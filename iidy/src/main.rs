@@ -1,6 +1,7 @@
 use std::io;
 mod aws;
 mod cli;
+mod describe_stack;
 mod list_stacks;
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
@@ -20,7 +21,16 @@ fn main() {
         Commands::CreateChangeset(args) => println!("create-changeset {:?}", args),
         Commands::ExecChangeset(args) => println!("exec-changeset {:?}", args),
         Commands::DummySpacer2 => {}
-        Commands::DescribeStack(args) => println!("describe-stack {:?}", args),
+        Commands::DescribeStack(args) => {
+            match rt.block_on(describe_stack::describe_stack(&cli.aws_opts, &args)) {
+                Ok(lines) => {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                }
+                Err(e) => eprintln!("error describing stack: {e:?}"),
+            }
+        }
         Commands::WatchStack(args) => println!("watch-stack {:?}", args),
         Commands::DescribeStackDrift(args) => println!("describe-stack-drift {:?}", args),
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
