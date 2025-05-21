@@ -29,3 +29,5 @@ anyhow = "1"
 
 # Tokio runtime required by AWS SDK
 tokio = { version = "1", features = ["full"] }
+aws-types = "1.3.7"
+aws-credential-types = "1.2.3"

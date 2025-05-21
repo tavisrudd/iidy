@@ -1,6 +1,5 @@
-use aws_sdk_cloudformation::types::{Stack, StackStatus};
+use aws_sdk_cloudformation::types::{Stack};
 use aws_smithy_types::date_time::Format;
-use aws_smithy_types::DateTime;
 
 /// Format a list of [`Stack`] objects similar to the Node.js implementation.
 ///
@@ -54,7 +53,8 @@ pub fn format_stacks(stacks: Vec<Stack>, show_tags: bool) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aws_sdk_cloudformation::types::{Tag};
+    use aws_sdk_cloudformation::types::{Tag, StackStatus};
+    use aws_smithy_types::DateTime;
 
     fn sample_stack(name: &str, ts: i64, status: StackStatus) -> Stack {
         Stack::builder()
