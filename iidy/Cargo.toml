@@ -5,10 +5,15 @@ edition = "2024"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4.5.2", features = ["derive"] }
+clap = { version = "4.5.38", features = ["derive", "wrap_help"] } # ... unicode
+clap-help = "1.4.0"
+clap_complete = "4.5.50"
+
 # AWS CloudFormation SDK and config helpers
 aws-config = "1"
 aws-sdk-cloudformation = "1"
+aws-sdk-ec2 = "1"
+aws-smithy-types = "1"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
