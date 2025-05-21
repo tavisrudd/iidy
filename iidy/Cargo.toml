@@ -6,3 +6,19 @@ license = "MIT"
 
 [dependencies]
 clap = { version = "4.5.2", features = ["derive"] }
+# AWS CloudFormation SDK and config helpers
+aws-config = "1"
+aws-sdk-cloudformation = "1"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# YAML parsing
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
+# Error handling utilities
+anyhow = "1"
+
+# Tokio runtime required by AWS SDK
+tokio = { version = "1", features = ["full"] }
