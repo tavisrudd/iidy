@@ -65,6 +65,8 @@ fn styles() -> Styles {
     name = "iidy-rs",
     bin_name = "iidy-rs",
     about = "CloudFormation with Confidence",
+    long_about = "CloudFormation with Confidence\n\nAn acronym for \"Is it done yet?\"",
+    after_help = "Status Codes:\n  Success (0)       Command successfully completed\n  Error (1)         An error was encountered while executing command\n  Cancelled (130)   User responded 'No' to iidy prompt or interrupt (CTRL-C) was received",
     version,
     arg_required_else_help = true,
     styles = styles()
@@ -160,42 +162,63 @@ pub enum ColorChoice {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    /// create a cfn stack based on stack-args.yaml
     CreateStack(StackFileArgs),
+    /// update a cfn stack based on stack-args.yaml
     UpdateStack(UpdateStackArgs),
+    /// create or update a cfn stack based on stack-args.yaml
     CreateOrUpdate(UpdateStackArgs),
+    /// estimate aws costs based on stack-args.yaml
     EstimateCost(StackFileArgs),
     #[clap(name = " ")]
     DummySpacer,
+    /// create a cfn changeset based on stack-args.yaml
     CreateChangeset(CreateChangeSetArgs),
+    /// execute a cfn changeset based on stack-args.yaml
     ExecChangeset(ExecChangeSetArgs),
     #[clap(name = "  ")]
     DummySpacer2,
+    /// describe a stack
     DescribeStack(DescribeArgs),
+    /// watch a stack that is already being created or updated
     WatchStack(WatchArgs),
+    /// describe stack drift
     DescribeStackDrift(DriftArgs),
+    /// delete a stack (after confirmation)
     DeleteStack(DeleteArgs),
+    /// download the template of a live stack
     GetStackTemplate(GetTemplateArgs),
+    /// list the ec2 instances of a live stack
     GetStackInstances(StackNameArg),
+    /// list all stacks within a region
     ListStacks(ListArgs),
     #[clap(name = "   ")]
     DummySpacer3,
+    /// sub commands for working with AWS SSM Parameter Store
     Param {
         #[command(subcommand)]
         command: ParamCommands,
     },
     #[clap(name = "    ")]
     DummySpacer4,
+    /// sub commands for template approval
     TemplateApproval {
         #[command(subcommand)]
         command: ApprovalCommands,
     },
     #[clap(name = "     ")]
     DummySpacer5,
+    /// pre-process and render yaml template
     Render(RenderArgs),
+    /// retrieve and print an $import value directly
     GetImport(GetImportArgs),
+    /// run a demo script
     Demo(DemoArgs),
+    /// lint a CloudFormation template
     LintTemplate(LintTemplateArgs),
+    /// create an iidy project directory from an existing CFN stack
     ConvertStackToIidy(ConvertArgs),
+    /// initialize stack-args.yaml and cfn-template.yaml
     InitStackArgs(InitStackArgs),
     #[clap(name = "      ")]
     DummySpacer6,
@@ -310,10 +333,15 @@ pub struct ListArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum ParamCommands {
+    /// set a parameter value
     Set(ParamSetArgs),
+    /// review a pending change
     Review(ParamPathArg),
+    /// get a parameter value
     Get(ParamGetArgs),
+    /// get a parameter value
     GetByPath(ParamGetByPathArgs),
+    /// get a parameter's history
     GetHistory(ParamGetArgs),
 }
 
@@ -358,7 +386,9 @@ pub struct ParamGetByPathArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum ApprovalCommands {
+    /// request template approval
     Request(ApprovalRequestArgs),
+    /// review pending template approval request
     Review(ApprovalReviewArgs),
 }
 
