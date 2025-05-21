@@ -1,42 +1,116 @@
 use clap::{Parser, Subcommand, Args, ValueEnum};
 
+const AWS_REGIONS: [&str; 26] = [
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "ca-central-1",
+    "sa-east-1",
+    "eu-central-1",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "eu-north-1",
+    "eu-south-1",
+    "ap-south-1",
+    "ap-south-2",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "ap-southeast-3",
+    "ap-southeast-4",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-northeast-3",
+    "ap-east-1",
+    "me-south-1",
+    "me-central-1",
+    "us-gov-west-1",
+    "us-gov-east-1",
+];
+
 #[derive(Parser, Debug)]
 #[command(name = "iidy", about = "Rust port of Unbounce/iidy", version, arg_required_else_help = true)]
 pub struct Cli {
-    /// Environment name used to load profile and region
-    #[arg(short, long, default_value = "development", global = true)]
-    pub environment: String,
+    #[clap(flatten)]
+    pub global_opts: GlobalOpts,
 
-    /// Unique idempotency token
-    #[arg(long, global = true)]
-    pub client_request_token: Option<String>,
-
-    /// AWS region
-    #[arg(long, global = true)]
-    pub region: Option<String>,
-
-    /// AWS credentials profile
-    #[arg(long, global = true)]
-    pub profile: Option<String>,
-
-    /// IAM role to assume
-    #[arg(long = "assume-role-arn", global = true)]
-    pub assume_role_arn: Option<String>,
-
-    /// Whether to colorize output
-    #[arg(long, value_enum, default_value = "auto", global = true)]
-    pub color: ColorChoice,
-
-    /// Enable debug logging
-    #[arg(long, global = true)]
-    pub debug: bool,
-
-    /// Print full error details
-    #[arg(long = "log-full-error", global = true)]
-    pub log_full_error: bool,
+    #[clap(flatten)]
+    pub aws_opts: AwsOpts,
 
     #[command(subcommand)]
     pub command: Commands,
+}
+
+#[derive(Debug, Args)]
+#[clap(next_help_heading = "Global Options")]
+pub struct GlobalOpts {
+    #[arg(
+        short,
+        long,
+        global = true,
+        default_value = "development",
+        help = "Used to load environment based settings: AWS Profile, Region, etc."
+    )]
+    pub environment: String,
+
+    #[arg(long, value_enum, global = true, default_value_t = ColorChoice::Auto, help = "Whether to color output using ANSI escape codes")]
+    pub color: ColorChoice,
+
+    #[arg(
+        long,
+        global = true,
+        default_value_t = false,
+        help = "Log debug information to stderr."
+    )]
+    pub debug: bool,
+
+    #[arg(
+        long,
+        global = true,
+        default_value_t = false,
+        help = "Log full error information to stderr."
+    )]
+    pub log_full_error: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct AwsOpts {
+    #[arg(
+        long,
+        global = true,
+        help = "AWS region. Can also be set via --environment & stack-args.yaml:Region.",
+        help_heading = "AWS Options",
+        hide_possible_values = true,
+        value_parser = clap::builder::PossibleValuesParser::new(&AWS_REGIONS)
+    )]
+    pub region: Option<String>,
+
+    #[arg(
+        long,
+        group = "aws-auth",
+        global = true,
+        help_heading = "AWS Options",
+        help = "AWS profile. Can also be set via --environment & stack-args.yaml:Profile. Use --profile=no-profile to override values in stack-args.yaml and use AWS_* env vars."
+    )]
+    pub profile: Option<String>,
+
+    #[arg(
+        long,
+        group = "aws-auth",
+        global = true,
+        help_heading = "AWS Options",
+        help = "AWS role. Can also be set via --environment & stack-args.yaml:AssumeRoleArn. Use --assume-role-arn=no-role to override values in stack-args.yaml and use AWS_* env vars."
+    )]
+    pub assume_role_arn: Option<String>,
+    #[arg(
+        long,
+        global = true,
+        group = "aws",
+        help_heading = "AWS Options",
+        help = "A unique, case-sensitive string of up to 64 ASCII characters used to ensure idempotent retries."
+    )]
+    pub client_request_token: Option<String>,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
