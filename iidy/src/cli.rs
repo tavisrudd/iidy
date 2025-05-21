@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, Args, ValueEnum};
+use clap_complete::Shell;
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use atty;
 use atty::Stream;
@@ -206,6 +207,8 @@ pub enum Commands {
     InitStackArgs(InitStackArgs),
     #[clap(name = "      ")]
     DummySpacer6,
+    /// generate shell completion script
+    Completion(CompletionArgs),
 }
 
 #[derive(Args, Debug)]
@@ -450,6 +453,12 @@ pub struct InitStackArgs {
     pub force_cfn_template: bool,
 }
 
+#[derive(Args, Debug)]
+pub struct CompletionArgs {
+    #[arg(value_enum, default_value = "bash")]
+    pub shell: Shell,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -528,6 +537,28 @@ mod tests {
                 _ => panic!("Expected ParamCommands::Set"),
             },
             _ => panic!("Expected param command"),
+        }
+    }
+
+    #[test]
+    fn parse_completion_default() {
+        let cli = Cli::parse_from(["iidy", "completion"]);
+        match cli.command {
+            Commands::Completion(args) => {
+                assert_eq!(args.shell, Shell::Bash);
+            }
+            _ => panic!("Expected completion command"),
+        }
+    }
+
+    #[test]
+    fn parse_completion_zsh() {
+        let cli = Cli::parse_from(["iidy", "completion", "zsh"]);
+        match cli.command {
+            Commands::Completion(args) => {
+                assert_eq!(args.shell, Shell::Zsh);
+            }
+            _ => panic!("Expected completion command"),
         }
     }
 }
