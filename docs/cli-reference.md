@@ -6,13 +6,16 @@ This document summarizes the CLI commands and options implemented in the origina
 ## Global Options
 
 * `--environment, -e` – select environment settings (default `development`)
+* `--color` – color output (`auto`, `always`, `never`)
+* `--debug` – enable debug logging
+* `--log-full-error` – print full stack traces on errors
+
+## AWS Options
+
 * `--client-request-token` – idempotency token passed to AWS APIs
 * `--region` – AWS region
 * `--profile` – AWS credentials profile
 * `--assume-role-arn` – role ARN to assume
-* `--color` – color output (`auto`, `always`, `never`)
-* `--debug` – enable debug logging
-* `--log-full-error` – print full stack traces on errors
 
 These options can appear before or after commands and apply globally.
 
