@@ -120,6 +120,7 @@ subcommands.
   - `--force`
   - `--force-stack-args`
   - `--force-cfn-template`
+- **completion `[bash|elvish|fish|powershell|zsh]`** – generate a shell completion script
 
 This reference is derived from the TypeScript version's `main.ts` and related
 files to guide the Rust `clap` implementation.
