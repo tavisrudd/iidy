@@ -1,5 +1,8 @@
-use aws_sdk_cloudformation::types::Stack;
+use anyhow::Result;
+use aws_sdk_cloudformation::{types::Stack, Client};
 use aws_smithy_types::date_time::Format;
+
+use crate::{aws, cli::{AwsOpts, ListArgs}};
 
 /// Format a list of [`Stack`] objects similar to the Node.js implementation.
 ///
@@ -45,6 +48,26 @@ pub fn format_stacks(stacks: Vec<Stack>, show_tags: bool) -> Vec<String> {
             }
         })
         .collect()
+}
+
+/// Retrieve all stacks for the configured AWS region and format them.
+///
+/// The returned vector of strings can be printed directly to display the list
+/// of stacks. Currently no filtering is implemented.
+pub async fn list_stacks(opts: &AwsOpts, args: &ListArgs) -> Result<Vec<String>> {
+    let config = aws::config_from_opts(opts).await?;
+    let client = Client::new(&config);
+
+    // Use the paginator to retrieve all stacks in the region.
+    let stacks: Vec<Stack> = client
+        .describe_stacks()
+        .into_paginator()
+        .items()
+        .send()
+        .try_collect()
+        .await?;
+
+    Ok(format_stacks(stacks, args.tags))
 }
 
 #[cfg(test)]
