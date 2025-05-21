@@ -5,10 +5,12 @@ mod list_stacks;
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use cli::{Cli, Commands};
+use tokio::runtime::Runtime;
 
 fn main() {
     let cli = Cli::parse();
     println!("CLI options: {:?}", cli);
+    let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
         Commands::CreateStack(args) => println!("create-stack {:?}", args),
         Commands::UpdateStack(args) => println!("update-stack {:?}", args),
@@ -24,7 +26,16 @@ fn main() {
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
         Commands::GetStackTemplate(args) => println!("get-stack-template {:?}", args),
         Commands::GetStackInstances(args) => println!("get-stack-instances {:?}", args),
-        Commands::ListStacks(args) => println!("list-stacks {:?}", args),
+        Commands::ListStacks(args) => {
+            match rt.block_on(list_stacks::list_stacks(&cli.aws_opts, &args)) {
+                Ok(lines) => {
+                    for line in lines {
+                        println!("{line}");
+                    }
+                }
+                Err(e) => eprintln!("error listing stacks: {e:?}"),
+            }
+        }
         Commands::DummySpacer3 => {}
         Commands::Param { command } => println!("param {:?}", command),
         Commands::DummySpacer4 => {}
