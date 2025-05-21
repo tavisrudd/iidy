@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use aws_sdk_cloudformation::{
     Client,
-    types::{Stack, StackStatus},
+    types::{Stack},
 };
 use aws_smithy_types::date_time::Format;
 
