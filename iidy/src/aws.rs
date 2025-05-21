@@ -1,9 +1,9 @@
-use aws_config::SdkConfig;
-use aws_config::BehaviorVersion;
-use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_config::sts::AssumeRoleProvider;
-use aws_types::region::Region;
 use anyhow::Result;
+use aws_config::BehaviorVersion;
+use aws_config::SdkConfig;
+use aws_config::sts::AssumeRoleProvider;
+use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_types::region::Region;
 
 use crate::cli::AwsOpts;
 
