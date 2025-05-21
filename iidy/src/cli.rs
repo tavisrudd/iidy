@@ -1,8 +1,8 @@
-use clap::{Parser, Subcommand, Args, ValueEnum};
-use clap_complete::Shell;
-use clap::builder::styling::{AnsiColor, Effects, Styles};
 use atty;
 use atty::Stream;
+use clap::builder::styling::{AnsiColor, Effects, Styles};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap_complete::Shell;
 
 const AWS_REGIONS: [&str; 26] = [
     "us-east-1",
