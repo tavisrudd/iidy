@@ -385,3 +385,85 @@ pub struct InitStackArgs {
     #[arg(long = "force-cfn-template")]
     pub force_cfn_template: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_create_stack_defaults() {
+        let cli = Cli::parse_from(["iidy", "create-stack", "stack.yaml"]);
+        assert_eq!(cli.global_opts.environment, "development");
+        assert_eq!(cli.aws_opts.region, None);
+
+        match cli.command {
+            Commands::CreateStack(args) => {
+                assert_eq!(args.argsfile, "stack.yaml");
+                assert!(args.stack_name.is_none());
+            }
+            _ => panic!("Expected create-stack command"),
+        }
+    }
+
+    #[test]
+    fn parse_update_stack_with_options() {
+        let cli = Cli::parse_from([
+            "iidy",
+            "--environment",
+            "prod",
+            "--region",
+            "us-west-2",
+            "update-stack",
+            "stack.yaml",
+            "--changeset",
+            "--yes",
+            "--stack-policy-during-update",
+            "policy.json",
+        ]);
+
+        assert_eq!(cli.global_opts.environment, "prod");
+        assert_eq!(cli.aws_opts.region.as_deref(), Some("us-west-2"));
+
+        match cli.command {
+            Commands::UpdateStack(args) => {
+                assert_eq!(args.base.argsfile, "stack.yaml");
+                assert!(args.changeset);
+                assert!(args.yes);
+                assert_eq!(
+                    args.stack_policy_during_update.as_deref(),
+                    Some("policy.json")
+                );
+            }
+            _ => panic!("Expected update-stack command"),
+        }
+    }
+
+    #[test]
+    fn parse_param_set() {
+        let cli = Cli::parse_from([
+            "iidy",
+            "param",
+            "set",
+            "/path/to/param",
+            "value",
+            "--overwrite",
+            "--with-approval",
+            "--type",
+            "String",
+        ]);
+
+        match cli.command {
+            Commands::Param { command } => match command {
+                ParamCommands::Set(args) => {
+                    assert_eq!(args.path, "/path/to/param");
+                    assert_eq!(args.value, "value");
+                    assert!(args.overwrite);
+                    assert!(args.with_approval);
+                    assert_eq!(args.r#type, "String");
+                }
+                _ => panic!("Expected ParamCommands::Set"),
+            },
+            _ => panic!("Expected param command"),
+        }
+    }
+}
