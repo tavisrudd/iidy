@@ -1,22 +1,6 @@
 use clap::{Parser, Subcommand, Args, ValueEnum};
 use clap::builder::styling::{AnsiColor, Effects, Styles};
-mod atty {
-    use std::io::{self, IsTerminal};
-
-    pub enum Stream {
-        Stdin,
-        Stdout,
-        Stderr,
-    }
-
-    pub fn is(stream: Stream) -> bool {
-        match stream {
-            Stream::Stdin => io::stdin().is_terminal(),
-            Stream::Stdout => io::stdout().is_terminal(),
-            Stream::Stderr => io::stderr().is_terminal(),
-        }
-    }
-}
+use atty;
 use atty::Stream;
 
 const AWS_REGIONS: [&str; 26] = [
