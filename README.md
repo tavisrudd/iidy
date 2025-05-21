@@ -4,7 +4,8 @@ This repository contains a small Rust command-line project called `iidy`.
 
 ## Pre-installed dependencies
 
-The development environment does not have network access after the container starts. To ensure the Rust dependencies are available, run the `setup.sh` script during the setup phase (when network access is still allowed). This script fetches the project dependencies with `cargo fetch`.
+
+The development environment does not have network access after the container starts. To ensure the Rust dependencies are available, run the `setup.sh` script during the setup phase (when network access is still allowed). The script fetches the Cargo dependencies and also clones the upstream [`unbounce/iidy`](https://github.com/unbounce/iidy) repository for reference.
 
 ```bash
 ./setup.sh
