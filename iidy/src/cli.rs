@@ -1,4 +1,23 @@
 use clap::{Parser, Subcommand, Args, ValueEnum};
+use clap::builder::styling::{AnsiColor, Effects, Styles};
+mod atty {
+    use std::io::{self, IsTerminal};
+
+    pub enum Stream {
+        Stdin,
+        Stdout,
+        Stderr,
+    }
+
+    pub fn is(stream: Stream) -> bool {
+        match stream {
+            Stream::Stdin => io::stdin().is_terminal(),
+            Stream::Stdout => io::stdout().is_terminal(),
+            Stream::Stderr => io::stderr().is_terminal(),
+        }
+    }
+}
+use atty::Stream;
 
 const AWS_REGIONS: [&str; 26] = [
     "us-east-1",
@@ -29,8 +48,27 @@ const AWS_REGIONS: [&str; 26] = [
     "us-gov-east-1",
 ];
 
+fn styles() -> Styles {
+    if atty::is(Stream::Stdout) {
+        Styles::styled()
+            .header(AnsiColor::Yellow.on_default() | Effects::BOLD)
+            .usage(AnsiColor::Yellow.on_default() | Effects::BOLD)
+            .literal(AnsiColor::Cyan.on_default() | Effects::BOLD)
+            .placeholder(AnsiColor::Cyan.on_default())
+    } else {
+        Styles::plain()
+    }
+}
+
 #[derive(Parser, Debug)]
-#[command(name = "iidy", about = "Rust port of Unbounce/iidy", version, arg_required_else_help = true)]
+#[command(
+    name = "iidy-rs",
+    bin_name = "iidy-rs",
+    about = "CloudFormation with Confidence",
+    version,
+    arg_required_else_help = true,
+    styles = styles()
+)]
 pub struct Cli {
     #[clap(flatten)]
     pub global_opts: GlobalOpts,
@@ -126,8 +164,12 @@ pub enum Commands {
     UpdateStack(UpdateStackArgs),
     CreateOrUpdate(UpdateStackArgs),
     EstimateCost(StackFileArgs),
+    #[clap(name = " ")]
+    DummySpacer,
     CreateChangeset(CreateChangeSetArgs),
     ExecChangeset(ExecChangeSetArgs),
+    #[clap(name = "  ")]
+    DummySpacer2,
     DescribeStack(DescribeArgs),
     WatchStack(WatchArgs),
     DescribeStackDrift(DriftArgs),
@@ -135,20 +177,28 @@ pub enum Commands {
     GetStackTemplate(GetTemplateArgs),
     GetStackInstances(StackNameArg),
     ListStacks(ListArgs),
+    #[clap(name = "   ")]
+    DummySpacer3,
     Param {
         #[command(subcommand)]
         command: ParamCommands,
     },
+    #[clap(name = "    ")]
+    DummySpacer4,
     TemplateApproval {
         #[command(subcommand)]
         command: ApprovalCommands,
     },
+    #[clap(name = "     ")]
+    DummySpacer5,
     Render(RenderArgs),
     GetImport(GetImportArgs),
     Demo(DemoArgs),
     LintTemplate(LintTemplateArgs),
     ConvertStackToIidy(ConvertArgs),
     InitStackArgs(InitStackArgs),
+    #[clap(name = "      ")]
+    DummySpacer6,
 }
 
 #[derive(Args, Debug)]
