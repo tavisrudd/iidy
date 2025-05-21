@@ -5,6 +5,7 @@
 
 set -euo pipefail
 
+
 cd "$(dirname "$0")"
 
 # Clone the upstream unbounce/iidy repository for reference
