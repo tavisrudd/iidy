@@ -1,5 +1,6 @@
 use aws_config::SdkConfig;
 use aws_config::BehaviorVersion;
+use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_config::sts::AssumeRoleProvider;
 use aws_types::region::Region;
 use anyhow::Result;
@@ -12,7 +13,7 @@ use crate::cli::AwsOpts;
 /// `AwsOpts`. The returned [`SdkConfig`] can be used to construct AWS service
 /// clients.
 pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
-    let mut loader = aws_config::from_env();
+    let mut loader = aws_config::defaults(BehaviorVersion::v2025_01_17());
 
     if let Some(ref region) = opts.region {
         loader = loader.region(Region::new(region.clone()));
@@ -35,7 +36,7 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
             .await;
         base_config
             .into_builder()
-            .credentials_provider(provider)
+            .credentials_provider(SharedCredentialsProvider::new(provider))
             .build()
     } else {
         base_config
