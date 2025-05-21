@@ -1,5 +1,7 @@
 use std::io;
 mod cli;
+mod aws;
+mod list_stacks;
 use clap::{CommandFactory, Parser};
 use clap_complete::{generate, Shell};
 use cli::{Cli, Commands};

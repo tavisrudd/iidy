@@ -1,0 +1,45 @@
+use aws_config::SdkConfig;
+use aws_config::BehaviorVersion;
+use aws_config::sts::AssumeRoleProvider;
+use aws_types::region::Region;
+use anyhow::Result;
+
+use crate::cli::AwsOpts;
+
+/// Load AWS SDK configuration using values from [`AwsOpts`].
+///
+/// This honors the `region`, `profile`, and `assume_role_arn` fields of
+/// `AwsOpts`. The returned [`SdkConfig`] can be used to construct AWS service
+/// clients.
+pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
+    let mut loader = aws_config::from_env();
+
+    if let Some(ref region) = opts.region {
+        loader = loader.region(Region::new(region.clone()));
+    }
+
+    if let Some(ref profile) = opts.profile {
+        loader = loader.profile_name(profile.clone());
+    }
+
+    // Load base configuration from the default chain
+    let base_config = loader.load().await;
+
+    // If an assume role was requested, build a credentials provider for it and
+    // return a config that uses it. Otherwise return the base config.
+    let config = if let Some(ref role) = opts.assume_role_arn {
+        let provider = AssumeRoleProvider::builder(role)
+            .configure(&base_config)
+            .session_name("iidy")
+            .build()
+            .await;
+        base_config
+            .into_builder()
+            .credentials_provider(provider)
+            .build()
+    } else {
+        base_config
+    };
+
+    Ok(config)
+}
