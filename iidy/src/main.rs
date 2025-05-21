@@ -3,6 +3,7 @@ mod aws;
 mod cli;
 mod describe_stack;
 mod list_stacks;
+mod get_stack_template;
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use cli::{Cli, Commands};
@@ -34,7 +35,17 @@ fn main() {
         Commands::WatchStack(args) => println!("watch-stack {:?}", args),
         Commands::DescribeStackDrift(args) => println!("describe-stack-drift {:?}", args),
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
-        Commands::GetStackTemplate(args) => println!("get-stack-template {:?}", args),
+        Commands::GetStackTemplate(args) => {
+            match rt.block_on(get_stack_template::get_stack_template(&cli.aws_opts, &args)) {
+                Ok(out) => {
+                    for line in out.stderr_lines {
+                        eprintln!("{line}");
+                    }
+                    println!("{}", out.body);
+                }
+                Err(e) => eprintln!("error getting template: {e:?}"),
+            }
+        }
         Commands::GetStackInstances(args) => println!("get-stack-instances {:?}", args),
         Commands::ListStacks(args) => {
             match rt.block_on(list_stacks::list_stacks(&cli.aws_opts, &args)) {
