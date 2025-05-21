@@ -1,6 +1,7 @@
+use std::io;
 mod cli;
 use clap::{CommandFactory, Parser};
-use clap_complete::generate;
+use clap_complete::{generate, Shell};
 use cli::{Cli, Commands};
 
 fn main() {
@@ -34,9 +35,11 @@ fn main() {
         Commands::ConvertStackToIidy(args) => println!("convert-stack-to-iidy {:?}", args),
         Commands::InitStackArgs(args) => println!("init-stack-args {:?}", args),
         Commands::DummySpacer6 => {},
-        Commands::Completion(args) => {
-            let mut cmd = Cli::command();
-            generate(args.shell, &mut cmd, "iidy", &mut std::io::stdout());
+        Commands::Completion { shell } => {
+            let shell = shell
+                .or(Shell::from_env())
+                .expect("invalid shell argument or $SHELL env var");
+            generate(shell, &mut Cli::command(), "iidy-rs", &mut io::stdout());
         }
     }
 }

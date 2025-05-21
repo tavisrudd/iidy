@@ -208,7 +208,7 @@ pub enum Commands {
     #[clap(name = "      ")]
     DummySpacer6,
     /// generate shell completion script
-    Completion(CompletionArgs),
+    Completion { shell: Option<Shell> },
 }
 
 #[derive(Args, Debug)]
@@ -453,12 +453,6 @@ pub struct InitStackArgs {
     pub force_cfn_template: bool,
 }
 
-#[derive(Args, Debug)]
-pub struct CompletionArgs {
-    #[arg(value_enum, default_value = "bash")]
-    pub shell: Shell,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -544,8 +538,8 @@ mod tests {
     fn parse_completion_default() {
         let cli = Cli::parse_from(["iidy", "completion"]);
         match cli.command {
-            Commands::Completion(args) => {
-                assert_eq!(args.shell, Shell::Bash);
+            Commands::Completion { shell } => {
+                assert_eq!(shell, None);
             }
             _ => panic!("Expected completion command"),
         }
@@ -555,8 +549,8 @@ mod tests {
     fn parse_completion_zsh() {
         let cli = Cli::parse_from(["iidy", "completion", "zsh"]);
         match cli.command {
-            Commands::Completion(args) => {
-                assert_eq!(args.shell, Shell::Zsh);
+            Commands::Completion { shell } => {
+                assert_eq!(shell, Some(Shell::Zsh));
             }
             _ => panic!("Expected completion command"),
         }
