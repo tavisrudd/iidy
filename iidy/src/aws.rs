@@ -4,6 +4,7 @@ use aws_config::SdkConfig;
 use aws_config::sts::AssumeRoleProvider;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_types::region::Region;
+use aws_sdk_cloudformation::{self as cloudformation};
 
 use crate::cli::AwsOpts;
 
@@ -42,4 +43,17 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
     let config = builder.build();
 
     Ok(config)
+}
+
+/// Construct a CloudFormation client using the provided [`AwsOpts`].
+///
+/// If `client_request_token` is specified in [`AwsOpts`], it will be used as the
+/// idempotency token provider for all CloudFormation API calls.
+pub async fn cfn_client_from_opts(opts: &AwsOpts) -> Result<cloudformation::Client> {
+    let sdk_config = config_from_opts(opts).await?;
+    let mut builder = cloudformation::config::Builder::from(&sdk_config);
+    if let Some(ref token) = opts.client_request_token {
+        builder = builder.idempotency_token_provider(token.as_str());
+    }
+    Ok(cloudformation::Client::from_conf(builder.build()))
 }

@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
-use aws_sdk_cloudformation::{Client, types::TemplateStage};
+use aws_sdk_cloudformation::types::TemplateStage;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 
@@ -90,8 +90,7 @@ pub async fn get_stack_template(
     opts: &AwsOpts,
     args: &GetTemplateArgs,
 ) -> Result<FormattedTemplate> {
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
+    let client = aws::cfn_client_from_opts(opts).await?;
 
     let stage = match args.stage {
         TemplateStageArg::Original => TemplateStage::Original,

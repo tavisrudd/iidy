@@ -1,5 +1,5 @@
 use anyhow::{Result, anyhow};
-use aws_sdk_cloudformation::{Client, types::Stack};
+use aws_sdk_cloudformation::types::Stack;
 use aws_smithy_types::date_time::Format;
 
 use crate::{
@@ -53,8 +53,7 @@ pub fn format_stack(stack: Stack) -> Vec<String> {
 /// This function performs the AWS API call and delegates formatting to
 /// [`format_stack`].
 pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<Vec<String>> {
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
+    let client = aws::cfn_client_from_opts(opts).await?;
 
     let resp = client
         .describe_stacks()

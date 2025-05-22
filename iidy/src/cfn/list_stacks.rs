@@ -1,5 +1,5 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::{Client, types::Stack};
+use aws_sdk_cloudformation::types::Stack;
 use aws_smithy_types::date_time::Format;
 
 use crate::{
@@ -58,8 +58,7 @@ pub fn format_stacks(stacks: Vec<Stack>, show_tags: bool) -> Vec<String> {
 /// The returned vector of strings can be printed directly to display the list
 /// of stacks. Currently no filtering is implemented.
 pub async fn list_stacks(opts: &AwsOpts, args: &ListArgs) -> Result<Vec<String>> {
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
+    let client = aws::cfn_client_from_opts(opts).await?;
 
     // Use the paginator to retrieve all stacks in the region.
     let stacks: Vec<Stack> = client
