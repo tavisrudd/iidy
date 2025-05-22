@@ -1,6 +1,7 @@
 use std::io;
 mod aws;
 mod cli;
+mod display;
 mod preprocess;
 mod stack_args;
 mod cfn {
@@ -39,13 +40,17 @@ fn main() {
         Commands::ExecChangeset(args) => println!("exec-changeset {:?}", args),
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(args) => {
-            match rt.block_on(cfn::describe_stack::describe_stack(&cli.aws_opts, &args)) {
-                Ok(lines) => {
-                    for line in lines {
-                        println!("{line}");
-                    }
-                }
-                Err(e) => eprintln!("error describing stack: {e:?}"),
+            if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&cli.aws_opts, &args)) {
+                eprintln!("error describing stack: {e:?}");
+            }
+        }
+
+        Commands::DescribeStackDrift(args) => {
+            if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(
+                &cli.aws_opts,
+                &args,
+            )) {
+                eprintln!("error describing stack drift: {e:?}");
             }
         }
         Commands::WatchStack(args) => {
@@ -53,7 +58,6 @@ fn main() {
                 eprintln!("error watching stack: {e:?}");
             }
         }
-        Commands::DescribeStackDrift(args) => println!("describe-stack-drift {:?}", args),
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
         Commands::GetStackTemplate(args) => {
             match rt.block_on(cfn::get_stack_template::get_stack_template(
@@ -71,13 +75,8 @@ fn main() {
         }
         Commands::GetStackInstances(args) => println!("get-stack-instances {:?}", args),
         Commands::ListStacks(args) => {
-            match rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
-                Ok(lines) => {
-                    for line in lines {
-                        println!("{line}");
-                    }
-                }
-                Err(e) => eprintln!("error listing stacks: {e:?}"),
+            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
+                eprintln!("error listing stacks: {e:?}");
             }
         }
         Commands::DummySpacer3 => {}

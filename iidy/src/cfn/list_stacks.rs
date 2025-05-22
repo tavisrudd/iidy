@@ -4,6 +4,7 @@ use atty::Stream;
 use aws_sdk_cloudformation::{Client, types::Stack};
 use aws_smithy_types::date_time::Format;
 
+use crate::display::display_lines;
 use crate::{
     aws,
     cli::{AwsOpts, ListArgs},
@@ -219,7 +220,7 @@ pub fn format_stacks(stacks: Vec<Stack>, show_tags: bool) -> Vec<String> {
 ///
 /// The returned vector of strings can be printed directly to display the list
 /// of stacks. Currently no filtering is implemented.
-pub async fn list_stacks(opts: &AwsOpts, args: &ListArgs) -> Result<Vec<String>> {
+pub async fn list_stacks(opts: &AwsOpts, args: &ListArgs) -> Result<()> {
     let config = aws::config_from_opts(opts).await?;
     let client = Client::new(&config);
 
@@ -232,7 +233,8 @@ pub async fn list_stacks(opts: &AwsOpts, args: &ListArgs) -> Result<Vec<String>>
         .try_collect()
         .await?;
 
-    Ok(format_stacks(stacks, args.tags))
+    display_lines(format_stacks(stacks, args.tags));
+    Ok(())
 }
 
 #[cfg(test)]

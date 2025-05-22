@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use aws_sdk_cloudformation::{Client, types::Stack};
 use aws_smithy_types::date_time::Format;
 
+use crate::display::display_lines;
 use crate::{
     aws,
     cli::{AwsOpts, DescribeArgs},
@@ -52,7 +53,7 @@ pub fn format_stack(stack: Stack) -> Vec<String> {
 ///
 /// This function performs the AWS API call and delegates formatting to
 /// [`format_stack`].
-pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<Vec<String>> {
+pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<()> {
     let config = aws::config_from_opts(opts).await?;
     let client = Client::new(&config);
 
@@ -67,7 +68,8 @@ pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<Vec<S
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow!("stack not found"))?;
 
-    Ok(format_stack(stack))
+    display_lines(format_stack(stack));
+    Ok(())
 }
 
 #[cfg(test)]
