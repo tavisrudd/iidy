@@ -14,6 +14,7 @@ mod cfn {
     pub mod get_stack_template;
     pub mod list_stacks;
     pub mod update_stack;
+    pub mod is_terminal_status;
     pub mod watch_stack;
 }
 use clap::{CommandFactory, Parser};
@@ -44,7 +45,11 @@ fn main() {
                 Err(e) => eprintln!("error describing stack: {e:?}"),
             }
         }
-        Commands::WatchStack(args) => println!("watch-stack {:?}", args),
+        Commands::WatchStack(args) => {
+            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&cli.aws_opts, &args)) {
+                eprintln!("error watching stack: {e:?}");
+            }
+        }
         Commands::DescribeStackDrift(args) => println!("describe-stack-drift {:?}", args),
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
         Commands::GetStackTemplate(args) => {
