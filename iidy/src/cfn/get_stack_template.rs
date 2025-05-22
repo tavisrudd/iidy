@@ -1,9 +1,12 @@
+use crate::{
+    aws,
+    cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg},
+};
 use anyhow::Result;
-use aws_sdk_cloudformation::{types::TemplateStage, Client};
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
+use aws_sdk_cloudformation::{Client, types::TemplateStage};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
-use crate::{aws, cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg}};
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {
@@ -76,7 +79,10 @@ pub fn format_template(
         TemplateFormat::Json => serde_json::to_string(&template.to_json()?)?,
         TemplateFormat::Original => body_raw.to_string(),
     };
-    Ok(FormattedTemplate { stderr_lines, body: strip_trailing_newline(body) })
+    Ok(FormattedTemplate {
+        stderr_lines,
+        body: strip_trailing_newline(body),
+    })
 }
 
 /// Retrieve a stack template from CloudFormation and format it for display.
@@ -118,11 +124,8 @@ mod tests {
     #[test]
     fn formats_yaml() {
         let output = sample_output("{\"A\":1}");
-        let formatted = format_template(
-            output,
-            TemplateStageArg::Original,
-            TemplateFormat::Yaml,
-        ).unwrap();
+        let formatted =
+            format_template(output, TemplateStageArg::Original, TemplateFormat::Yaml).unwrap();
         assert_eq!(formatted.stderr_lines.len(), 3);
         assert!(formatted.stderr_lines[0].contains("Stages Available"));
         assert!(formatted.body.contains("A: 1"));

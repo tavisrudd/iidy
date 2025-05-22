@@ -1,9 +1,21 @@
 use std::io;
 mod aws;
 mod cli;
-mod describe_stack;
-mod list_stacks;
-mod get_stack_template;
+mod cfn {
+    pub mod create_changeset;
+    pub mod create_or_update;
+    pub mod create_stack;
+    pub mod delete_stack;
+    pub mod describe_stack;
+    pub mod describe_stack_drift;
+    pub mod estimate_cost;
+    pub mod exec_changeset;
+    pub mod get_stack_instances;
+    pub mod get_stack_template;
+    pub mod list_stacks;
+    pub mod update_stack;
+    pub mod watch_stack;
+}
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use cli::{Cli, Commands};
@@ -23,7 +35,7 @@ fn main() {
         Commands::ExecChangeset(args) => println!("exec-changeset {:?}", args),
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(args) => {
-            match rt.block_on(describe_stack::describe_stack(&cli.aws_opts, &args)) {
+            match rt.block_on(cfn::describe_stack::describe_stack(&cli.aws_opts, &args)) {
                 Ok(lines) => {
                     for line in lines {
                         println!("{line}");
@@ -36,7 +48,10 @@ fn main() {
         Commands::DescribeStackDrift(args) => println!("describe-stack-drift {:?}", args),
         Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
         Commands::GetStackTemplate(args) => {
-            match rt.block_on(get_stack_template::get_stack_template(&cli.aws_opts, &args)) {
+            match rt.block_on(cfn::get_stack_template::get_stack_template(
+                &cli.aws_opts,
+                &args,
+            )) {
                 Ok(out) => {
                     for line in out.stderr_lines {
                         eprintln!("{line}");
@@ -48,7 +63,7 @@ fn main() {
         }
         Commands::GetStackInstances(args) => println!("get-stack-instances {:?}", args),
         Commands::ListStacks(args) => {
-            match rt.block_on(list_stacks::list_stacks(&cli.aws_opts, &args)) {
+            match rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
                 Ok(lines) => {
                     for line in lines {
                         println!("{line}");

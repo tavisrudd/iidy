@@ -1,8 +1,11 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::{types::Stack, Client};
+use aws_sdk_cloudformation::{Client, types::Stack};
 use aws_smithy_types::date_time::Format;
 
-use crate::{aws, cli::{AwsOpts, ListArgs}};
+use crate::{
+    aws,
+    cli::{AwsOpts, ListArgs},
+};
 
 /// Format a list of [`Stack`] objects similar to the Node.js implementation.
 ///
