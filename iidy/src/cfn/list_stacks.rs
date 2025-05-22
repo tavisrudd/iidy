@@ -263,4 +263,29 @@ mod tests {
         assert!(lines[0].contains("1970-01-01T00:00:01Z"));
         assert!(lines[0].contains("CREATE_COMPLETE"));
     }
+
+    #[test]
+    fn calc_padding_respects_max() {
+        let stacks = vec![
+            sample_stack("a", 0, StackStatus::CreateInProgress),
+            sample_stack("b", 0, StackStatus::DeleteFailed),
+        ];
+        let pad = calc_padding(&stacks, |s| s.stack_status().unwrap().as_str());
+        assert!(pad >= MIN_STATUS_PADDING);
+        assert!(pad <= MAX_PADDING);
+        assert_eq!(pad, "CREATE_IN_PROGRESS".len());
+    }
+
+    #[test]
+    fn colorize_status_applies_style() {
+        let scheme = ColorScheme::default();
+        let styled = colorize_status(
+            "DELETE_FAILED",
+            20,
+            &scheme,
+            true,
+        );
+        assert!(styled.starts_with(&scheme.status_failed.render().to_string()));
+        assert!(styled.ends_with(&scheme.status_failed.render_reset().to_string()));
+    }
 }
