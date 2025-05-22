@@ -1,18 +1,18 @@
 * prompt & task
-Fix compile errors in describe_stack_drift.rs after moving logic into handlers.
+Prompt:
+#+begin_quote
+Implement describe-stack-drift. Architect it on a way that you can test offline with fixtures. Study the aws IO / presentation separation in list-stacks etc
+#+end_quote
 
 * requirements
-- Understand existing code in iidy/src/cfn/describe_stack_drift.rs and iidy-js reference.
+- Separate AWS api IO from output formatting and terminal IO
+- Ensure offline testing possible
 - Ensure DescribeStackResourceDriftsPaginator uses correct method (maybe items or send
   with aggregator). Fix compile error.
 - Ensure PropertyDifference implements Serialize or convert to other method to print YAML.
-- Run `cargo build --target=x86_64-unknown-linux-gnu` after changes but kill if >1min.
-- Commit plan before code.
 
 * implementation-plan
-- [ ] inspect iidy/src/cfn/describe_stack_drift.rs to see usage of DescribeStackResourceDriftsPaginator::items.
-- [ ] check AW SDK for Rust for method name (maybe `items` or `send`). Use introspection with cargo doc or code search in repo's dependencies (target). But we may not have docs; maybe use `send()` from smithy clients. We'll check compile error message to determine.
-- [ ] If `items` doesn't exist, use `send().await` with .into_paginator().items() or something? Wait compile error shows no method items; there might be `send()` or `collect()`? maybe `try_collect`. We'll open target doc or check other modules.
-- [ ] fix property difference serialization: implement `Serialize` for this struct or convert to YAML using manual mapping.
-- [ ] run cargo build with target and fix compile errors.
-- [ ] commit code changes.
+- [X] Implement a new format_resource_drifts function
+- [X] Complete describe_stack_drift workflow that triggers drift detection, waits for completion, fetches resource drifts, and formats the output for display
+- [X] Add unit tests covering drift formatting scenarios
+- [X] Integrate the new command into main.rs so it executes the drift logic and prints formatted lines

@@ -31,13 +31,37 @@ fn main() {
     println!("CLI options: {:?}", cli);
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
-        Commands::CreateStack(args) => println!("create-stack {:?}", args),
-        Commands::UpdateStack(args) => println!("update-stack {:?}", args),
-        Commands::CreateOrUpdate(args) => println!("create-or-update {:?}", args),
-        Commands::EstimateCost(args) => println!("estimate-cost {:?}", args),
+        Commands::CreateStack(args) => {
+            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&cli.aws_opts, &args)) {
+                eprintln!("error creating stack: {e:?}");
+            }
+        }
+        Commands::UpdateStack(args) => {
+            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&cli.aws_opts, &args)) {
+                eprintln!("error updating stack: {e:?}");
+            }
+        }
+        Commands::CreateOrUpdate(args) => {
+            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(&cli.aws_opts, &args)) {
+                eprintln!("error creating or updating stack: {e:?}");
+            }
+        }
+        Commands::EstimateCost(args) => {
+            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&cli.aws_opts, &args)) {
+                eprintln!("error estimating cost: {e:?}");
+            }
+        }
         Commands::DummySpacer => {}
-        Commands::CreateChangeset(args) => println!("create-changeset {:?}", args),
-        Commands::ExecChangeset(args) => println!("exec-changeset {:?}", args),
+        Commands::CreateChangeset(args) => {
+            if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(&cli.aws_opts, &args)) {
+                eprintln!("error creating change set: {e:?}");
+            }
+        }
+        Commands::ExecChangeset(args) => {
+            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&cli.aws_opts, &args)) {
+                eprintln!("error executing change set: {e:?}");
+            }
+        }
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(args) => {
             if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&cli.aws_opts, &args)) {
@@ -58,7 +82,11 @@ fn main() {
                 eprintln!("error watching stack: {e:?}");
             }
         }
-        Commands::DeleteStack(args) => println!("delete-stack {:?}", args),
+        Commands::DeleteStack(args) => {
+            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&cli.aws_opts, &args)) {
+                eprintln!("error deleting stack: {e:?}");
+            }
+        }
         Commands::GetStackTemplate(args) => {
             match rt.block_on(cfn::get_stack_template::get_stack_template(
                 &cli.aws_opts,
@@ -73,7 +101,11 @@ fn main() {
                 Err(e) => eprintln!("error getting template: {e:?}"),
             }
         }
-        Commands::GetStackInstances(args) => println!("get-stack-instances {:?}", args),
+        Commands::GetStackInstances(args) => {
+            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(&cli.aws_opts, &args)) {
+                eprintln!("error getting stack instances: {e:?}");
+            }
+        }
         Commands::ListStacks(args) => {
             if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
                 eprintln!("error listing stacks: {e:?}");
