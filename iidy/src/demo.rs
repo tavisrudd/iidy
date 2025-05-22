@@ -6,7 +6,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use tempfile::tempdir;
-use crossterm::{style::{Color, Stylize}, terminal::{self, size}};
+use crossterm::{style::Stylize, terminal::size};
 use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Deserialize)]
