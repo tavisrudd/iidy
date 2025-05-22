@@ -145,6 +145,40 @@ pub enum ColorChoice {
     Never,
 }
 
+#[derive(ValueEnum, Clone, Debug)]
+pub enum TemplateFormat {
+    Json,
+    Yaml,
+    Original,
+}
+
+impl std::fmt::Display for TemplateFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TemplateFormat::Json => "json",
+            TemplateFormat::Yaml => "yaml",
+            TemplateFormat::Original => "original",
+        };
+        write!(f, "{s}")
+    }
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum TemplateStageArg {
+    Original,
+    Processed,
+}
+
+impl std::fmt::Display for TemplateStageArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TemplateStageArg::Original => "Original",
+            TemplateStageArg::Processed => "Processed",
+        };
+        write!(f, "{s}")
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// create a cfn stack based on stack-args.yaml
@@ -295,10 +329,10 @@ pub struct DeleteArgs {
 #[derive(Args, Debug)]
 pub struct GetTemplateArgs {
     pub stackname: String,
-    #[arg(long, default_value = "original")]
-    pub format: String,
-    #[arg(long, default_value = "Original")]
-    pub stage: String,
+    #[arg(long, value_enum, default_value_t = TemplateFormat::Original)]
+    pub format: TemplateFormat,
+    #[arg(long, value_enum, default_value_t = TemplateStageArg::Original)]
+    pub stage: TemplateStageArg,
 }
 
 #[derive(Args, Debug)]
