@@ -32,7 +32,30 @@ pub fn format_resource_drifts(drifts: Vec<StackResourceDrift>) -> Vec<String> {
             lines.push(format!("  {}", status.as_str()));
         }
         if !drift.property_differences().is_empty() {
-            if let Ok(diff_yaml) = serde_yaml::to_string(&drift.property_differences()) {
+            #[derive(serde::Serialize)]
+            struct Diff<'a> {
+                #[serde(skip_serializing_if = "Option::is_none")]
+                property_path: Option<&'a str>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                expected_value: Option<&'a str>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                actual_value: Option<&'a str>,
+                #[serde(skip_serializing_if = "Option::is_none")]
+                difference_type: Option<&'a str>,
+            }
+
+            let diffs: Vec<Diff<'_>> = drift
+                .property_differences()
+                .iter()
+                .map(|d| Diff {
+                    property_path: d.property_path(),
+                    expected_value: d.expected_value(),
+                    actual_value: d.actual_value(),
+                    difference_type: d.difference_type().map(|dt| dt.as_str()),
+                })
+                .collect();
+
+            if let Ok(diff_yaml) = serde_yaml::to_string(&diffs) {
                 for l in diff_yaml.lines() {
                     lines.push(format!("   {l}"));
                 }
@@ -75,14 +98,18 @@ pub async fn describe_stack_drift(opts: &AwsOpts, args: &DriftArgs) -> Result<()
     }
 
     // Retrieve all drifted resources.
-    let all_drifts: Vec<StackResourceDrift> = client
+    let pages: Vec<_> = client
         .describe_stack_resource_drifts()
         .stack_name(&args.stackname)
         .into_paginator()
-        .items()
         .send()
         .try_collect()
         .await?;
+
+    let mut all_drifts: Vec<StackResourceDrift> = Vec::new();
+    for page in pages {
+        all_drifts.extend_from_slice(page.stack_resource_drifts());
+    }
 
     let drifts: Vec<StackResourceDrift> = all_drifts
         .into_iter()
