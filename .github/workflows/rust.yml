@@ -13,20 +13,41 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable] # [1.70.0, stable]   # test multiple toolchains if desired
 
     steps:
     - uses: actions/checkout@v4
-    - name: Cache cargo build
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: ${{ matrix.rust }}
+        default: true
+
+    - name: Cache Cargo registry
       uses: actions/cache@v3
       with:
         path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          iidy/target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-cargo-registry-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-
+          ${{ runner.os }}-cargo-registry-${{ matrix.rust }}-
+          
+
+    - name: Cache build output
+      uses: actions/cache@v3
+      with:
+        path: iidy/target
+        key: ${{ runner.os }}-cargo-target-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-target-${{ matrix.rust }}-
+
     - name: Build
-      run: cd iidy && cargo build --verbose --target=x86_64-unknown-linux-gnu
+      run: cd iidy && cargo build --verbose 
     - name: Run tests
-      run: cd iidy && cargo test --verbose --target=x86_64-unknown-linux-gnu
+      run: cd iidy && cargo test --verbose 
