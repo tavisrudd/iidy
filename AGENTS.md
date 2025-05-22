@@ -1,7 +1,7 @@
-# Workflow Requirements
+# Workflow
 - For each task, create a folder codex/{your-branch-name}/ containing plan.org file containing entries `prompt & task`, `requirements` and `implementation-plan`. 
 - Begin your work by reviewing your prompt and the existing related code, both in iidy-js/ and iidy/, then fill out a detailed set of `requirements` in plan.org. Use org-bable src blocks and sub-entries if appropriate.
-- Then plan your work in `implementation-plan`. It should be a hierarchical outline and you will tick off each item as you complete it. Again use org-babel src blocks and other org syntax to help structure it.
+- Then plan your work in `implementation-plan`. It should be a hierarchical outline and you will tick off each item as you complete it. Again use org-babel src blocks and other org syntax to help structure it. Focus on the substance of the task and don't just repeat the general workflow requirements listed here.
 - Commit plan.org once you have filled it out. Your code changes will come in subsequent commits.
 - After you have completed a coding task, mark off your org todo list items in plan.org and review what is left to do and if all requirements have been met.
 - Always create a branch/PR even if you get stuck.
