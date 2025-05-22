@@ -52,4 +52,20 @@ jobs:
     - name: Build
       run: cd iidy && cargo build --verbose 
     - name: Run tests
-      run: cd iidy && cargo test --verbose 
+      run: cd iidy && cargo test --verbose
+    
+
+    - name: Upload Cargo cache as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cargo-cache
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+    
+    - name: Upload build output as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cargo-target
+        path: iidy/target
