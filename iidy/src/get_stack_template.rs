@@ -1,93 +1,9 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::{types::TemplateStage, Client};
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
+use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use crate::{aws, cli::{AwsOpts, GetTemplateArgs}};
-
-fn json_escape(input: &str) -> String {
-    let mut out = String::new();
-    for c in input.chars() {
-        match c {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-fn yaml_value_to_json(value: &YamlValue) -> String {
-    fn helper(v: &YamlValue, indent: usize, out: &mut String) {
-        match v {
-            YamlValue::Null => out.push_str("null"),
-            YamlValue::Bool(b) => out.push_str(&b.to_string()),
-            YamlValue::Number(n) => out.push_str(&n.to_string()),
-            YamlValue::String(s) => {
-                out.push('"');
-                out.push_str(&json_escape(s));
-                out.push('"');
-            }
-            YamlValue::Sequence(seq) => {
-                if seq.is_empty() {
-                    out.push_str("[]");
-                    return;
-                }
-                out.push('[');
-                out.push('\n');
-                let next_indent = indent + 2;
-                for (i, item) in seq.iter().enumerate() {
-                    out.push_str(&" ".repeat(next_indent));
-                    helper(item, next_indent, out);
-                    if i + 1 != seq.len() {
-                        out.push(',');
-                    }
-                    out.push('\n');
-                }
-                out.push_str(&" ".repeat(indent));
-                out.push(']');
-            }
-            YamlValue::Mapping(map) => {
-                if map.is_empty() {
-                    out.push_str("{}");
-                    return;
-                }
-                out.push('{');
-                out.push('\n');
-                let next_indent = indent + 2;
-                let len = map.len();
-                for (idx, (k, val)) in map.iter().enumerate() {
-                    out.push_str(&" ".repeat(next_indent));
-                    let key = match k {
-                        YamlValue::String(s) => json_escape(s),
-                        other => {
-                            let mut tmp = String::new();
-                            helper(other, 0, &mut tmp);
-                            tmp
-                        }
-                    };
-                    out.push('"');
-                    out.push_str(&key);
-                    out.push_str("\": ");
-                    helper(val, next_indent, out);
-                    if idx + 1 != len {
-                        out.push(',');
-                    }
-                    out.push('\n');
-                }
-                out.push_str(&" ".repeat(indent));
-                out.push('}');
-            }
-            YamlValue::Tagged(t) => helper(&t.value, indent, out),
-        }
-    }
-
-    let mut out = String::new();
-    helper(value, 0, &mut out);
-    out
-}
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {
@@ -95,6 +11,43 @@ pub struct FormattedTemplate {
     pub stderr_lines: Vec<String>,
     /// The template content to print to stdout.
     pub body: String,
+}
+
+enum TemplateBody {
+    Json(JsonValue),
+    Yaml(YamlValue),
+}
+
+impl TemplateBody {
+    fn to_json(&self) -> Result<JsonValue> {
+        match self {
+            TemplateBody::Json(j) => Ok(j.clone()),
+            TemplateBody::Yaml(y) => Ok(serde_json::to_value(y)?),
+        }
+    }
+
+    fn to_yaml(&self) -> Result<YamlValue> {
+        match self {
+            TemplateBody::Yaml(y) => Ok(y.clone()),
+            TemplateBody::Json(j) => Ok(serde_yaml::to_value(j)?),
+        }
+    }
+}
+
+fn parse_template_body(s: &str) -> Result<TemplateBody> {
+    let s = s.trim_start();
+    if s.starts_with('{') {
+        Ok(TemplateBody::Json(serde_json::from_str(s)?))
+    } else {
+        Ok(TemplateBody::Yaml(serde_yaml::from_str(s)?))
+    }
+}
+
+fn strip_trailing_newline(mut s: String) -> String {
+    if s.ends_with('\n') {
+        s.pop();
+    }
+    s
 }
 
 /// Format the template returned from AWS according to the requested stage
@@ -116,24 +69,14 @@ pub fn format_template(
         format!("# Stage Shown: {stage}"),
         String::new(),
     ];
-
     let body_raw = output.template_body().unwrap_or_default();
+    let template = parse_template_body(body_raw)?;
     let body = match format {
-        "yaml" => {
-            let value: YamlValue = serde_yaml::from_str(body_raw)?;
-            // serde_yaml emits trailing newline; trim to keep output similar to list_stacks
-            let mut text = serde_yaml::to_string(&value)?;
-            if text.ends_with('\n') { text.pop(); }
-            text
-        }
-        "json" => {
-            let value: YamlValue = serde_yaml::from_str(body_raw)?;
-            yaml_value_to_json(&value)
-        }
+        "yaml" => serde_yaml::to_string(&template.to_yaml()?)?,
+        "json" => serde_json::to_string(&template.to_json()?)?,
         _ => body_raw.to_string(),
     };
-
-    Ok(FormattedTemplate { stderr_lines, body })
+    Ok(FormattedTemplate { stderr_lines, body: strip_trailing_newline(body) })
 }
 
 /// Retrieve a stack template from CloudFormation and format it for display.
