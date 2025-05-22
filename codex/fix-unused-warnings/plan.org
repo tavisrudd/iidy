@@ -1,0 +1,18 @@
+* prompt & task
+Fix warnings for unused functions by wiring stub command handlers and using load_stack_args_file.
+
+* requirements
+- Remove compiler warnings for unused functions listed in the prompt.
+- Wire stub CloudFormation command handlers in main.rs so they are called via tokio runtime.
+- Import and call load_stack_args_file in stub command modules to mark it used.
+- Follow project coding standards from AGENTS.md.
+- Document implementation plan in this file.
+
+* implementation-plan
+- [X] Examine existing CLI and command modules.
+- [X] Update main.rs match arms for create-stack, update-stack, create-or-update, estimate-cost, create-changeset, exec-changeset, get-stack-instances, delete-stack to call corresponding cfn functions using runtime.
+- [X] Modify each stub command module to import load_stack_args_file and read argsfile (ignore result) to exercise the function.
+- [X] Commit this plan.
+- [X] Implement code changes.
+- [X] Run `cargo build --target=x86_64-unknown-linux-gnu` to check compile (killed after ~1m).
+- [X] Commit code changes if build succeeds or times out (<1 min wait max per instruction).
