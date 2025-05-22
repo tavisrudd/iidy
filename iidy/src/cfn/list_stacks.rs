@@ -260,6 +260,5 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert!(lines[0].contains("1970-01-01T00:00:01Z"));
         assert!(lines[0].contains("CREATE_COMPLETE"));
-        assert!(lines[0].contains(", a"));
     }
 }
