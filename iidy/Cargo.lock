@@ -1502,6 +1502,7 @@ dependencies = [
 name = "iidy"
 version = "0.1.0"
 dependencies = [
+ "anstyle",
  "anyhow",
  "atty",
  "aws-config",
@@ -1514,9 +1515,12 @@ dependencies = [
  "clap",
  "clap-help",
  "clap_complete",
+ "crossterm",
  "serde",
  "serde_json",
  "serde_yaml",
+ "tempfile",
+ "terminal_size",
  "tokio",
 ]
 
@@ -2302,6 +2306,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tempfile"
+version = "3.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
+dependencies = [
+ "fastrand",
+ "getrandom 0.3.3",
+ "once_cell",
+ "rustix 1.0.7",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
