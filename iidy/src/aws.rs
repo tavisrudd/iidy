@@ -3,7 +3,6 @@ use aws_config::BehaviorVersion;
 use aws_config::SdkConfig;
 use aws_config::sts::AssumeRoleProvider;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_sdk_cloudformation::idempotency_token::IdempotencyTokenProvider;
 use aws_types::region::Region;
 
 use crate::cli::AwsOpts;
@@ -30,11 +29,6 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
     // Start building the final config from the base configuration
     let mut builder = base_config.clone().into_builder();
 
-    if let Some(ref token) = opts.client_request_token {
-        // Leak the token string to obtain a 'static lifetime for the provider
-        let static_token: &'static str = Box::leak(token.clone().into_boxed_str());
-        builder = builder.idempotency_token_provider(IdempotencyTokenProvider::fixed(static_token));
-    }
 
     if let Some(ref role) = opts.assume_role_arn {
         let provider = AssumeRoleProvider::builder(role)
