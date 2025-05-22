@@ -1,6 +1,8 @@
 use std::io;
 mod aws;
 mod cli;
+mod preprocess;
+mod stack_args;
 mod cfn {
     pub mod create_changeset;
     pub mod create_or_update;
