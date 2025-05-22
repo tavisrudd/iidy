@@ -61,8 +61,8 @@ subcommands.
   - `--yes` – confirm deletion
   - `--fail-if-absent` – exit with error if stack does not exist
 - **get-stack-template `<stackname>`**
-  - `--format <original|yaml|json>`
-  - `--stage <Original|Processed>`
+  - `--format <json|yaml|original>`
+  - `--stage <original|processed>`
 - **get-stack-instances `<stackname>`**
   - `--short` – only display DNS names
 - **list-stacks**

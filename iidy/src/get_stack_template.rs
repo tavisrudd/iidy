@@ -3,7 +3,7 @@ use aws_sdk_cloudformation::{types::TemplateStage, Client};
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
-use crate::{aws, cli::{AwsOpts, GetTemplateArgs}};
+use crate::{aws, cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg}};
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {
@@ -54,8 +54,8 @@ fn strip_trailing_newline(mut s: String) -> String {
 /// and output format.
 pub fn format_template(
     output: GetTemplateOutput,
-    stage: &str,
-    format: &str,
+    stage: TemplateStageArg,
+    format: TemplateFormat,
 ) -> Result<FormattedTemplate> {
     let stages = output
         .stages_available()
@@ -72,9 +72,9 @@ pub fn format_template(
     let body_raw = output.template_body().unwrap_or_default();
     let template = parse_template_body(body_raw)?;
     let body = match format {
-        "yaml" => serde_yaml::to_string(&template.to_yaml()?)?,
-        "json" => serde_json::to_string(&template.to_json()?)?,
-        _ => body_raw.to_string(),
+        TemplateFormat::Yaml => serde_yaml::to_string(&template.to_yaml()?)?,
+        TemplateFormat::Json => serde_json::to_string(&template.to_json()?)?,
+        TemplateFormat::Original => body_raw.to_string(),
     };
     Ok(FormattedTemplate { stderr_lines, body: strip_trailing_newline(body) })
 }
@@ -87,7 +87,10 @@ pub async fn get_stack_template(
     let config = aws::config_from_opts(opts).await?;
     let client = Client::new(&config);
 
-    let stage = TemplateStage::from(args.stage.as_str());
+    let stage = match args.stage {
+        TemplateStageArg::Original => TemplateStage::Original,
+        TemplateStageArg::Processed => TemplateStage::Processed,
+    };
 
     let output = client
         .get_template()
@@ -96,7 +99,7 @@ pub async fn get_stack_template(
         .send()
         .await?;
 
-    format_template(output, &args.stage, &args.format)
+    format_template(output, args.stage.clone(), args.format.clone())
 }
 
 #[cfg(test)]
@@ -115,7 +118,11 @@ mod tests {
     #[test]
     fn formats_yaml() {
         let output = sample_output("{\"A\":1}");
-        let formatted = format_template(output, "Original", "yaml").unwrap();
+        let formatted = format_template(
+            output,
+            TemplateStageArg::Original,
+            TemplateFormat::Yaml,
+        ).unwrap();
         assert_eq!(formatted.stderr_lines.len(), 3);
         assert!(formatted.stderr_lines[0].contains("Stages Available"));
         assert!(formatted.body.contains("A: 1"));
