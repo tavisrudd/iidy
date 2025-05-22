@@ -130,4 +130,22 @@ mod tests {
         assert!(formatted.stderr_lines[0].contains("Stages Available"));
         assert!(formatted.body.contains("A: 1"));
     }
+
+    #[test]
+    fn parses_json_and_yaml() {
+        match parse_template_body("{\"A\":1}").unwrap() {
+            TemplateBody::Json(v) => assert_eq!(v["A"], 1),
+            _ => panic!("expected json"),
+        }
+        match parse_template_body("A: 1").unwrap() {
+            TemplateBody::Yaml(v) => assert_eq!(v["A"], 1),
+            _ => panic!("expected yaml"),
+        }
+    }
+
+    #[test]
+    fn strips_trailing_newline() {
+        assert_eq!(strip_trailing_newline("abc\n".to_string()), "abc");
+        assert_eq!(strip_trailing_newline("abc".to_string()), "abc");
+    }
 }

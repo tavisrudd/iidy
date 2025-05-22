@@ -5,6 +5,7 @@ use aws_sdk_cloudformation::types::{ResourceStatus, StackStatus};
 /// Terminal states correspond to the COMPLETE/FAILED/SKIPPED sets from
 /// the original Node.js implementation plus `REVIEW_IN_PROGRESS` for stack
 /// statuses.
+#[allow(dead_code)]
 pub fn is_terminal_resource_status(status: &ResourceStatus) -> bool {
     matches!(
         status,
@@ -25,6 +26,7 @@ pub fn is_terminal_resource_status(status: &ResourceStatus) -> bool {
 }
 
 /// Return true if the [`StackStatus`] represents a terminal state.
+#[allow(dead_code)]
 pub fn is_terminal_stack_status(status: &StackStatus) -> bool {
     matches!(
         status,

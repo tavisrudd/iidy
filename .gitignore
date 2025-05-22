@@ -1,3 +1,4 @@
 iidy-js/
 iidy/target/
-iidy-js-linux-x64-bin
+iidy/iidy-linux-x64
+/.DS_Store
