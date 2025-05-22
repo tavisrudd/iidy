@@ -1,8 +1,10 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::{
     Client,
-    types::{ResourceStatus, StackEvent},
+    types::StackEvent,
 };
+#[cfg(test)]
+use aws_sdk_cloudformation::types::ResourceStatus;
 use aws_smithy_types::date_time::Format;
 use std::collections::HashSet;
 use std::time::Duration;

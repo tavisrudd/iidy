@@ -8,6 +8,7 @@ use serde_yaml::{Mapping, Value};
 
 use crate::preprocess;
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
 pub struct StackArgs {
     #[serde(rename = "StackName")]

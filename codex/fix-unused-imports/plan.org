@@ -1,0 +1,32 @@
+* prompt & task
+Fix the following warnings:
+- unused imports
+- multiple fields are never read
+
+Prompt:
+#+begin_quote
+warning: unused import: `ResourceStatus`
+ --> src/cfn/watch_stack.rs:4:13
+  |
+4 |     types::{ResourceStatus, StackEvent},
+  |             ^^^^^^^^^^^^^^
+
+warning: unused imports: `Color` and `self`
+ --> src/demo.rs:9:25
+  |
+9 | use crossterm::{style::{Color, Stylize}, terminal::{self, size}};
+  |                         ^^^^^                       ^^^^
+
+warning: multiple fields are never read
+  --> src/stack_args.rs:18:9
+   |
+  <many fields>
+#+end_quote
+* requirements
+- Remove compiler warnings for unused imports in `watch_stack.rs` and `demo.rs`.
+- Silence "fields are never read" warnings for `StackArgs` in `stack_args.rs`.
+* implementation-plan
+- [X] Adjust imports in `watch_stack.rs` so `ResourceStatus` is only imported for tests.
+- [X] Simplify `crossterm` imports in `demo.rs` to only pull used items.
+- [X] Add `#[allow(dead_code)]` on `StackArgs` struct to suppress unused field warnings.
+- [/] Run `cargo build --target=x86_64-unknown-linux-gnu` to ensure warnings are resolved (build timed out in this environment).
