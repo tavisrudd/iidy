@@ -17,9 +17,9 @@ mod cfn {
     pub mod exec_changeset;
     pub mod get_stack_instances;
     pub mod get_stack_template;
+    pub mod is_terminal_status;
     pub mod list_stacks;
     pub mod update_stack;
-    pub mod is_terminal_status;
     pub mod watch_stack;
 }
 use clap::{CommandFactory, Parser, error::ErrorKind};
@@ -42,7 +42,10 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::CreateOrUpdate(args) => {
-            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(&cli.aws_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(
+                &cli.aws_opts,
+                &args,
+            )) {
                 eprintln!("error creating or updating stack: {e:?}");
             }
         }
@@ -53,7 +56,10 @@ fn handle_command(cli: Cli) {
         }
         Commands::DummySpacer => {}
         Commands::CreateChangeset(args) => {
-            if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(&cli.aws_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(
+                &cli.aws_opts,
+                &args,
+            )) {
                 eprintln!("error creating change set: {e:?}");
             }
         }
@@ -102,7 +108,10 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::GetStackInstances(args) => {
-            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(&cli.aws_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(
+                &cli.aws_opts,
+                &args,
+            )) {
                 eprintln!("error getting stack instances: {e:?}");
             }
         }
