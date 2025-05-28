@@ -279,12 +279,7 @@ mod tests {
     #[test]
     fn colorize_status_applies_style() {
         let scheme = ColorScheme::default();
-        let styled = colorize_status(
-            "DELETE_FAILED",
-            20,
-            &scheme,
-            true,
-        );
+        let styled = colorize_status("DELETE_FAILED", 20, &scheme, true);
         assert!(styled.starts_with(&scheme.status_failed.render().to_string()));
         assert!(styled.ends_with(&scheme.status_failed.render_reset().to_string()));
     }

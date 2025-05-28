@@ -29,7 +29,6 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
     // Start building the final config from the base configuration
     let mut builder = base_config.clone().into_builder();
 
-
     if let Some(ref role) = opts.assume_role_arn {
         let provider = AssumeRoleProvider::builder(role)
             .configure(&base_config)

@@ -53,7 +53,9 @@ mod tests {
     #[test]
     fn resource_status_terminal() {
         assert!(is_terminal_resource_status(&ResourceStatus::CreateComplete));
-        assert!(!is_terminal_resource_status(&ResourceStatus::CreateInProgress));
+        assert!(!is_terminal_resource_status(
+            &ResourceStatus::CreateInProgress
+        ));
     }
 
     #[test]

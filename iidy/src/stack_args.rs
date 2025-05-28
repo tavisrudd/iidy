@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
@@ -66,17 +66,15 @@ fn resolve_env_map(value: &Value, env: &str, key: &str) -> Result<Value> {
             let k = Value::String(env.to_string());
             match m.get(&k) {
                 Some(Value::String(s)) => Ok(Value::String(s.clone())),
-                Some(_) => bail!(
-                    "The {key} setting in stack-args.yaml must map environments to strings"
-                ),
+                Some(_) => {
+                    bail!("The {key} setting in stack-args.yaml must map environments to strings")
+                }
                 None => bail!("environment '{env}' not found in {key} map"),
             }
         }
         Value::String(s) => Ok(Value::String(s.clone())),
         Value::Null => Ok(Value::Null),
-        _ => bail!(
-            "The {key} setting in stack-args.yaml must be a string or an environment map"
-        ),
+        _ => bail!("The {key} setting in stack-args.yaml must be a string or an environment map"),
     }
 }
 
@@ -97,7 +95,11 @@ pub fn load_stack_args_file(path: &Path, environment: Option<&str>) -> Result<St
     load_stack_args_str(&contents, path, environment)
 }
 
-pub fn load_stack_args_str(content: &str, _path: &Path, environment: Option<&str>) -> Result<StackArgs> {
+pub fn load_stack_args_str(
+    content: &str,
+    _path: &Path,
+    environment: Option<&str>,
+) -> Result<StackArgs> {
     // stack-args.yaml is always YAML
     let mut value: Value = serde_yaml::from_str(content)?;
 
@@ -123,16 +125,12 @@ mod tests {
     #[test]
     fn parse_basic_args() {
         let yaml = "StackName: test\nTemplate: foo.yaml\n";
-        let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("dev"))
-            .expect("failed to load");
+        let result =
+            load_stack_args_str(yaml, Path::new("test.yaml"), Some("dev")).expect("failed to load");
         assert_eq!(result.stack_name.as_deref(), Some("test"));
         assert_eq!(result.template.as_deref(), Some("foo.yaml"));
         assert_eq!(
-            result
-                .tags
-                .unwrap()
-                .get("environment")
-                .map(String::as_str),
+            result.tags.unwrap().get("environment").map(String::as_str),
             Some("dev")
         );
     }
@@ -147,8 +145,7 @@ Region:
 StackName: s
 Template: t
 "#;
-        let result =
-            load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod")).unwrap();
+        let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod")).unwrap();
         assert_eq!(result.region.as_deref(), Some("us-west-2"));
         assert_eq!(result.profile.as_deref(), Some("default"));
     }

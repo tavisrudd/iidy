@@ -1,17 +1,14 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::{
-    Client,
-    types::StackEvent,
-};
+use aws_sdk_cloudformation::{Client, types::StackEvent};
 use aws_smithy_types::date_time::Format;
 use std::collections::HashSet;
-use std::time::Duration;
 use std::io::Write;
+use std::time::Duration;
 
 use crate::{
     aws,
-    cli::{AwsOpts, WatchArgs},
     cfn::is_terminal_status::is_terminal_resource_status,
+    cli::{AwsOpts, WatchArgs},
 };
 
 /// Format a [`StackEvent`] into a single line similar to the Node.js output.
@@ -36,7 +33,7 @@ fn event_indicates_terminal(event: &StackEvent, stack_name: &str) -> bool {
         && event.logical_resource_id() == Some(stack_name)
     {
         if let Some(status) = event.resource_status() {
-            return is_terminal_resource_status(&status);
+            return is_terminal_resource_status(status);
         }
     }
     false
@@ -79,7 +76,11 @@ struct Spinner {
 
 impl Spinner {
     fn new(enabled: bool) -> Self {
-        Spinner { enabled, frames: ["-", "\\", "|", "/"], idx: 0 }
+        Spinner {
+            enabled,
+            frames: ["-", "\\", "|", "/"],
+            idx: 0,
+        }
     }
 
     async fn spin(&mut self, dur: Duration) {

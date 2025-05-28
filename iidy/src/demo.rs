@@ -1,13 +1,13 @@
+use anyhow::{Context, Result};
+use crossterm::{style::Stylize, terminal::size};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use anyhow::{Context, Result};
-use serde::Deserialize;
 use tempfile::tempdir;
-use crossterm::{style::Stylize, terminal::size};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
@@ -27,10 +27,8 @@ struct DemoScript {
 }
 
 pub async fn run(script_path: &str, timescaling: u32) -> Result<()> {
-    let data = fs::read_to_string(script_path)
-        .with_context(|| format!("reading {script_path}"))?;
-    let script: DemoScript = serde_yaml::from_str(&data)
-        .with_context(|| "parsing demo script")?;
+    let data = fs::read_to_string(script_path).with_context(|| format!("reading {script_path}"))?;
+    let script: DemoScript = serde_yaml::from_str(&data).with_context(|| "parsing demo script")?;
 
     let tmp = tempdir()?;
     for (path, contents) in script.files.iter() {
