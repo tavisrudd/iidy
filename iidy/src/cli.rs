@@ -189,13 +189,13 @@ pub enum Commands {
     CreateOrUpdate(UpdateStackArgs),
     /// estimate aws costs based on stack-args.yaml
     EstimateCost(StackFileArgs),
-    #[clap(name = " ")]
+    #[clap(name = "\u{2800}")]
     DummySpacer,
     /// create a cfn changeset based on stack-args.yaml
     CreateChangeset(CreateChangeSetArgs),
     /// execute a cfn changeset based on stack-args.yaml
     ExecChangeset(ExecChangeSetArgs),
-    #[clap(name = "  ")]
+    #[clap(name = "\u{2800}\u{2800}")]
     DummySpacer2,
     /// describe a stack
     DescribeStack(DescribeArgs),
@@ -211,21 +211,21 @@ pub enum Commands {
     GetStackInstances(StackNameArg),
     /// list all stacks within a region
     ListStacks(ListArgs),
-    #[clap(name = "   ")]
+    #[clap(name = "\u{2800}\u{2800}\u{2800}")]
     DummySpacer3,
     /// sub commands for working with AWS SSM Parameter Store
     Param {
         #[command(subcommand)]
         command: ParamCommands,
     },
-    #[clap(name = "    ")]
+    #[clap(name = "\u{2800}\u{2800}\u{2800}\u{2800}")]
     DummySpacer4,
     /// sub commands for template approval
     TemplateApproval {
         #[command(subcommand)]
         command: ApprovalCommands,
     },
-    #[clap(name = "     ")]
+    #[clap(name = "\u{2800}\u{2800}\u{2800}\u{2800}\u{2800}")]
     DummySpacer5,
     /// pre-process and render yaml template
     Render(RenderArgs),
@@ -239,7 +239,7 @@ pub enum Commands {
     ConvertStackToIidy(ConvertArgs),
     /// initialize stack-args.yaml and cfn-template.yaml
     InitStackArgs(InitStackArgs),
-    #[clap(name = "      ")]
+    #[clap(name = "\u{2800}\u{2800}\u{2800}\u{2800}\u{2800}\u{2800}")]
     DummySpacer6,
     /// generate shell completion script
     Completion { shell: Option<Shell> },
