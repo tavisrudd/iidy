@@ -1,4 +1,6 @@
 use std::io;
+use log::debug;
+use env_logger;
 mod aws;
 mod cli;
 mod display;
@@ -20,15 +22,13 @@ mod cfn {
     pub mod is_terminal_status;
     pub mod watch_stack;
 }
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
 mod demo;
 use cli::{Cli, Commands};
 use tokio::runtime::Runtime;
 
-fn main() {
-    let cli = Cli::parse();
-    println!("CLI options: {:?}", cli);
+fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
         Commands::CreateStack(args) => {
@@ -132,6 +132,31 @@ fn main() {
                 .or(Shell::from_env())
                 .expect("invalid shell argument or $SHELL env var");
             generate(shell, &mut Cli::command(), "iidy-rs", &mut io::stdout());
+            debug!("Completion for {:?}", shell);
+        }
+    }
+}
+
+fn main() {
+    env_logger::Builder::from_default_env().init();
+
+    match Cli::try_parse() {
+        Ok(cli) => {
+            debug!("CLI options: {:?}", cli);
+            handle_command(cli)
+        },
+        Err(e)
+            if matches!(
+                e.kind(),
+                ErrorKind::DisplayHelp | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+            ) =>
+        {
+            e.print().unwrap();
+            std::process::exit(0); // 👈 override exit code 2 → 0
+        }
+        Err(e) => {
+            e.print().unwrap();
+            std::process::exit(1); // non-help errors still exit with error
         }
     }
 }

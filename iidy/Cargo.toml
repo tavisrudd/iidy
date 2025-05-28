@@ -7,9 +7,9 @@ license = "MIT"
 [dependencies]
 atty = "0.2.14"
 
-clap = { version = "4.5.38", features = ["derive", "wrap_help"] } # ... unicode
-clap-help = "1.4.0"
-clap_complete = "4.5.50"
+clap = { version = "4.5.39", features = ["derive", "wrap_help"] } # ... unicode, debug
+# clap-help = "1.4.0" # ... later https://github.com/Canop/clap-help
+clap_complete = {version="4.5.51", features=[]} # debug
 
 # AWS CloudFormation SDK and config helpers
 aws-config = "1"
@@ -37,3 +37,5 @@ tempfile = "3"
 terminal_size = "0.4"
 crossterm = "0.29"
 anstyle = "1.0.10"
+log = "0.4.27"
+env_logger = "0.11.8"
