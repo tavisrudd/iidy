@@ -579,14 +579,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn parse_completion_zsh() {
-        let cli = Cli::parse_from(["iidy", "completion", "zsh"]);
-        match cli.command {
-            Commands::Completion { shell } => {
-                assert_eq!(shell, Some(Shell::Zsh));
+ #[test]
+    fn parse_completion_shells() {
+        let shells = vec![Shell::Zsh, Shell::Bash, Shell::PowerShell, Shell::Fish];
+        for shell in shells {
+            let cli = Cli::parse_from(["iidy", "completion", &shell.to_string()]);
+            match cli.command {
+                Commands::Completion { shell: s } => {
+                    assert_eq!(s, Some(shell));
+                }
+                _ => panic!("Expected completion command"),
             }
-            _ => panic!("Expected completion command"),
         }
     }
 }
