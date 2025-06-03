@@ -6,6 +6,7 @@ mod cli;
 mod display;
 mod preprocess;
 mod stack_args;
+mod yaml;
 mod cfn {
     pub mod create_changeset;
     pub mod create_or_update;

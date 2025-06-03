@@ -6,6 +6,8 @@ use serde_yaml::Value;
 ///
 /// For now this function simply deserializes the provided `Value` into the
 /// requested type without any transformation.
+/// TODO swap this out for the new code in ./yaml/
+/// TODO add the required context argument
 pub fn preprocess<T: DeserializeOwned>(value: Value) -> Result<T> {
     // TODO: implement the full preprocessing language from iidy-js
     Ok(serde_yaml::from_value(value)?)

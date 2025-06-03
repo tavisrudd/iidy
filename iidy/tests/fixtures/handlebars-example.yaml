@@ -1,0 +1,110 @@
+# Example demonstrating handlebars-style variable substitution in iidy
+
+$defs:
+  app_name: "my-application"
+  version: "1.2.3"
+  environments:
+    - development
+    - staging  
+    - production
+
+# Basic variable substitution
+application:
+  name: "{{app_name}}"
+  version: "{{version}}"
+  environment: "{{environment}}"
+
+# String manipulation with helpers (these would be processed by handlebars engine)
+identifiers:
+  stack_name: "{{app_name}}-{{environment}}"
+  resource_prefix: "{{toUpperCase app_name}}_{{toUpperCase environment}}"
+  s3_bucket: "{{toLowerCase app_name}}-{{environment}}-{{random_suffix}}"
+  
+# Conditional variable usage
+database:
+  host: "{{#if (eq environment 'production')}}prod-db.example.com{{else}}dev-db.example.com{{/if}}"
+  name: "{{app_name}}_{{environment}}"
+  port: "{{#if (eq environment 'production')}}5432{{else}}5433{{/if}}"
+
+# Array processing with variables
+security_groups: !$map
+  source: "{{security_group_ids}}"
+  var: "sg_id"
+  transform: "{{sg_id}}"
+
+# Complex nested variable substitution
+monitoring:
+  metrics:
+    namespace: "{{toUpperCase app_name}}/{{toUpperCase environment}}"
+    dimensions:
+      - Name: Application
+        Value: "{{app_name}}"
+      - Name: Environment  
+        Value: "{{environment}}"
+      - Name: Version
+        Value: "{{version}}"
+
+# Base64 encoding example
+secrets:
+  database_password: "{{base64 database_password}}"
+  api_key: "{{base64 api_key}}"
+
+# JSON serialization example
+configuration:
+  app_config: "{{toJson app_settings}}"
+  feature_flags: "{{toJson features}}"
+
+# URL construction with variables
+endpoints:
+  api_url: "https://{{#if (eq environment 'production')}}api{{else}}{{environment}}-api{{/if}}.example.com"
+  health_check: "https://{{app_name}}-{{environment}}.example.com/health"
+  
+# Environment-specific configuration with complex logic
+parameters: !$merge
+  - # Base parameters with variable substitution
+    AppName: "{{app_name}}"
+    Environment: "{{environment}}"
+    Version: "{{version}}"
+    
+  - # Conditional parameters
+    !$if
+      condition: "{{#if (eq environment 'production')}}true{{else}}false{{/if}}"
+      then:
+        DBInstanceClass: "db.r5.xlarge"
+        DBMultiAZ: true
+        BackupRetention: 30
+      else:
+        DBInstanceClass: "db.t3.micro"
+        DBMultiAZ: false
+        BackupRetention: 7
+
+# Tags with variable interpolation
+tags: !$merge
+  - Project: "{{app_name}}"
+    Environment: "{{environment}}"
+    Version: "{{version}}"
+    CreatedBy: iidy
+    
+  - # Dynamic tags based on variables
+    !$let
+      bindings:
+        cost_center: "{{#if (eq environment 'production')}}PROD-{{toUpperCase app_name}}{{else}}DEV-{{toUpperCase app_name}}{{/if}}"
+        owner_team: "{{#if (eq environment 'production')}}ops-team{{else}}dev-team{{/if}}"
+      expression:
+        CostCenter: "{{cost_center}}"
+        OwnerTeam: "{{owner_team}}"
+
+# Resource naming with variable patterns
+resource_names: !$let
+  bindings:
+    prefix: "{{toUpperCase app_name}}-{{toUpperCase environment}}"
+    suffix: "{{#if enable_versioning}}{{version}}{{else}}LATEST{{/if}}"
+  expression:
+    vpc: "{{prefix}}-VPC"
+    subnets:
+      public: "{{prefix}}-PUBLIC-SUBNET-{{suffix}}"
+      private: "{{prefix}}-PRIVATE-SUBNET-{{suffix}}"
+    security_groups:
+      web: "{{prefix}}-WEB-SG-{{suffix}}"
+      app: "{{prefix}}-APP-SG-{{suffix}}"
+      db: "{{prefix}}-DB-SG-{{suffix}}"

@@ -1,0 +1,34 @@
+# Database configuration example
+host: !$if
+  condition: !$eq [!$, "{{environment}}", "production"]
+  then: "prod-db.example.com"
+  else: "dev-db.example.com"
+
+port: 5432
+
+database: !$join
+  array: ["myapp", !$, "{{environment}}"]
+  delimiter: "_"
+
+credentials:
+  username: !$join
+    array: ["/myapp", !$, "{{environment}}", "db-username"]
+    delimiter: "/"
+  password: !$join
+    array: ["/myapp", !$, "{{environment}}", "db-password"]
+    delimiter: "/"
+
+connection_pool:
+  min_size: !$if
+    condition: !$eq [!$, "{{environment}}", "production"]
+    then: 5
+    else: 1
+  max_size: !$if
+    condition: !$eq [!$, "{{environment}}", "production"]
+    then: 20
+    else: 5
+
+ssl_mode: !$if
+  condition: !$eq [!$, "{{environment}}", "production"]
+  then: "require"
+  else: "disable"

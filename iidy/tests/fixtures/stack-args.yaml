@@ -1,0 +1,51 @@
+# Example stack-args.yaml with iidy preprocessing
+StackName: !$join
+  array: ["my-app", !$, "{{environment}}"]
+  delimiter: "-"
+
+Template: ./template.yaml
+
+Region: us-west-2
+
+Parameters:
+  Environment: !$ "{{environment}}"
+  DatabaseConfig: !$ ./db-config.yaml
+  FeatureFlags: !$merge
+    - !$ ./default-features.yaml
+    - !$if
+        condition: !$eq [!$, "{{environment}}", "production"]
+        then:
+          EnableLogging: true
+          LogLevel: info
+        else:
+          EnableLogging: false
+          LogLevel: debug
+
+Tags:
+  Environment: !$ "{{environment}}"
+  Project: my-application
+  ManagedBy: iidy
+  
+Capabilities:
+  - CAPABILITY_IAM
+  - CAPABILITY_NAMED_IAM
+
+ServiceRoleARN: !$if
+  condition: !$eq [!$, "{{environment}}", "production"]
+  then: "arn:aws:iam::123456789012:role/CloudFormationServiceRole"
+  else: null
+
+NotificationARNs: !$if
+  condition: !$not !$eq [!$, "{{environment}}", "development"]
+  then:
+    - "arn:aws:sns:us-west-2:123456789012:cfn-notifications"
+  else: []
+
+TimeoutInMinutes: 30
+
+OnFailure: ROLLBACK
+
+EnableTerminationProtection: !$if
+  condition: !$eq [!$, "{{environment}}", "production"]
+  then: true
+  else: false

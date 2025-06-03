@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
+[lib]
+name = "iidy"
+path = "src/lib.rs"
+
+[[bin]]
+name = "iidy"
+path = "src/main.rs"
+
 [dependencies]
 atty = "0.2.14"
 

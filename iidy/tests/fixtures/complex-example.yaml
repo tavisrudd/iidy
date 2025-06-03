@@ -1,0 +1,136 @@
+# Complex iidy preprocessing example demonstrating nested tags and advanced features
+
+$defs:
+  environments: ["development", "staging", "production"]
+  regions: ["us-east-1", "us-west-2", "eu-west-1"]
+  app_name: "my-complex-app"
+
+# Import base configuration
+base_config: !$ ./base-config.yaml
+
+# Generate stack name with complex logic
+stack_name: !$let
+  bindings:
+    env: !$, "{{environment}}"
+    region_short: !$if
+      condition: !$eq [!$, "{{region}}", "us-east-1"]
+      then: "use1"
+      else: !$if
+        condition: !$eq [!$, "{{region}}", "us-west-2"] 
+        then: "usw2"
+        else: "euw1"
+  expression: !$join
+    array: [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]
+    delimiter: "-"
+
+# Conditional resource configuration
+resources: !$merge
+  - # Base resources for all environments
+    common: !$ ./common-resources.yaml
+    
+  - # Environment-specific resources
+    !$if
+      condition: !$eq [!$, "{{environment}}", "production"]
+      then:
+        production: !$ ./prod-resources.yaml
+      else:
+        non_production: !$ ./non-prod-resources.yaml
+
+# Complex parameter transformation
+parameters: !$let
+  bindings:
+    base_params: !$ ./base-parameters.yaml
+    env_params: !$if
+      condition: !$eq [!$, "{{environment}}", "production"]
+      then: !$ ./prod-parameters.yaml
+      else: !$ ./dev-parameters.yaml
+    
+    # Transform parameter values
+    transformed_params: !$map
+      source: !$, "{{env_params}}"
+      var: "param"
+      transform: !$if
+        condition: !$eq [!$, "{{param.type}}", "secure"]
+        then: !$join
+          array: ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]
+          delimiter: ""
+        else: !$, "{{param.value}}"
+        
+  expression: !$merge
+    - !$, "{{base_params}}"
+    - !$, "{{transformed_params}}"
+
+# Generate tags with computed values
+tags: !$merge
+  - # Static tags
+    Project: !$, "{{app_name}}"
+    ManagedBy: iidy
+    
+  - # Environment-specific tags
+    Environment: !$, "{{environment}}"
+    CostCenter: !$if
+      condition: !$eq [!$, "{{environment}}", "production"]
+      then: "PROD-001"
+      else: "DEV-001"
+      
+  - # Dynamic tags based on region
+    Region: !$, "{{region}}"
+    DataResidency: !$if
+      condition: !$eq [!$, "{{region}}", "eu-west-1"]
+      then: "EU"
+      else: "US"
+
+# Notification configuration with conditional logic
+notifications: !$if
+  condition: !$not !$eq [!$, "{{environment}}", "development"]
+  then: !$map
+    source: !$split
+      string: !$if
+        condition: !$eq [!$, "{{environment}}", "production"]
+        then: "ops-team@company.com,infra-team@company.com,alerts@company.com"
+        else: "dev-team@company.com,staging-alerts@company.com"
+      delimiter: ","
+    var: "email"
+    transform: !$join
+      array: ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{email}}"]
+      delimiter: ""
+  else: []
+
+# Complex capability determination
+capabilities: !$concat
+  - ["CAPABILITY_IAM"]
+  - !$if
+      condition: !$eq [!$, "{{environment}}", "production"]
+      then: ["CAPABILITY_NAMED_IAM"]
+      else: []
+  - !$if
+      condition: !$eq [!$, "{{has_custom_resources}}", "true"]
+      then: ["CAPABILITY_AUTO_EXPAND"]
+      else: []
+
+# Conditional service role with complex ARN construction
+service_role: !$if
+  condition: !$not !$eq [!$, "{{environment}}", "development"]
+  then: !$let
+    bindings:
+      account_id: !$if
+        condition: !$eq [!$, "{{environment}}", "production"]
+        then: "123456789012"
+        else: "987654321098"
+      role_name: !$join
+        array: ["CloudFormation", !$, "{{environment}}", "ServiceRole"]
+        delimiter: ""
+    expression: !$join
+      array: ["arn:aws:iam::", !$, "{{account_id}}", ":role/", !$, "{{role_name}}"]
+      delimiter: ""
+  else: null
+
+# Resource types with conditional inclusion
+resource_types: !$concat
+  - ["AWS::*"]
+  - !$if
+      condition: !$eq [!$, "{{enable_third_party}}", "true"]
+      then: !$split
+        string: "Custom::*,AWS::CloudFormation::CustomResource"
+        delimiter: ","
+      else: []
