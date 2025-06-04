@@ -16,10 +16,10 @@ pub fn parse_yaml_with_custom_tags(input: &str) -> Result<YamlAst> {
 /// Convert a serde_yaml::Value to our custom AST
 fn convert_value_to_ast(value: Value) -> Result<YamlAst> {
     match value {
-        Value::Null => Ok(YamlAst::Scalar("null".to_string())),
-        Value::Bool(b) => Ok(YamlAst::Scalar(b.to_string())),
-        Value::Number(n) => Ok(YamlAst::Scalar(n.to_string())),
-        Value::String(s) => Ok(YamlAst::Scalar(s)),
+        Value::Null => Ok(YamlAst::Null),
+        Value::Bool(b) => Ok(YamlAst::Bool(b)),
+        Value::Number(n) => Ok(YamlAst::Number(n.as_f64().unwrap_or(0.0))),
+        Value::String(s) => Ok(YamlAst::String(s)),
         Value::Sequence(seq) => convert_sequence_to_ast(seq),
         Value::Mapping(map) => convert_mapping_to_ast(map),
         Value::Tagged(tagged) => parse_tagged_value(*tagged),

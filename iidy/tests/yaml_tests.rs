@@ -10,9 +10,38 @@ fn test_parse_simple_scalar() -> Result<()> {
     let ast = parse_yaml_with_custom_tags(yaml)?;
     
     match ast {
-        YamlAst::Scalar(s) => assert_eq!(s, "hello world"),
-        _ => panic!("Expected scalar"),
+        YamlAst::String(s) => assert_eq!(s, "hello world"),
+        _ => panic!("Expected string scalar"),
     }
+    Ok(())
+}
+
+#[test]
+fn test_parse_different_scalar_types() -> Result<()> {
+    // Test boolean
+    let yaml = "true";
+    let ast = parse_yaml_with_custom_tags(yaml)?;
+    match ast {
+        YamlAst::Bool(b) => assert_eq!(b, true),
+        _ => panic!("Expected boolean"),
+    }
+    
+    // Test number
+    let yaml = "42.5";
+    let ast = parse_yaml_with_custom_tags(yaml)?;
+    match ast {
+        YamlAst::Number(n) => assert_eq!(n, 42.5),
+        _ => panic!("Expected number"),
+    }
+    
+    // Test null
+    let yaml = "null";
+    let ast = parse_yaml_with_custom_tags(yaml)?;
+    match ast {
+        YamlAst::Null => {},
+        _ => panic!("Expected null"),
+    }
+    
     Ok(())
 }
 
@@ -41,13 +70,13 @@ count: 42
 "#;
     let result = preprocess_yaml(yaml)?;
     
-    // Should parse as a mapping
+    // Should parse as a mapping with proper types
     if let Value::Mapping(map) = result {
         assert_eq!(map.len(), 4);
         assert_eq!(map.get(&Value::String("name".to_string())), Some(&Value::String("test-app".to_string())));
         assert_eq!(map.get(&Value::String("version".to_string())), Some(&Value::String("1.0.0".to_string())));
-        assert_eq!(map.get(&Value::String("enabled".to_string())), Some(&Value::String("true".to_string())));
-        assert_eq!(map.get(&Value::String("count".to_string())), Some(&Value::String("42".to_string())));
+        assert_eq!(map.get(&Value::String("enabled".to_string())), Some(&Value::Bool(true)));
+        assert_eq!(map.get(&Value::String("count".to_string())), Some(&Value::Number(serde_yaml::Number::from(42.0))));
     } else {
         panic!("Expected mapping result");
     }

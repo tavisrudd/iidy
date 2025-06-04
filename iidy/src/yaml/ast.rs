@@ -7,8 +7,14 @@ use serde_yaml::Value;
 /// Main AST node for YAML with preprocessing support
 #[derive(Debug, Clone, PartialEq)]
 pub enum YamlAst {
-    /// Regular scalar value (string, number, boolean, null)
-    Scalar(String),
+    /// Null value
+    Null,
+    /// Boolean value
+    Bool(bool),
+    /// Numeric value (stored as f64 to handle both integers and floats)
+    Number(f64),
+    /// String value
+    String(String),
     /// YAML sequence (array)
     Sequence(Vec<YamlAst>),
     /// YAML mapping (object)
@@ -145,7 +151,10 @@ impl YamlAst {
     /// Convert to a standard YAML Value if possible (no preprocessing tags)
     pub fn to_value(&self) -> Option<Value> {
         match self {
-            YamlAst::Scalar(s) => Some(Value::String(s.clone())),
+            YamlAst::Null => Some(Value::Null),
+            YamlAst::Bool(b) => Some(Value::Bool(*b)),
+            YamlAst::Number(n) => Some(Value::Number(serde_yaml::Number::from(*n))),
+            YamlAst::String(s) => Some(Value::String(s.clone())),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();
                 for item in seq {

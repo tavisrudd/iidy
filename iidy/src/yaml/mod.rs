@@ -47,7 +47,10 @@ impl YamlPreprocessor {
 
     fn resolve_ast_with_context(&mut self, ast: YamlAst, context: &TagContext) -> Result<Value> {
         match ast {
-            YamlAst::Scalar(s) => Ok(Value::String(s)),
+            YamlAst::Null => Ok(Value::Null),
+            YamlAst::Bool(b) => Ok(Value::Bool(b)),
+            YamlAst::Number(n) => Ok(Value::Number(serde_yaml::Number::from(n))),
+            YamlAst::String(s) => Ok(Value::String(s)),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();
                 for item in seq {
