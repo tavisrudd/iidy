@@ -23,6 +23,8 @@ clap_complete = {version="4.5.51", features=[]} # debug
 aws-config = "1"
 aws-sdk-cloudformation = "1"
 aws-sdk-ec2 = "1"
+aws-sdk-s3 = "1"
+aws-sdk-ssm = "1"
 aws-smithy-types = "1"
 
 # Date/time handling
@@ -40,6 +42,16 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 aws-types = "1.3.7"
 aws-credential-types = "1.2.3"
+# Import preprocessing dependencies
+handlebars = "4.0"
+reqwest = { version = "0.11", features = ["json"] }
+sha2 = "0.10"
+url = "2.4"
+async-trait = "0.1"
+base64 = "0.21"
+hex = "0.4"
+rand = "0.8"
+
 # Utilities for demo feature
 tempfile = "3"
 terminal_size = "0.4"
@@ -47,3 +59,8 @@ crossterm = "0.29"
 anstyle = "1.0.10"
 log = "0.4.27"
 env_logger = "0.11.8"
+
+[dev-dependencies]
+# Testing and mocking
+mockito = "1.2"
+tokio-test = "0.4"

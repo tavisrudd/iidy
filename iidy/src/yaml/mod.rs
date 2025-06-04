@@ -6,6 +6,8 @@
 pub mod ast;
 pub mod parser;
 pub mod tags;
+pub mod imports;
+pub mod handlebars;
 
 pub use ast::*;
 pub use parser::parse_yaml_with_custom_tags;
