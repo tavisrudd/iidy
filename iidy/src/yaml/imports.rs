@@ -6,6 +6,15 @@
 
 pub mod loaders;
 
+#[cfg(test)]
+pub mod tests;
+
+#[cfg(test)]
+pub mod aws_mocks;
+
+#[cfg(test)]
+pub mod integration_tests;
+
 use std::collections::HashMap;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
@@ -244,13 +253,15 @@ pub async fn load_imports(
                 ));
             }
 
-            // Add to environment
-            env_values.insert(as_key.clone(), doc_with_location.clone());
-
             // Recursively process nested imports if the imported document has them
             if doc_with_location.get("$imports").is_some() || doc_with_location.get("$defs").is_some() {
-                let mut nested_doc = doc_with_location;
+                let mut nested_doc = doc_with_location.clone();
                 Box::pin(load_imports(&mut nested_doc, &import_data.resolved_location, imports_accum, loader)).await?;
+                // Update with the processed version
+                env_values.insert(as_key.clone(), nested_doc);
+            } else {
+                // Add to environment as-is if no nested processing needed
+                env_values.insert(as_key.clone(), doc_with_location);
             }
         }
     }
@@ -278,58 +289,3 @@ pub async fn load_imports(
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_import_type_file() {
-        assert_eq!(
-            parse_import_type("./config.yaml", "file://base.yaml").unwrap(),
-            ImportType::File
-        );
-        assert_eq!(
-            parse_import_type("file:./config.yaml", "file://base.yaml").unwrap(),
-            ImportType::File
-        );
-    }
-
-    #[test]
-    fn test_parse_import_type_env() {
-        assert_eq!(
-            parse_import_type("env:VAR_NAME:default", "file://base.yaml").unwrap(),
-            ImportType::Env
-        );
-    }
-
-    #[test]
-    fn test_parse_import_type_s3() {
-        assert_eq!(
-            parse_import_type("s3://bucket/key.yaml", "file://base.yaml").unwrap(),
-            ImportType::S3
-        );
-    }
-
-    #[test]
-    fn test_parse_import_type_security_restriction() {
-        // Local imports from remote templates should fail
-        let result = parse_import_type("file:./config.yaml", "s3://bucket/base.yaml");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not allowed from remote template"));
-    }
-
-    #[test]
-    fn test_parse_import_type_inherit_from_remote() {
-        // No explicit type should inherit from remote base
-        assert_eq!(
-            parse_import_type("config.yaml", "s3://bucket/base.yaml").unwrap(),
-            ImportType::S3
-        );
-    }
-
-    #[test]
-    fn test_sha256_digest() {
-        let digest = sha256_digest("hello world");
-        assert_eq!(digest, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
-    }
-}
