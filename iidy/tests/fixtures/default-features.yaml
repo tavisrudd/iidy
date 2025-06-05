@@ -6,45 +6,46 @@ MetricsInterval: 60
 
 DatabaseFeatures:
   ReadReplicas: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: 2
     else: 0
   
   BackupRetention: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]  
+    condition: !$eq [!$ environment, "production"]  
     then: 30
     else: 7
 
 APIFeatures:
   RateLimit: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: 1000
     else: 100
     
   Throttling: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: true
     else: false
 
 SecurityFeatures:
   EnableWAF: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: true
     else: false
     
   EnableCloudTrail: !$if
-    condition: !$not !$eq [!$, "{{environment}}", "development"]
+    condition: !$not
+      value: !$eq [!$ environment, "development"]
     then: true
     else: false
 
 MonitoringFeatures:
   DetailedMetrics: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: true
     else: false
     
   AlertingTargets: !$if
-    condition: !$eq [!$, "{{environment}}", "production"]
+    condition: !$eq [!$ environment, "production"]
     then: !$split
       string: "ops-team@company.com,alerts@company.com"
       delimiter: ","
