@@ -24,8 +24,9 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::CreateOrUpdate(args) => {
+            let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(
-                &cli.aws_opts,
+                &normalized_opts,
                 &args,
             )) {
                 eprintln!("error creating or updating stack: {e:?}");
@@ -68,7 +69,8 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::WatchStack(args) => {
-            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&normalized_opts, &args)) {
                 eprintln!("error watching stack: {e:?}");
             }
         }

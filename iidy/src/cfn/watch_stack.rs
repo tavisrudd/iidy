@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use crate::{
     aws,
-    cli::{AwsOpts, WatchArgs},
-    timing::{ReliableTimeProvider, TimeProvider, TokenInfo},
+    cli::{NormalizedAwsOpts, WatchArgs},
+    timing::{ReliableTimeProvider, TimeProvider},
 };
 
 use super::{is_terminal_status::is_terminal_resource_status, CfnContext};
@@ -176,16 +176,13 @@ pub async fn watch_stack_with_context(
 
 /// Watch a CloudFormation stack for changes.
 /// 
-/// This is the legacy function that creates its own timing context.
-/// New code should use watch_stack_with_context for better testability.
-pub async fn watch_stack(opts: &AwsOpts, args: &WatchArgs) -> Result<()> {
-    let config = aws::config_from_opts(opts).await?;
+/// This function creates its own timing context with proper token management.
+pub async fn watch_stack(opts: &NormalizedAwsOpts, args: &WatchArgs) -> Result<()> {
+    let config = aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    // TODO: In later phases, this will receive a proper TokenInfo from NormalizedAwsOpts
-    let temp_token = TokenInfo::auto_generated(uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().to_string());
-    let ctx = CfnContext::new(client, time_provider, temp_token).await?;
+    let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
 
     watch_stack_with_context(&ctx, &args.stackname, Duration::from_secs(2)).await
 }
