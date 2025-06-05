@@ -11,4 +11,4 @@ pub mod helpers;
 mod tests;
 
 // Re-export the main public API
-pub use engine::{create_handlebars_registry, interpolate_handlebars_string};
+pub use engine::interpolate_handlebars_string;

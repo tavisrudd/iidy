@@ -14,7 +14,7 @@ pub mod http;
 // Re-export the main loader functions
 pub use file::{load_file_import, load_filehash_import};
 pub use env::load_env_import;
-pub use git::{load_git_import, load_git_import_with_executor, GitCommandExecutor};
+pub use git::load_git_import;
 pub use random::load_random_import;
 pub use http::load_http_import;
 

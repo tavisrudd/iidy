@@ -1,6 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::yaml::handlebars::interpolate_handlebars_string;
     use serde_json::json;
     use std::collections::HashMap;

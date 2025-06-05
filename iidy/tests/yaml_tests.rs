@@ -168,7 +168,7 @@ is_dev: !$eq
 fn test_tag_context_variables() -> Result<()> {
     use std::collections::HashMap;
     
-    let mut context = TagContext::new();
+    let context = TagContext::new();
     let mut vars = HashMap::new();
     vars.insert("environment".to_string(), Value::String("production".to_string()));
     vars.insert("app_name".to_string(), Value::String("my-app".to_string()));
