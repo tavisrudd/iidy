@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     aws,
     cli::{AwsOpts, DeleteArgs},
-    timing::{ReliableTimeProvider, TimeProvider},
+    timing::{ReliableTimeProvider, TimeProvider, TokenInfo},
 };
 
 use super::{watch_stack::watch_stack_with_context, CfnContext};
@@ -55,7 +55,9 @@ pub async fn delete_stack(opts: &AwsOpts, args: &DeleteArgs) -> Result<()> {
     let client = Client::new(&config);
     
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let ctx = CfnContext::new(client, time_provider).await?;
+    // TODO: In later phases, this will receive a proper TokenInfo from NormalizedAwsOpts
+    let temp_token = TokenInfo::auto_generated(uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().to_string());
+    let ctx = CfnContext::new(client, time_provider, temp_token).await?;
     
     delete_stack_with_context(
         &ctx,

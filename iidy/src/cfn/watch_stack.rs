@@ -10,7 +10,7 @@ use std::time::Duration;
 use crate::{
     aws,
     cli::{AwsOpts, WatchArgs},
-    timing::{ReliableTimeProvider, TimeProvider},
+    timing::{ReliableTimeProvider, TimeProvider, TokenInfo},
 };
 
 use super::{is_terminal_status::is_terminal_resource_status, CfnContext};
@@ -183,7 +183,9 @@ pub async fn watch_stack(opts: &AwsOpts, args: &WatchArgs) -> Result<()> {
     let client = Client::new(&config);
     
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let ctx = CfnContext::new(client, time_provider).await?;
+    // TODO: In later phases, this will receive a proper TokenInfo from NormalizedAwsOpts
+    let temp_token = TokenInfo::auto_generated(uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().to_string());
+    let ctx = CfnContext::new(client, time_provider, temp_token).await?;
 
     watch_stack_with_context(&ctx, &args.stackname, Duration::from_secs(2)).await
 }
@@ -253,7 +255,8 @@ mod tests {
             .build();
         let client = Client::new(&config);
         
-        let ctx = CfnContext::new(client, time_provider).await.unwrap();
+        let temp_token = TokenInfo::auto_generated("test-token".to_string(), "test-op".to_string());
+        let ctx = CfnContext::new(client, time_provider, temp_token).await.unwrap();
         assert!(ctx.start_time.is_some());
         
         // Test that start time is 500ms before the fixed time
