@@ -38,15 +38,17 @@ fn handle_command(cli: Cli) {
         }
         Commands::DummySpacer => {}
         Commands::CreateChangeset(args) => {
+            let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(
-                &cli.aws_opts,
+                &normalized_opts,
                 &args,
             )) {
                 eprintln!("error creating change set: {e:?}");
             }
         }
         Commands::ExecChangeset(args) => {
-            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args)) {
                 eprintln!("error executing change set: {e:?}");
             }
         }
