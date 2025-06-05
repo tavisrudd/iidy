@@ -47,8 +47,6 @@ pub struct StackArgs {
     pub stack_policy: Option<Value>,
     #[serde(rename = "ResourceTypes", default)]
     pub resource_types: Option<Vec<String>>,
-    #[serde(rename = "ClientRequestToken", default)]
-    pub client_request_token: Option<String>,
     #[serde(rename = "UsePreviousTemplate", default)]
     pub use_previous_template: Option<bool>,
     #[serde(rename = "UsePreviousParameterValues", default)]
