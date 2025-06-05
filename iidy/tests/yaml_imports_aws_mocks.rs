@@ -11,7 +11,7 @@ mod tests {
     use serde_json::{json, Value};
     use async_trait::async_trait;
     
-    use crate::yaml::imports::{ImportLoader, ImportData, ImportType};
+    use iidy::yaml::imports::{ImportLoader, ImportData, ImportType};
 
     /// Mock AWS import loader that simulates AWS service responses
     pub struct MockAwsImportLoader {

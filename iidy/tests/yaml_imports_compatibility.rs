@@ -8,7 +8,7 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use async_trait::async_trait;
 
-use crate::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports, parse_import_type};
+use iidy::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports, parse_import_type};
 
 /// Enhanced mock loader that supports more sophisticated testing patterns
 pub struct EnhancedMockLoader {

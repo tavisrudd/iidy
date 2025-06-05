@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "language-server": {
+      "type": "stdio",
+      "command": "/Users/tavis/src/tools/mcp-language-server/mcp-language-server",
+      "args": [
+        "--workspace",
+        "/Volumes/case-sensitive/experiments/gptplay/iidy",
+        "--lsp",
+        "rust-analyzer"
+      ],
+      "env": {
+        "LOG_LEVEL": "WARN"
+      }
+    }
+  }
+}

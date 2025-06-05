@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use mockito::Server;
 use tempfile::TempDir;
 
-use crate::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports};
-use crate::yaml::imports::loaders::{load_http_import, load_git_import_with_executor, GitCommandExecutor};
+use iidy::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports};
+use iidy::yaml::imports::loaders::{load_http_import, load_git_import_with_executor, GitCommandExecutor};
 
 /// Mock import loader for testing that returns predefined responses
 pub struct MockImportLoader {

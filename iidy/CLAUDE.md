@@ -3,7 +3,8 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Development Commands
-The standard rust / cargo stuff.
+- Use the standard rust / cargo stuff.
+- prefer fd to find, rg to grep
 
 ## Architecture Overview
 

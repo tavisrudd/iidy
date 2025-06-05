@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use tempfile::TempDir;
 use tokio::fs;
 
-use crate::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports};
+use iidy::yaml::imports::{ImportLoader, ImportData, ImportType, load_imports};
 
 /// Test fixture loader that simulates a realistic import environment
 /// with files, config data, and mock external services

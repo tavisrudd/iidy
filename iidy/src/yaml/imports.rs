@@ -6,17 +6,6 @@
 
 pub mod loaders;
 
-#[cfg(test)]
-pub mod tests;
-
-#[cfg(test)]
-pub mod aws_mocks;
-
-#[cfg(test)]
-pub mod integration_tests;
-
-#[cfg(test)]
-pub mod comprehensive_tests;
 
 use std::collections::HashMap;
 use anyhow::{Result, anyhow};
