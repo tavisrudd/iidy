@@ -81,18 +81,89 @@ async fn update_stack_direct(
 
 /// Perform a stack update using changesets for preview and safer deployment.
 /// 
-/// This is a placeholder implementation. The full changeset workflow will be
-/// implemented in Phase 3 with proper multi-step token management.
+/// This demonstrates the full multi-step operation with proper token derivation:
+/// 1. Create changeset with derived token
+/// 2. Execute changeset with another derived token
+/// 3. Watch stack progress
 async fn update_stack_with_changeset(
-    _opts: &NormalizedAwsOpts,
-    _args: &UpdateStackArgs,
-    _stack_args: &crate::stack_args::StackArgs,
+    opts: &NormalizedAwsOpts,
+    args: &UpdateStackArgs,
+    stack_args: &crate::stack_args::StackArgs,
 ) -> Result<()> {
-    // TODO: Implement changeset workflow in Phase 3
-    // This will involve:
-    // 1. Create changeset with derived token
-    // 2. Display changeset preview
-    // 3. Execute changeset with another derived token
-    // 4. Watch stack progress
-    anyhow::bail!("Changeset-based updates not yet implemented. Use without --changeset flag for direct updates.")
+    // Setup AWS client and context
+    let config = aws::config_from_normalized_opts(opts).await?;
+    let client = Client::new(&config);
+    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    
+    // Setup console reporter and request builder
+    let reporter = ConsoleReporter::new("update-stack --changeset");
+    let builder = CfnRequestBuilder::new(&context, stack_args);
+    
+    // Show primary token
+    reporter.show_primary_token(&context.primary_token());
+    
+    // Step 1: Create changeset
+    let changeset_name = format!("iidy-update-{}", &context.primary_token().value[..8]);
+    let (create_request, create_token) = builder.build_create_changeset(&changeset_name, "create-changeset");
+    reporter.show_step_token("create-changeset", &create_token);
+    
+    reporter.show_progress(&format!("Creating changeset '{}' for stack: {}", 
+        changeset_name, stack_args.stack_name.as_ref().unwrap()));
+    
+    let create_response = create_request.send().await?;
+    
+    if let Some(changeset_id) = create_response.id() {
+        reporter.show_success(&format!("Changeset created: {}", changeset_id));
+    } else {
+        reporter.show_success("Changeset created");
+    }
+    
+    // Ask for confirmation unless --yes is specified
+    if !args.yes {
+        println!();
+        println!("Review the changeset in the AWS Console if needed.");
+        println!("Do you want to execute this changeset? (y/N)");
+        
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+        
+        if input != "y" && input != "yes" {
+            reporter.show_warning("Changeset execution cancelled by user");
+            println!("Changeset '{}' has been created but not executed.", changeset_name);
+            println!("You can execute it later with:");
+            println!("  iidy exec-changeset stack-args.yaml {}", changeset_name);
+            reporter.show_operation_summary(&context);
+            return Ok(());
+        }
+    }
+    
+    // Step 2: Execute changeset
+    let (execute_request, execute_token) = builder.build_execute_changeset(&changeset_name, "execute-changeset");
+    reporter.show_step_token("execute-changeset", &execute_token);
+    
+    reporter.show_progress("Executing changeset...");
+    
+    let _execute_response = execute_request.send().await?;
+    
+    reporter.show_success("Changeset execution initiated");
+    
+    // Step 3: Watch stack progress
+    use super::watch_stack::watch_stack_with_context;
+    reporter.show_progress("Watching stack operation progress...");
+    
+    if let Err(e) = watch_stack_with_context(&context, stack_args.stack_name.as_ref().unwrap(), 
+                                           std::time::Duration::from_secs(5)).await {
+        reporter.show_warning(&format!("Error watching stack progress: {}", e));
+        println!("The changeset execution was initiated, but there was an error watching progress.");
+        println!("You can check the stack status manually in the AWS Console.");
+    } else {
+        reporter.show_success("Stack update completed successfully");
+    }
+    
+    // Show operation summary
+    reporter.show_operation_summary(&context);
+    
+    Ok(())
 }
