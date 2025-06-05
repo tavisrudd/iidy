@@ -52,6 +52,9 @@ base64 = "0.21"
 hex = "0.4"
 rand = "0.8"
 
+# Timing/NTP support
+ntp = "0.5"
+
 # Utilities for demo feature
 tempfile = "3"
 terminal_size = "0.4"

@@ -1,15 +1,19 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::{Client, types::StackEvent};
 use aws_smithy_types::date_time::Format;
+use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 use std::io::Write;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::{
     aws,
-    cfn::is_terminal_status::is_terminal_resource_status,
     cli::{AwsOpts, WatchArgs},
+    timing::{ReliableTimeProvider, TimeProvider},
 };
+
+use super::{is_terminal_status::is_terminal_resource_status, CfnContext};
 
 /// Format a [`StackEvent`] into a single line similar to the Node.js output.
 fn format_event(event: &StackEvent) -> String {
@@ -52,10 +56,38 @@ async fn fetch_events(client: &Client, stack_name: &str) -> Result<Vec<StackEven
     Ok(events)
 }
 
+/// Convert AWS timestamp to chrono DateTime
+fn aws_timestamp_to_chrono(aws_time: &aws_smithy_types::DateTime) -> Option<DateTime<Utc>> {
+    DateTime::from_timestamp(aws_time.secs(), aws_time.subsec_nanos()).map(|dt| dt.with_timezone(&Utc))
+}
+
+/// Filter events to only include those after the given start time
+fn filter_events_after_start_time(events: Vec<StackEvent>, start_time: DateTime<Utc>) -> Vec<StackEvent> {
+    events.into_iter()
+        .filter(|event| {
+            event.timestamp()
+                .and_then(|ts| aws_timestamp_to_chrono(ts))
+                .map(|event_time| event_time > start_time)
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
 /// Display any new events and return true if the stack has reached a terminal state.
-fn display_events(events: Vec<StackEvent>, seen: &mut HashSet<String>, stack_name: &str) -> bool {
+fn display_events(
+    events: Vec<StackEvent>, 
+    seen: &mut HashSet<String>, 
+    stack_name: &str,
+    start_time: Option<DateTime<Utc>>
+) -> bool {
+    // Filter events by start time if provided
+    let filtered_events = match start_time {
+        Some(start) => filter_events_after_start_time(events, start),
+        None => events,
+    };
+    
     let mut done = false;
-    for ev in events {
+    for ev in filtered_events {
         if let Some(id) = ev.event_id() {
             if seen.insert(id.to_string()) {
                 println!("{}", format_event(&ev));
@@ -100,25 +132,60 @@ impl Spinner {
     }
 }
 
-/// Watch a CloudFormation stack for changes.
-pub async fn watch_stack(opts: &AwsOpts, args: &WatchArgs) -> Result<()> {
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
-
-    let stack_name = &args.stackname;
-    let poll = Duration::from_secs(2);
+/// Watch a CloudFormation stack for changes using a CfnContext.
+/// 
+/// This version uses the timing abstraction for reliable event filtering
+/// and elapsed time tracking.
+pub async fn watch_stack_with_context(
+    ctx: &CfnContext,
+    stack_name: &str,
+    poll_interval: Duration,
+) -> Result<()> {
     let mut seen = HashSet::new();
     let mut spinner = Spinner::new(atty::is(atty::Stream::Stdout));
 
     loop {
-        let events = fetch_events(&client, stack_name).await?;
+        let events = fetch_events(&ctx.client, stack_name).await?;
 
-        if display_events(events, &mut seen, stack_name) {
-            return Ok(());
+        if display_events(events, &mut seen, stack_name, ctx.start_time) {
+            break;
         }
 
-        spinner.spin(poll).await;
+        // Show elapsed time in spinner if we have a start time
+        if let Some(start_time) = ctx.start_time {
+            if let Ok(current_time) = ctx.time_provider.now().await {
+                let elapsed = (current_time - start_time).num_seconds();
+                print!("\r⏱ {} seconds elapsed...", elapsed);
+                std::io::stdout().flush().ok();
+            }
+        }
+
+        spinner.spin(poll_interval).await;
     }
+    
+    // Show final elapsed time
+    if let Some(start_time) = ctx.start_time {
+        if let Ok(current_time) = ctx.time_provider.now().await {
+            let elapsed = (current_time - start_time).num_seconds();
+            println!("\n✓ Stack operation completed in {} seconds", elapsed);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Watch a CloudFormation stack for changes.
+/// 
+/// This is the legacy function that creates its own timing context.
+/// New code should use watch_stack_with_context for better testability.
+pub async fn watch_stack(opts: &AwsOpts, args: &WatchArgs) -> Result<()> {
+    let config = aws::config_from_opts(opts).await?;
+    let client = Client::new(&config);
+    
+    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    let ctx = CfnContext::new(client, time_provider).await?;
+
+    watch_stack_with_context(&ctx, &args.stackname, Duration::from_secs(2)).await
 }
 
 #[cfg(test)]
@@ -151,5 +218,46 @@ mod tests {
     fn detect_terminal_event() {
         let ev = sample_event("2", 0, ResourceStatus::CreateComplete);
         assert!(event_indicates_terminal(&ev, "demo"));
+    }
+    
+    #[test]
+    fn filter_events_after_start_time_works() {
+        use chrono::TimeZone;
+        
+        let start_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+        
+        // Create events before and after start time
+        let old_event = sample_event("1", start_time.timestamp() - 10, ResourceStatus::CreateInProgress);
+        let new_event = sample_event("2", start_time.timestamp() + 10, ResourceStatus::CreateComplete);
+        
+        let events = vec![old_event, new_event];
+        let filtered = filter_events_after_start_time(events, start_time);
+        
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].event_id().unwrap(), "2");
+    }
+    
+    #[tokio::test]
+    async fn watch_stack_with_context_filters_events() {
+        use crate::timing::MockTimeProvider;
+        use chrono::TimeZone;
+        
+        // This test would require mocking the AWS client
+        // For now, just test that the context can be created with proper config
+        let fixed_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+        let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
+        
+        let config = aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build();
+        let client = Client::new(&config);
+        
+        let ctx = CfnContext::new(client, time_provider).await.unwrap();
+        assert!(ctx.start_time.is_some());
+        
+        // Test that start time is 500ms before the fixed time
+        let expected_start = fixed_time - chrono::Duration::milliseconds(500);
+        assert_eq!(ctx.start_time.unwrap(), expected_start);
     }
 }

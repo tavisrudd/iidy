@@ -1,32 +1,11 @@
 use std::io;
 use log::debug;
 use env_logger;
-mod aws;
-mod cli;
-mod display;
-mod preprocess;
-mod stack_args;
-mod yaml;
-mod cfn {
-    pub mod create_changeset;
-    pub mod create_or_update;
-    pub mod create_stack;
-    pub mod delete_stack;
-    pub mod describe_stack;
-    pub mod describe_stack_drift;
-    pub mod estimate_cost;
-    pub mod exec_changeset;
-    pub mod get_stack_instances;
-    pub mod get_stack_template;
-    pub mod is_terminal_status;
-    pub mod list_stacks;
-    pub mod update_stack;
-    pub mod watch_stack;
-}
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
+
+use iidy::{cfn, cli::{Cli, Commands}};
 mod demo;
-use cli::{Cli, Commands};
 use tokio::runtime::Runtime;
 
 fn handle_command(cli: Cli) {
