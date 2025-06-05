@@ -18,7 +18,8 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::UpdateStack(args) => {
-            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args)) {
                 eprintln!("error updating stack: {e:?}");
             }
         }
@@ -70,7 +71,8 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::DeleteStack(args) => {
-            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args)) {
                 eprintln!("error deleting stack: {e:?}");
             }
         }

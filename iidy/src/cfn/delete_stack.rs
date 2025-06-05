@@ -4,13 +4,14 @@ use std::sync::Arc;
 
 use crate::{
     aws,
-    cli::{AwsOpts, DeleteArgs},
-    timing::{ReliableTimeProvider, TimeProvider, TokenInfo},
+    cli::{NormalizedAwsOpts, DeleteArgs},
+    timing::{ReliableTimeProvider, TimeProvider},
+    cfn::{ConsoleReporter},
 };
 
 use super::{watch_stack::watch_stack_with_context, CfnContext};
 
-/// Delete a CloudFormation stack with timing context.
+/// Delete a CloudFormation stack with timing context and console reporting.
 ///
 /// Uses the timing abstraction for reliable event filtering and elapsed time tracking.
 pub async fn delete_stack_with_context(
@@ -18,12 +19,18 @@ pub async fn delete_stack_with_context(
     stack_name: &str,
     role_arn: Option<&str>,
     retain_resources: Option<Vec<String>>,
-    client_request_token: Option<&str>,
+    reporter: &ConsoleReporter,
 ) -> Result<()> {
-    println!("🗑️  Deleting stack: {}", stack_name);
+    // Derive a token for the delete operation
+    let token = ctx.derive_token_for_step("delete-stack");
+    reporter.show_step_token("delete-stack", &token);
+    
+    reporter.show_progress(&format!("Deleting stack: {}", stack_name));
     
     // Start the delete operation
-    let mut request = ctx.client.delete_stack().stack_name(stack_name);
+    let mut request = ctx.client.delete_stack()
+        .stack_name(stack_name)
+        .client_request_token(&token.value);
     
     if let Some(role) = role_arn {
         request = request.role_arn(role);
@@ -33,13 +40,9 @@ pub async fn delete_stack_with_context(
         request = request.set_retain_resources(Some(resources));
     }
     
-    if let Some(token) = client_request_token {
-        request = request.client_request_token(token);
-    }
-    
     request.send().await?;
     
-    println!("✅ Delete operation initiated, watching for completion...");
+    reporter.show_success("Delete operation initiated, watching for completion...");
     
     // Watch the stack deletion
     watch_stack_with_context(ctx, stack_name, std::time::Duration::from_secs(5)).await?;
@@ -50,20 +53,29 @@ pub async fn delete_stack_with_context(
 /// Delete a CloudFormation stack.
 ///
 /// This is the main entry point that creates its own timing context.
-pub async fn delete_stack(opts: &AwsOpts, args: &DeleteArgs) -> Result<()> {
-    let config = aws::config_from_opts(opts).await?;
+pub async fn delete_stack(opts: &NormalizedAwsOpts, args: &DeleteArgs) -> Result<()> {
+    let config = aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    // TODO: In later phases, this will receive a proper TokenInfo from NormalizedAwsOpts
-    let temp_token = TokenInfo::auto_generated(uuid::Uuid::new_v4().to_string(), uuid::Uuid::new_v4().to_string());
-    let ctx = CfnContext::new(client, time_provider, temp_token).await?;
+    let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
     
-    delete_stack_with_context(
+    // Setup console reporter
+    let reporter = ConsoleReporter::new("delete-stack");
+    
+    // Show primary token
+    reporter.show_primary_token(&ctx.primary_token());
+    
+    let result = delete_stack_with_context(
         &ctx,
         &args.stackname,
         args.role_arn.as_deref(),
         if args.retain_resources.is_empty() { None } else { Some(args.retain_resources.clone()) },
-        None, // DeleteArgs doesn't have client_request_token
-    ).await
+        &reporter,
+    ).await;
+    
+    // Show operation summary
+    reporter.show_operation_summary(&ctx);
+    
+    result
 }
