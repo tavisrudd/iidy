@@ -37,6 +37,12 @@ impl TagContext {
         self.variables.get(name)
     }
 
+    /// Add a variable to the context
+    pub fn with_variable(mut self, name: &str, value: Value) -> Self {
+        self.variables.insert(name.to_string(), value);
+        self
+    }
+
     /// Set base path for includes
     pub fn with_base_path<P: Into<std::path::PathBuf>>(mut self, path: P) -> Self {
         self.base_path = Some(path.into());

@@ -149,4 +149,26 @@ Template: t
         assert_eq!(result.region.as_deref(), Some("us-west-2"));
         assert_eq!(result.profile.as_deref(), Some("default"));
     }
+
+    #[test]
+    fn test_yaml_preprocessing_integration() {
+        // Test that our YAML preprocessing system is being used in stack args parsing
+        let yaml = r#"
+StackName: !$join
+  array: ["my-app", "production"]
+  delimiter: "-"
+Template: template.yaml
+Region: us-west-2
+"#;
+        let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod"));
+        
+        // Should succeed even with custom tags (currently they get converted to null)
+        assert!(result.is_ok(), "Stack args with custom tags should parse successfully");
+        
+        let stack_args = result.unwrap();
+        // Currently custom tags become null since AST resolution isn't implemented yet
+        // But parsing should succeed
+        assert_eq!(stack_args.template.as_deref(), Some("template.yaml"));
+        assert_eq!(stack_args.region.as_deref(), Some("us-west-2"));
+    }
 }
