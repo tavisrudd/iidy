@@ -17,10 +17,9 @@ This document outlines the design and implementation plan for comprehensive clie
 - ✅ **Comprehensive test coverage for token functionality** (Phase 1, Commit 2)
 
 ### What's Missing
-- ❌ CfnRequestBuilder pattern for standardized API calls
-- ❌ Multi-step operation support (changeset workflows)
-- ❌ Console visibility of tokens being used
+- ❌ CLI integration for remaining operations (estimate-cost, describe-*, etc.)
 - ❌ Comprehensive offline testing with fixtures
+- ❌ Documentation and performance optimization
 
 ## Design Requirements
 
@@ -374,31 +373,54 @@ The `CfnRequestBuilder` handles these inconsistencies transparently.
 - ✅ Update `CfnContext::new()` constructor to accept `TokenInfo`
 - ✅ Update existing CfnContext tests
 
-## Phase 2: Request Building and Console Output
+## ✅ Phase 2: Request Building and Console Output (COMPLETED)
 
-### Commit 4: Implement CfnRequestBuilder pattern
+### ✅ Commit 4: Implement CfnRequestBuilder pattern (COMPLETED)
 **Files**: `src/cfn/mod.rs`, `src/cfn/request_builder.rs` (new)
-- Create `CfnRequestBuilder` struct with context and stack_args references
-- Implement `build_create_stack()` with token injection and StackArgs integration
-- Implement `build_update_stack()` with token injection
-- Implement `build_create_changeset()` with correct field name (`client_token`)
-- Implement `build_execute_changeset()` with standard field name
-- Add builder tests with mock contexts
+- ✅ Create `CfnRequestBuilder` struct with context and stack_args references
+- ✅ Implement `build_create_stack()` with token injection and StackArgs integration
+- ✅ Implement `build_update_stack()` with token injection
+- ✅ Implement `build_create_changeset()` with correct field name (`client_token`)
+- ✅ Implement `build_execute_changeset()` with standard field name
+- ✅ Add builder tests with mock contexts
 
-### Commit 5: Create ConsoleReporter for token display
-**Files**: `src/display.rs` or `src/cfn/console.rs` (new)
-- Implement `ConsoleReporter` struct
-- Add `show_primary_token()`, `show_step_token()`, `show_operation_summary()` methods
-- Add token visibility controls (env var or CLI flag)
-- Add console output formatting tests
+### ✅ Commit 5: Create ConsoleReporter for token display (COMPLETED)
+**Files**: `src/cfn/console.rs` (new)
+- ✅ Implement `ConsoleReporter` struct
+- ✅ Add `show_primary_token()`, `show_step_token()`, `show_operation_summary()` methods
+- ✅ Always-on token display for full transparency (no env var control)
+- ✅ Add console output formatting tests
 
-### Commit 6: Update existing single-step operations
-**Files**: `src/cfn/create_stack.rs`, `src/cfn/update_stack.rs`, `src/cfn/delete_stack.rs`
-- Replace direct AWS client usage with `CfnRequestBuilder`
-- Add token display using `ConsoleReporter`
-- Update function signatures to accept `NormalizedAwsOpts`
-- Ensure StackArgs integration (parameters, tags, capabilities)
-- Update existing operation tests
+### ✅ Commit 6: Update existing single-step operations (COMPLETED)
+**Files**: `src/cfn/create_stack.rs`, `src/cfn/update_stack.rs`, `src/cfn/delete_stack.rs`, `src/aws.rs`, `src/main.rs`
+- ✅ Replace direct AWS client usage with `CfnRequestBuilder`
+- ✅ Add token display using `ConsoleReporter`
+- ✅ Update function signatures to accept `NormalizedAwsOpts`
+- ✅ Ensure StackArgs integration (parameters, tags, capabilities)
+- ✅ Add `config_from_normalized_opts()` helper in aws.rs
+- ✅ Update main.rs to normalize AwsOpts for all operations
+
+## ✅ Phase 2.5: Basic Changeset Operations (COMPLETED)
+
+### ✅ Implement basic changeset operations (COMPLETED)
+**Files**: `src/cfn/create_changeset.rs`, `src/cfn/exec_changeset.rs`, `src/main.rs`
+- ✅ Implement create_changeset with CfnRequestBuilder and token derivation
+- ✅ Implement exec_changeset with token derivation and stack watching
+- ✅ Update main.rs to normalize AwsOpts for changeset operations
+- ✅ Add user guidance and execution instructions
+
+### ✅ Implement multi-step changeset workflow (COMPLETED)
+**Files**: `src/cfn/update_stack.rs`
+- ✅ Complete update-stack --changeset workflow with multi-step token derivation
+- ✅ Interactive user confirmation with graceful cancellation
+- ✅ Full create → execute → watch flow with separate derived tokens
+- ✅ Comprehensive error handling and progress reporting
+
+### ✅ UX improvements for token display (COMPLETED)
+**Files**: `src/cfn/console.rs`
+- ✅ Remove colons from token display for easier copy-paste
+- ✅ Terminal-friendly token format for better UX
+- ✅ Maintain complete audit trail and debugging capabilities
 
 ## Phase 3: Multi-Step Operations
 
