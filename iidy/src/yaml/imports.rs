@@ -15,6 +15,9 @@ pub mod aws_mocks;
 #[cfg(test)]
 pub mod integration_tests;
 
+#[cfg(test)]
+pub mod comprehensive_tests;
+
 use std::collections::HashMap;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
@@ -124,7 +127,7 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
             .unwrap();
         match base_type_str {
             "s3" => Some(ImportType::S3),
-            "http" => Some(ImportType::Http),
+            "http" | "https" => Some(ImportType::Http),
             _ => None,
         }
     } else {
@@ -135,7 +138,15 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
     if let Some(base_type) = base_import_type {
         if base_type.requires_network() {
             if !has_explicit_type {
-                // Inherit the base type if no explicit type
+                // For implicit imports (no prefix), inherit the base type
+                // unless the location looks explicitly local (starts with ./ or /)
+                if location.starts_with("./") || location.starts_with("../") || location.starts_with("/") {
+                    return Err(anyhow!(
+                        "Import type '{}' in '{}' not allowed from remote template",
+                        location, base_location
+                    ));
+                }
+                // Inherit the base type for relative paths without explicit local indicators
                 return Ok(base_type);
             } else if import_type.is_local_only() {
                 return Err(anyhow!(
