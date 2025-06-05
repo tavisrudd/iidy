@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 6d25073e5e486318eaf0fdc4937f1cade388e7fbd1a9f7bf155ff59b951cee59 # shrinks to var_name = "a", var_value = "\""
+cc 13bf472263cdcd78b79eee7ebae9308438195c6971b45991e60b34e966a86541 # shrinks to malformed_yaml = "!"
