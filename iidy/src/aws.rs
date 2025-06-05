@@ -5,7 +5,7 @@ use aws_config::sts::AssumeRoleProvider;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_types::region::Region;
 
-use crate::cli::AwsOpts;
+use crate::cli::{AwsOpts, NormalizedAwsOpts};
 
 /// Load AWS SDK configuration using values from [`AwsOpts`].
 ///
@@ -41,4 +41,20 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
     let config = builder.build();
 
     Ok(config)
+}
+
+/// Load AWS SDK configuration using values from [`NormalizedAwsOpts`].
+/// 
+/// This is a convenience function that extracts the relevant AWS configuration
+/// fields from NormalizedAwsOpts and delegates to config_from_opts.
+pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<SdkConfig> {
+    // Convert NormalizedAwsOpts back to AwsOpts for the configuration
+    let aws_opts = AwsOpts {
+        region: opts.region.clone(),
+        profile: opts.profile.clone(),
+        assume_role_arn: opts.assume_role_arn.clone(),
+        client_request_token: None, // Token is handled separately in NormalizedAwsOpts
+    };
+    
+    config_from_opts(&aws_opts).await
 }

@@ -12,7 +12,8 @@ fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
         Commands::CreateStack(args) => {
-            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args)) {
                 eprintln!("error creating stack: {e:?}");
             }
         }
