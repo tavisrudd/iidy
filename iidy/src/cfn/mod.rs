@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use crate::timing::{TimeProvider, TokenInfo};
 
 // CloudFormation operation modules
+pub mod console;
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;
@@ -19,9 +20,12 @@ pub mod get_stack_template;
 pub mod is_terminal_status;
 pub mod list_stacks;
 pub mod request_builder;
-pub use request_builder::CfnRequestBuilder;
 pub mod update_stack;
 pub mod watch_stack;
+
+// Re-exports
+pub use console::ConsoleReporter;
+pub use request_builder::CfnRequestBuilder;
 
 /// Context object that carries shared state for CloudFormation operations.
 /// 
