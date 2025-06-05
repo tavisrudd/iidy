@@ -18,6 +18,8 @@ pub mod get_stack_instances;
 pub mod get_stack_template;
 pub mod is_terminal_status;
 pub mod list_stacks;
+pub mod request_builder;
+pub use request_builder::CfnRequestBuilder;
 pub mod update_stack;
 pub mod watch_stack;
 
