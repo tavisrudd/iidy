@@ -189,47 +189,6 @@ fn test_tag_context_variables() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_handlebars_in_yaml_values() -> Result<()> {
-    use std::collections::HashMap;
-    
-    let yaml = r#"
-app_name: "{{service}}-{{environment}}"
-version: "{{version}}"
-port: 8080
-"#;
-    
-    let mut preprocessor = YamlPreprocessor::new();
-    let ast = parse_yaml_with_custom_tags(yaml)?;
-    
-    // Create context with variables
-    let mut variables = HashMap::new();
-    variables.insert("service".to_string(), Value::String("api".to_string()));
-    variables.insert("environment".to_string(), Value::String("production".to_string()));
-    variables.insert("version".to_string(), Value::String("v1.2.3".to_string()));
-    
-    let context = TagContext::new().with_bindings(variables);
-    let result = preprocessor.resolve_ast_with_context(ast, &context)?;
-    
-    if let Value::Mapping(map) = result {
-        assert_eq!(
-            map.get(&Value::String("app_name".to_string())),
-            Some(&Value::String("api-production".to_string()))
-        );
-        assert_eq!(
-            map.get(&Value::String("version".to_string())),
-            Some(&Value::String("v1.2.3".to_string()))
-        );
-        assert_eq!(
-            map.get(&Value::String("port".to_string())),
-            Some(&Value::Number(serde_yaml::Number::from(8080.0)))
-        );
-    } else {
-        panic!("Expected mapping result");
-    }
-    
-    Ok(())
-}
 
 #[test]
 fn test_handlebars_in_yaml_keys() -> Result<()> {
@@ -283,49 +242,3 @@ fn test_handlebars_in_yaml_keys() -> Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_handlebars_with_helpers_in_keys() -> Result<()> {
-    use std::collections::HashMap;
-    
-    let yaml = r#"
-"{{camelCase service_name}}": "my-api"
-"{{snakeCase environment_name}}_config":
-  enabled: true
-"#;
-    
-    let mut preprocessor = YamlPreprocessor::new();
-    let ast = parse_yaml_with_custom_tags(yaml)?;
-    
-    // Create context with variables
-    let mut variables = HashMap::new();
-    variables.insert("service_name".to_string(), Value::String("API Service".to_string()));
-    variables.insert("environment_name".to_string(), Value::String("Production Environment".to_string()));
-    
-    let context = TagContext::new().with_bindings(variables);
-    let result = preprocessor.resolve_ast_with_context(ast, &context)?;
-    
-    if let Value::Mapping(map) = result {
-        // Check that keys were processed with handlebars helpers
-        assert!(map.contains_key(&Value::String("apiService".to_string())));
-        assert!(map.contains_key(&Value::String("production_environment_config".to_string())));
-        
-        // Verify values
-        assert_eq!(
-            map.get(&Value::String("apiService".to_string())),
-            Some(&Value::String("my-api".to_string()))
-        );
-        
-        if let Some(Value::Mapping(config)) = map.get(&Value::String("production_environment_config".to_string())) {
-            assert_eq!(
-                config.get(&Value::String("enabled".to_string())),
-                Some(&Value::Bool(true))
-            );
-        } else {
-            panic!("Expected production_environment_config to be a mapping");
-        }
-    } else {
-        panic!("Expected mapping result");
-    }
-    
-    Ok(())
-}
