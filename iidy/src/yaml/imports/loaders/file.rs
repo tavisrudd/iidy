@@ -113,3 +113,142 @@ fn sha256_digest(data: &str) -> String {
     hasher.update(data.as_bytes());
     hex::encode(hasher.finalize())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    #[tokio::test]
+    async fn test_load_file_import_absolute_path() -> Result<()> {
+        // Create a temporary file
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "test: value")?;
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+
+        let result = load_file_import(&temp_path, "/some/base").await?;
+        
+        assert_eq!(result.import_type, ImportType::File);
+        assert_eq!(result.resolved_location, temp_path);
+        assert!(result.data.contains("test: value"));
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_file_import_relative_path() -> Result<()> {
+        // Create a temporary directory and file
+        let temp_dir = tempfile::tempdir()?;
+        let base_file = temp_dir.path().join("base.yaml");
+        let target_file = temp_dir.path().join("target.yaml");
+        
+        std::fs::write(&target_file, "imported: data")?;
+        
+        let base_location = base_file.to_string_lossy().to_string();
+        let result = load_file_import("target.yaml", &base_location).await?;
+        
+        assert_eq!(result.import_type, ImportType::File);
+        assert!(result.data.contains("imported: data"));
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_file_import_with_file_prefix() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "prefixed: value")?;
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+        let file_url = format!("file:{}", temp_path);
+
+        let result = load_file_import(&file_url, "/some/base").await?;
+        
+        assert_eq!(result.import_type, ImportType::File);
+        assert_eq!(result.resolved_location, temp_path);
+        assert!(result.data.contains("prefixed: value"));
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_file_import_nonexistent() {
+        let result = load_file_import("/nonexistent/file.yaml", "/base").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("bad import"));
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_import() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "hash test content")?;
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+        
+        let location = format!("filehash:{}", temp_path);
+        let result = load_filehash_import(&location, "/base", false).await?;
+        
+        assert_eq!(result.import_type, ImportType::Filehash);
+        assert_eq!(result.data.len(), 64); // SHA256 hex length
+        
+        // Verify the hash is consistent
+        let expected_hash = sha256_digest("hash test content\n");
+        assert_eq!(result.data, expected_hash);
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_import_base64() -> Result<()> {
+        let mut temp_file = NamedTempFile::new()?;
+        writeln!(temp_file, "base64 test content")?;
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+        
+        let location = format!("filehash-base64:{}", temp_path);
+        let result = load_filehash_import(&location, "/base", true).await?;
+        
+        assert_eq!(result.import_type, ImportType::FilehashBase64);
+        // Base64 encoded SHA256 should be different length than hex
+        assert_ne!(result.data.len(), 64);
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_import_missing_allowed() -> Result<()> {
+        let location = "filehash:?/nonexistent/file.txt";
+        let result = load_filehash_import(location, "/base", false).await?;
+        
+        assert_eq!(result.import_type, ImportType::Filehash);
+        assert_eq!(result.data, "FILE_MISSING");
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_import_missing_not_allowed() {
+        let location = "filehash:/nonexistent/file.txt";
+        let result = load_filehash_import(location, "/base", false).await;
+        
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid location"));
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_import_invalid_format() {
+        let result = load_filehash_import("invalid-format", "/base", false).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid filehash import format"));
+    }
+
+    #[test]
+    fn test_sha256_digest() {
+        let input = "test string";
+        let hash = sha256_digest(input);
+        
+        // Verify it's a valid hex string of correct length
+        assert_eq!(hash.len(), 64);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+        
+        // Verify consistency
+        assert_eq!(hash, sha256_digest(input));
+    }
+}
