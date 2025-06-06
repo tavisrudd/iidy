@@ -1,0 +1,69 @@
+$defs:
+  app_name: "my-demo-app"
+  environment: "dev"
+  region: "us-west-2"
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "{{app_name}} infrastructure for {{environment}}"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: "{{environment}}"
+    Description: "Deployment environment"
+
+Resources:
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: "{{toLowerCase app_name}}-{{environment}}-bucket"
+      Tags:
+        - Key: "Name"
+          Value: "{{app_name}} Storage"
+        - Key: "Environment"
+          Value: "{{environment}}"
+        - Key: "Region"
+          Value: "{{region}}"
+
+  # Test conditional logic
+  DatabaseInstance: !$if
+    condition: !$eq ["{{environment}}", "prod"]
+    then:
+      Type: "AWS::RDS::DBInstance"
+      Properties:
+        DBInstanceIdentifier: "{{app_name}}-{{environment}}-db"
+        DBInstanceClass: "db.t3.medium"
+        Engine: "postgres"
+        MasterUsername: "admin"
+        AllocatedStorage: 100
+    else:
+      Type: "AWS::RDS::DBInstance"
+      Properties:
+        DBInstanceIdentifier: "{{app_name}}-{{environment}}-db"
+        DBInstanceClass: "db.t3.micro"
+        Engine: "postgres"
+        MasterUsername: "admin"
+        AllocatedStorage: 20
+
+  # Test map transformations
+  SecurityGroups: !$fromPairs !$map
+    source: ["web", "api", "database"]
+    transform:
+      - "{{app_name}}-{{item}}-{{environment}}-sg"
+      - Type: "AWS::EC2::SecurityGroup"
+        Properties:
+          GroupDescription: "Security group for {{item}} tier"
+          GroupName: "{{app_name}}-{{item}}-{{environment}}-sg"
+
+Outputs:
+  BucketName:
+    Description: "S3 Bucket Name"
+    Value: !Ref S3Bucket
+    Export:
+      Name: "{{app_name}}-{{environment}}-bucket-name"
+  
+  SecurityGroupNames:
+    Description: "Security Group Names"
+    Value: !$toJsonString !$mapValues
+      source: !$ SecurityGroups
+      transform: "{{key}}"

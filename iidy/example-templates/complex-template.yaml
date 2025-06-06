@@ -1,0 +1,139 @@
+$defs:
+  app_name: "complex-demo"
+  environment: "staging"
+  services: ["web", "api", "worker", "scheduler"]
+
+$imports:
+  config: "./config.yaml"
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "{{app_name}} complex infrastructure with imports and transformations"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: "{{environment}}"
+  
+  DatabaseHost:
+    Type: String
+    Default: "{{config.database.host}}"
+
+Resources:
+  # Generate VPC and networking resources
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: "10.0.0.0/16"
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: "Name"
+          Value: "{{app_name}}-{{environment}}-vpc"
+
+  # Generate subnets for each service
+  Subnets: !$fromPairs !$concatMap
+    source: !$ services
+    var_name: "service"
+    transform: !$map
+      source: ["a", "b"]
+      var_name: "az"
+      transform:
+        - "{{service}}-{{az}}-subnet"
+        - Type: "AWS::EC2::Subnet"
+          Properties:
+            VpcId: !Ref VPC
+            CidrBlock: "10.0.{{index}}.0/24"
+            AvailabilityZone: "{{region}}{{az}}"
+            Tags:
+              - Key: "Name"
+                Value: "{{app_name}}-{{service}}-{{az}}-{{environment}}"
+
+  # Generate Auto Scaling Groups for services
+  AutoScalingGroups: !$mergeMap
+    source: !$ services
+    var_name: "service"
+    transform: !$let
+      bindings:
+        min_size: !$if
+          condition: !$eq ["{{service}}", "worker"]
+          then: 2
+          else: 1
+        max_size: !$if
+          condition: !$eq ["{{service}}", "web"]
+          then: 10
+          else: 5
+      expression: !$fromPairs
+        - - "{{service}}-asg"
+          - Type: "AWS::AutoScaling::AutoScalingGroup"
+            Properties:
+              MinSize: !$ min_size
+              MaxSize: !$ max_size
+              DesiredCapacity: !$ min_size
+              Tags:
+                - Key: "Name"
+                  Value: "{{app_name}}-{{service}}-{{environment}}-asg"
+                  PropagateAtLaunch: true
+                - Key: "Service"
+                  Value: "{{service}}"
+                  PropagateAtLaunch: true
+
+  # Application Load Balancer configuration
+  LoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: "{{app_name}}-{{environment}}-alb"
+      Scheme: "internet-facing"
+      Type: "application"
+      IpAddressType: "ipv4"
+      Tags:
+        - Key: "Name"
+          Value: "{{app_name}} {{titleize environment}} ALB"
+
+  # Database configuration using imported config
+  Database:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      DBInstanceIdentifier: "{{app_name}}-{{environment}}-db"
+      DBName: "{{config.database.name}}"
+      Port: !$ config.database.port
+      Engine: "postgres"
+      DBInstanceClass: !$if
+        condition: !$eq ["{{environment}}", "prod"]
+        then: "db.r5.large"
+        else: "db.t3.medium"
+      AllocatedStorage: !$if
+        condition: !$eq ["{{environment}}", "prod"]
+        then: 500
+        else: 100
+      BackupRetentionPeriod: !$if
+        condition: !$eq ["{{environment}}", "prod"]
+        then: 30
+        else: 7
+      Tags:
+        - Key: "Name"
+          Value: "{{app_name}} {{titleize environment}} Database"
+
+Outputs:
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref VPC
+    Export:
+      Name: "{{app_name}}-{{environment}}-vpc-id"
+
+  DatabaseEndpoint:
+    Description: "Database endpoint"
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: "{{app_name}}-{{environment}}-db-endpoint"
+
+  ServiceInfo:
+    Description: "Service configuration summary"
+    Value: !$toJsonString
+      app_name: "{{app_name}}"
+      environment: "{{environment}}"
+      services: !$ services
+      database:
+        host: "{{config.database.host}}"
+        port: !$ config.database.port
+        name: "{{config.database.name}}"
+      monitoring: !$ config.monitoring

@@ -1,0 +1,64 @@
+$defs:
+  app_name: "iidy-showcase"
+  environment: "demo"
+  services: ["api", "web", "worker"]
+  regions: ["us-west-2", "us-east-1"]
+
+$imports:
+  config: "./config.yaml"
+
+# Demo basic handlebars string processing
+app_info:
+  name: "{{toUpperCase app_name}}"
+  env: "{{titleize environment}}"
+  version: "1.0.0"
+  
+# Demo conditional logic
+database_config: !$if
+  condition: !$eq ["{{environment}}", "prod"]
+  then:
+    host: "prod.db.{{app_name}}.com"
+    instance_class: "db.r5.large"
+    backup_retention: 30
+  else:
+    host: "{{config.database.host}}"
+    instance_class: "db.t3.medium"
+    backup_retention: 7
+
+# Demo map transformations
+service_configs: !$map
+  source: !$ services
+  transform:
+    name: "{{app_name}}-{{item}}-{{environment}}"
+    type: "{{item}}"
+    replicas: !$if
+      condition: !$eq ["{{item}}", "worker"]
+      then: 3
+      else: 2
+
+# Demo simple map transformation
+service_urls: !$map
+  source: !$ services
+  transform: "https://{{app_name}}-{{item}}.{{environment}}.example.com"
+
+# Demo merge operations
+complete_config: !$merge
+  - app: !$ app_info
+  - database: !$ database_config
+  - imported_config: !$ config
+  - urls: !$ service_urls
+
+# Demo string processing with encoding
+secrets:
+  encoded_app_name: "{{base64 app_name}}"
+  config_hash: "{{sha256 (toJson config)}}"
+  app_slug: "{{kebabCase app_name}}"
+
+# Demo data conversion
+export_data: !$toJsonString
+  services: !$ services
+  regions: !$ regions
+  config_summary:
+    database_port: !$ config.database.port
+    api_timeout: !$ config.api.timeout
+    monitoring: !$ config.monitoring

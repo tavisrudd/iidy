@@ -4,7 +4,10 @@ use env_logger;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
 
-use iidy::{cfn, cli::{Cli, Commands}};
+use iidy::{cfn, cli::{Cli, Commands, RenderArgs}, yaml::preprocess_yaml_with_base_location};
+use anyhow::Result;
+use std::fs;
+use std::path::Path;
 mod demo;
 use tokio::runtime::Runtime;
 
@@ -114,7 +117,11 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer4 => {}
         Commands::TemplateApproval { command } => println!("template-approval {:?}", command),
         Commands::DummySpacer5 => {}
-        Commands::Render(args) => println!("render {:?}", args),
+        Commands::Render(args) => {
+            if let Err(e) = rt.block_on(handle_render_command(&args)) {
+                eprintln!("error rendering template: {e:?}");
+            }
+        }
         Commands::GetImport(args) => println!("get-import {:?}", args),
         Commands::Demo(args) => {
             if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling)) {
@@ -133,6 +140,77 @@ fn handle_command(cli: Cli) {
             debug!("Completion for {:?}", shell);
         }
     }
+}
+
+async fn handle_render_command(args: &RenderArgs) -> Result<()> {
+    // Read the template file
+    let template_content = fs::read_to_string(&args.template)?;
+    
+    // Get the base location from the template file path for relative imports
+    let base_location = &args.template;
+    
+    // Process the YAML with the new preprocessing system
+    let processed_value = preprocess_yaml_with_base_location(&template_content, base_location).await?;
+    
+    // Apply query selector if provided
+    let output_value = if let Some(query) = &args.query {
+        apply_query_to_value(processed_value, query)?
+    } else {
+        processed_value
+    };
+    
+    // Format output based on requested format
+    let formatted_output = match args.format.as_str() {
+        "json" => serde_json::to_string_pretty(&output_value)?,
+        "yaml" | "yml" => serde_yaml::to_string(&output_value)?,
+        _ => return Err(anyhow::anyhow!("Unsupported format: {}. Use 'yaml' or 'json'", args.format)),
+    };
+    
+    // Output to file or stdout
+    if args.outfile == "stdout" || args.outfile == "-" {
+        println!("{}", formatted_output);
+    } else {
+        // Check if file exists and handle overwrite logic
+        if Path::new(&args.outfile).exists() && !args.overwrite {
+            return Err(anyhow::anyhow!(
+                "Output file '{}' exists. Use --overwrite to overwrite it.", 
+                args.outfile
+            ));
+        }
+        
+        fs::write(&args.outfile, formatted_output)?;
+        eprintln!("Template rendered to: {}", args.outfile);
+    }
+    
+    Ok(())
+}
+
+fn apply_query_to_value(value: serde_yaml::Value, query: &str) -> Result<serde_yaml::Value> {
+    // Simple query support - handles dot notation like "Resources.MyBucket"
+    let parts: Vec<&str> = query.split('.').collect();
+    let mut current = value;
+    
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+        
+        match current {
+            serde_yaml::Value::Mapping(ref map) => {
+                let key = serde_yaml::Value::String(part.to_string());
+                if let Some(next_value) = map.get(&key) {
+                    current = next_value.clone();
+                } else {
+                    return Err(anyhow::anyhow!("Query path '{}' not found at key '{}'", query, part));
+                }
+            }
+            _ => {
+                return Err(anyhow::anyhow!("Cannot query '{}' on non-mapping value", part));
+            }
+        }
+    }
+    
+    Ok(current)
 }
 
 fn main() {
