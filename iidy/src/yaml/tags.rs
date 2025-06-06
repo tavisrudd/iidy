@@ -206,13 +206,15 @@ impl TagContext {
 }
 
 /// Resolve an include tag
+/// !$ tags only access variables in scope (from $defs, $imports, and local scoped variables)
+/// They never perform file loading - that only happens during $imports processing
 pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Value> {
     let path = &tag.path;
     
     // Parse path and query
     let (base_path, query) = parse_path_and_query(path, &tag.query);
     
-    // Handle dot notation access to variables (e.g., "config.database_host")
+    // Try to resolve the variable from the environment
     if let Some(mut value) = resolve_dot_notation_path(&base_path, context) {
         // Apply query selector if present
         if let Some(query_str) = query {
@@ -221,30 +223,31 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
         return Ok(value);
     }
     
-    // Handle different include formats:
-    // - File paths: "./config.yaml", "/abs/path.yaml"
-    // - URLs: "https://example.com/config.yaml"
-    // - Special imports: "AWS::EC2::Instance", etc.
+    // Variable not found - error immediately with location context
+    // Only variables from $defs, $imports, and local scoped variables are allowed
+    let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
     
-    if base_path.starts_with("http://") || base_path.starts_with("https://") {
-        // TODO: HTTP includes
-        Err(anyhow!("HTTP includes not yet implemented"))
-    } else if base_path.contains("::") {
-        // AWS CloudFormation resource type or similar
-        // TODO: Handle special imports
-        Err(anyhow!("Special imports not yet implemented"))
+    // Get location information - file name from base_path if available
+    let location_info = if let Some(base_path) = &context.base_path {
+        format!("in file '{}'", base_path.display())
     } else {
-        // File include
-        let resolved_path = if let Some(base) = &context.base_path {
-            base.join(&base_path)
-        } else {
-            std::path::PathBuf::from(&base_path)
-        };
-        
-        // TODO: Read and parse the file
-        // For now, return placeholder
-        Ok(Value::String(format!("TODO: Include content from {}", resolved_path.display())))
-    }
+        context.current_location()
+            .map(|loc| format!("in '{}'", loc))
+            .unwrap_or_else(|| "in unknown location".to_string())
+    };
+    
+    // Get YAML path information if available
+    let yaml_path = context.current_path();
+    let path_info = if !yaml_path.is_empty() {
+        format!(" at path '{}'", yaml_path)
+    } else {
+        String::new()
+    };
+    
+    Err(anyhow!(
+        "Variable '{}' not found in environment {}{}\nOnly variables from $defs, $imports, and local scoped variables (like 'item' in !$map) are available.", 
+        root_var, location_info, path_info
+    ))
 }
 
 /// Parse path and query from include path

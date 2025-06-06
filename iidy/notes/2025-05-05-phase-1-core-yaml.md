@@ -774,5 +774,128 @@ This implementation completes the **critical missing piece** for full iidy-js co
 
 ---
 
+## Error Reporting Requirements (2025-06-06)
+
+### Current Error Reporting Capabilities
+
+**✅ What We Have:**
+- File name in error messages (e.g., "in file 'example-templates/showcase.yaml'")
+- Variable scope validation with clear error messages
+- Error context showing which variable was not found
+- Explanation of allowed variable sources ($defs, $imports, local scoped variables)
+
+**❌ Missing Critical Features:**
+- **Line and column numbers** for precise error location
+- **YAML path information** (e.g., `<root>/complete_config/app` showing document structure path)
+- **Source code highlighting** showing the problematic YAML section
+- **Context around the error** (showing surrounding YAML structure)
+
+### Enhanced Error Reporting Requirements
+
+#### 1. Source Location Tracking
+**Problem**: Current YAML parser (`serde_yaml`) doesn't preserve source location information (line/column numbers) after parsing.
+
+**Solutions to Investigate:**
+- **Tree-sitter YAML**: Use tree-sitter parser to maintain source locations throughout AST
+- **Custom YAML Parser**: Extend existing parser to track source positions
+- **Source Map Approach**: Create mapping between AST nodes and source positions
+- **Hybrid Approach**: Use serde_yaml for functionality + tree-sitter for location tracking
+
+#### 2. YAML Path Context
+**Current**: We have document structure paths available but not utilized in errors
+**Target**: Show hierarchical path to error location (e.g., `complete_config.app` or `service_configs[1].replicas`)
+
+**Implementation Notes:**
+- TagContext already tracks some path information via stack frames
+- Need to enhance path tracking during AST traversal
+- Path should show both object keys and array indices
+
+#### 3. Source Code Highlighting
+**Requirements:**
+- Show the problematic YAML section with surrounding context
+- Highlight the specific line/expression causing the error
+- Preserve indentation and structure for readability
+- Support for both simple variables (`!$ app_info`) and complex expressions (`!$ config[environment].regions[region]`)
+
+**Implementation Approaches:**
+- **Tree-sitter Integration**: Parse source with tree-sitter to get exact byte ranges
+- **Re-serialization**: Convert AST back to YAML and highlight based on path
+- **Source Reconstruction**: Build source view from AST with position tracking
+
+#### 4. Enhanced Error Message Format
+
+**Target Error Format:**
+```
+Error: Variable 'app_info' not found in environment
+  --> example-templates/showcase.yaml:46:12
+   |
+46 |   - app: !$ app_info
+   |            ^^^^^^^^ variable not found
+   |
+   = note: Only variables from $defs, $imports, and local scoped variables are available
+   = help: Available variables: app_name, environment, services, regions, config
+   = path: complete_config.app
+```
+
+**Components:**
+1. **Error Type**: Clear categorization (Variable Not Found, Type Mismatch, etc.)
+2. **Location**: File:line:column with precise positioning
+3. **Source Context**: Show relevant YAML lines with highlighting
+4. **Path Information**: Document structure path to error location
+5. **Helpful Context**: Available variables, suggestions, documentation links
+
+#### 5. Implementation Strategy
+
+**Phase 1: YAML Path Enhancement (Immediate)**
+- Enhance existing TagContext to track full YAML paths
+- Update error messages to include path information
+- No parser changes required - can use existing AST structure
+
+**Phase 2: Tree-sitter Integration (Future)**
+- Add tree-sitter-yaml dependency for source location tracking
+- Create hybrid parsing approach: tree-sitter for locations + serde_yaml for functionality
+- Implement source range tracking throughout preprocessing pipeline
+
+**Phase 3: Rich Error Display (Future)**
+- Implement error formatter with source highlighting
+- Add suggestions and help text based on error type
+- Support for interactive error exploration in CLI
+
+#### 6. Technical Considerations
+
+**Performance Impact:**
+- Source location tracking will add memory overhead
+- Tree-sitter parsing may be slower than serde_yaml
+- Consider making enhanced error reporting optional for production use
+
+**Compatibility:**
+- Maintain backward compatibility with existing error handling
+- Graceful degradation when source information unavailable
+- Support for both detailed and concise error modes
+
+**Testing:**
+- Comprehensive error message testing with exact location verification
+- Edge cases for nested imports, complex expressions, malformed YAML
+- Performance regression testing for error handling paths
+
+### Current Implementation Priority
+
+**Immediate (Current Session):**
+- ✅ Enhanced variable scope error with file name
+- ✅ Clear explanation of allowed variable sources
+- [ ] Add YAML path information to error messages
+
+**Near Term:**
+- [ ] Investigate tree-sitter-yaml integration feasibility
+- [ ] Design enhanced error message format
+- [ ] Implement path tracking improvements
+
+**Future:**
+- [ ] Full source location tracking with line/column numbers
+- [ ] Rich error display with syntax highlighting
+- [ ] Interactive error exploration and suggestions
+
+---
+
 *Last updated: 2025-06-06*
-*Status: Phase 1 COMPLETE → Nested Document Processing IMPLEMENTED → 100% FEATURE COMPLETE WITH CRITICAL FIXES*
+*Status: Phase 1 COMPLETE → Nested Document Processing IMPLEMENTED → Variable Scope Validation FIXED → Error Reporting Requirements DOCUMENTED*
