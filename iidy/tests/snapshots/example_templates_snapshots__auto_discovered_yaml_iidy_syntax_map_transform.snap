@@ -33,16 +33,15 @@ user_permissions:
 filtered_admins:
   - name: alice
     access_level: full
-  - ~
   - name: charlie
     access_level: full
 subnet_definitions:
   - - subnet-a
-    - cidr: 10.0.1.0/24
+    - cidr: 10.0.0.0/24
       zone: us-west-2a
   - - subnet-b
     - cidr: 10.0.1.0/24
       zone: us-west-2b
   - - subnet-c
-    - cidr: 10.0.1.0/24
+    - cidr: 10.0.2.0/24
       zone: us-west-2c

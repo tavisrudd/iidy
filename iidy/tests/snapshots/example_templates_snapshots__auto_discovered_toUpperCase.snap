@@ -1,0 +1,5 @@
+---
+source: tests/example_templates_snapshots.rs
+expression: output
+---
+out: ABC

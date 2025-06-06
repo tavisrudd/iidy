@@ -1,0 +1,6 @@
+$defs:
+  app_name: "my-app"
+  environment: "production"
+
+# Test our sequence format  
+result: !$join ["-", ["{{app_name}}", "{{environment}}"]]

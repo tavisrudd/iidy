@@ -14,46 +14,44 @@ title: "Map Transformation Demo"
 
 # Simple !$map over a list of numbers
 port_configs: !$map
-  source: !$ ports
+  items: !$ ports
   var: "port"
-  transform:
+  template:
     port_number: "{{port}}"
     protocol: "tcp"
     description: "Port {{port}} configuration"
 
 # !$map with custom variable name
 environment_configs: !$map
-  source: !$ environments
+  items: !$ environments
   var: "env"
-  transform:
+  template:
     name: "{{env}}"
     url: "https://{{env}}.example.com"
 
 # !$map over objects
 user_permissions: !$map
-  source: !$ users
+  items: !$ users
   var: "user"
-  transform:
+  template:
     username: "{{user.name}}"
     is_admin: !$eq ["{{user.role}}", "admin"]
     home_directory: "/home/{{user.name}}"
 
-# !$map with conditional transformation
+# !$map with filter (only admins)
 filtered_admins: !$map
-  source: !$ users
+  items: !$ users
   var: "user"
-  transform: !$if
-    condition: !$eq ["{{user.role}}", "admin"]
-    then:
-      name: "{{user.name}}"
-      access_level: "full"
-    else: null
+  filter: !$eq ["{{user.role}}", "admin"]
+  template:
+    name: "{{user.name}}"
+    access_level: "full"
 
-# !$map creating key-value pairs 
+# !$map creating key-value pairs with index
 subnet_definitions: !$map
-  source: ["a", "b", "c"]
+  items: ["a", "b", "c"]
   var: "zone"
-  transform:
+  template:
     - "subnet-{{zone}}"
-    - cidr: "10.0.1.0/24"
+    - cidr: "10.0.{{zoneIdx}}.0/24"
       zone: "us-west-2{{zone}}"

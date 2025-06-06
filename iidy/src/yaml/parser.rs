@@ -150,19 +150,27 @@ fn parse_if_tag(value: Value) -> Result<YamlAst> {
 /// Parse !$map tag
 fn parse_map_tag(value: Value) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in map tag"))?;
-        let transform_val = map.get(&Value::String("transform".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'transform' in map tag"))?;
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in map tag"))?;
+        let template_val = map.get(&Value::String("template".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'template' in map tag"))?;
         let var_name = extract_optional_string_field(&map, "var");
+        
+        // Optional filter
+        let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
+            Some(Box::new(convert_value_to_ast(filter_val.clone())?))
+        } else {
+            None
+        };
 
-        let source = Box::new(convert_value_to_ast(source_val.clone())?);
-        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+        let items = Box::new(convert_value_to_ast(items_val.clone())?);
+        let template = Box::new(convert_value_to_ast(template_val.clone())?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Map(MapTag {
-            source,
-            transform,
-            var_name,
+            items,
+            template,
+            var: var_name,
+            filter,
         })))
     } else {
         Err(anyhow!("Map tag must be a mapping"))
@@ -310,19 +318,27 @@ fn extract_optional_string_field(map: &Mapping, field: &str) -> Option<String> {
 /// Parse !$concatMap tag
 fn parse_concat_map_tag(value: Value) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in concatMap tag"))?;
-        let transform_val = map.get(&Value::String("transform".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'transform' in concatMap tag"))?;
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in concatMap tag"))?;
+        let template_val = map.get(&Value::String("template".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'template' in concatMap tag"))?;
         let var_name = extract_optional_string_field(&map, "var");
+        
+        // Optional filter
+        let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
+            Some(Box::new(convert_value_to_ast(filter_val.clone())?))
+        } else {
+            None
+        };
 
-        let source = Box::new(convert_value_to_ast(source_val.clone())?);
-        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+        let items = Box::new(convert_value_to_ast(items_val.clone())?);
+        let template = Box::new(convert_value_to_ast(template_val.clone())?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::ConcatMap(ConcatMapTag {
-            source,
-            transform,
-            var_name,
+            items,
+            template,
+            var: var_name,
+            filter,
         })))
     } else {
         Err(anyhow!("ConcatMap tag must be a mapping"))
@@ -374,19 +390,19 @@ fn parse_map_list_to_hash_tag(value: Value) -> Result<YamlAst> {
 /// Parse !$mapValues tag
 fn parse_map_values_tag(value: Value) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in mapValues tag"))?;
-        let transform_val = map.get(&Value::String("transform".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'transform' in mapValues tag"))?;
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in mapValues tag"))?;
+        let template_val = map.get(&Value::String("template".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'template' in mapValues tag"))?;
         let var_name = extract_optional_string_field(&map, "var");
 
-        let source = Box::new(convert_value_to_ast(source_val.clone())?);
-        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+        let items = Box::new(convert_value_to_ast(items_val.clone())?);
+        let template = Box::new(convert_value_to_ast(template_val.clone())?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapValues(MapValuesTag {
-            source,
-            transform,
-            var_name,
+            items,
+            template,
+            var: var_name,
         })))
     } else {
         Err(anyhow!("MapValues tag must be a mapping"))

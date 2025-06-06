@@ -96,15 +96,17 @@ pub struct IfTag {
     pub else_value: Option<Box<YamlAst>>,
 }
 
-/// Map transformation tag
+/// Map transformation tag (matches iidy-js field names)
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapTag {
-    /// Source list/array to transform
-    pub source: Box<YamlAst>,
-    /// Transformation expression
-    pub transform: Box<YamlAst>,
+    /// Items list/array to transform
+    pub items: Box<YamlAst>,
+    /// Template expression for transformation
+    pub template: Box<YamlAst>,
     /// Optional variable name for current item (default: "item")
-    pub var_name: Option<String>,
+    pub var: Option<String>,
+    /// Optional filter condition
+    pub filter: Option<Box<YamlAst>>,
 }
 
 /// Merge tag for combining mappings
@@ -164,15 +166,17 @@ pub struct JoinTag {
     pub array: Box<YamlAst>,
 }
 
-/// ConcatMap tag for map followed by concat
+/// ConcatMap tag for map followed by concat (matches iidy-js field names)
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConcatMapTag {
-    /// Source list/array to transform
-    pub source: Box<YamlAst>,
-    /// Transformation expression
-    pub transform: Box<YamlAst>,
+    /// Items list/array to transform
+    pub items: Box<YamlAst>,
+    /// Template expression for transformation
+    pub template: Box<YamlAst>,
     /// Optional variable name for current item (default: "item")
-    pub var_name: Option<String>,
+    pub var: Option<String>,
+    /// Optional filter condition
+    pub filter: Option<Box<YamlAst>>,
 }
 
 /// MergeMap tag for map followed by merge  
@@ -197,15 +201,15 @@ pub struct MapListToHashTag {
     pub value_field: Option<String>,
 }
 
-/// MapValues tag for transforming object values while preserving keys
+/// MapValues tag for transforming object values while preserving keys (matches iidy-js field names)
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapValuesTag {
-    /// Source object to transform
-    pub source: Box<YamlAst>,
-    /// Transformation expression
-    pub transform: Box<YamlAst>,
-    /// Optional variable name for current value (default: "value")
-    pub var_name: Option<String>,
+    /// Items object to transform
+    pub items: Box<YamlAst>,
+    /// Template expression for transformation
+    pub template: Box<YamlAst>,
+    /// Optional variable name for current value (default: "item")
+    pub var: Option<String>,
 }
 
 /// GroupBy tag for grouping items by key

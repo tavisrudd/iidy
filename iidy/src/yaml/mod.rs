@@ -937,8 +937,8 @@ $defs:
   data: [1, 2, 3]
 
 result: !$concatMap
-  source: !$ data
-  transform: ["{{item}}", "{{item}}"]
+  items: !$ data
+  template: ["{{item}}", "{{item}}"]
 "#;
 
         let loader = ProductionImportLoader::new();
@@ -1042,8 +1042,8 @@ $defs:
     city: "boston"
 
 result: !$mapValues
-  source: !$ data  
-  transform: "{{toUpperCase value}}"
+  items: !$ data  
+  template: "{{toUpperCase item.value}}"
 "#;
 
         let loader = ProductionImportLoader::new();

@@ -153,8 +153,8 @@ service_template: &service_template
 
 # Use aliases with iidy preprocessing
 service_configs: !$map
-  source: !$ services
-  transform:
+  items: !$ services
+  template:
     name: "{{environment}}-{{item}}"
     config: *service_template  # Use alias in transformation
     port: !$if
@@ -276,8 +276,8 @@ service2:
 
 # Use with iidy preprocessing  
 all_services: !$map
-  source: ["api", "web", "worker"]
-  transform:
+  items: ["api", "web", "worker"]
+  template:
     name: "{{item}}-service"
     env_vars: *common_env
 "#;

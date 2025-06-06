@@ -44,8 +44,8 @@ database_url: !$if
 
 # Test data transformation
 services: !$map
-  source: ["api", "web", "worker"]
-  transform: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
+  items: ["api", "web", "worker"]
+  template: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
 
 # Test advanced transformations
 merged_config: !$merge
@@ -149,14 +149,14 @@ Resources:
       Properties:
         BucketName: "{{bucket_name}}"
         Tags: !$map
-          source:
+          items:
             - Key: "Name"
               Value: "{{bucket_name}}"
             - Key: "Environment" 
               Value: "{{environment}}"
             - Key: "App"
               Value: "{{app_name}}"
-          transform: !$ item
+          template: !$ item
 
   # Test groupBy and fromPairs
   SecurityGroups: !$fromPairs
@@ -250,23 +250,23 @@ environment: !$ config.environment.name
 
 # Test mapValues with handlebars
 service_configs: !$mapValues
-  source:
+  items:
     api:
       port: 3000
       cpu: "100m"
     web:
       port: 8080
       cpu: "200m"
-  transform: 
-    name: "{{key}}"
-    port: !$ value.port
-    cpu: !$ value.cpu
+  template: 
+    name: "{{item.key}}"
+    port: !$ item.value.port
+    cpu: !$ item.value.cpu
     replicas: !$ config.environment.replicas
 
 # Test concatMap with simpler transformation
 all_endpoints: !$concatMap
-  source: !$ services
-  transform:
+  items: !$ services
+  template:
     - name: "{{item}}-internal"
       type: "internal"
     - name: "{{item}}-external"

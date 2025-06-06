@@ -554,26 +554,48 @@ pub fn resolve_if_tag(tag: &IfTag, context: &TagContext, resolver: &dyn AstResol
 
 /// Resolve a map tag
 pub fn resolve_map_tag(tag: &MapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    let items_result = resolver.resolve_ast(&tag.items, context)?;
     
-    match source_result {
+    match items_result {
         Value::Sequence(seq) => {
             let mut result = Vec::new();
-            let var_name = tag.var_name.as_deref().unwrap_or("item");
+            let var_name = tag.var.as_deref().unwrap_or("item");
             
-            for item in seq {
-                // Create new context with the current item bound to the variable
+            for (idx, item) in seq.into_iter().enumerate() {
+                // Create new context with the current item and index bound to variables
                 let mut item_bindings = HashMap::new();
                 item_bindings.insert(var_name.to_string(), item);
+                item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
                 let item_context = context.with_bindings(item_bindings);
                 
-                let transformed = resolver.resolve_ast(&tag.transform, &item_context)?;
+                // Apply filter if present
+                if let Some(filter) = &tag.filter {
+                    let filter_result = resolver.resolve_ast(filter, &item_context)?;
+                    if !is_truthy(&filter_result) {
+                        continue; // Skip this item
+                    }
+                }
+                
+                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
                 result.push(transformed);
             }
             
             Ok(Value::Sequence(result))
         }
-        _ => Err(anyhow!("Map source must be a sequence")),
+        _ => Err(anyhow!("Map items must be a sequence")),
+    }
+}
+
+/// Helper function to determine if a value is truthy
+fn is_truthy(value: &Value) -> bool {
+    match value {
+        Value::Bool(b) => *b,
+        Value::Null => false,
+        Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+        Value::String(s) => !s.is_empty(),
+        Value::Sequence(seq) => !seq.is_empty(),
+        Value::Mapping(map) => !map.is_empty(),
+        Value::Tagged(_) => true, // Tagged values are generally truthy
     }
 }
 
@@ -728,20 +750,29 @@ fn values_equal(left: &Value, right: &Value) -> bool {
 
 /// Resolve a concatMap tag (map followed by concat)
 pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    let items_result = resolver.resolve_ast(&tag.items, context)?;
     
-    match source_result {
+    match items_result {
         Value::Sequence(seq) => {
             let mut result = Vec::new();
-            let var_name = tag.var_name.as_deref().unwrap_or("item");
+            let var_name = tag.var.as_deref().unwrap_or("item");
             
-            for item in seq {
-                // Create new context with the current item bound to the variable
+            for (idx, item) in seq.into_iter().enumerate() {
+                // Create new context with the current item and index bound to variables
                 let mut item_bindings = HashMap::new();
                 item_bindings.insert(var_name.to_string(), item);
+                item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
                 let item_context = context.with_bindings(item_bindings);
                 
-                let transformed = resolver.resolve_ast(&tag.transform, &item_context)?;
+                // Apply filter if present
+                if let Some(filter) = &tag.filter {
+                    let filter_result = resolver.resolve_ast(filter, &item_context)?;
+                    if !is_truthy(&filter_result) {
+                        continue; // Skip this item
+                    }
+                }
+                
+                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
                 // Flatten the result - if it's a sequence, extend; otherwise push
                 match transformed {
                     Value::Sequence(mut sub_seq) => {
@@ -755,7 +786,7 @@ pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver
             
             Ok(Value::Sequence(result))
         }
-        _ => Err(anyhow!("ConcatMap source must be a sequence")),
+        _ => Err(anyhow!("ConcatMap items must be a sequence")),
     }
 }
 
@@ -821,36 +852,40 @@ pub fn resolve_map_list_to_hash_tag(tag: &MapListToHashTag, context: &TagContext
 
 /// Resolve a mapValues tag (transform object values while preserving keys)
 pub fn resolve_map_values_tag(tag: &MapValuesTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    let items_result = resolver.resolve_ast(&tag.items, context)?;
     
-    match source_result {
+    match items_result {
         Value::Mapping(map) => {
             let mut result = serde_yaml::Mapping::new();
-            let var_name = tag.var_name.as_deref().unwrap_or("value");
+            let var_name = tag.var.as_deref().unwrap_or("item");
             
             for (key, value) in map {
-                // Create new context with the current value and key bound to variables
+                // Create lodash _.mapValues compatible context: item = {key: "keyname", value: actualValue}
                 let mut value_bindings = HashMap::new();
-                value_bindings.insert(var_name.to_string(), value);
                 
-                // Add the key as a string (convert from Value to string)
+                // Convert key to string
                 let key_str = match &key {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
                     _ => format!("{:?}", key),
                 };
-                value_bindings.insert("key".to_string(), Value::String(key_str));
+                
+                // Create the item object with key and value properties (lodash style)
+                let mut item_object = serde_yaml::Mapping::new();
+                item_object.insert(Value::String("key".to_string()), Value::String(key_str));
+                item_object.insert(Value::String("value".to_string()), value);
+                value_bindings.insert(var_name.to_string(), Value::Mapping(item_object));
                 
                 let value_context = context.with_bindings(value_bindings);
                 
-                let transformed = resolver.resolve_ast(&tag.transform, &value_context)?;
+                let transformed = resolver.resolve_ast(&tag.template, &value_context)?;
                 result.insert(key, transformed);
             }
             
             Ok(Value::Mapping(result))
         }
-        _ => Err(anyhow!("MapValues source must be a mapping")),
+        _ => Err(anyhow!("MapValues items must be a mapping")),
     }
 }
 
