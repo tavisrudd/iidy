@@ -27,7 +27,7 @@ pub mod handlebars;
 
 pub use ast::*;
 pub use parser::parse_yaml_with_custom_tags;
-pub use tags::TagContext;
+pub use tags::{TagContext, StackFrame};
 
 use anyhow::Result;
 use serde_yaml::Value;
@@ -73,7 +73,11 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         
         // Phase 2: Tag processing and final resolution
         let mut context = TagContext::new()
-            .with_base_path(PathBuf::from(base_location));
+            .with_base_path(PathBuf::from(base_location))
+            .with_stack_frame(StackFrame {
+                location: Some(base_location.to_string()),
+                path: "<root>".to_string(),
+            });
         
         // Add all environment variables to context
         for (key, value) in env_values {
@@ -301,8 +305,10 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             },
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();
-                for item in seq {
-                    result.push(self.resolve_ast_with_context(item, context)?);
+                for (index, item) in seq.into_iter().enumerate() {
+                    // Create context with array index for path tracking
+                    let item_context = context.with_array_index(index);
+                    result.push(self.resolve_ast_with_context(item, &item_context)?);
                 }
                 Ok(Value::Sequence(result))
             }
@@ -318,7 +324,20 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                         }
                     }
                     
-                    let value_val = self.resolve_ast_with_context(value, context)?;
+                    // Create context with object key for path tracking
+                    let value_context = if let Value::String(key_str) = &key_val {
+                        context.with_path_segment(key_str)
+                    } else {
+                        // For non-string keys, use the key's string representation
+                        let key_str = match &key_val {
+                            Value::Number(n) => n.as_f64().unwrap_or(0.0).to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            _ => format!("{:?}", key_val),
+                        };
+                        context.with_path_segment(&key_str)
+                    };
+                    
+                    let value_val = self.resolve_ast_with_context(value, &value_context)?;
                     result.insert(key_val, value_val);
                 }
                 Ok(Value::Mapping(result))

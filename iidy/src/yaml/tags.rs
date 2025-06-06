@@ -203,6 +203,59 @@ impl TagContext {
     pub fn current_path(&self) -> String {
         self.stack.last().map(|f| f.path.clone()).unwrap_or_default()
     }
+    
+    /// Create a new context with an extended path for nested document traversal
+    pub fn with_path_segment(&self, segment: &str) -> Self {
+        let current_path = self.current_path();
+        let new_path = if current_path.is_empty() {
+            segment.to_string()
+        } else {
+            format!("{}.{}", current_path, segment)
+        };
+        
+        let mut new_stack = self.stack.clone();
+        if let Some(last_frame) = new_stack.last_mut() {
+            last_frame.path = new_path;
+        } else {
+            // Create a new stack frame if none exists
+            new_stack.push(StackFrame {
+                location: self.current_location(),
+                path: new_path,
+            });
+        }
+        
+        Self {
+            variables: self.variables.clone(),
+            base_path: self.base_path.clone(),
+            stack: new_stack,
+        }
+    }
+    
+    /// Create a new context with an array index path segment
+    pub fn with_array_index(&self, index: usize) -> Self {
+        let current_path = self.current_path();
+        let new_path = if current_path.is_empty() {
+            format!("[{}]", index)
+        } else {
+            format!("{}[{}]", current_path, index)
+        };
+        
+        let mut new_stack = self.stack.clone();
+        if let Some(last_frame) = new_stack.last_mut() {
+            last_frame.path = new_path;
+        } else {
+            new_stack.push(StackFrame {
+                location: self.current_location(),
+                path: new_path,
+            });
+        }
+        
+        Self {
+            variables: self.variables.clone(),
+            base_path: self.base_path.clone(),
+            stack: new_stack,
+        }
+    }
 }
 
 /// Resolve an include tag
