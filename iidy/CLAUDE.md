@@ -7,7 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - prefer fd to find, rg to grep
 
 ## Token Management
-See [token-management-design.md](token-management-design.md) for comprehensive documentation on the client request token management system, including architecture, multi-step operations, and testing strategy.
+See [notes/2025-05-05-token-management-design.md](notes/2025-05-05-token-management-design.md) for comprehensive documentation on the client request token management system, including architecture, multi-step operations, and testing strategy.
+
+## Project Documentation
+See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.
 
 ## Architecture Overview
 
