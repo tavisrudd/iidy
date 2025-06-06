@@ -238,7 +238,7 @@ mod tests {
     
     #[tokio::test]
     async fn watch_stack_with_context_filters_events() {
-        use crate::timing::MockTimeProvider;
+        use crate::timing::{MockTimeProvider, TokenInfo};
         use chrono::TimeZone;
         
         // This test would require mocking the AWS client

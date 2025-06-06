@@ -1,11 +1,14 @@
 use anyhow::{Result, anyhow};
 use aws_sdk_cloudformation::{Client, types::Stack};
 use aws_smithy_types::date_time::Format;
+use std::sync::Arc;
 
 use crate::display::display_lines;
 use crate::{
     aws,
-    cli::{AwsOpts, DescribeArgs},
+    cli::{NormalizedAwsOpts, DescribeArgs},
+    timing::{ReliableTimeProvider, TimeProvider},
+    cfn::{CfnContext, ConsoleReporter},
 };
 
 /// Format a [`Stack`] object into human readable lines.
@@ -53,11 +56,16 @@ pub fn format_stack(stack: Stack) -> Vec<String> {
 ///
 /// This function performs the AWS API call and delegates formatting to
 /// [`format_stack`].
-pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<()> {
-    let config = aws::config_from_opts(opts).await?;
+pub async fn describe_stack(opts: &NormalizedAwsOpts, args: &DescribeArgs) -> Result<()> {
+    let config = aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
+    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    
+    let reporter = ConsoleReporter::new("describe-stack");
+    reporter.show_primary_token(&context.primary_token());
 
-    let resp = client
+    let resp = context.client
         .describe_stacks()
         .stack_name(args.stackname.clone())
         .send()
@@ -69,6 +77,8 @@ pub async fn describe_stack(opts: &AwsOpts, args: &DescribeArgs) -> Result<()> {
         .ok_or_else(|| anyhow!("stack not found"))?;
 
     display_lines(format_stack(stack));
+    
+    reporter.show_operation_summary(&context);
     Ok(())
 }
 

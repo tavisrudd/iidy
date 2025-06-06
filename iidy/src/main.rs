@@ -33,7 +33,8 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::EstimateCost(args) => {
-            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args)) {
                 eprintln!("error estimating cost: {e:?}");
             }
         }
@@ -55,7 +56,8 @@ fn handle_command(cli: Cli) {
         }
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(args) => {
-            if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args)) {
                 eprintln!("error describing stack: {e:?}");
             }
         }
