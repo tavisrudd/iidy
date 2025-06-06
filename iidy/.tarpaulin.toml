@@ -1,0 +1,82 @@
+# Tarpaulin configuration for iidy test coverage reporting
+# See: https://github.com/xd009642/tarpaulin
+
+[tool.tarpaulin]
+# Output formats
+out = ["Html", "Lcov", "Json"]
+
+# Target directory for output files
+target-dir = "target/tarpaulin"
+
+# Coverage threshold - fail if coverage is below this percentage
+fail-under = 80.0
+
+# Include all packages in workspace
+all-features = true
+workspace = true
+
+# Timeout for test execution (in seconds)
+timeout = 300
+
+# Follow symbolic links
+follow-exec = true
+
+# Run tests in release mode for more realistic performance
+release = false
+
+# Include files matching these patterns
+include-tests = false
+
+# Exclude certain files/directories from coverage
+exclude = [
+    # Exclude main.rs since it's just CLI entry point
+    "src/main.rs",
+    
+    # Exclude demo module (development utility)
+    "src/demo.rs",
+    
+    # Exclude benchmark code
+    "benches/*",
+    
+    # Exclude test fixtures and snapshots
+    "tests/fixtures/*",
+    "tests/snapshots/*",
+    
+    # Exclude external dependencies
+    "target/*",
+    
+    # Exclude generated files
+    "*.snap"
+]
+
+# Exclude lines containing these patterns
+exclude-lines = [
+    # Debug assertions and panic macros
+    "assert!",
+    "debug_assert!",
+    "panic!",
+    "unreachable!",
+    "unimplemented!",
+    "todo!",
+    
+    # Error handling patterns that are hard to test
+    "#\\[cfg\\(test\\)\\]",
+    "// SAFETY:",
+    
+    # Compiler directives
+    "#\\[derive\\(",
+]
+
+# Count hits rather than just visited lines
+count = true
+
+# Generate verbose output
+verbose = true
+
+# Forward signals to child processes
+forward = true
+
+[tool.tarpaulin.coverage]
+# Minimum coverage percentage for different components
+line = 80.0
+branch = 70.0

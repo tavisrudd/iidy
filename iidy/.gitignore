@@ -9,3 +9,9 @@ Cargo.lock
 
 # Local temp files
 tmp/
+
+# Coverage reports
+tarpaulin-report.html
+cobertura.json
+lcov.info
+/target/tarpaulin/

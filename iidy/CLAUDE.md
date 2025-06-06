@@ -7,10 +7,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - prefer fd to find, rg to grep
 
 ## Testing
+- **All tests**: `cargo test` or `make test`
 - **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
 - Run tests: `cargo test --test example_templates_snapshots`
 - Review snapshots: `cargo insta review` (requires `cargo install cargo-insta`)
 - Accept changes: `cargo insta accept`
+
+## Coverage Reporting
+- **Quick coverage**: `make coverage-quick`
+- **HTML report**: `make coverage-html` (generates `tarpaulin-report.html`)
+- **CI coverage**: `make coverage-ci` (70% threshold)
+- **Full documentation**: See [docs/COVERAGE.md](docs/COVERAGE.md)
 
 ## Token Management
 See [notes/2025-05-05-token-management-design.md](notes/2025-05-05-token-management-design.md) for comprehensive documentation on the client request token management system, including architecture, multi-step operations, and testing strategy.
