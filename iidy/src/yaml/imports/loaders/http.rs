@@ -26,7 +26,7 @@ pub async fn load_http_import(location: &str, _base_location: &str, client: &req
 mod tests {
     use super::*;
     use mockito;
-    use serde_json::Value;
+    use serde_yaml::Value;
 
     #[tokio::test]
     async fn test_load_http_import_success() -> Result<()> {
@@ -50,9 +50,9 @@ mod tests {
         assert!(result.data.contains("other: data"));
         
         // Should parse as YAML
-        if let Value::Object(map) = result.doc {
-            assert!(map.contains_key("test"));
-            assert!(map.contains_key("other"));
+        if let Value::Mapping(map) = result.doc {
+            assert!(map.contains_key(&Value::String("test".to_string())));
+            assert!(map.contains_key(&Value::String("other".to_string())));
         } else {
             panic!("Expected parsed YAML object");
         }
@@ -79,10 +79,10 @@ mod tests {
         assert_eq!(result.import_type, ImportType::Http);
         assert!(result.data.contains("\"key\": \"value\""));
         
-        // Should parse as JSON
-        if let Value::Object(map) = result.doc {
-            assert_eq!(map.get("key"), Some(&Value::String("value".to_string())));
-            assert_eq!(map.get("number"), Some(&Value::Number(serde_json::Number::from(42))));
+        // Should parse as JSON (converted to YAML Value)
+        if let Value::Mapping(map) = result.doc {
+            assert_eq!(map.get(&Value::String("key".to_string())), Some(&Value::String("value".to_string())));
+            assert_eq!(map.get(&Value::String("number".to_string())), Some(&Value::Number(serde_yaml::Number::from(42))));
         } else {
             panic!("Expected parsed JSON object");
         }

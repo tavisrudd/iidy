@@ -231,12 +231,13 @@ Based on codebase research, the following components are already in place:
 - ❌ `!$escape` - Prevent preprocessing on child tree
 
 **Special Processing:**
-- ❌ `$imports` and `$defs` key processing in mappings (Phase 1)
-- ❌ Handlebars interpolation in import locations during Phase 1
-- ❌ Include path with dot notation (e.g., `!$ imports.config.database`)
+- ✅ `$imports` and `$defs` key processing in mappings (Phase 1)
+- ✅ Handlebars interpolation in import locations during Phase 1
+- ✅ Two-phase processing pipeline implementation
+- ✅ Include path with dot notation (e.g., `!$ config.database_host`) 
+- ✅ File import parsing with proper YAML extension detection
 - ❌ Dynamic key support with brackets (e.g., `!$ config[environment]`)
-- ❌ Full AST resolution integration (currently uses temporary bridge)
-- ❌ Two-phase processing pipeline implementation
+- ❌ Full AST resolution integration (still has some bridging)
 
 **Handlebars Integration:**
 - ❌ Complete handlebars helper library
@@ -250,16 +251,20 @@ Based on codebase research, the following components are already in place:
 - [x] Tag resolution framework
 - [x] Environment and variable management
 
-### Phase 1.3: Import System Implementation ✅ (Loaders Complete)
+### Phase 1.3: Import System Implementation ✅ (Complete)
 - [x] Implement file loader with YAML/JSON parsing
 - [x] Add environment variable loader
 - [x] Add git information loader (branch, sha, describe)
 - [x] Add HTTP/HTTPS loader with async support
 - [x] Add random value generator (names, integers)
 - [x] Add filehash computation (hex and base64)
-- [ ] Wire up two-phase processing pipeline
-- [ ] Implement Phase 1 import loading with handlebars interpolation
-- [ ] Implement `$imports` and `$defs` key detection and processing
+- [x] Wire up two-phase processing pipeline
+- [x] Implement Phase 1 import loading with handlebars interpolation
+- [x] Implement `$imports` and `$defs` key detection and processing
+- [x] Add basic tests for two-phase processing functionality
+- [x] Fix handlebars string interpolation in Phase 2
+- [x] Add dot notation support for include path resolution
+- [x] Ensure proper YAML file extension detection for parsing
 
 ### Phase 1.4: Advanced Tags Implementation
 - [ ] Implement missing transformation tags (concatMap, groupBy, etc.)

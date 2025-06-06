@@ -4,7 +4,7 @@
 
 use std::path::Path;
 use anyhow::{Result, anyhow};
-use serde_json::Value;
+use serde_yaml::Value;
 
 /// Parse document data based on file extension
 pub fn resolve_doc_from_import_data(data: &str, location: &str) -> Result<Value> {

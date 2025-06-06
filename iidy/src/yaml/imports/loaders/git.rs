@@ -3,7 +3,7 @@
 //! Provides functionality for executing git commands and retrieving git information
 
 use anyhow::{Result, anyhow};
-use serde_json::Value;
+use serde_yaml::Value;
 use async_trait::async_trait;
 
 use crate::yaml::imports::{ImportData, ImportType};

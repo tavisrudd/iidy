@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use anyhow::{Result, anyhow};
 use tokio::fs;
-use serde_json::Value;
+use serde_yaml::Value;
 use sha2::{Sha256, Digest};
 
 use crate::yaml::imports::{ImportData, ImportType};

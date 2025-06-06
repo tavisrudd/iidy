@@ -41,6 +41,12 @@ impl ProductionImportLoader {
     }
 }
 
+impl Default for ProductionImportLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl ImportLoader for ProductionImportLoader {
     async fn load(&self, location: &str, base_location: &str) -> Result<ImportData> {

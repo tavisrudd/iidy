@@ -3,7 +3,7 @@
 //! Provides functionality for generating random names and numbers
 
 use anyhow::{Result, anyhow};
-use serde_json::Value;
+use serde_yaml::Value;
 
 use crate::yaml::imports::{ImportData, ImportType};
 

@@ -52,9 +52,12 @@ impl TagContext {
 
 /// Resolve an include tag
 pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Value> {
-    // TODO: Implement actual file reading
-    // For now, return a placeholder
     let path = &tag.path;
+    
+    // Handle dot notation access to variables (e.g., "config.database_host")
+    if let Some(value) = resolve_dot_notation_path(path, context) {
+        return Ok(value);
+    }
     
     // Handle different include formats:
     // - File paths: "./config.yaml", "/abs/path.yaml"
@@ -80,6 +83,31 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
         // For now, return placeholder
         Ok(Value::String(format!("TODO: Include content from {}", resolved_path.display())))
     }
+}
+
+/// Resolve dot notation path in variables (e.g., "config.database_host")
+fn resolve_dot_notation_path(path: &str, context: &TagContext) -> Option<Value> {
+    let parts: Vec<&str> = path.split('.').collect();
+    if parts.is_empty() {
+        return None;
+    }
+    
+    // Start with the root variable
+    let root_var = parts[0];
+    let mut current_value = context.get_variable(root_var)?.clone();
+    
+    // Traverse the dot notation path
+    for part in &parts[1..] {
+        match current_value {
+            Value::Mapping(ref map) => {
+                let key = Value::String(part.to_string());
+                current_value = map.get(&key)?.clone();
+            }
+            _ => return None, // Can't traverse further
+        }
+    }
+    
+    Some(current_value)
 }
 
 /// Resolve an if tag
