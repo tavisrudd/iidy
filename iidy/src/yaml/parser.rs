@@ -87,7 +87,14 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
             } else {
                 &tag
             };
-            let value = convert_value_to_ast(value).unwrap();
+            
+            // Handle array syntax: !Ref [expression] should extract the expression
+            let actual_value = match value {
+                Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+                other => other,
+            };
+            
+            let value = convert_value_to_ast(actual_value).unwrap();
             Ok(YamlAst::UnknownYamlTag(UnknownTag { tag: tag_name.to_string(), value: Box::new(value) }))
         }
     }
@@ -447,7 +454,13 @@ fn parse_from_pairs_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$toYamlString tag
 fn parse_to_yaml_string_tag(value: Value) -> Result<YamlAst> {
-    let data = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$toYamlString [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let data = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToYamlString(ToYamlStringTag {
         data,
     })))
@@ -455,7 +468,13 @@ fn parse_to_yaml_string_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$parseYaml tag
 fn parse_parse_yaml_tag(value: Value) -> Result<YamlAst> {
-    let yaml_string = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$parseYaml [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let yaml_string = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseYaml(ParseYamlTag {
         yaml_string,
     })))
@@ -463,7 +482,13 @@ fn parse_parse_yaml_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$toJsonString tag
 fn parse_to_json_string_tag(value: Value) -> Result<YamlAst> {
-    let data = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$toJsonString [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let data = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToJsonString(ToJsonStringTag {
         data,
     })))
@@ -471,7 +496,13 @@ fn parse_to_json_string_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$parseJson tag
 fn parse_parse_json_tag(value: Value) -> Result<YamlAst> {
-    let json_string = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$parseJson [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let json_string = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseJson(ParseJsonTag {
         json_string,
     })))
@@ -479,7 +510,13 @@ fn parse_parse_json_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$escape tag
 fn parse_escape_tag(value: Value) -> Result<YamlAst> {
-    let content = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$escape [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let content = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::Escape(EscapeTag {
         content,
     })))

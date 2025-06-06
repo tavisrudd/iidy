@@ -224,7 +224,7 @@ Resources:
           - "!Ref": AppSecurityGroup
         UserData:
           "!Base64":
-            - "!Sub": "#!/bin/bash\nyum update -y\necho \"APP_NAME=advanced-app\" >> /etc/environment\necho \"ENVIRONMENT=production\" >> /etc/environment\n"
+            "!Sub": "#!/bin/bash\nyum update -y\necho \"APP_NAME=advanced-app\" >> /etc/environment\necho \"ENVIRONMENT=production\" >> /etc/environment\n"
         TagSpecifications:
           - ResourceType: instance
             Tags:
