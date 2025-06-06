@@ -258,7 +258,13 @@ fn parse_eq_tag(value: Value) -> Result<YamlAst> {
 
 /// Parse !$not tag
 fn parse_not_tag(value: Value) -> Result<YamlAst> {
-    let expression = Box::new(convert_value_to_ast(value)?);
+    // Handle array syntax: !$not [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let expression = Box::new(convert_value_to_ast(actual_value)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::Not(NotTag {
         expression,
     })))

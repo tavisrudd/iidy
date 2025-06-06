@@ -1246,26 +1246,33 @@ Fixed all broken tests resulting from the compatibility changes:
 - Template syntax: All handlebars processing compatible
 - Index variables: `{{itemIdx}}` support implemented
 
-**❌ Critical Bug Remaining:**
-- **Filter evaluation**: Handlebars templates in filter expressions not processed correctly
-- **Impact**: `production_configs: []` instead of expected items
-- **Scope**: Affects `!$map`, `!$concatMap`, and other tags with filter support
+**✅ Filter Evaluation Bug Fix (COMPLETE):**
 
-#### Next Steps
+**Status: ✅ RESOLVED**
 
-**Filter Evaluation Bug Fix (HIGH PRIORITY):**
-The remaining critical compatibility issue is filter processing where handlebars templates like `"{{item}}"` in filter expressions are not being resolved correctly, causing all items to be filtered out instead of applying the intended logic.
+Successfully identified and fixed the critical filter evaluation bug in `!$not` tag processing:
 
-**Example of the issue:**
-```yaml
-# This should exclude only "worker" but excludes everything:
-production_configs: !$concatMap
-  items: ["api", "web", "worker"]
-  filter: !$not [!$eq ["{{item}}", "worker"]]
-  template: [...]
+**Root Cause:** The `!$not` tag parser was incorrectly handling array syntax `!$not [expression]`. When parsing `!$not [!$eq ["{{item}}", "worker"]]`, it was treating the array `[boolean_result]` as a sequence and applying truthiness to the sequence (non-empty = truthy) rather than extracting the boolean value inside.
+
+**Solution:** Modified `parse_not_tag()` in `src/yaml/parser.rs:260-271` to detect array syntax and extract the inner expression:
+```rust
+// Handle array syntax: !$not [expression] should extract the expression
+let actual_value = match value {
+    Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+    other => other,
+};
 ```
 
-This represents the final blocker for complete iidy-js compatibility.
+**Impact:** Filter expressions now work correctly:
+- `!$not [!$eq ["{{item}}", "worker"]]` correctly excludes only "worker" items
+- `production_configs` now contains 4 items (api-config, api-secret, web-config, web-secret) instead of empty array
+- All filter operations in `!$map`, `!$concatMap`, and other tags work as expected
+
+**Verification:**
+- ✅ All 192 existing tests continue to pass
+- ✅ Snapshot test updated to reflect correct output
+- ✅ Manual testing confirms filter logic works correctly
+- ✅ Comprehensive test coverage for `!$not` with both literal and handlebars values
 
 #### Architecture Benefits
 
@@ -1275,7 +1282,7 @@ This represents the final blocker for complete iidy-js compatibility.
 - ✅ Maintained all existing functionality while adding compatibility
 - ✅ Clean separation between compatibility layer and core functionality
 
-**Result**: Phase 1 Core YAML Preprocessing System now has full `!$mapValues` compatibility with iidy-js, with only the filter evaluation bug remaining as the final compatibility blocker.
+**Result**: Phase 1 Core YAML Preprocessing System now has **complete iidy-js compatibility** including full `!$mapValues` support and working filter evaluation. All critical compatibility issues have been resolved.
 
 ---
 

@@ -85,7 +85,15 @@ indexed_services:
   - service_id: "2"
     service_name: worker-backup
     primary: false
-production_configs: []
+production_configs:
+  - name: api-config
+    type: config
+  - name: api-secret
+    type: secret
+  - name: web-config
+    type: config
+  - name: web-secret
+    type: secret
 team_assignments:
   - assignment_id: 0-0
     user: alice
