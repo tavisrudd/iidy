@@ -36,6 +36,133 @@ use std::path::PathBuf;
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
 
+/// Detect YAML specification version from document content
+/// 
+/// Checks for:
+/// 1. Explicit %YAML directives (%YAML 1.1 or %YAML 1.2)
+/// 2. CloudFormation-specific top-level keys (AWSTemplateFormatVersion, Resources, etc.)
+/// 3. Kubernetes-specific patterns (apiVersion, kind, etc.)
+pub fn detect_yaml_spec(input: &str) -> YamlSpecDetection {
+    // Check for explicit YAML directive first
+    let lines = input.lines().take(5); // YAML directive should be in first few lines
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("%YAML") {
+            if trimmed.contains("1.1") {
+                return YamlSpecDetection::ExplicitV11;
+            } else if trimmed.contains("1.2") {
+                return YamlSpecDetection::ExplicitV12;
+            }
+        }
+    }
+    
+    // Check for CloudFormation indicators
+    if is_cloudformation_template(input) {
+        return YamlSpecDetection::CloudFormation;
+    }
+    
+    // Check for Kubernetes indicators  
+    if is_kubernetes_manifest(input) {
+        return YamlSpecDetection::Kubernetes;
+    }
+    
+    // Default to YAML 1.2 if no specific indicators found
+    YamlSpecDetection::Unknown
+}
+
+/// Result of YAML specification detection
+#[derive(Debug, Clone, PartialEq)]
+pub enum YamlSpecDetection {
+    /// Explicit %YAML 1.1 directive found
+    ExplicitV11,
+    /// Explicit %YAML 1.2 directive found  
+    ExplicitV12,
+    /// CloudFormation template detected (prefer YAML 1.1)
+    CloudFormation,
+    /// Kubernetes manifest detected (prefer YAML 1.2)
+    Kubernetes,
+    /// Could not determine type (default to YAML 1.2)
+    Unknown,
+}
+
+impl YamlSpecDetection {
+    /// Convert detection result to boolean for YAML 1.1 compatibility mode
+    pub fn should_use_yaml_11_compatibility(&self) -> bool {
+        match self {
+            YamlSpecDetection::ExplicitV11 => true,
+            YamlSpecDetection::ExplicitV12 => false,
+            YamlSpecDetection::CloudFormation => true,  // CloudFormation uses YAML 1.1
+            YamlSpecDetection::Kubernetes => false,     // Kubernetes uses YAML 1.2
+            YamlSpecDetection::Unknown => false,        // Default to YAML 1.2 strict mode
+        }
+    }
+}
+
+/// Check if the document appears to be a CloudFormation template
+fn is_cloudformation_template(input: &str) -> bool {
+    // CloudFormation-specific top-level keys
+    let cfn_indicators = [
+        "AWSTemplateFormatVersion",
+        "Transform:",
+        "Resources:",
+        "Parameters:",
+        "Outputs:",
+        "Conditions:",
+        "Mappings:",
+        "Metadata:",
+    ];
+    
+    // Look for CloudFormation indicators in the first 50 lines
+    let lines: Vec<&str> = input.lines().take(50).collect();
+    let content = lines.join("\n");
+    
+    // Count how many CloudFormation indicators we find
+    let cfn_count = cfn_indicators.iter()
+        .filter(|&indicator| content.contains(indicator))
+        .count();
+    
+    // If we find 2+ CloudFormation indicators, it's likely a CFN template
+    cfn_count >= 2
+}
+
+/// Check if the document appears to be a Kubernetes manifest
+fn is_kubernetes_manifest(input: &str) -> bool {
+    // Kubernetes-specific patterns (not currently used in detection logic)
+    let _k8s_indicators = [
+        "apiVersion:",
+        "kind:",
+        "metadata:",
+        "spec:",
+        "status:",
+    ];
+    
+    // Kubernetes API versions
+    let k8s_api_versions = [
+        "apps/v1",
+        "v1",
+        "extensions/v1beta1",
+        "networking.k8s.io",
+        "batch/v1",
+        "autoscaling/v1",
+        "rbac.authorization.k8s.io",
+    ];
+    
+    // Look for Kubernetes indicators in the first 20 lines
+    let lines: Vec<&str> = input.lines().take(20).collect();
+    let content = lines.join("\n");
+    
+    // Check for apiVersion and kind (required for all K8s resources)
+    let has_api_version = content.contains("apiVersion:");
+    let has_kind = content.contains("kind:");
+    
+    // Check for known Kubernetes API versions
+    let has_k8s_api = k8s_api_versions.iter()
+        .any(|&api| content.contains(api));
+    
+    // If we have apiVersion + kind + known K8s API, it's likely Kubernetes
+    has_api_version && has_kind && has_k8s_api
+}
+
 /// Main entry point for YAML preprocessing
 /// 
 /// Takes raw YAML text and processes all custom tags and preprocessing directives
@@ -48,6 +175,25 @@ pub async fn preprocess_yaml(input: &str) -> Result<Value> {
 pub async fn preprocess_yaml_with_base_location(input: &str, base_location: &str) -> Result<Value> {
     let loader = ProductionImportLoader::new();
     let mut preprocessor = YamlPreprocessor::new(loader);
+    preprocessor.process(input, base_location).await
+}
+
+/// Preprocess YAML with specific YAML specification mode
+pub async fn preprocess_yaml_with_spec(input: &str, base_location: &str, yaml_spec: &crate::cli::YamlSpec) -> Result<Value> {
+    let loader = ProductionImportLoader::new();
+    
+    let yaml_11_compatibility = match yaml_spec {
+        crate::cli::YamlSpec::V11 => true,
+        crate::cli::YamlSpec::V12 => false,
+        crate::cli::YamlSpec::Auto => {
+            let detection = detect_yaml_spec(input);
+            detection.should_use_yaml_11_compatibility()
+        }
+    };
+    
+    let mut preprocessor = YamlPreprocessor::new(loader)
+        .with_yaml_11_compatibility(yaml_11_compatibility);
+    
     preprocessor.process(input, base_location).await
 }
 

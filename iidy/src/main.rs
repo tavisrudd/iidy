@@ -4,7 +4,7 @@ use env_logger;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
 
-use iidy::{cfn, cli::{Cli, Commands, RenderArgs}, yaml::preprocess_yaml_with_base_location};
+use iidy::{cfn, cli::{Cli, Commands, RenderArgs}, yaml::preprocess_yaml_with_spec};
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
@@ -149,8 +149,8 @@ async fn handle_render_command(args: &RenderArgs) -> Result<()> {
     // Get the base location from the template file path for relative imports
     let base_location = &args.template;
     
-    // Process the YAML with the new preprocessing system
-    let processed_value = preprocess_yaml_with_base_location(&template_content, base_location).await?;
+    // Process the YAML with the new preprocessing system using specified YAML spec
+    let processed_value = preprocess_yaml_with_spec(&template_content, base_location, &args.yaml_spec).await?;
     
     // Apply query selector if provided
     let output_value = if let Some(query) = &args.query {

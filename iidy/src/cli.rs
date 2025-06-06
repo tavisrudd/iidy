@@ -222,6 +222,30 @@ impl std::fmt::Display for TemplateStageArg {
     }
 }
 
+#[derive(ValueEnum, Clone, Debug, Default)]
+pub enum YamlSpec {
+    /// YAML 1.1 input parsing mode (CloudFormation compatible - converts yes/no/on/off to booleans during processing)
+    #[value(name = "1.1")]
+    V11,
+    /// YAML 1.2 strict input parsing mode (treats yes/no/on/off as strings during processing)
+    #[value(name = "1.2")]
+    V12,
+    /// Auto-detect input parsing mode based on document structure (CloudFormation vs Kubernetes) and %YAML directives
+    #[default]
+    Auto,
+}
+
+impl std::fmt::Display for YamlSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            YamlSpec::V11 => "1.1",
+            YamlSpec::V12 => "1.2",
+            YamlSpec::Auto => "auto",
+        };
+        write!(f, "{s}")
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// create a cfn stack based on stack-args.yaml
@@ -483,6 +507,13 @@ pub struct RenderArgs {
     pub query: Option<String>,
     #[arg(long)]
     pub overwrite: bool,
+    #[arg(
+        long = "yaml-spec",
+        value_enum,
+        default_value = "auto",
+        help = "YAML specification version for input parsing (not output format). 'auto' detects %YAML directives and CloudFormation patterns"
+    )]
+    pub yaml_spec: YamlSpec,
 }
 
 #[derive(Args, Debug)]
