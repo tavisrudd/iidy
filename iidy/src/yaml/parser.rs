@@ -80,10 +80,15 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
         "!$parseJson" => parse_parse_json_tag(value),
         "!$escape" => parse_escape_tag(value),
         _ => {
-            // Unknown tag, treat as regular value
+            // Unknown tag (like CloudFormation !Ref, !Sub), preserve with content processing
+            // Strip the '!' prefix to get the actual tag name
+            let tag_name = if tag.starts_with('!') {
+                tag.strip_prefix('!').unwrap_or(&tag)
+            } else {
+                &tag
+            };
             let value = convert_value_to_ast(value).unwrap();
-            Ok(YamlAst::UnknownYamlTag(UnknownTag {tag: tag, value: Box::new(value) }))
-            
+            Ok(YamlAst::UnknownYamlTag(UnknownTag { tag: tag_name.to_string(), value: Box::new(value) }))
         }
     }
 }

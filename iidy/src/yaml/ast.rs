@@ -291,7 +291,11 @@ impl YamlAst {
                 Some(Value::Mapping(result))
             }
             YamlAst::PreprocessingTag(_) => None, // Cannot convert preprocessing tags directly
-            YamlAst::UnknownYamlTag(_) => todo!()
+            YamlAst::UnknownYamlTag(_tag) => {
+                // Unknown tags (like !Ref, !Sub) cannot be converted to plain values
+                // They need to be preserved as-is in the YAML output
+                None
+            }
         }
     }
 }

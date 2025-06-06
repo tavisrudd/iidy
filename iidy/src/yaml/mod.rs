@@ -266,8 +266,30 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::PreprocessingTag(tag) => {
                 self.resolve_preprocessing_tag_with_context(tag, context)
             },
-            YamlAst::UnknownYamlTag(_) => todo!()
+            YamlAst::UnknownYamlTag(tag) => {
+                // For unknown tags like !Ref, !Sub, preserve the tag structure while processing the content
+                // Based on iidy-js behavior: handlebars/preprocessing happens INSIDE tag values
+                let resolved_value = self.resolve_ast_with_context(*tag.value, context)?;
+                self.create_tagged_value(&tag.tag, resolved_value)
+            }
         }
+    }
+
+    /// Create a tagged value that preserves CloudFormation tags like !Ref, !Sub
+    /// This uses a custom representation that can be serialized back to proper YAML tags
+    fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
+        // Create a special mapping that represents a tagged value
+        // This will need to be handled specially during final YAML serialization
+        let mut tagged_map = serde_yaml::Mapping::new();
+        tagged_map.insert(
+            Value::String("__yaml_tag".to_string()),
+            Value::String(tag.to_string())
+        );
+        tagged_map.insert(
+            Value::String("__yaml_value".to_string()),
+            value
+        );
+        Ok(Value::Mapping(tagged_map))
     }
 
     #[allow(dead_code)]
@@ -1169,7 +1191,7 @@ result: !$
     #[tokio::test]
     async fn test_enhanced_error_handling_infrastructure() -> Result<()> {
         // Test that we can create ProcessingEnv and TagContext with stack frames
-        use crate::yaml::tags::{ProcessingEnv, TagContext, StackFrame, GlobalAccumulator};
+        use crate::yaml::tags::{ProcessingEnv, TagContext, StackFrame};
 
         // Test ProcessingEnv creation and usage
         let mut env = ProcessingEnv::new();
@@ -1238,6 +1260,129 @@ result: !$ config.database
         assert_eq!(context.current_location(), Some("test.yaml".to_string()));
         assert_eq!(context.current_path(), "Root.config");
         assert_eq!(context.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_direct_handlebars_processing() -> Result<()> {
+        // Test handlebars processing directly
+        use crate::yaml::handlebars::interpolate_handlebars_string;
+        use std::collections::HashMap;
+        
+        let mut variables = HashMap::new();
+        variables.insert("environment".to_string(), serde_json::Value::String("production".to_string()));
+        
+        // Test different patterns
+        let result1 = interpolate_handlebars_string("${{environment}}", &variables, "test")?;
+        let result2 = interpolate_handlebars_string("${{{environment}}}", &variables, "test")?;
+        let result3 = interpolate_handlebars_string("{{environment}}", &variables, "test")?;
+        
+        // Based on actual handlebars behavior:
+        assert_eq!(result1, "$production");  // ${{env}} becomes $production  
+        assert_eq!(result2, "$production");  // ${{{env}}} also becomes $production
+        assert_eq!(result3, "production");   // {{env}} becomes production
+        
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_handlebars_with_cloudformation_syntax() -> Result<()> {
+        // Test that handlebars processing correctly handles CloudFormation ${} syntax
+        let yaml_input = r#"
+$defs:
+  environment: production
+
+test_values:
+  simple: "{{environment}}"
+  cf_syntax_correct: "${{environment}}"
+  cf_syntax_triple: "${{{environment}}}"
+  mixed: "prefix-${{environment}}-suffix"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(root) = &result {
+            if let Some(Value::Mapping(test_values)) = root.get(&Value::String("test_values".to_string())) {
+                let simple = test_values.get(&Value::String("simple".to_string()));
+                assert_eq!(simple, Some(&Value::String("production".to_string())));
+                
+                let cf_syntax_correct = test_values.get(&Value::String("cf_syntax_correct".to_string()));
+                // Based on actual handlebars behavior: both become $production
+                assert_eq!(cf_syntax_correct, Some(&Value::String("$production".to_string())));
+                
+                let cf_syntax_triple = test_values.get(&Value::String("cf_syntax_triple".to_string()));
+                assert_eq!(cf_syntax_triple, Some(&Value::String("$production".to_string())));
+                
+                let mixed = test_values.get(&Value::String("mixed".to_string()));
+                assert_eq!(mixed, Some(&Value::String("prefix-$production-suffix".to_string())));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_cloudformation_tag_preservation_with_preprocessing() -> Result<()> {
+        // Test that handlebars preprocessing works inside CloudFormation tags
+        // This matches the behavior tested in iidy-js test-yaml-preprocessing.ts:219-247
+        let yaml_input = r#"
+$defs:
+  environment: production
+  param: MyParameter
+
+Resources:
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${{environment}}-my-bucket"
+      Tags:
+        - Key: Environment
+          Value: !Ref "{{param}}"
+        - Key: Name
+          Value: !GetAtt "SomeResource.{{param}}"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        // Verify that CloudFormation tags are preserved with processed content
+        if let Value::Mapping(root) = &result {
+            if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+                if let Some(Value::Mapping(bucket)) = resources.get(&Value::String("MyBucket".to_string())) {
+                    if let Some(Value::Mapping(properties)) = bucket.get(&Value::String("Properties".to_string())) {
+                        // Check that !Sub tag is preserved with processed handlebars
+                        if let Some(bucket_name) = properties.get(&Value::String("BucketName".to_string())) {
+                            if let Value::Mapping(tag_map) = bucket_name {
+                                assert_eq!(tag_map.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Sub".to_string())));
+                                // The handlebars {{environment}} should be processed to "production"  
+                                assert_eq!(tag_map.get(&Value::String("__yaml_value".to_string())), Some(&Value::String("$production-my-bucket".to_string())));
+                            } else {
+                                panic!("Expected !Sub to be preserved as tagged value");
+                            }
+                        }
+
+                        // Check that !Ref tag preserves content with processed handlebars
+                        if let Some(Value::Sequence(tags)) = properties.get(&Value::String("Tags".to_string())) {
+                            if tags.len() >= 2 {
+                                if let Value::Mapping(env_tag) = &tags[0] {
+                                    if let Some(Value::Mapping(ref_map)) = env_tag.get(&Value::String("Value".to_string())) {
+                                        assert_eq!(ref_map.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Ref".to_string())));
+                                        // The handlebars {{param}} should be processed to "MyParameter"
+                                        assert_eq!(ref_map.get(&Value::String("__yaml_value".to_string())), Some(&Value::String("MyParameter".to_string())));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            panic!("Expected root to be a mapping");
+        }
 
         Ok(())
     }

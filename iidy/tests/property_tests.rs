@@ -20,16 +20,6 @@ fn yaml_scalar_strategy() -> impl Strategy<Value = Value> {
     ]
 }
 
-/// Strategy for generating simple YAML mappings
-fn yaml_mapping_strategy() -> impl Strategy<Value = Value> {
-    prop::collection::hash_map(".*", yaml_scalar_strategy(), 0..5)
-        .prop_map(|map| {
-            let serde_map: serde_yaml::Mapping = map.into_iter()
-                .map(|(k, v)| (Value::String(k), v))
-                .collect();
-            Value::Mapping(serde_map)
-        })
-}
 
 /// Strategy for generating variable names for handlebars
 fn variable_name_strategy() -> impl Strategy<Value = String> {
