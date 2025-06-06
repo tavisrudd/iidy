@@ -501,7 +501,7 @@ pub struct RenderArgs {
     pub template: String,
     #[arg(long, default_value = "stdout")]
     pub outfile: String,
-    #[arg(long, default_value = "yaml")]
+    #[arg(long, default_value = "yaml", help = "Output format: yaml, json, or yaml-cloudformation")]
     pub format: String,
     #[arg(long)]
     pub query: Option<String>,

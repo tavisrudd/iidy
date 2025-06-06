@@ -81,10 +81,10 @@ Resources:
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
             if let Some(Value::Mapping(instance)) = resources.get(&Value::String("EC2Instance".to_string())) {
                 if let Some(Value::Mapping(properties)) = instance.get(&Value::String("Properties".to_string())) {
-                    if let Some(Value::Mapping(user_data_tag)) = properties.get(&Value::String("UserData".to_string())) {
+                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
                         // Should be a tagged value preserving !Base64
-                        assert_eq!(user_data_tag.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Base64".to_string())));
-                        if let Some(Value::String(processed_content)) = user_data_tag.get(&Value::String("__yaml_value".to_string())) {
+                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+                        if let Value::String(processed_content) = &user_data_tagged.value {
                             assert!(processed_content.contains("Starting production instance in us-east-1"));
                             assert!(processed_content.contains("#!/bin/bash"));
                         }
@@ -280,10 +280,10 @@ Resources:
             if let Some(Value::Mapping(launch_template)) = resources.get(&Value::String("LaunchTemplate".to_string())) {
                 if let Some(Value::Mapping(properties)) = launch_template.get(&Value::String("Properties".to_string())) {
                     if let Some(Value::Mapping(template_data)) = properties.get(&Value::String("LaunchTemplateData".to_string())) {
-                        if let Some(Value::Mapping(user_data_tag)) = template_data.get(&Value::String("UserData".to_string())) {
+                        if let Some(Value::Tagged(user_data_tagged)) = template_data.get(&Value::String("UserData".to_string())) {
                             // Should preserve !Base64 tag
-                            assert_eq!(user_data_tag.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Base64".to_string())));
-                            if let Some(Value::String(user_data)) = user_data_tag.get(&Value::String("__yaml_value".to_string())) {
+                            assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+                            if let Value::String(user_data) = &user_data_tagged.value {
                                 // Check handlebars substitution in UserData
                                 assert!(user_data.contains("CLUSTER_NAME=\"production-cluster\""));
                                 assert!(user_data.contains("NAMESPACE=\"default\""));
@@ -393,9 +393,8 @@ Resources:
                 
                 if let Some(Value::Mapping(properties)) = my_resource.get(&Value::String("Properties".to_string())) {
                     // UserData should be preserved as tagged value
-                    if let Some(Value::Mapping(user_data)) = properties.get(&Value::String("UserData".to_string())) {
-                        assert_eq!(user_data.get(&Value::String("__yaml_tag".to_string())), 
-                                  Some(&Value::String("Base64".to_string())));
+                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
+                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                     }
                     
                     // Tags should be preserved as sequence
@@ -496,12 +495,11 @@ Resources:
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
             if let Some(Value::Mapping(my_function)) = resources.get(&Value::String("MyFunction".to_string())) {
                 if let Some(Value::Mapping(properties)) = my_function.get(&Value::String("Properties".to_string())) {
-                    if let Some(Value::Mapping(code_tag)) = properties.get(&Value::String("Code".to_string())) {
+                    if let Some(Value::Tagged(code_tagged)) = properties.get(&Value::String("Code".to_string())) {
                         // Should preserve !Sub tag
-                        assert_eq!(code_tag.get(&Value::String("__yaml_tag".to_string())), 
-                                  Some(&Value::String("Sub".to_string())));
+                        assert_eq!(code_tagged.tag.to_string(), "!Sub");
                         
-                        if let Some(Value::String(code_content)) = code_tag.get(&Value::String("__yaml_value".to_string())) {
+                        if let Value::String(code_content) = &code_tagged.value {
                             // Should have processed handlebars but preserved CloudFormation substitutions
                             assert!(code_content.contains("'environment': '\t${Environment}'"));
                             assert!(code_content.contains("'timestamp': '\n${AWS::Region}'"));
@@ -581,11 +579,10 @@ Outputs:
             if let Some(Value::Mapping(ec2_instance)) = resources.get(&Value::String("EC2Instance".to_string())) {
                 if let Some(Value::Mapping(properties)) = ec2_instance.get(&Value::String("Properties".to_string())) {
                     // UserData should be preserved as tagged value
-                    if let Some(Value::Mapping(user_data)) = properties.get(&Value::String("UserData".to_string())) {
-                        assert_eq!(user_data.get(&Value::String("__yaml_tag".to_string())), 
-                                  Some(&Value::String("Base64".to_string())));
+                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
+                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                         
-                        if let Some(Value::String(user_data_content)) = user_data.get(&Value::String("__yaml_value".to_string())) {
+                        if let Value::String(user_data_content) = &user_data_tagged.value {
                             // Check that multi-line shell script structure is preserved
                             assert!(user_data_content.contains("#!/bin/bash"));
                             assert!(user_data_content.contains("yum update -y"));

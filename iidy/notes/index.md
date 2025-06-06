@@ -94,6 +94,30 @@ The project follows a modular Rust architecture:
 - Property-based testing enhancements
 - Real AWS integration validation
 
+## Testing Infrastructure
+
+### [Snapshot Testing System](../tests/example_templates_snapshots.rs)
+**Comprehensive Example Template Testing**
+
+**Status**: ✅ Complete
+**Features**:
+- **Auto-discovery**: Recursive scanning of `example-templates/` directory
+- **Snapshot testing**: `insta`-based regression protection for all templates
+- **CloudFormation tag preservation**: Verified correct serialization of `!Ref`, `!Sub`, `!GetAtt`
+- **Path-aware naming**: Templates in subdirectories get organized snapshot names
+- **Selective exclusion**: Automatically skips `invalid/`, `expected-outputs/`, and hidden files
+
+**Coverage**:
+- 12+ comprehensive test scenarios
+- All example templates automatically tested
+- CloudFormation intrinsic function preservation
+- YAML 1.1 boolean compatibility
+- Handlebars preprocessing within CloudFormation tags
+- Template import functionality
+- Performance regression tests
+
+The snapshot testing ensures all example templates remain working and any changes to preprocessing behavior are explicitly reviewed.
+
 ## Implementation Roadmap
 
 ### [2025-05-05-plan.md](2025-05-05-plan.md)

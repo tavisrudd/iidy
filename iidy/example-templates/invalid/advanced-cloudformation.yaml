@@ -1,0 +1,344 @@
+$defs:
+  app_name: "advanced-app"
+  environment: "production"
+  region: "us-west-2"
+  
+  # Multi-AZ configuration
+  availability_zones:
+    - "us-west-2a"
+    - "us-west-2b" 
+    - "us-west-2c"
+  
+  # Environment-specific configurations
+  env_config:
+    production:
+      instance_type: "t3.medium"
+      min_capacity: 3
+      max_capacity: 10
+      db_instance_class: "db.r5.large"
+    staging:
+      instance_type: "t3.small"
+      min_capacity: 1
+      max_capacity: 3
+      db_instance_class: "db.t3.medium"
+    development:
+      instance_type: "t3.micro"
+      min_capacity: 1
+      max_capacity: 1
+      db_instance_class: "db.t3.micro"
+
+AWSTemplateFormatVersion: "2010-09-09"
+Description: !Sub "{{app_name}} - Advanced multi-tier application infrastructure for {{environment}} environment"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: "{{environment}}"
+    AllowedValues: ["development", "staging", "production"]
+    Description: "Target deployment environment"
+  
+  VpcCidr:
+    Type: String
+    Default: "10.0.0.0/16"
+    Description: "CIDR block for the VPC"
+
+Resources:
+  # VPC Configuration
+  VPC:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-vpc"
+        - Key: "Environment"
+          Value: "{{environment}}"
+
+  # Internet Gateway
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+    Properties:
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-igw"
+
+  VPCGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Generate subnets dynamically using map transformation
+  PublicSubnets: !$fromPairs !$map
+    source: !$ availability_zones
+    var: "az"
+    transform:
+      - "PublicSubnet{{@index}}"
+      - Type: "AWS::EC2::Subnet"
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: "{{az}}"
+          CidrBlock: !Sub "10.0.{{@index}}.0/24"
+          MapPublicIpOnLaunch: true
+          Tags:
+            - Key: "Name"
+              Value: !Sub "{{app_name}}-{{environment}}-public-{{az}}"
+            - Key: "Environment"
+              Value: "{{environment}}"
+            - Key: "Type"
+              Value: "Public"
+
+  PrivateSubnets: !$fromPairs !$map
+    source: !$ availability_zones
+    var: "az"
+    transform:
+      - "PrivateSubnet{{@index}}"
+      - Type: "AWS::EC2::Subnet"
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: "{{az}}"
+          CidrBlock: !Sub "10.0.{{add @index 10}}.0/24"
+          Tags:
+            - Key: "Name"
+              Value: !Sub "{{app_name}}-{{environment}}-private-{{az}}"
+            - Key: "Environment"
+              Value: "{{environment}}"
+            - Key: "Type"
+              Value: "Private"
+
+  # Route Tables
+  PublicRouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-public-rt"
+
+  PublicRoute:
+    Type: "AWS::EC2::Route"
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  # Associate public subnets with public route table
+  PublicSubnetAssociations: !$map
+    source: !$ availability_zones
+    var: "az"
+    transform:
+      Type: "AWS::EC2::SubnetRouteTableAssociation"
+      Properties:
+        SubnetId: !Ref "PublicSubnet{{@index}}"
+        RouteTableId: !Ref PublicRouteTable
+
+  # Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Name: !Sub "{{app_name}}-{{environment}}-alb"
+      Type: "application"
+      Scheme: "internet-facing"
+      IpAddressType: "ipv4"
+      Subnets: !$map
+        source: !$ availability_zones
+        transform: !Ref "PublicSubnet{{@index}}"
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-alb"
+        - Key: "Environment"
+          Value: "{{environment}}"
+
+  # Security Groups
+  ALBSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Security group for Application Load Balancer"
+      GroupName: !Sub "{{app_name}}-{{environment}}-alb-sg"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+          Description: "HTTP access from internet"
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+          Description: "HTTPS access from internet"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-alb-sg"
+        - Key: "Environment"
+          Value: "{{environment}}"
+
+  WebTierSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Security group for web tier instances"
+      GroupName: !Sub "{{app_name}}-{{environment}}-web-sg"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: "HTTP access from ALB"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "10.0.0.0/16"
+          Description: "SSH access from VPC"
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-web-sg"
+
+  # Launch Template with environment-specific configuration
+  WebTierLaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: !Sub "{{app_name}}-{{environment}}-web-lt"
+      LaunchTemplateData:
+        ImageId: "ami-0c02fb55956c7d316"  # Amazon Linux 2
+        InstanceType: "{{lookup env_config environment 'instance_type'}}"
+        SecurityGroupIds:
+          - !Ref WebTierSecurityGroup
+        UserData: !Base64 |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          
+          # Create application configuration
+          cat > /var/www/html/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>{{app_name}} - {{environment}}</title>
+          </head>
+          <body>
+              <h1>Welcome to {{app_name}}</h1>
+              <p>Environment: {{environment}}</p>
+              <p>Region: {{region}}</p>
+              <p>Instance Type: {{lookup env_config environment 'instance_type'}}</p>
+              <p>Server: ${HOSTNAME}</p>
+          </body>
+          </html>
+          EOF
+          
+          systemctl start httpd
+          systemctl enable httpd
+        TagSpecifications:
+          - ResourceType: "instance"
+            Tags:
+              - Key: "Name"
+                Value: !Sub "{{app_name}}-{{environment}}-web"
+              - Key: "Environment"
+                Value: "{{environment}}"
+              - Key: "Tier"
+                Value: "Web"
+
+  # Auto Scaling Group with environment-specific capacity
+  WebTierAutoScalingGroup:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AutoScalingGroupName: !Sub "{{app_name}}-{{environment}}-web-asg"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebTierLaunchTemplate
+        Version: !GetAtt WebTierLaunchTemplate.LatestVersionNumber
+      MinSize: "{{lookup env_config environment 'min_capacity'}}"
+      MaxSize: "{{lookup env_config environment 'max_capacity'}}"
+      DesiredCapacity: "{{lookup env_config environment 'min_capacity'}}"
+      VPCZoneIdentifier: !$map
+        source: !$ availability_zones
+        transform: !Ref "PrivateSubnet{{@index}}"
+      TargetGroupARNs:
+        - !Ref WebTierTargetGroup
+      HealthCheckType: "ELB"
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-web-asg"
+          PropagateAtLaunch: false
+        - Key: "Environment"
+          Value: "{{environment}}"
+          PropagateAtLaunch: true
+
+  # Target Group
+  WebTierTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      Name: !Sub "{{app_name}}-{{environment}}-web-tg"
+      Port: 80
+      Protocol: "HTTP"
+      VpcId: !Ref VPC
+      HealthCheckEnabled: true
+      HealthCheckPath: "/"
+      HealthCheckProtocol: "HTTP"
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      Tags:
+        - Key: "Name"
+          Value: !Sub "{{app_name}}-{{environment}}-web-tg"
+        - Key: "Environment"
+          Value: "{{environment}}"
+
+  # Listener
+  ALBListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: "forward"
+          TargetGroupArn: !Ref WebTierTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: "HTTP"
+
+Outputs:
+  VPCId:
+    Description: "VPC ID"
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "{{app_name}}-{{environment}}-vpc-id"
+
+  LoadBalancerDNS:
+    Description: "Application Load Balancer DNS Name"
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub "{{app_name}}-{{environment}}-alb-dns"
+
+  LoadBalancerURL:
+    Description: "Application URL"
+    Value: !Sub "http://${ApplicationLoadBalancer.DNSName}"
+
+  PublicSubnetIds:
+    Description: "Public Subnet IDs"
+    Value: !$toJsonString !$map
+      source: !$ availability_zones
+      transform: !Ref "PublicSubnet{{@index}}"
+    Export:
+      Name: !Sub "{{app_name}}-{{environment}}-public-subnet-ids"
+
+  PrivateSubnetIds:
+    Description: "Private Subnet IDs"
+    Value: !$toJsonString !$map
+      source: !$ availability_zones
+      transform: !Ref "PrivateSubnet{{@index}}"
+    Export:
+      Name: !Sub "{{app_name}}-{{environment}}-private-subnet-ids"
+
+  EnvironmentConfig:
+    Description: "Current environment configuration"
+    Value: !$toJsonString
+      environment: "{{environment}}"
+      instance_type: "{{lookup env_config environment 'instance_type'}}"
+      capacity:
+        min: "{{lookup env_config environment 'min_capacity'}}"
+        max: "{{lookup env_config environment 'max_capacity'}}"
+      database_class: "{{lookup env_config environment 'db_instance_class'}}"

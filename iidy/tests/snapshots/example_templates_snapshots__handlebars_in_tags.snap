@@ -1,0 +1,15 @@
+---
+source: tests/example_templates_snapshots.rs
+expression: result
+---
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  TestBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName:
+        "!Sub": "my-app-${AWS::StackName}-bucket"
+      Tags:
+        - Key: Environment
+          Value:
+            "!Ref": prod

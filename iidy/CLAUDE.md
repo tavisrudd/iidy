@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Use the standard rust / cargo stuff.
 - prefer fd to find, rg to grep
 
+## Testing
+- **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
+- Run tests: `cargo test --test example_templates_snapshots`
+- Review snapshots: `cargo insta review` (requires `cargo install cargo-insta`)
+- Accept changes: `cargo insta accept`
+
 ## Token Management
 See [notes/2025-05-05-token-management-design.md](notes/2025-05-05-token-management-design.md) for comprehensive documentation on the client request token management system, including architecture, multi-step operations, and testing strategy.
 

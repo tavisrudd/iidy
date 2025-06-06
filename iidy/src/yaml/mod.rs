@@ -653,20 +653,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Create a tagged value that preserves CloudFormation tags like !Ref, !Sub
-    /// This uses a custom representation that can be serialized back to proper YAML tags
+    /// Uses serde_yaml::value::TaggedValue to properly serialize YAML tags
     fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
-        // Create a special mapping that represents a tagged value
-        // This will need to be handled specially during final YAML serialization
-        let mut tagged_map = serde_yaml::Mapping::new();
-        tagged_map.insert(
-            Value::String("__yaml_tag".to_string()),
-            Value::String(tag.to_string())
-        );
-        tagged_map.insert(
-            Value::String("__yaml_value".to_string()),
-            value
-        );
-        Ok(Value::Mapping(tagged_map))
+        // Use serde_yaml::value::TaggedValue for proper YAML tag serialization
+        let tagged_value = serde_yaml::value::TaggedValue {
+            tag: serde_yaml::value::Tag::new(format!("!{}", tag)),
+            value,
+        };
+        Ok(Value::Tagged(Box::new(tagged_value)))
     }
 
     #[allow(dead_code)]
@@ -1769,10 +1763,14 @@ Resources:
                     if let Some(Value::Mapping(properties)) = bucket.get(&Value::String("Properties".to_string())) {
                         // Check that !Sub tag is preserved with processed handlebars
                         if let Some(bucket_name) = properties.get(&Value::String("BucketName".to_string())) {
-                            if let Value::Mapping(tag_map) = bucket_name {
-                                assert_eq!(tag_map.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Sub".to_string())));
+                            if let Value::Tagged(tagged) = bucket_name {
+                                assert_eq!(tagged.tag.to_string(), "!Sub");
                                 // The handlebars {{environment}} should be processed to "production"  
-                                assert_eq!(tag_map.get(&Value::String("__yaml_value".to_string())), Some(&Value::String("$production-my-bucket".to_string())));
+                                if let Value::String(value) = &tagged.value {
+                                    assert_eq!(value, "$production-my-bucket");
+                                } else {
+                                    panic!("Expected tagged value to be a string");
+                                }
                             } else {
                                 panic!("Expected !Sub to be preserved as tagged value");
                             }
@@ -1782,10 +1780,14 @@ Resources:
                         if let Some(Value::Sequence(tags)) = properties.get(&Value::String("Tags".to_string())) {
                             if tags.len() >= 2 {
                                 if let Value::Mapping(env_tag) = &tags[0] {
-                                    if let Some(Value::Mapping(ref_map)) = env_tag.get(&Value::String("Value".to_string())) {
-                                        assert_eq!(ref_map.get(&Value::String("__yaml_tag".to_string())), Some(&Value::String("Ref".to_string())));
+                                    if let Some(Value::Tagged(ref_tagged)) = env_tag.get(&Value::String("Value".to_string())) {
+                                        assert_eq!(ref_tagged.tag.to_string(), "!Ref");
                                         // The handlebars {{param}} should be processed to "MyParameter"
-                                        assert_eq!(ref_map.get(&Value::String("__yaml_value".to_string())), Some(&Value::String("MyParameter".to_string())));
+                                        if let Value::String(ref_value) = &ref_tagged.value {
+                                            assert_eq!(ref_value, "MyParameter");
+                                        } else {
+                                            panic!("Expected Ref tagged value to be a string");
+                                        }
                                     }
                                 }
                             }
