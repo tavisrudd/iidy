@@ -1,7 +1,5 @@
 # Example stack-args.yaml with iidy preprocessing
-StackName: !$join
-  array: ["my-app", !$ environment]
-  delimiter: "-"
+StackName: !$join ["-", ["my-app", !$ environment]]
 
 Template: ./template.yaml
 

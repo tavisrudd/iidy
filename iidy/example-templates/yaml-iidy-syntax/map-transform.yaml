@@ -1,0 +1,59 @@
+$defs:
+  ports: [80, 443, 8080]
+  environments: ["dev", "staging", "production"]
+  users:
+    - name: "alice"
+      role: "admin"
+    - name: "bob" 
+      role: "user"
+    - name: "charlie"
+      role: "admin"
+
+# !$map transformation examples
+title: "Map Transformation Demo"
+
+# Simple !$map over a list of numbers
+port_configs: !$map
+  source: !$ ports
+  var: "port"
+  transform:
+    port_number: "{{port}}"
+    protocol: "tcp"
+    description: "Port {{port}} configuration"
+
+# !$map with custom variable name
+environment_configs: !$map
+  source: !$ environments
+  var: "env"
+  transform:
+    name: "{{env}}"
+    url: "https://{{env}}.example.com"
+
+# !$map over objects
+user_permissions: !$map
+  source: !$ users
+  var: "user"
+  transform:
+    username: "{{user.name}}"
+    is_admin: !$eq ["{{user.role}}", "admin"]
+    home_directory: "/home/{{user.name}}"
+
+# !$map with conditional transformation
+filtered_admins: !$map
+  source: !$ users
+  var: "user"
+  transform: !$if
+    condition: !$eq ["{{user.role}}", "admin"]
+    then:
+      name: "{{user.name}}"
+      access_level: "full"
+    else: null
+
+# !$map creating key-value pairs 
+subnet_definitions: !$map
+  source: ["a", "b", "c"]
+  var: "zone"
+  transform:
+    - "subnet-{{zone}}"
+    - cidr: "10.0.1.0/24"
+      zone: "us-west-2{{zone}}"

@@ -136,3 +136,8 @@ Based on the upstream iidy documentation and implementation, the YAML preprocess
 - `src/yaml/transforms.rs`: Data transformation operations
 
 This preprocessing system is essential for iidy's template composition and dynamic configuration capabilities.
+
+## YAML Tag Notes
+- Yaml !Tags can't be nested directly like !Foo !Bar. You must instead do
+!Foo
+  - !Bar

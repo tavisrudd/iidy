@@ -152,9 +152,7 @@ Template: t
     fn test_yaml_preprocessing_integration() {
         // Test that our YAML preprocessing system is being used in stack args parsing
         let yaml = r#"
-StackName: !$join
-  array: ["my-app", "production"]
-  delimiter: "-"
+StackName: !$join ["-", ["my-app", "production"]]
 Template: template.yaml
 Region: us-west-2
 "#;

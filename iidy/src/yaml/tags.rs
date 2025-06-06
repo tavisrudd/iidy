@@ -671,9 +671,18 @@ pub fn resolve_split_tag(tag: &SplitTag, context: &TagContext, resolver: &dyn As
     }
 }
 
-/// Resolve a join tag
+/// Resolve a join tag (follows iidy-js format: [delimiter, array])
 pub fn resolve_join_tag(tag: &JoinTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
+    let delimiter_result = resolver.resolve_ast(&tag.delimiter, context)?;
     let array_result = resolver.resolve_ast(&tag.array, context)?;
+    
+    // Extract delimiter as string
+    let delimiter_str = match delimiter_result {
+        Value::String(s) => s,
+        Value::Number(n) => n.to_string(),
+        Value::Bool(b) => b.to_string(),
+        _ => return Err(anyhow!("Join delimiter must be a string-convertible value")),
+    };
     
     match array_result {
         Value::Sequence(seq) => {
@@ -687,7 +696,7 @@ pub fn resolve_join_tag(tag: &JoinTag, context: &TagContext, resolver: &dyn AstR
                 })
                 .collect();
             
-            let joined = strings?.join(&tag.delimiter);
+            let joined = strings?.join(&delimiter_str);
             Ok(Value::String(joined))
         }
         _ => Err(anyhow!("Join array must be a sequence")),

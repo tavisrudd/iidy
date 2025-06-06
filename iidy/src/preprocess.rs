@@ -91,9 +91,7 @@ $defs:
   environment: "production"
 
 name: "test"
-stack_name: !$join
-  array: ["{{app_name}}", "{{environment}}"]
-  delimiter: "-"
+stack_name: !$join ["-", ["{{app_name}}", "{{environment}}"]]
 "#)?;
         
         let result = preprocess_with_base_location::<std::collections::HashMap<String, Value>>(yaml_value, "test.yaml").await?;

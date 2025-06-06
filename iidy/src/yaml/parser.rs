@@ -273,21 +273,22 @@ fn parse_split_tag(value: Value) -> Result<YamlAst> {
     }
 }
 
-/// Parse !$join tag
+/// Parse !$join tag (expects [delimiter, array] format like iidy-js)
 fn parse_join_tag(value: Value) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        let array_val = map.get(&Value::String("array".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'array' in join tag"))?;
-        let delimiter = extract_string_field(&map, "delimiter")?;
+    if let Value::Sequence(seq) = value {
+        if seq.len() != 2 {
+            return Err(anyhow!("Join tag must be a sequence with two elements: [delimiter, array]"));
+        }
 
-        let array = Box::new(convert_value_to_ast(array_val.clone())?);
+        let delimiter = Box::new(convert_value_to_ast(seq[0].clone())?);
+        let array = Box::new(convert_value_to_ast(seq[1].clone())?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Join(JoinTag {
-            array,
             delimiter,
+            array,
         })))
     } else {
-        Err(anyhow!("Join tag must be a mapping"))
+        Err(anyhow!("Join tag must be a sequence with format [delimiter, array]"))
     }
 }
 

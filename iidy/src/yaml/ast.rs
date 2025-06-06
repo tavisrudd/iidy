@@ -155,13 +155,13 @@ pub struct SplitTag {
     pub delimiter: String,
 }
 
-/// Array joining tag
+/// Array joining tag (takes [delimiter, array] format like iidy-js)
 #[derive(Debug, Clone, PartialEq)]
 pub struct JoinTag {
+    /// Delimiter to join with
+    pub delimiter: Box<YamlAst>,
     /// Array to join
     pub array: Box<YamlAst>,
-    /// Delimiter to join with
-    pub delimiter: String,
 }
 
 /// ConcatMap tag for map followed by concat

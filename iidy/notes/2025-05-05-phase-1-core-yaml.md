@@ -790,6 +790,57 @@ This implementation completes the **critical missing piece** for full iidy-js co
 - **Source code highlighting** showing the problematic YAML section
 - **Context around the error** (showing surrounding YAML structure)
 
+### !$map Implementation Differences from iidy-js
+
+**Status: ⚠️ PARTIAL IMPLEMENTATION**
+
+Current Rust implementation differs from iidy-js in variable availability:
+
+**iidy-js (Reference Implementation):**
+```typescript
+// From visitMap() in visitor.ts
+const varName = node.data.var || 'item';
+const subEnv = mkSubEnv(
+  env, 
+  {...env.$envValues, [varName]: item, [varName + 'Idx']: idx}, 
+  {path: subPath}
+);
+```
+
+**Variables Available:**
+- `item` (or custom `var` name): current array item
+- `itemIdx` (or custom `var` + 'Idx'): zero-based index
+
+**Current Rust Implementation:**
+```rust
+// In resolve_map_tag() in tags.rs lines 555-578  
+let var_name = tag.var_name.as_deref().unwrap_or("item");
+let mut item_bindings = HashMap::new();
+item_bindings.insert(var_name.to_string(), item);
+```
+
+**Variables Available:**
+- `item` (or custom `var` name): current array item
+- ❌ **Missing**: Index variable (should be `itemIdx` or `${var}Idx`)
+
+**Impact:**
+- Templates expecting `itemIdx` or custom index variables will fail
+- Affects templates needing array position information for:
+  - Subnet CIDR calculations (e.g., `10.0.{{@index}}.0/24`)
+  - Resource naming with sequential numbers
+  - Conditional logic based on array position
+
+**TODO - Required Implementation:**
+1. Add `index` parameter support to `MapTag` struct in `ast.rs`
+2. Update `resolve_map_tag()` to create index variable: `${var_name}Idx`
+3. Update map examples to use correct `itemIdx` variable names
+4. Add tests covering index variable functionality
+5. Document the `index` parameter in map tag usage
+
+**Priority: HIGH** - This affects compatibility with existing iidy-js templates
+
+**UPDATE (2025-06-06)**: After testing with examples, confirmed that our Rust implementation of `!$map` is missing the `itemIdx` variable (or `${var}Idx` for custom variable names) that iidy-js provides automatically. This prevents templates from accessing array indices during map operations.
+
 ### Enhanced Error Reporting Requirements
 
 #### 1. Source Location Tracking

@@ -6,17 +6,11 @@ host: !$if
 
 port: 5432
 
-database: !$join
-  array: ["myapp", !$ environment]
-  delimiter: "_"
+database: !$join ["_", ["myapp", !$ environment]]
 
 credentials:
-  username: !$join
-    array: ["/myapp", !$ environment, "db-username"]
-    delimiter: "/"
-  password: !$join
-    array: ["/myapp", !$ environment, "db-password"]
-    delimiter: "/"
+  username: !$join ["/", ["/myapp", !$ environment, "db-username"]]
+  password: !$join ["/", ["/myapp", !$ environment, "db-password"]]
 
 connection_pool:
   min_size: !$if

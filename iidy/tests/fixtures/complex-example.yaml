@@ -19,9 +19,7 @@ stack_name: !$let
         condition: !$eq [!$, "{{region}}", "us-west-2"] 
         then: "usw2"
         else: "euw1"
-  expression: !$join
-    array: [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]
-    delimiter: "-"
+  expression: !$join ["-", [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]]
 
 # Conditional resource configuration
 resources: !$merge
@@ -51,9 +49,7 @@ parameters: !$let
       var: "param"
       transform: !$if
         condition: !$eq [!$, "{{param.type}}", "secure"]
-        then: !$join
-          array: ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]
-          delimiter: ""
+        then: !$join ["", ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]]
         else: !$, "{{param.value}}"
         
   expression: !$merge
@@ -91,9 +87,7 @@ notifications: !$if
         else: "dev-team@company.com,staging-alerts@company.com"
       delimiter: ","
     var: "email"
-    transform: !$join
-      array: ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{email}}"]
-      delimiter: ""
+    transform: !$join ["", ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{email}}"]]
   else: []
 
 # Complex capability determination
@@ -117,12 +111,8 @@ service_role: !$if
         condition: !$eq [!$, "{{environment}}", "production"]
         then: "123456789012"
         else: "987654321098"
-      role_name: !$join
-        array: ["CloudFormation", !$, "{{environment}}", "ServiceRole"]
-        delimiter: ""
-    expression: !$join
-      array: ["arn:aws:iam::", !$, "{{account_id}}", ":role/", !$, "{{role_name}}"]
-      delimiter: ""
+      role_name: !$join ["", ["CloudFormation", !$, "{{environment}}", "ServiceRole"]]
+    expression: !$join ["", ["arn:aws:iam::", !$, "{{account_id}}", ":role/", !$, "{{role_name}}"]]
   else: null
 
 # Resource types with conditional inclusion

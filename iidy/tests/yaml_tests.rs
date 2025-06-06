@@ -19,9 +19,7 @@ fn load_fixture(filename: &str) -> Result<String> {
 fn test_stack_args_parsing_workflow() -> Result<()> {
     // Use a simplified version that avoids complex nested tag syntax issues
     let yaml_content = r#"
-StackName: !$join
-  array: ["my-app", "{{environment}}"]
-  delimiter: "-"
+StackName: !$join ["-", ["my-app", "{{environment}}"]]
 
 Template: ./template.yaml
 Region: us-west-2
@@ -113,19 +111,13 @@ $defs:
   environments: ["development", "staging", "production"]
   app_name: "my-complex-app"
 
-stack_name: !$join
-  array: ["{{app_name}}", "{{environment}}"]
-  delimiter: "-"
+stack_name: !$join ["-", ["{{app_name}}", "{{environment}}"]]
 
 resources: !$merge
   - common:
-      vpc: !$join
-        array: ["{{app_name}}", "vpc"]
-        delimiter: "-"
+      vpc: !$join ["-", ["{{app_name}}", "vpc"]]
   - environment_specific:
-      database: !$join
-        array: ["{{app_name}}", "{{environment}}", "db"]
-        delimiter: "-"
+      database: !$join ["-", ["{{app_name}}", "{{environment}}", "db"]]
 
 parameters: !$let
   bindings:

@@ -1,0 +1,59 @@
+$defs:
+  environment: "production"
+  enable_debug: false
+  instance_count: 3
+
+# !$if conditional logic examples
+title: "Conditional Logic Demo"
+
+# Basic !$if with !$eq condition
+log_level: !$if
+  condition: !$eq ["{{environment}}", "production"]
+  then: "WARN"
+  else: "DEBUG"
+
+# !$if with !$not condition  
+debug_enabled: !$if
+  condition: !$not
+    condition: !$eq ["{{environment}}", "production"]
+  then: true
+  else: false
+
+# !$if with !$and condition
+high_availability: !$if
+  condition: !$and
+    - !$eq ["{{environment}}", "production"]
+    - !$gte ["{{instance_count}}", 2]
+  then: true
+  else: false
+
+# !$if with !$or condition
+monitoring_enabled: !$if
+  condition: !$or
+    - !$eq ["{{environment}}", "production"]
+    - "{{enable_debug}}"
+  then: true
+  else: false
+
+# Nested !$if example
+instance_type: !$if
+  condition: !$eq ["{{environment}}", "production"]
+  then: "m5.large"
+  else: !$if
+    condition: !$eq ["{{environment}}", "staging"]
+    then: "m5.small"
+    else: "t3.micro"
+
+# !$if for conditional object creation
+database_config: !$if
+  condition: !$eq ["{{environment}}", "production"]
+  then:
+    engine: "postgres"
+    instance_class: "db.r5.xlarge"
+    multi_az: true
+    backup_retention: 30
+  else:
+    engine: "postgres"
+    instance_class: "db.t3.micro"
+    multi_az: false
+    backup_retention: 7
