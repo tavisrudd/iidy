@@ -1,14 +1,10 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::Client;
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::{
-    aws,
     cli::{NormalizedAwsOpts, UpdateStackArgs},
     stack_args::load_stack_args_file,
-    timing::{ReliableTimeProvider, TimeProvider},
-    cfn::{CfnContext, CfnRequestBuilder, ConsoleReporter},
+    cfn::{create_context, CfnContext, CfnRequestBuilder, ConsoleReporter},
 };
 
 /// Create or update a CloudFormation stack using intelligent detection.
@@ -35,16 +31,14 @@ pub async fn create_or_update(opts: &NormalizedAwsOpts, args: &UpdateStackArgs) 
     }
     
     // Setup AWS client and context
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     // Setup console reporter
     let reporter = ConsoleReporter::new("create-or-update");
     reporter.show_primary_token(&context.primary_token());
     
-    let stack_name = final_stack_args.stack_name.as_ref().unwrap();
+    let stack_name = final_stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
     
     // Check if stack exists
     reporter.show_progress(&format!("Checking if stack '{}' exists...", stack_name));
@@ -95,10 +89,7 @@ async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bo
 /// Create a new stack directly (reusing create_stack logic).
 async fn create_stack_direct(opts: &NormalizedAwsOpts, stack_args: &crate::stack_args::StackArgs) -> Result<()> {
     // Setup context and builder  
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     let reporter = ConsoleReporter::new("create-stack");
     let builder = CfnRequestBuilder::new(&context, stack_args);
@@ -107,7 +98,9 @@ async fn create_stack_direct(opts: &NormalizedAwsOpts, stack_args: &crate::stack
     let (create_request, token) = builder.build_create_stack("create-stack");
     reporter.show_step_token("create-stack", &token);
     
-    reporter.show_progress(&format!("Creating stack: {}", stack_args.stack_name.as_ref().unwrap()));
+    let stack_name = stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
+    reporter.show_progress(&format!("Creating stack: {}", stack_name));
     
     let response = create_request.send().await?;
     
@@ -127,10 +120,7 @@ async fn create_stack_direct(opts: &NormalizedAwsOpts, stack_args: &crate::stack
 /// Update stack directly (reusing update_stack logic).
 async fn update_stack_direct(opts: &NormalizedAwsOpts, _args: &UpdateStackArgs, stack_args: &crate::stack_args::StackArgs) -> Result<()> {
     // Setup context and builder
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     let reporter = ConsoleReporter::new("update-stack");
     let builder = CfnRequestBuilder::new(&context, stack_args);
@@ -139,7 +129,9 @@ async fn update_stack_direct(opts: &NormalizedAwsOpts, _args: &UpdateStackArgs, 
     let (update_request, token) = builder.build_update_stack("update-stack");
     reporter.show_step_token("update-stack", &token);
     
-    reporter.show_progress(&format!("Updating stack: {}", stack_args.stack_name.as_ref().unwrap()));
+    let stack_name = stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
+    reporter.show_progress(&format!("Updating stack: {}", stack_name));
     
     let response = update_request.send().await?;
     
@@ -161,10 +153,7 @@ async fn update_stack_with_changeset(opts: &NormalizedAwsOpts, args: &UpdateStac
     // Reuse the existing changeset workflow from update_stack
     // This demonstrates code reuse while maintaining token correlation
     
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     let reporter = ConsoleReporter::new("create-or-update --changeset");
     let builder = CfnRequestBuilder::new(&context, stack_args);

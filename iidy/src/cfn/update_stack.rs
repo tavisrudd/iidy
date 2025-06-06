@@ -1,14 +1,10 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::Client;
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::{
-    aws,
     cli::{NormalizedAwsOpts, UpdateStackArgs},
     stack_args::load_stack_args_file,
-    timing::{ReliableTimeProvider, TimeProvider},
-    cfn::{CfnContext, CfnRequestBuilder, ConsoleReporter},
+    cfn::{create_context, CfnRequestBuilder, ConsoleReporter},
 };
 
 /// Update a CloudFormation stack using the request builder pattern.
@@ -46,10 +42,7 @@ async fn update_stack_direct(
     stack_args: &crate::stack_args::StackArgs
 ) -> Result<()> {
     // Setup AWS client and context
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     // Setup console reporter and request builder
     let reporter = ConsoleReporter::new("update-stack");
@@ -62,7 +55,9 @@ async fn update_stack_direct(
     let (update_request, token) = builder.build_update_stack("update-stack");
     reporter.show_step_token("update-stack", &token);
     
-    reporter.show_progress(&format!("Updating stack: {}", stack_args.stack_name.as_ref().unwrap()));
+    let stack_name = stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
+    reporter.show_progress(&format!("Updating stack: {}", stack_name));
     
     let response = update_request.send().await?;
     
@@ -91,10 +86,7 @@ async fn update_stack_with_changeset(
     stack_args: &crate::stack_args::StackArgs,
 ) -> Result<()> {
     // Setup AWS client and context
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     // Setup console reporter and request builder
     let reporter = ConsoleReporter::new("update-stack --changeset");
@@ -108,8 +100,10 @@ async fn update_stack_with_changeset(
     let (create_request, create_token) = builder.build_create_changeset(&changeset_name, "create-changeset");
     reporter.show_step_token("create-changeset", &create_token);
     
+    let stack_name = stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
     reporter.show_progress(&format!("Creating changeset '{}' for stack: {}", 
-        changeset_name, stack_args.stack_name.as_ref().unwrap()));
+        changeset_name, stack_name));
     
     let create_response = create_request.send().await?;
     
@@ -153,7 +147,8 @@ async fn update_stack_with_changeset(
     use super::watch_stack::watch_stack_with_context;
     reporter.show_progress("Watching stack operation progress...");
     
-    if let Err(e) = watch_stack_with_context(&context, stack_args.stack_name.as_ref().unwrap(), 
+    // Use the stack_name we already validated
+    if let Err(e) = watch_stack_with_context(&context, stack_name, 
                                            std::time::Duration::from_secs(5)).await {
         reporter.show_warning(&format!("Error watching stack progress: {}", e));
         println!("The changeset execution was initiated, but there was an error watching progress.");

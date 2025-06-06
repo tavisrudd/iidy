@@ -141,6 +141,14 @@ impl ConsoleReporter {
         println!("⚠️  {}", message);
     }
     
+    /// Display an informational message for the current operation.
+    /// 
+    /// # Arguments
+    /// * `message` - The info message to display
+    pub fn show_info(&self, message: &str) {
+        println!("ℹ️  {}", message);
+    }
+    
     /// Display operation timing information.
     /// 
     /// # Arguments

@@ -1,12 +1,8 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::Client;
-use std::sync::Arc;
 
 use crate::{
-    aws,
     cli::{NormalizedAwsOpts, DeleteArgs},
-    timing::{ReliableTimeProvider, TimeProvider},
-    cfn::{ConsoleReporter},
+    cfn::{create_context, ConsoleReporter},
 };
 
 use super::{watch_stack::watch_stack_with_context, CfnContext};
@@ -54,11 +50,7 @@ pub async fn delete_stack_with_context(
 ///
 /// This is the main entry point that creates its own timing context.
 pub async fn delete_stack(opts: &NormalizedAwsOpts, args: &DeleteArgs) -> Result<()> {
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let ctx = create_context(opts).await?;
     
     // Setup console reporter
     let reporter = ConsoleReporter::new("delete-stack");

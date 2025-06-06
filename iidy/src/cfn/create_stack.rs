@@ -1,14 +1,10 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::Client;
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::{
-    aws,
     cli::{NormalizedAwsOpts, StackFileArgs},
     stack_args::load_stack_args_file,
-    timing::{ReliableTimeProvider, TimeProvider},
-    cfn::{CfnContext, CfnRequestBuilder, ConsoleReporter},
+    cfn::{create_context, CfnRequestBuilder, ConsoleReporter},
 };
 
 /// Create a CloudFormation stack using the request builder pattern.
@@ -34,10 +30,7 @@ pub async fn create_stack(opts: &NormalizedAwsOpts, args: &StackFileArgs) -> Res
     }
     
     // Setup AWS client and context
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = create_context(opts).await?;
     
     // Setup console reporter and request builder
     let reporter = ConsoleReporter::new("create-stack");
@@ -50,7 +43,9 @@ pub async fn create_stack(opts: &NormalizedAwsOpts, args: &StackFileArgs) -> Res
     let (create_request, token) = builder.build_create_stack("create-stack");
     reporter.show_step_token("create-stack", &token);
     
-    reporter.show_progress(&format!("Creating stack: {}", final_stack_args.stack_name.as_ref().unwrap()));
+    let stack_name = final_stack_args.stack_name.as_ref()
+        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
+    reporter.show_progress(&format!("Creating stack: {}", stack_name));
     
     let response = create_request.send().await?;
     

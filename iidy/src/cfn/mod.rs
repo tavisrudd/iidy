@@ -3,7 +3,8 @@ use aws_sdk_cloudformation::Client;
 use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 
-use crate::timing::{TimeProvider, TokenInfo};
+use crate::cli::NormalizedAwsOpts;
+use crate::timing::{ReliableTimeProvider, TimeProvider, TokenInfo};
 
 // CloudFormation operation modules
 pub mod console;
@@ -26,6 +27,23 @@ pub mod watch_stack;
 // Re-exports
 pub use console::ConsoleReporter;
 pub use request_builder::CfnRequestBuilder;
+
+/// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
+/// 
+/// This helper function centralizes the common pattern of creating AWS config,
+/// client, time provider, and context that appears in most CloudFormation operations.
+/// 
+/// # Arguments
+/// * `opts` - The normalized AWS options containing region and token info
+/// 
+/// # Returns
+/// A fully initialized CfnContext ready for CloudFormation operations
+pub async fn create_context(opts: &NormalizedAwsOpts) -> Result<CfnContext> {
+    let config = crate::aws::config_from_normalized_opts(opts).await?;
+    let client = Client::new(&config);
+    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    CfnContext::new(client, time_provider, opts.client_request_token.clone()).await
+}
 
 /// Context object that carries shared state for CloudFormation operations.
 /// 
