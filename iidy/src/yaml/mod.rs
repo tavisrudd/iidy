@@ -157,8 +157,16 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     // Load the import
                     let import_data = self.import_loader.load(&resolved_location, base_location).await?;
                     
-                    // Add to environment (TODO: implement nested preprocessing in separate commit)
-                    env_values.insert(import_key.clone(), import_data.doc);
+                    // CRITICAL: Recursively process the imported document if it has $imports or $defs
+                    // This matches iidy-js loadImports() lines 524-527
+                    let processed_doc = self.process_imported_document(
+                        import_data.doc, 
+                        &import_data.resolved_location,
+                        import_records
+                    ).await?;
+                    
+                    // Add the fully processed document to environment
+                    env_values.insert(import_key.clone(), processed_doc);
                     
                     // Record for metadata
                     import_records.push(ImportRecord {
@@ -195,7 +203,49 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
     }
 
-    // TODO: Implement nested document preprocessing in separate commit
+    /// Process an imported document recursively, matching iidy-js loadImports behavior
+    /// This ensures that imported documents get their own $defs and $imports processed
+    fn process_imported_document<'a>(
+        &'a self,
+        doc: Value,
+        doc_location: &'a str,
+        import_records: &'a mut Vec<ImportRecord>,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + 'a>> {
+        Box::pin(async move {
+            // Check if this document has preprocessing directives that need processing
+            if let Value::Mapping(ref map) = doc {
+                let has_imports = map.contains_key(&Value::String("$imports".to_string()));
+                let has_defs = map.contains_key(&Value::String("$defs".to_string()));
+                
+                if has_imports || has_defs {
+                    // This document needs recursive preprocessing - parse it back to AST and process
+                    let doc_yaml = serde_yaml::to_string(&doc)?;
+                    let doc_ast = parser::parse_yaml_with_custom_tags(&doc_yaml)?;
+                    
+                    // Recursively process this document with its own environment
+                    let mut doc_env_values = EnvValues::new();
+                    self.load_imports_and_defs(&doc_ast, doc_location, &mut doc_env_values, import_records).await?;
+                    
+                    // Phase 2: Process the document with its own environment context
+                    let mut doc_context = TagContext::new()
+                        .with_base_path(PathBuf::from(doc_location));
+                    
+                    // Add the document's environment variables to context
+                    for (key, value) in doc_env_values {
+                        doc_context = doc_context.with_variable(&key, value);
+                    }
+                    
+                    // Create a temporary mutable preprocessor for resolving this document
+                    let loader = ProductionImportLoader::new();
+                    let mut temp_preprocessor = YamlPreprocessor::new(loader);
+                    return temp_preprocessor.resolve_ast_with_context(doc_ast, &doc_context);
+                }
+            }
+            
+            // Document has no preprocessing directives, return as-is
+            Ok(doc)
+        })
+    }
 
     /// Compute SHA256 hash for import tracking
     fn compute_sha256(&self, data: &str) -> String {
