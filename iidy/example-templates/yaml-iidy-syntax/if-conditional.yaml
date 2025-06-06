@@ -4,6 +4,7 @@ $defs:
   instance_count: 3
 
 # !$if conditional logic examples
+# Note: !$and and !$or tags don't exist - use nested !$if for complex logic
 title: "Conditional Logic Demo"
 
 # Basic !$if with !$eq condition
@@ -19,21 +20,20 @@ debug_enabled: !$if
   then: true
   else: false
 
-# !$if with !$and condition
+# !$if with logical AND (using nested conditions)
 high_availability: !$if
-  condition: !$and
-    - !$eq ["{{environment}}", "production"]
-    - !$gte ["{{instance_count}}", 2]
-  then: true
+  condition: !$eq ["{{environment}}", "production"]
+  then: !$if
+    condition: !$not [!$eq ["{{instance_count}}", 1]]
+    then: true
+    else: false
   else: false
 
-# !$if with !$or condition
+# !$if with logical OR (using nested conditions)
 monitoring_enabled: !$if
-  condition: !$or
-    - !$eq ["{{environment}}", "production"]
-    - "{{enable_debug}}"
+  condition: !$eq ["{{environment}}", "production"]
   then: true
-  else: false
+  else: "{{enable_debug}}"
 
 # Nested !$if example
 instance_type: !$if

@@ -80,6 +80,11 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
         "!$parseJson" => parse_parse_json_tag(value),
         "!$escape" => parse_escape_tag(value),
         _ => {
+            // Check for unknown iidy preprocessing tags (likely typos)
+            if tag.starts_with("!$") {
+                return Err(anyhow!("Unknown iidy preprocessing tag '{}'. Preprocessing tags must start with '!$' and be one of the supported tags like !$if, !$map, !$merge, etc. This is likely a typo.", tag));
+            }
+            
             // Unknown tag (like CloudFormation !Ref, !Sub), preserve with content processing
             // Strip the '!' prefix to get the actual tag name
             let tag_name = if tag.starts_with('!') {
