@@ -764,9 +764,19 @@ pub fn resolve_map_values_tag(tag: &MapValuesTag, context: &TagContext, resolver
             let var_name = tag.var_name.as_deref().unwrap_or("value");
             
             for (key, value) in map {
-                // Create new context with the current value bound to the variable
+                // Create new context with the current value and key bound to variables
                 let mut value_bindings = HashMap::new();
                 value_bindings.insert(var_name.to_string(), value);
+                
+                // Add the key as a string (convert from Value to string)
+                let key_str = match &key {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => format!("{:?}", key),
+                };
+                value_bindings.insert("key".to_string(), Value::String(key_str));
+                
                 let value_context = context.with_bindings(value_bindings);
                 
                 let transformed = resolver.resolve_ast(&tag.transform, &value_context)?;

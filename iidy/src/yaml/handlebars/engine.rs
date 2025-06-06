@@ -45,6 +45,7 @@ pub fn create_handlebars_registry() -> Handlebars<'static> {
     handlebars.register_helper("substring", Box::new(substring_helper));
     handlebars.register_helper("length", Box::new(length_helper));
     handlebars.register_helper("pad", Box::new(pad_helper));
+    handlebars.register_helper("concat", Box::new(concat_helper));
     
     // Register object access helpers
     handlebars.register_helper("lookup", Box::new(lookup_helper));

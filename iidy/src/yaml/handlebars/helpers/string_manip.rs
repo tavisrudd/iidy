@@ -157,3 +157,26 @@ pub fn pad_helper(
     
     Ok(())
 }
+
+/// concat helper - concatenates multiple strings
+pub fn concat_helper(
+    h: &Helper,
+    _: &Handlebars,
+    _: &Context,
+    _: &mut RenderContext,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let mut result = String::new();
+    
+    for param in h.params() {
+        match param.value() {
+            serde_json::Value::String(s) => result.push_str(s),
+            serde_json::Value::Number(n) => result.push_str(&n.to_string()),
+            serde_json::Value::Bool(b) => result.push_str(&b.to_string()),
+            _ => return Err(handlebars::RenderError::new("concat helper only supports strings, numbers, and booleans")),
+        }
+    }
+    
+    out.write(&result)?;
+    Ok(())
+}
