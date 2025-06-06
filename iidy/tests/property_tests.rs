@@ -34,6 +34,13 @@ fn yaml_mapping_strategy() -> impl Strategy<Value = Value> {
 /// Strategy for generating variable names for handlebars
 fn variable_name_strategy() -> impl Strategy<Value = String> {
     "[a-zA-Z][a-zA-Z0-9_]*"
+        .prop_filter("Must not be handlebars reserved keyword", |name| {
+            // Filter out handlebars reserved keywords
+            !matches!(name.as_str(), 
+                "if" | "else" | "unless" | "each" | "with" | "lookup" | "log" | 
+                "blockHelperMissing" | "helperMissing" | "true" | "false" | "null" | "undefined"
+            )
+        })
 }
 
 /// Strategy for generating handlebars template strings
