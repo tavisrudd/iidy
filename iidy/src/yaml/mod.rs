@@ -908,4 +908,260 @@ resources:
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_bracket_notation_variable_reference() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  environment: "prod"
+  config:
+    prod: "prod-db.example.com"
+    dev: "dev-db.example.com"
+
+database_host: !$ config[environment]
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(db_host)) = map.get(&Value::String("database_host".to_string())) {
+                assert_eq!(db_host, "prod-db.example.com");
+            } else {
+                panic!("Expected database_host to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bracket_notation_literal_string() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  config:
+    "literal-key": "literal-value"
+    'single-quote-key': "single-quote-value"
+
+result1: !$ config["literal-key"]
+result2: !$ config['single-quote-key']
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(result1)) = map.get(&Value::String("result1".to_string())) {
+                assert_eq!(result1, "literal-value");
+            } else {
+                panic!("Expected result1 to be resolved");
+            }
+            
+            if let Some(Value::String(result2)) = map.get(&Value::String("result2".to_string())) {
+                assert_eq!(result2, "single-quote-value");
+            } else {
+                panic!("Expected result2 to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_bracket_notation_nested_path() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  env:
+    stage: "production"
+  config:
+    production: "prod-db.example.com"
+    development: "dev-db.example.com"
+
+database_host: !$ config[env.stage]
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(db_host)) = map.get(&Value::String("database_host".to_string())) {
+                assert_eq!(db_host, "prod-db.example.com");
+            } else {
+                panic!("Expected database_host to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_mixed_dot_and_bracket_notation() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  environment: "prod"
+  region: "us-west-2"
+  configs:
+    prod:
+      regions:
+        "us-west-2": "prod-us-west-2-db.example.com"
+        "us-east-1": "prod-us-east-1-db.example.com"
+
+database_host: !$ configs[environment].regions[region]
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(db_host)) = map.get(&Value::String("database_host".to_string())) {
+                assert_eq!(db_host, "prod-us-west-2-db.example.com");
+            } else {
+                panic!("Expected database_host to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_selector_single_property() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  config:
+    database: "db.example.com"
+    cache: "cache.example.com"
+    storage: "storage.example.com"
+
+result: !$ config?database
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(result_value)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_value, "db.example.com");
+            } else {
+                panic!("Expected result to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_selector_multiple_properties() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  config:
+    database: "db.example.com"
+    cache: "cache.example.com"
+    storage: "storage.example.com"
+
+result: !$ config?database,cache
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                // Should contain only database and cache, not storage
+                assert!(result_map.contains_key(&Value::String("database".to_string())));
+                assert!(result_map.contains_key(&Value::String("cache".to_string())));
+                assert!(!result_map.contains_key(&Value::String("storage".to_string())));
+                
+                assert_eq!(result_map.get(&Value::String("database".to_string())), Some(&Value::String("db.example.com".to_string())));
+                assert_eq!(result_map.get(&Value::String("cache".to_string())), Some(&Value::String("cache.example.com".to_string())));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_query_selector_nested_path() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  config:
+    database:
+      host: "db.example.com"
+      port: 5432
+    cache:
+      host: "cache.example.com"
+      port: 6379
+
+result: !$ config?.database.host
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(result_value)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_value, "db.example.com");
+            } else {
+                panic!("Expected result to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_explicit_query_parameter() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  config:
+    database: "db.example.com"
+    cache: "cache.example.com"
+    storage: "storage.example.com"
+
+result: !$
+  path: config
+  query: "database,cache"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                // Should contain only database and cache, not storage
+                assert!(result_map.contains_key(&Value::String("database".to_string())));
+                assert!(result_map.contains_key(&Value::String("cache".to_string())));
+                assert!(!result_map.contains_key(&Value::String("storage".to_string())));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
 }

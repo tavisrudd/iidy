@@ -272,11 +272,12 @@ Based on codebase research, the following components are already in place:
 - [x] Add comprehensive tests for all advanced tags
 - [x] Fix number representation to preserve integers for CloudFormation compatibility
 
-### Phase 1.5: Include System Enhancement
-- [ ] Add dot notation support for nested access
-- [ ] Implement dynamic key support with brackets
-- [ ] Add query/selector support for partial inclusion
-- [ ] Wire up include path resolution with imports
+### Phase 1.5: Include System Enhancement ✅ (Complete)
+- [x] Add dot notation support for nested access (already implemented)
+- [x] Implement dynamic key support with brackets (e.g., `!$ config[environment]`)
+- [x] Add query/selector support for partial inclusion (e.g., `!$ config?database,cache`)
+- [x] Add comprehensive tests for enhanced include functionality
+- [ ] Wire up include path resolution with imports (deferred to Phase 1.6)
 
 ### Phase 1.6: Full AST Resolution
 - [ ] Remove temporary AST-to-Value bridge in preprocess.rs
@@ -324,14 +325,37 @@ This would enable:
 - Performance variants optimized for different use cases
 - Easier extensibility for custom tag behavior
 
+## Implementation Progress
+
+### ✅ Phase 1.5 Completion (2025-06-05)
+
+Successfully completed enhanced include system with:
+
+**Dynamic Key Support with Brackets:**
+- Variable references: `config[environment]` where `environment` is a variable
+- String literals: `config["literal-key"]` and `config['literal-key']`
+- Nested paths: `config[env.stage]` where `env.stage` resolves to a variable
+- Mixed notation: `configs[environment].regions[region]`
+
+**Query/Selector Support:**
+- Single property: `config?database` - select single property
+- Multiple properties: `config?database,cache` - select multiple properties
+- Nested paths: `config?.database.host` - query with path traversal
+- Explicit syntax: `!$ {path: config, query: "database,cache"}`
+
+**Comprehensive Test Coverage:**
+- 7 new tests covering all bracket notation scenarios
+- 4 new tests covering all query selector scenarios
+- All tests passing with full functionality validation
+
 ## Next Steps
 
-1. Complete Phase 1.4: Advanced Tags Implementation
-2. Implement all missing transformation and string processing tags
-3. Add comprehensive test coverage for new tags
-4. Consider tag resolver trait refactoring for Phase 1.6
+1. Begin Phase 1.6: Full AST Resolution
+2. Remove temporary AST-to-Value bridge in preprocess.rs
+3. Implement full AST resolution pipeline
+4. Consider tag resolver trait refactoring for better testing and extensibility
 
 ---
 
 *Last updated: 2025-06-05*
-*Status: Planning → Implementation Ready*
+*Status: Phase 1.5 Complete → Ready for Phase 1.6*

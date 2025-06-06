@@ -54,8 +54,15 @@ impl TagContext {
 pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Value> {
     let path = &tag.path;
     
+    // Parse path and query
+    let (base_path, query) = parse_path_and_query(path, &tag.query);
+    
     // Handle dot notation access to variables (e.g., "config.database_host")
-    if let Some(value) = resolve_dot_notation_path(path, context) {
+    if let Some(mut value) = resolve_dot_notation_path(&base_path, context) {
+        // Apply query selector if present
+        if let Some(query_str) = query {
+            value = apply_query_selector(value, &query_str)?;
+        }
         return Ok(value);
     }
     
@@ -64,19 +71,19 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
     // - URLs: "https://example.com/config.yaml"
     // - Special imports: "AWS::EC2::Instance", etc.
     
-    if path.starts_with("http://") || path.starts_with("https://") {
+    if base_path.starts_with("http://") || base_path.starts_with("https://") {
         // TODO: HTTP includes
         Err(anyhow!("HTTP includes not yet implemented"))
-    } else if path.contains("::") {
+    } else if base_path.contains("::") {
         // AWS CloudFormation resource type or similar
         // TODO: Handle special imports
         Err(anyhow!("Special imports not yet implemented"))
     } else {
         // File include
         let resolved_path = if let Some(base) = &context.base_path {
-            base.join(path)
+            base.join(&base_path)
         } else {
-            std::path::PathBuf::from(path)
+            std::path::PathBuf::from(&base_path)
         };
         
         // TODO: Read and parse the file
@@ -85,22 +92,106 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
     }
 }
 
-/// Resolve dot notation path in variables (e.g., "config.database_host")
-fn resolve_dot_notation_path(path: &str, context: &TagContext) -> Option<Value> {
+/// Parse path and query from include path
+/// Supports formats like "config?database" or "config?database,host"
+fn parse_path_and_query(path: &str, explicit_query: &Option<String>) -> (String, Option<String>) {
+    // If there's an explicit query in the tag, use that
+    if let Some(q) = explicit_query {
+        return (path.to_string(), Some(q.clone()));
+    }
+    
+    // Otherwise, check if path contains query syntax
+    if let Some(query_index) = path.find('?') {
+        let base_path = path[..query_index].to_string();
+        let query = path[query_index + 1..].to_string();
+        (base_path, Some(query))
+    } else {
+        (path.to_string(), None)
+    }
+}
+
+/// Apply query selector to a value
+/// Supported query formats:
+/// - "property" - select single property
+/// - "prop1,prop2" - select multiple properties  
+/// - ".nested.path" - select nested property (same as dot notation)
+fn apply_query_selector(value: Value, query: &str) -> Result<Value> {
+    match value {
+        Value::Mapping(map) => {
+            if query.starts_with('.') {
+                // Handle nested path query like ".database.host"
+                let path = &query[1..]; // Remove leading dot
+                apply_nested_path_query(Value::Mapping(map), path)
+            } else if query.contains(',') {
+                // Handle multiple property selection like "database,host"
+                let properties: Vec<&str> = query.split(',').map(|s| s.trim()).collect();
+                let mut result = serde_yaml::Mapping::new();
+                
+                for prop in properties {
+                    if let Some(prop_value) = map.get(&Value::String(prop.to_string())) {
+                        result.insert(Value::String(prop.to_string()), prop_value.clone());
+                    }
+                }
+                
+                Ok(Value::Mapping(result))
+            } else {
+                // Handle single property selection like "database"
+                if let Some(prop_value) = map.get(&Value::String(query.to_string())) {
+                    Ok(prop_value.clone())
+                } else {
+                    Err(anyhow!("Property '{}' not found in mapping", query))
+                }
+            }
+        }
+        _ => Err(anyhow!("Query selectors can only be applied to mappings"))
+    }
+}
+
+/// Apply nested path query to a value
+fn apply_nested_path_query(value: Value, path: &str) -> Result<Value> {
     let parts: Vec<&str> = path.split('.').collect();
-    if parts.is_empty() {
+    let mut current_value = value;
+    
+    for part in parts {
+        if part.is_empty() {
+            continue;
+        }
+        
+        match current_value {
+            Value::Mapping(ref map) => {
+                let key = Value::String(part.to_string());
+                if let Some(next_value) = map.get(&key) {
+                    current_value = next_value.clone();
+                } else {
+                    return Err(anyhow!("Property '{}' not found in path", part));
+                }
+            }
+            _ => return Err(anyhow!("Cannot traverse path further at '{}'", part)),
+        }
+    }
+    
+    Ok(current_value)
+}
+
+/// Resolve dot notation path in variables (e.g., "config.database_host")
+/// Also supports bracket notation (e.g., "config[environment]", "config['literal']")
+fn resolve_dot_notation_path(path: &str, context: &TagContext) -> Option<Value> {
+    // Parse the path to handle both dot notation and bracket notation
+    let path_segments = parse_path_segments(path, context)?;
+    
+    if path_segments.is_empty() {
         return None;
     }
     
     // Start with the root variable
-    let root_var = parts[0];
+    let root_var = &path_segments[0];
     let mut current_value = context.get_variable(root_var)?.clone();
     
-    // Traverse the dot notation path
-    for part in &parts[1..] {
+    // Traverse the path segments
+    for segment in &path_segments[1..] {
         match current_value {
             Value::Mapping(ref map) => {
-                let key = Value::String(part.to_string());
+                let key = Value::String(segment.clone());
                 current_value = map.get(&key)?.clone();
             }
             _ => return None, // Can't traverse further
@@ -108,6 +199,123 @@ fn resolve_dot_notation_path(path: &str, context: &TagContext) -> Option<Value> 
     }
     
     Some(current_value)
+}
+
+/// Parse path segments handling both dot notation and bracket notation
+/// Examples:
+/// - "config.database_host" -> ["config", "database_host"]
+/// - "config[environment]" -> ["config", "prod"] (if environment="prod")
+/// - "config['literal']" -> ["config", "literal"]
+/// - "config[env.stage]" -> ["config", "production"] (if env.stage="production")
+fn parse_path_segments(path: &str, context: &TagContext) -> Option<Vec<String>> {
+    let mut segments = Vec::new();
+    let mut current_segment = String::new();
+    let mut chars = path.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        match ch {
+            '.' => {
+                if !current_segment.is_empty() {
+                    segments.push(current_segment.clone());
+                    current_segment.clear();
+                }
+            }
+            '[' => {
+                // End current segment if any
+                if !current_segment.is_empty() {
+                    segments.push(current_segment.clone());
+                    current_segment.clear();
+                }
+                
+                // Parse bracket content
+                let bracket_content = parse_bracket_content(&mut chars, context)?;
+                segments.push(bracket_content);
+            }
+            _ => {
+                current_segment.push(ch);
+            }
+        }
+    }
+    
+    // Add final segment if any
+    if !current_segment.is_empty() {
+        segments.push(current_segment);
+    }
+    
+    if segments.is_empty() {
+        None
+    } else {
+        Some(segments)
+    }
+}
+
+/// Parse the content inside brackets and resolve it
+/// Supports:
+/// - Variable references: [environment] -> resolves variable "environment"
+/// - String literals: ['literal'] or ["literal"] -> returns "literal"
+/// - Nested paths: [env.stage] -> resolves "env.stage" as a path
+fn parse_bracket_content(chars: &mut std::iter::Peekable<std::str::Chars>, context: &TagContext) -> Option<String> {
+    let mut bracket_content = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '"';
+    let mut was_quoted = false;
+    
+    while let Some(ch) = chars.next() {
+        match ch {
+            ']' if !in_quotes => {
+                break;
+            }
+            '\'' | '"' if !in_quotes => {
+                in_quotes = true;
+                was_quoted = true;
+                quote_char = ch;
+                // Don't include the opening quote in the content
+            }
+            c if in_quotes && c == quote_char => {
+                in_quotes = false;
+                // Don't include the closing quote in the content
+            }
+            _ => {
+                bracket_content.push(ch);
+            }
+        }
+    }
+    
+    if bracket_content.is_empty() {
+        return None;
+    }
+    
+    // If it was quoted, return the literal string
+    if was_quoted {
+        return Some(bracket_content);
+    }
+    
+    // Otherwise, try to resolve as a variable or path
+    if bracket_content.contains('.') {
+        // It's a nested path reference
+        if let Some(resolved_value) = resolve_dot_notation_path(&bracket_content, context) {
+            match resolved_value {
+                Value::String(s) => Some(s),
+                Value::Number(n) => Some(n.to_string()),
+                Value::Bool(b) => Some(b.to_string()),
+                _ => None, // Can't use complex types as keys
+            }
+        } else {
+            None
+        }
+    } else {
+        // It's a simple variable reference
+        if let Some(var_value) = context.get_variable(&bracket_content) {
+            match var_value {
+                Value::String(s) => Some(s.clone()),
+                Value::Number(n) => Some(n.to_string()),
+                Value::Bool(b) => Some(b.to_string()),
+                _ => None, // Can't use complex types as keys
+            }
+        } else {
+            None
+        }
+    }
 }
 
 /// Resolve an if tag
