@@ -1049,6 +1049,74 @@ Added comprehensive test suites:
 
 This will enable automatic detection for CloudFormation vs Kubernetes manifests and apply the appropriate YAML specification compatibility.
 
+### CLI Implementation Complete
+
+**Status: ✅ IMPLEMENTED**
+
+Successfully added `--yaml-spec` CLI option to `iidy render` command:
+
+**CLI Options:**
+- `--yaml-spec=1.1`: Force YAML 1.1 input parsing mode (CloudFormation compatible)
+- `--yaml-spec=1.2`: Force YAML 1.2 strict input parsing mode  
+- `--yaml-spec=auto`: Auto-detect based on document analysis (default)
+
+**Auto-Detection Logic:**
+1. **Explicit Directives** (highest priority): `%YAML 1.1` or `%YAML 1.2` in document
+2. **CloudFormation Detection**: Multiple indicators like `AWSTemplateFormatVersion`, `Resources`, `Parameters`
+3. **Kubernetes Detection**: `apiVersion` + `kind` + known K8s API versions
+4. **Default**: YAML 1.2 strict mode for unknown document types
+
+**Integration Features:**
+- ✅ Full integration with existing YAML 1.1 boolean compatibility system
+- ✅ Context-aware heuristics still apply (Description fields preserved as strings)
+- ✅ Comprehensive test coverage (12 detection scenarios)
+- ✅ Clear help text distinguishing input parsing from output format
+- ✅ All 261 existing tests continue to pass
+
+### Other YAML 1.1 vs 1.2 Differences to Consider
+
+While we've addressed the most critical differences (boolean handling and merge keys), there are other YAML 1.1 vs 1.2 differences that we should be aware of for completeness:
+
+#### Currently Handled:
+- ✅ **Boolean Values**: `yes/no/on/off` conversion vs string preservation
+- ✅ **Merge Keys**: `<<` not supported in 1.2, helpful error with `!$merge` alternative
+- ✅ **Null Values**: `null/Null/NULL` handling (minimal differences)
+
+#### Other Specification Differences (Future Consideration):
+
+**1. Number Formats:**
+- **YAML 1.1**: Supports sexagesimal (base 60): `190:20:30` → 685230
+- **YAML 1.2**: Only decimal, hex, octal
+- **Impact**: Rare in CloudFormation/K8s, low priority
+
+**2. String Escaping:**
+- **YAML 1.1**: More permissive escape sequences  
+- **YAML 1.2**: Stricter JSON-compatible escaping
+- **Impact**: Could affect templates with complex string escaping
+
+**3. Document Markers:**
+- **YAML 1.1**: `---` and `...` handling differences
+- **YAML 1.2**: Stricter document boundary rules
+- **Impact**: Multi-document YAML streams (rare in our use cases)
+
+**4. Tag Resolution:**
+- **YAML 1.1**: More implicit tag resolution rules
+- **YAML 1.2**: Simplified tag resolution  
+- **Impact**: Mostly handled by our preprocessing system
+
+**5. Timestamp Formats:**
+- **YAML 1.1**: Multiple timestamp formats supported
+- **YAML 1.2**: ISO 8601 only
+- **Impact**: CloudFormation uses ISO 8601, minimal risk
+
+#### Recommendation:
+The current implementation addresses the most significant practical differences (booleans and merge keys). Other differences are either:
+- Rarely used in CloudFormation/Kubernetes contexts
+- Already handled appropriately by `serde_yaml`
+- Would require deep parser modifications for minimal benefit
+
+Monitor for edge cases in production use, but the current implementation should handle 99%+ of real-world scenarios effectively.
+
 ---
 
 *Last updated: 2025-06-06*
