@@ -29,6 +29,8 @@ pub fn create_handlebars_registry() -> Handlebars<'static> {
     
     // Register encoding helpers
     handlebars.register_helper("base64", Box::new(base64_helper));
+    handlebars.register_helper("urlEncode", Box::new(url_encode_helper));
+    handlebars.register_helper("sha256", Box::new(sha256_helper));
     
     // Register string manipulation helpers
     handlebars.register_helper("toLowerCase", Box::new(to_lower_case_helper));
@@ -40,6 +42,9 @@ pub fn create_handlebars_registry() -> Handlebars<'static> {
     handlebars.register_helper("capitalize", Box::new(capitalize_helper));
     handlebars.register_helper("trim", Box::new(trim_helper));
     handlebars.register_helper("replace", Box::new(replace_helper));
+    handlebars.register_helper("substring", Box::new(substring_helper));
+    handlebars.register_helper("length", Box::new(length_helper));
+    handlebars.register_helper("pad", Box::new(pad_helper));
     
     // Register object access helpers
     handlebars.register_helper("lookup", Box::new(lookup_helper));

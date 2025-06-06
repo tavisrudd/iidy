@@ -338,4 +338,63 @@ mod tests {
         let result = interpolate_handlebars_string(template, &env, "test").unwrap();
         assert_eq!(result, "api: prod web: dev ");
     }
+
+    #[test]
+    fn test_substring_helper() {
+        let mut env = HashMap::new();
+        env.insert("text".to_string(), json!("hello world"));
+        
+        let result = interpolate_handlebars_string("{{substring text 0 5}}", &env, "test").unwrap();
+        assert_eq!(result, "hello");
+        
+        let result = interpolate_handlebars_string("{{substring text 6 5}}", &env, "test").unwrap();
+        assert_eq!(result, "world");
+    }
+
+    #[test]
+    fn test_length_helper() {
+        let mut env = HashMap::new();
+        env.insert("text".to_string(), json!("hello"));
+        env.insert("array".to_string(), json!([1, 2, 3, 4]));
+        env.insert("object".to_string(), json!({"a": 1, "b": 2}));
+        
+        let result = interpolate_handlebars_string("{{length text}}", &env, "test").unwrap();
+        assert_eq!(result, "5");
+        
+        let result = interpolate_handlebars_string("{{length array}}", &env, "test").unwrap();
+        assert_eq!(result, "4");
+        
+        let result = interpolate_handlebars_string("{{length object}}", &env, "test").unwrap();
+        assert_eq!(result, "2");
+    }
+
+    #[test]
+    fn test_pad_helper() {
+        let mut env = HashMap::new();
+        env.insert("text".to_string(), json!("hello"));
+        
+        let result = interpolate_handlebars_string("{{pad text 10}}", &env, "test").unwrap();
+        assert_eq!(result, "hello     ");
+        
+        let result = interpolate_handlebars_string("{{pad text 10 \"-\"}}", &env, "test").unwrap();
+        assert_eq!(result, "hello-----");
+    }
+
+    #[test]
+    fn test_url_encode_helper() {
+        let mut env = HashMap::new();
+        env.insert("text".to_string(), json!("hello world & more"));
+        
+        let result = interpolate_handlebars_string("{{urlEncode text}}", &env, "test").unwrap();
+        assert_eq!(result, "hello+world+%26+more");
+    }
+
+    #[test]
+    fn test_sha256_helper() {
+        let mut env = HashMap::new();
+        env.insert("text".to_string(), json!("hello"));
+        
+        let result = interpolate_handlebars_string("{{sha256 text}}", &env, "test").unwrap();
+        assert_eq!(result, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    }
 }
