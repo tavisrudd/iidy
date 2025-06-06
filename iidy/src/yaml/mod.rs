@@ -54,11 +54,30 @@ pub async fn preprocess_yaml_with_base_location(input: &str, base_location: &str
 /// YAML preprocessor that handles the two-phase processing pipeline
 pub struct YamlPreprocessor<L: ImportLoader> {
     import_loader: L,
+    /// Enable YAML 1.1 boolean compatibility for CloudFormation
+    yaml_11_compatibility: bool,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
     pub fn new(import_loader: L) -> Self {
-        Self { import_loader }
+        Self { 
+            import_loader,
+            yaml_11_compatibility: true, // Default to CloudFormation compatibility
+        }
+    }
+    
+    /// Create a preprocessor with YAML 1.1 compatibility disabled
+    pub fn new_yaml_12_mode(import_loader: L) -> Self {
+        Self { 
+            import_loader,
+            yaml_11_compatibility: false,
+        }
+    }
+    
+    /// Enable or disable YAML 1.1 boolean compatibility
+    pub fn with_yaml_11_compatibility(mut self, enabled: bool) -> Self {
+        self.yaml_11_compatibility = enabled;
+        self
     }
 
     /// Main processing entry point - implements the two-phase pipeline
@@ -84,7 +103,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             context = context.with_variable(&key, value);
         }
             
-        self.resolve_ast_with_context(ast, &context)
+        let result = self.resolve_ast_with_context(ast, &context)?;
+        
+        // Apply YAML 1.1 compatibility for CloudFormation if enabled
+        if self.yaml_11_compatibility {
+            Ok(self.convert_yaml_12_to_11_compatibility(result))
+        } else {
+            Ok(result)
+        }
     }
 
     /// Phase 1: Load all imports and definitions to build the complete environment
@@ -293,6 +319,107 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
     }
 
+    /// Convert YAML 1.2 values to YAML 1.1 equivalents for CloudFormation compatibility
+    /// 
+    /// CloudFormation uses YAML 1.1 which auto-converts certain strings to booleans/null:
+    /// - yes/Yes/YES/true/True/TRUE/on/On/ON → boolean true
+    /// - no/No/NO/false/False/FALSE/off/Off/OFF → boolean false  
+    /// - null/Null/NULL/~ → null
+    ///
+    /// This function uses heuristics to avoid converting strings that are likely intended 
+    /// to remain as strings (like in Description fields or certain tag contexts).
+    fn convert_yaml_12_to_11_compatibility(&self, value: Value) -> Value {
+        self.convert_yaml_12_to_11_compatibility_with_context(value, &[])
+    }
+    
+    /// Convert with context awareness to avoid inappropriate conversions
+    fn convert_yaml_12_to_11_compatibility_with_context(&self, value: Value, path: &[String]) -> Value {
+        match value {
+            Value::String(s) => {
+                // Check if we're in a context where strings should remain strings
+                if self.should_preserve_as_string(&s, path) {
+                    Value::String(s)
+                } else {
+                    match s.as_str() {
+                        // YAML 1.1 true values
+                        "yes" | "Yes" | "YES" | "true" | "True" | "TRUE" | "on" | "On" | "ON" => {
+                            Value::Bool(true)
+                        }
+                        // YAML 1.1 false values  
+                        "no" | "No" | "NO" | "false" | "False" | "FALSE" | "off" | "Off" | "OFF" => {
+                            Value::Bool(false)
+                        }
+                        // YAML 1.1 null values (~ is already handled by serde_yaml)
+                        "null" | "Null" | "NULL" => {
+                            Value::Null
+                        }
+                        // Keep all other strings as strings
+                        _ => Value::String(s)
+                    }
+                }
+            }
+            Value::Sequence(seq) => {
+                // Recursively convert sequence elements
+                let converted_seq = seq.into_iter()
+                    .enumerate()
+                    .map(|(i, item)| {
+                        let mut new_path = path.to_vec();
+                        new_path.push(format!("[{}]", i));
+                        self.convert_yaml_12_to_11_compatibility_with_context(item, &new_path)
+                    })
+                    .collect();
+                Value::Sequence(converted_seq)
+            }
+            Value::Mapping(map) => {
+                // Recursively convert mapping values with path context
+                let mut converted_map = serde_yaml::Mapping::new();
+                for (k, v) in map {
+                    let key_str = match &k {
+                        Value::String(s) => s.clone(),
+                        _ => format!("{:?}", k),
+                    };
+                    let mut new_path = path.to_vec();
+                    new_path.push(key_str);
+                    let converted_value = self.convert_yaml_12_to_11_compatibility_with_context(v, &new_path);
+                    converted_map.insert(k, converted_value);
+                }
+                Value::Mapping(converted_map)
+            }
+            // Keep other types as-is (Bool, Number, Null, Tagged)
+            _ => value
+        }
+    }
+    
+    /// Determine if a string should be preserved as-is rather than converted to boolean
+    /// Uses heuristics based on the path context to avoid inappropriate conversions
+    fn should_preserve_as_string(&self, s: &str, path: &[String]) -> bool {
+        // Don't convert boolean-like strings in these contexts:
+        let preserve_contexts = [
+            "Description",      // CloudFormation Description fields
+            "Name",            // Name fields often contain descriptive text
+            "Value",           // Tag values might be descriptive
+            "Message",         // Message fields
+            "Text",            // Text fields
+            "Content",         // Content fields
+            "Data",            // Data fields
+        ];
+        
+        // Check if we're in a context that typically contains free-form text
+        for context in &preserve_contexts {
+            if path.iter().any(|p| p.contains(context)) {
+                return true;
+            }
+        }
+        
+        // Additional heuristic: if the string is longer than a simple boolean word,
+        // it's probably not intended as a boolean
+        if s.len() > 5 {  // "false" is 5 characters, so longer strings are probably not booleans
+            return true;
+        }
+        
+        false
+    }
+
     /// Phase 2: Resolve AST with complete environment context
     pub fn resolve_ast_with_context(&mut self, ast: YamlAst, context: &TagContext) -> Result<Value> {
         match ast {
@@ -317,8 +444,33 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 for (key, value) in map {
                     let key_val = self.resolve_ast_with_context(key, context)?;
                     
-                    // Skip preprocessing directive keys in final output (matching iidy-js behavior)
+                    // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
                     if let Value::String(key_str) = &key_val {
+                        if key_str == "<<" {
+                            let location_info = if let Some(base_path) = &context.base_path {
+                                format!("in file '{}'", base_path.display())
+                            } else {
+                                context.current_location()
+                                    .map(|loc| format!("in '{}'", loc))
+                                    .unwrap_or_else(|| "in unknown location".to_string())
+                            };
+                            let yaml_path = context.current_path();
+                            let path_info = if !yaml_path.is_empty() {
+                                format!(" at path '{}'", yaml_path)
+                            } else {
+                                String::new()
+                            };
+                            return Err(anyhow::anyhow!(
+                                "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
+                                Consider using iidy's !$merge tag instead:\n\
+                                  combined_config: !$merge\n\
+                                    - *base_config\n\
+                                    - additional_key: additional_value",
+                                location_info, path_info
+                            ));
+                        }
+                        
+                        // Skip preprocessing directive keys in final output (matching iidy-js behavior)
                         if matches!(key_str.as_str(), "$imports" | "$defs" | "$envValues") {
                             continue;
                         }

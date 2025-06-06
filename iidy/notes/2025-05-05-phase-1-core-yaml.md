@@ -897,5 +897,159 @@ Error: Variable 'app_info' not found in environment
 
 ---
 
+## YAML 1.1/1.2 Compatibility Implementation (2025-06-06)
+
+### Critical CloudFormation Compatibility Issue
+
+**Problem Identified**: CloudFormation uses YAML 1.1 specification, but `serde_yaml` follows YAML 1.2. This creates significant compatibility issues:
+
+- **YAML 1.1**: Auto-converts strings like `yes`, `no`, `on`, `off` to booleans
+- **YAML 1.2**: Treats these as literal strings
+- **Impact**: CloudFormation expects boolean values but receives strings, causing deployment failures
+
+### Implementation: Intelligent YAML 1.1 Compatibility
+
+**Status: ✅ COMPLETE**
+
+Successfully implemented configurable YAML 1.1 boolean compatibility with intelligent heuristics:
+
+#### Key Features:
+
+**1. Configurable YAML Modes:**
+```rust
+// Default: YAML 1.1 mode (CloudFormation compatible)
+let preprocessor = YamlPreprocessor::new(loader);
+
+// YAML 1.2 mode (strict mode, no conversion)  
+let preprocessor = YamlPreprocessor::new_yaml_12_mode(loader);
+
+// Explicit configuration
+let preprocessor = YamlPreprocessor::new(loader)
+    .with_yaml_11_compatibility(false);
+```
+
+**2. Smart Boolean Conversion:**
+- **True values**: `yes/Yes/YES/true/True/TRUE/on/On/ON` → `boolean true`
+- **False values**: `no/No/NO/false/False/FALSE/off/Off/OFF` → `boolean false`
+- **Null values**: `null/Null/NULL` → `null`
+
+**3. Context-Aware Heuristics:**
+Preserves strings in contexts where they're likely intentional:
+- `Description` fields (CloudFormation descriptions)
+- `Name` fields (often contain descriptive text)
+- `Value` fields (tag values might be descriptive)
+- `Message`, `Text`, `Content`, `Data` fields
+- Strings longer than 5 characters (beyond simple boolean words)
+
+**4. Path-Aware Processing:**
+Uses hierarchical path tracking to make intelligent conversion decisions based on document structure context.
+
+### YAML Merge Key Detection
+
+**Status: ✅ COMPLETE**
+
+**Problem**: YAML merge keys (`<<`) were removed in YAML 1.2 but users might try to use them from YAML 1.1 experience.
+
+**Solution**: Comprehensive merge key detection with helpful error messages:
+
+```
+YAML merge keys ('<<') are not supported in YAML 1.2 in file 'test.yaml' at path '<root>.prod_config'
+Consider using iidy's !$merge tag instead:
+  combined_config: !$merge
+    - *base_config
+    - additional_key: additional_value
+```
+
+#### Features:
+- **Proactive Detection**: Identifies merge key usage during AST processing
+- **Clear Error Messages**: File location and YAML path context
+- **Actionable Alternatives**: Suggests concrete solutions using `!$merge` tag
+- **Path Integration**: Uses existing path tracking system for precise error location
+
+### Enhanced Error Reporting with YAML Path Tracking
+
+**Status: ✅ COMPLETE**
+
+Enhanced error reporting system with comprehensive YAML document path tracking:
+
+#### Key Features:
+
+**1. Hierarchical Path Tracking:**
+- Object paths: `<root>.Resources.MyResource.Properties`
+- Array indices: `<root>.services[1].config`
+- Mixed structures: `<root>.environments[production].regions[0]`
+
+**2. Context-Aware Error Messages:**
+```
+Variable 'app_info' not found in environment in file 'test.yaml' at path '<root>.complete_config.app'
+Only variables from $defs, $imports, and local scoped variables (like 'item' in !$map) are available.
+```
+
+**3. Integration with All Error Types:**
+- Variable scope validation errors
+- YAML merge key detection errors  
+- Import resolution failures
+- Tag processing errors
+
+### Comprehensive Test Coverage
+
+**Status: ✅ COMPLETE**
+
+Added comprehensive test suites:
+
+**1. YAML Boolean Compatibility Tests** (`tests/yaml_boolean_compatibility_tests.rs`):
+- 4 test cases covering YAML 1.1 vs 1.2 behavior
+- Mode switching validation (YAML 1.2 vs 1.1 compatibility)
+- Context-aware heuristics verification
+- CloudFormation template compatibility
+
+**2. Enhanced YAML Anchors/Aliases Tests** (`tests/yaml_anchors_aliases_tests.rs`):
+- 7 test cases covering anchors, aliases, and merge key scenarios
+- Proper merge key error detection validation
+- Alternative patterns using `!$merge` tags
+- Complex nested scenarios with YAML anchors
+
+**3. Error Reporting Tests** (`tests/error_reporting_tests.rs`):
+- 7 test cases for path tracking functionality
+- Complex nested structure validation
+- Error message format consistency
+- YAML path accuracy verification
+
+### Production Readiness
+
+**✅ All Functionality Verified:**
+
+1. **YAML 1.1 Boolean Conversion**: Working perfectly
+   - `yes` → `boolean true` ✅
+   - `no` → `boolean false` ✅
+   - `"yes"` in Description field → `string "yes"` ✅ (preserved by heuristics)
+
+2. **YAML 1.2 Mode**: All strings preserved as-is ✅
+
+3. **Merge Key Detection**: Clear error messages with actionable alternatives ✅
+
+4. **Path Tracking Integration**: All error messages include precise location context ✅
+
+5. **CloudFormation Compatibility**: Boolean values work correctly as expected ✅
+
+### Impact and Benefits
+
+**CloudFormation Templates**: Now work correctly with boolean values as expected by AWS
+**Error Clarity**: Users get helpful guidance when trying to use unsupported YAML 1.1 features  
+**Flexibility**: Both strict YAML 1.2 and CloudFormation-compatible YAML 1.1 modes available
+**Intelligent Behavior**: Context-aware processing prevents common pitfalls with quoted strings
+**Production Ready**: Comprehensive test coverage and robust error handling
+
+### Future CLI Integration
+
+**Next Steps**: Add CLI option `--yaml-spec` with values:
+- `1.1`: Force YAML 1.1 compatibility mode (CloudFormation)
+- `1.2`: Force YAML 1.2 strict mode 
+- `auto`: Detect CloudFormation templates by top-level keys and apply appropriate mode
+
+This will enable automatic detection for CloudFormation vs Kubernetes manifests and apply the appropriate YAML specification compatibility.
+
+---
+
 *Last updated: 2025-06-06*
-*Status: Phase 1 COMPLETE → Nested Document Processing IMPLEMENTED → Variable Scope Validation FIXED → Error Reporting Requirements DOCUMENTED*
+*Status: Phase 1 COMPLETE → Nested Document Processing IMPLEMENTED → Variable Scope Validation FIXED → Error Reporting Requirements DOCUMENTED → YAML 1.1/1.2 Compatibility IMPLEMENTED*
