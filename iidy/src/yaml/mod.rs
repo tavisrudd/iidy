@@ -208,13 +208,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         match ast {
             YamlAst::Null => Ok(Value::Null),
             YamlAst::Bool(b) => Ok(Value::Bool(b)),
-            YamlAst::Number(n) => {
-                if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
-                    Ok(Value::Number(serde_yaml::Number::from(n as i64)))
-                } else {
-                    Ok(Value::Number(serde_yaml::Number::from(n)))
-                }
-            }
+            YamlAst::Number(n) => Ok(Value::Number(n)),
             YamlAst::String(s) => Ok(Value::String(s)),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();
@@ -248,7 +242,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         match ast {
             YamlAst::Null => Ok(Value::Null),
             YamlAst::Bool(b) => Ok(Value::Bool(b)),
-            YamlAst::Number(n) => Ok(Value::Number(serde_yaml::Number::from(n))),
+            YamlAst::Number(n) => Ok(Value::Number(n)),
             YamlAst::String(s) => {
                 // Process handlebars templates in strings
                 self.process_string_with_handlebars(s, context)
@@ -336,6 +330,39 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             }
             PreprocessingTag::Join(join_tag) => {
                 resolve_join_tag(&join_tag, context, self)
+            }
+            PreprocessingTag::ConcatMap(concat_map_tag) => {
+                resolve_concat_map_tag(&concat_map_tag, context, self)
+            }
+            PreprocessingTag::MergeMap(merge_map_tag) => {
+                resolve_merge_map_tag(&merge_map_tag, context, self)
+            }
+            PreprocessingTag::MapListToHash(map_list_to_hash_tag) => {
+                resolve_map_list_to_hash_tag(&map_list_to_hash_tag, context, self)
+            }
+            PreprocessingTag::MapValues(map_values_tag) => {
+                resolve_map_values_tag(&map_values_tag, context, self)
+            }
+            PreprocessingTag::GroupBy(group_by_tag) => {
+                resolve_group_by_tag(&group_by_tag, context, self)
+            }
+            PreprocessingTag::FromPairs(from_pairs_tag) => {
+                resolve_from_pairs_tag(&from_pairs_tag, context, self)
+            }
+            PreprocessingTag::ToYamlString(to_yaml_string_tag) => {
+                resolve_to_yaml_string_tag(&to_yaml_string_tag, context, self)
+            }
+            PreprocessingTag::ParseYaml(parse_yaml_tag) => {
+                resolve_parse_yaml_tag(&parse_yaml_tag, context, self)
+            }
+            PreprocessingTag::ToJsonString(to_json_string_tag) => {
+                resolve_to_json_string_tag(&to_json_string_tag, context, self)
+            }
+            PreprocessingTag::ParseJson(parse_json_tag) => {
+                resolve_parse_json_tag(&parse_json_tag, context, self)
+            }
+            PreprocessingTag::Escape(escape_tag) => {
+                resolve_escape_tag(&escape_tag, context, self)
             }
         }
     }
@@ -505,6 +532,379 @@ database_host: !$if
         } else {
             panic!("Expected a mapping result");
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_concat_map_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data: [1, 2, 3]
+
+result: !$concatMap
+  source: !$ data
+  transform: ["{{item}}", "{{item}}"]
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Sequence(result_seq)) = map.get(&Value::String("result".to_string())) {
+                // Should flatten the sequences: [1, 1, 2, 2, 3, 3]
+                assert_eq!(result_seq.len(), 6);
+                assert_eq!(result_seq[0], Value::String("1".to_string()));
+                assert_eq!(result_seq[1], Value::String("1".to_string()));
+                assert_eq!(result_seq[2], Value::String("2".to_string()));
+                assert_eq!(result_seq[3], Value::String("2".to_string()));
+            } else {
+                panic!("Expected result to be a sequence");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_map_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data: ["a", "b"]
+
+result: !$mergeMap
+  source: !$ data
+  transform: 
+    "prefix_{{item}}": "value_{{item}}"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                // Should merge the transformed mappings
+                assert!(result_map.contains_key(&Value::String("prefix_a".to_string())));
+                assert!(result_map.contains_key(&Value::String("prefix_b".to_string())));
+                assert_eq!(result_map.get(&Value::String("prefix_a".to_string())), Some(&Value::String("value_a".to_string())));
+                assert_eq!(result_map.get(&Value::String("prefix_b".to_string())), Some(&Value::String("value_b".to_string())));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_map_list_to_hash_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data: 
+    - key: "name"
+      value: "Alice"
+    - key: "age" 
+      value: 30
+
+result: !$mapListToHash
+  source: !$ data
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_map.get(&Value::String("name".to_string())), Some(&Value::String("Alice".to_string())));
+                // Check the age number properly
+                if let Some(Value::Number(age)) = result_map.get(&Value::String("age".to_string())) {
+                    assert_eq!(age.as_i64().unwrap(), 30);
+                } else {
+                    panic!("Expected age to be a number");
+                }
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_map_values_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data: 
+    name: "alice"
+    city: "boston"
+
+result: !$mapValues
+  source: !$ data  
+  transform: "{{toUpperCase value}}"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_map.get(&Value::String("name".to_string())), Some(&Value::String("ALICE".to_string())));
+                assert_eq!(result_map.get(&Value::String("city".to_string())), Some(&Value::String("BOSTON".to_string())));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_group_by_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data:
+    - name: "Alice"
+      category: "A"
+    - name: "Bob"
+      category: "B"
+    - name: "Charlie"
+      category: "A"
+
+result: !$groupBy
+  source: !$ data
+  key: !$ item.category
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                // Should have groups "A" and "B"
+                assert!(result_map.contains_key(&Value::String("A".to_string())));
+                assert!(result_map.contains_key(&Value::String("B".to_string())));
+                
+                if let Some(Value::Sequence(group_a)) = result_map.get(&Value::String("A".to_string())) {
+                    assert_eq!(group_a.len(), 2); // Alice and Charlie
+                }
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_from_pairs_tag() -> Result<()> {
+        let yaml_input = r#"
+result: !$fromPairs
+  - ["name", "Alice"]
+  - ["age", 30]
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_map.get(&Value::String("name".to_string())), Some(&Value::String("Alice".to_string())));
+                // Numbers should preserve their original representation (integer in this case)
+                if let Some(Value::Number(age)) = result_map.get(&Value::String("age".to_string())) {
+                    assert_eq!(age.as_i64().unwrap(), 30);
+                } else {
+                    panic!("Expected age to be a number");
+                }
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_to_yaml_string_tag() -> Result<()> {
+        let yaml_input = r#"
+result: !$toYamlString
+  name: "Alice"
+  age: 30
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(yaml_str)) = map.get(&Value::String("result".to_string())) {
+                assert!(yaml_str.contains("name: Alice"));
+                assert!(yaml_str.contains("age: 30"));
+            } else {
+                panic!("Expected result to be a YAML string");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_parse_yaml_tag() -> Result<()> {
+        let yaml_input = r#"
+result: !$parseYaml "name: Alice\nage: 30"
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_map.get(&Value::String("name".to_string())), Some(&Value::String("Alice".to_string())));
+                assert_eq!(result_map.get(&Value::String("age".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_to_json_string_tag() -> Result<()> {
+        let yaml_input = r#"
+result: !$toJsonString
+  name: "Alice"
+  age: 30
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(json_str)) = map.get(&Value::String("result".to_string())) {
+                // Should be valid JSON
+                let parsed: serde_json::Value = serde_json::from_str(json_str).expect("Should be valid JSON");
+                assert_eq!(parsed["name"], "Alice");
+                assert_eq!(parsed["age"], 30);
+            } else {
+                panic!("Expected result to be a JSON string");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_parse_json_tag() -> Result<()> {
+        let yaml_input = r#"
+result: !$parseJson '{"name": "Alice", "age": 30}'
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_map.get(&Value::String("name".to_string())), Some(&Value::String("Alice".to_string())));
+                assert_eq!(result_map.get(&Value::String("age".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_escape_tag() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  data: "test"
+
+result: !$escape
+  message: "{{data}}"
+  nested: !$ data
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        if let Value::Mapping(map) = result {
+            if let Some(Value::Mapping(result_map)) = map.get(&Value::String("result".to_string())) {
+                // The escaped content should not be processed
+                assert_eq!(result_map.get(&Value::String("message".to_string())), Some(&Value::String("{{data}}".to_string())));
+                // The !$ tag should be escaped to a placeholder
+                assert_eq!(result_map.get(&Value::String("nested".to_string())), Some(&Value::String("__ESCAPED_PREPROCESSING_TAG__".to_string())));
+            } else {
+                panic!("Expected result to be a mapping");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_number_preservation_for_cloudformation() -> Result<()> {
+        let yaml_input = r#"
+$defs:
+  port: 80
+  timeout: 3.5
+  count: 10
+
+resources:
+  server_port: !$ port
+  request_timeout: !$ timeout  
+  instance_count: !$ count
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        // Convert back to YAML string to verify serialization
+        let yaml_output = serde_yaml::to_string(&result)?;
+        
+        // Verify that integers stay as integers (no .0 suffix)
+        assert!(yaml_output.contains("server_port: 80"));
+        assert!(!yaml_output.contains("server_port: 80.0"));
+        
+        // Verify that floats stay as floats  
+        assert!(yaml_output.contains("request_timeout: 3.5"));
+        
+        // Verify that large integers stay as integers
+        assert!(yaml_output.contains("instance_count: 10"));
+        assert!(!yaml_output.contains("instance_count: 10.0"));
 
         Ok(())
     }

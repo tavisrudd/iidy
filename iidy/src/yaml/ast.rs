@@ -11,8 +11,8 @@ pub enum YamlAst {
     Null,
     /// Boolean value
     Bool(bool),
-    /// Numeric value (stored as f64 to handle both integers and floats)
-    Number(f64),
+    /// Numeric value (preserves original integer/float representation)
+    Number(serde_yaml::Number),
     /// String value
     String(String),
     /// YAML sequence (array)
@@ -52,6 +52,28 @@ pub enum PreprocessingTag {
     Split(SplitTag),
     /// !$join - Array to string conversion
     Join(JoinTag),
+    /// !$concatMap - Map followed by concat
+    ConcatMap(ConcatMapTag),
+    /// !$mergeMap - Map followed by merge
+    MergeMap(MergeMapTag),
+    /// !$mapListToHash - Convert list of key-value pairs to hash
+    MapListToHash(MapListToHashTag),
+    /// !$mapValues - Transform object values while preserving keys
+    MapValues(MapValuesTag),
+    /// !$groupBy - Group items by key (like lodash groupBy)
+    GroupBy(GroupByTag),
+    /// !$fromPairs - Convert key-value pairs to object
+    FromPairs(FromPairsTag),
+    /// !$toYamlString - Convert data to YAML string
+    ToYamlString(ToYamlStringTag),
+    /// !$parseYaml - Parse YAML string back to data
+    ParseYaml(ParseYamlTag),
+    /// !$toJsonString - Convert data to JSON string
+    ToJsonString(ToJsonStringTag),
+    /// !$parseJson - Parse JSON string back to data
+    ParseJson(ParseJsonTag),
+    /// !$escape - Prevent preprocessing on child tree
+    Escape(EscapeTag),
 }
 
 /// Include tag for importing external content
@@ -142,6 +164,103 @@ pub struct JoinTag {
     pub delimiter: String,
 }
 
+/// ConcatMap tag for map followed by concat
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConcatMapTag {
+    /// Source list/array to transform
+    pub source: Box<YamlAst>,
+    /// Transformation expression
+    pub transform: Box<YamlAst>,
+    /// Optional variable name for current item (default: "item")
+    pub var_name: Option<String>,
+}
+
+/// MergeMap tag for map followed by merge  
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeMapTag {
+    /// Source list/array to transform
+    pub source: Box<YamlAst>,
+    /// Transformation expression
+    pub transform: Box<YamlAst>,
+    /// Optional variable name for current item (default: "item")
+    pub var_name: Option<String>,
+}
+
+/// MapListToHash tag for converting list of key-value pairs to hash
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapListToHashTag {
+    /// Source list of key-value pairs
+    pub source: Box<YamlAst>,
+    /// Key field name (default: "key")
+    pub key_field: Option<String>,
+    /// Value field name (default: "value")
+    pub value_field: Option<String>,
+}
+
+/// MapValues tag for transforming object values while preserving keys
+#[derive(Debug, Clone, PartialEq)]
+pub struct MapValuesTag {
+    /// Source object to transform
+    pub source: Box<YamlAst>,
+    /// Transformation expression
+    pub transform: Box<YamlAst>,
+    /// Optional variable name for current value (default: "value")
+    pub var_name: Option<String>,
+}
+
+/// GroupBy tag for grouping items by key
+#[derive(Debug, Clone, PartialEq)]
+pub struct GroupByTag {
+    /// Source list/array to group
+    pub source: Box<YamlAst>,
+    /// Key expression or field name
+    pub key: Box<YamlAst>,
+    /// Optional variable name for current item (default: "item")
+    pub var_name: Option<String>,
+}
+
+/// FromPairs tag for converting key-value pairs to object
+#[derive(Debug, Clone, PartialEq)]
+pub struct FromPairsTag {
+    /// Source list of [key, value] pairs
+    pub source: Box<YamlAst>,
+}
+
+/// ToYamlString tag for converting data to YAML string
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToYamlStringTag {
+    /// Data to convert to YAML string
+    pub data: Box<YamlAst>,
+}
+
+/// ParseYaml tag for parsing YAML string back to data
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseYamlTag {
+    /// YAML string to parse
+    pub yaml_string: Box<YamlAst>,
+}
+
+/// ToJsonString tag for converting data to JSON string
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToJsonStringTag {
+    /// Data to convert to JSON string
+    pub data: Box<YamlAst>,
+}
+
+/// ParseJson tag for parsing JSON string back to data
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseJsonTag {
+    /// JSON string to parse
+    pub json_string: Box<YamlAst>,
+}
+
+/// Escape tag for preventing preprocessing on child tree
+#[derive(Debug, Clone, PartialEq)]
+pub struct EscapeTag {
+    /// Child tree to escape from preprocessing
+    pub content: Box<YamlAst>,
+}
+
 impl YamlAst {
     /// Check if this AST node represents a preprocessing tag
     pub fn is_preprocessing_tag(&self) -> bool {
@@ -153,7 +272,7 @@ impl YamlAst {
         match self {
             YamlAst::Null => Some(Value::Null),
             YamlAst::Bool(b) => Some(Value::Bool(*b)),
-            YamlAst::Number(n) => Some(Value::Number(serde_yaml::Number::from(*n))),
+            YamlAst::Number(n) => Some(Value::Number(n.clone())),
             YamlAst::String(s) => Some(Value::String(s.clone())),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();

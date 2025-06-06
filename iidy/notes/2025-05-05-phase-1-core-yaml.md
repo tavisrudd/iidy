@@ -217,18 +217,18 @@ Based on codebase research, the following components are already in place:
 - ❌ AWS loaders (S3, SSM, CloudFormation)
 - ❌ Filehash computation
 
-**Missing Advanced Tags:**
-- ❌ `!$concatMap` - Map followed by concat
-- ❌ `!$mergeMap` - Map followed by merge
-- ❌ `!$mapListToHash` - Convert list of key-value pairs to hash
-- ❌ `!$mapValues` - Transform object values while preserving keys
-- ❌ `!$groupBy` - Group items by key (like lodash groupBy)
-- ❌ `!$fromPairs` - Convert key-value pairs to object
-- ❌ `!$string`/`!$toYamlString` - Convert data to YAML string
-- ❌ `!$parseYaml` - Parse YAML string back to data
-- ❌ `!$toJsonString` - Convert data to JSON string
-- ❌ `!$parseJson` - Parse JSON string back to data
-- ❌ `!$escape` - Prevent preprocessing on child tree
+**Advanced Tags:**
+- ✅ `!$concatMap` - Map followed by concat
+- ✅ `!$mergeMap` - Map followed by merge
+- ✅ `!$mapListToHash` - Convert list of key-value pairs to hash
+- ✅ `!$mapValues` - Transform object values while preserving keys
+- ✅ `!$groupBy` - Group items by key (like lodash groupBy)
+- ✅ `!$fromPairs` - Convert key-value pairs to object
+- ✅ `!$toYamlString` - Convert data to YAML string
+- ✅ `!$parseYaml` - Parse YAML string back to data
+- ✅ `!$toJsonString` - Convert data to JSON string
+- ✅ `!$parseJson` - Parse JSON string back to data
+- ✅ `!$escape` - Prevent preprocessing on child tree
 
 **Special Processing:**
 - ✅ `$imports` and `$defs` key processing in mappings (Phase 1)
@@ -266,11 +266,11 @@ Based on codebase research, the following components are already in place:
 - [x] Add dot notation support for include path resolution
 - [x] Ensure proper YAML file extension detection for parsing
 
-### Phase 1.4: Advanced Tags Implementation
-- [ ] Implement missing transformation tags (concatMap, groupBy, etc.)
-- [ ] Add string processing tags (parseYaml, parseJson, escape)
-- [ ] Add data conversion tags (toYamlString, toJsonString)
-- [ ] Implement `$imports` and `$defs` key processing
+### Phase 1.4: Advanced Tags Implementation ✅ (Complete)
+- [x] Implement missing transformation tags (concatMap, mergeMap, mapListToHash, mapValues, groupBy, fromPairs)
+- [x] Add string processing tags (parseYaml, parseJson, escape, toYamlString, toJsonString)
+- [x] Add comprehensive tests for all advanced tags
+- [x] Fix number representation to preserve integers for CloudFormation compatibility
 
 ### Phase 1.5: Include System Enhancement
 - [ ] Add dot notation support for nested access
@@ -283,6 +283,7 @@ Based on codebase research, the following components are already in place:
 - [ ] Implement full AST resolution pipeline
 - [ ] Add comprehensive error handling with stack frames
 - [ ] Performance optimization for recursive resolution
+- [ ] Refactor resolve_ functions into a trait for different implementations (std vs debug vs trace)
 
 ### Phase 1.7: Integration and Testing
 - [ ] Complete handlebars helper library
@@ -300,12 +301,35 @@ Based on codebase research, the following components are already in place:
 6. **Testing**: Comprehensive offline test coverage with deterministic behavior
 7. **Error Handling**: Clear error messages with stack frame context like TypeScript version
 
+## Architecture Notes
+
+### Tag Resolution Refactoring
+Currently all tag resolution functions (`resolve_include_tag`, `resolve_if_tag`, etc.) are standalone functions. These should be refactored into a trait-based system to allow for different implementations:
+
+```rust
+trait TagResolver {
+    fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value>;
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
+    // ... other tag types
+}
+
+struct StandardTagResolver;   // Standard implementation
+struct DebugTagResolver;      // With debug logging
+struct TracingTagResolver;    // With detailed tracing/metrics
+```
+
+This would enable:
+- Better testing with mock resolvers
+- Debug/tracing modes for troubleshooting
+- Performance variants optimized for different use cases
+- Easier extensibility for custom tag behavior
+
 ## Next Steps
 
-1. Begin Phase 1.2: Core Infrastructure implementation
-2. Set up serde_yml integration and basic tag system
-3. Implement Environment and StackFrame management
-4. Create foundation for visitor pattern implementation
+1. Complete Phase 1.4: Advanced Tags Implementation
+2. Implement all missing transformation and string processing tags
+3. Add comprehensive test coverage for new tags
+4. Consider tag resolver trait refactoring for Phase 1.6
 
 ---
 

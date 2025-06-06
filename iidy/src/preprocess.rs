@@ -39,12 +39,8 @@ fn ast_to_value(ast: crate::yaml::YamlAst) -> Result<Value> {
         YamlAst::Null => Ok(Value::Null),
         YamlAst::Bool(b) => Ok(Value::Bool(b)),
         YamlAst::Number(n) => {
-            // Convert f64 back to appropriate number type
-            if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
-                Ok(Value::Number(serde_yaml::Number::from(n as i64)))
-            } else {
-                Ok(Value::Number(serde_yaml::Number::from(n)))
-            }
+            // Number already preserves its original representation
+            Ok(Value::Number(n))
         },
         YamlAst::String(s) => Ok(Value::String(s)),
         YamlAst::Sequence(seq) => {
@@ -147,7 +143,7 @@ stack_name: !$join
         assert_eq!(ast_to_value(YamlAst::String("test".to_string()))?, Value::String("test".to_string()));
         
         // Test number conversion
-        let number_ast = YamlAst::Number(42.0);
+        let number_ast = YamlAst::Number(serde_yaml::Number::from(42));
         let number_value = ast_to_value(number_ast)?;
         assert!(matches!(number_value, Value::Number(_)));
         

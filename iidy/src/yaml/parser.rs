@@ -18,7 +18,7 @@ fn convert_value_to_ast(value: Value) -> Result<YamlAst> {
     match value {
         Value::Null => Ok(YamlAst::Null),
         Value::Bool(b) => Ok(YamlAst::Bool(b)),
-        Value::Number(n) => Ok(YamlAst::Number(n.as_f64().unwrap_or(0.0))),
+        Value::Number(n) => Ok(YamlAst::Number(n)),
         Value::String(s) => Ok(YamlAst::String(s)),
         Value::Sequence(seq) => convert_sequence_to_ast(seq),
         Value::Mapping(map) => convert_mapping_to_ast(map),
@@ -68,6 +68,17 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
         "!$not" => parse_not_tag(value),
         "!$split" => parse_split_tag(value),
         "!$join" => parse_join_tag(value),
+        "!$concatMap" => parse_concat_map_tag(value),
+        "!$mergeMap" => parse_merge_map_tag(value),
+        "!$mapListToHash" => parse_map_list_to_hash_tag(value),
+        "!$mapValues" => parse_map_values_tag(value),
+        "!$groupBy" => parse_group_by_tag(value),
+        "!$fromPairs" => parse_from_pairs_tag(value),
+        "!$toYamlString" => parse_to_yaml_string_tag(value),
+        "!$parseYaml" => parse_parse_yaml_tag(value),
+        "!$toJsonString" => parse_to_json_string_tag(value),
+        "!$parseJson" => parse_parse_json_tag(value),
+        "!$escape" => parse_escape_tag(value),
         _ => {
             // Unknown tag, treat as regular value
             let value = convert_value_to_ast(value).unwrap();
@@ -288,4 +299,160 @@ fn extract_optional_string_field(map: &Mapping, field: &str) -> Option<String> {
     map.get(&Value::String(field.to_string()))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// Parse !$concatMap tag
+fn parse_concat_map_tag(value: Value) -> Result<YamlAst> {
+    if let Value::Mapping(map) = value {
+        let source_val = map.get(&Value::String("source".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'source' in concatMap tag"))?;
+        let transform_val = map.get(&Value::String("transform".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'transform' in concatMap tag"))?;
+        let var_name = extract_optional_string_field(&map, "var");
+
+        let source = Box::new(convert_value_to_ast(source_val.clone())?);
+        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+
+        Ok(YamlAst::PreprocessingTag(PreprocessingTag::ConcatMap(ConcatMapTag {
+            source,
+            transform,
+            var_name,
+        })))
+    } else {
+        Err(anyhow!("ConcatMap tag must be a mapping"))
+    }
+}
+
+/// Parse !$mergeMap tag
+fn parse_merge_map_tag(value: Value) -> Result<YamlAst> {
+    if let Value::Mapping(map) = value {
+        let source_val = map.get(&Value::String("source".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'source' in mergeMap tag"))?;
+        let transform_val = map.get(&Value::String("transform".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'transform' in mergeMap tag"))?;
+        let var_name = extract_optional_string_field(&map, "var");
+
+        let source = Box::new(convert_value_to_ast(source_val.clone())?);
+        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+
+        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MergeMap(MergeMapTag {
+            source,
+            transform,
+            var_name,
+        })))
+    } else {
+        Err(anyhow!("MergeMap tag must be a mapping"))
+    }
+}
+
+/// Parse !$mapListToHash tag
+fn parse_map_list_to_hash_tag(value: Value) -> Result<YamlAst> {
+    if let Value::Mapping(map) = value {
+        let source_val = map.get(&Value::String("source".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'source' in mapListToHash tag"))?;
+        let key_field = extract_optional_string_field(&map, "key");
+        let value_field = extract_optional_string_field(&map, "value");
+
+        let source = Box::new(convert_value_to_ast(source_val.clone())?);
+
+        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapListToHash(MapListToHashTag {
+            source,
+            key_field,
+            value_field,
+        })))
+    } else {
+        Err(anyhow!("MapListToHash tag must be a mapping"))
+    }
+}
+
+/// Parse !$mapValues tag
+fn parse_map_values_tag(value: Value) -> Result<YamlAst> {
+    if let Value::Mapping(map) = value {
+        let source_val = map.get(&Value::String("source".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'source' in mapValues tag"))?;
+        let transform_val = map.get(&Value::String("transform".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'transform' in mapValues tag"))?;
+        let var_name = extract_optional_string_field(&map, "var");
+
+        let source = Box::new(convert_value_to_ast(source_val.clone())?);
+        let transform = Box::new(convert_value_to_ast(transform_val.clone())?);
+
+        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapValues(MapValuesTag {
+            source,
+            transform,
+            var_name,
+        })))
+    } else {
+        Err(anyhow!("MapValues tag must be a mapping"))
+    }
+}
+
+/// Parse !$groupBy tag
+fn parse_group_by_tag(value: Value) -> Result<YamlAst> {
+    if let Value::Mapping(map) = value {
+        let source_val = map.get(&Value::String("source".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'source' in groupBy tag"))?;
+        let key_val = map.get(&Value::String("key".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'key' in groupBy tag"))?;
+        let var_name = extract_optional_string_field(&map, "var");
+
+        let source = Box::new(convert_value_to_ast(source_val.clone())?);
+        let key = Box::new(convert_value_to_ast(key_val.clone())?);
+
+        Ok(YamlAst::PreprocessingTag(PreprocessingTag::GroupBy(GroupByTag {
+            source,
+            key,
+            var_name,
+        })))
+    } else {
+        Err(anyhow!("GroupBy tag must be a mapping"))
+    }
+}
+
+/// Parse !$fromPairs tag
+fn parse_from_pairs_tag(value: Value) -> Result<YamlAst> {
+    let source = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::FromPairs(FromPairsTag {
+        source,
+    })))
+}
+
+/// Parse !$toYamlString tag
+fn parse_to_yaml_string_tag(value: Value) -> Result<YamlAst> {
+    let data = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToYamlString(ToYamlStringTag {
+        data,
+    })))
+}
+
+/// Parse !$parseYaml tag
+fn parse_parse_yaml_tag(value: Value) -> Result<YamlAst> {
+    let yaml_string = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseYaml(ParseYamlTag {
+        yaml_string,
+    })))
+}
+
+/// Parse !$toJsonString tag
+fn parse_to_json_string_tag(value: Value) -> Result<YamlAst> {
+    let data = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToJsonString(ToJsonStringTag {
+        data,
+    })))
+}
+
+/// Parse !$parseJson tag
+fn parse_parse_json_tag(value: Value) -> Result<YamlAst> {
+    let json_string = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseJson(ParseJsonTag {
+        json_string,
+    })))
+}
+
+/// Parse !$escape tag
+fn parse_escape_tag(value: Value) -> Result<YamlAst> {
+    let content = Box::new(convert_value_to_ast(value)?);
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::Escape(EscapeTag {
+        content,
+    })))
 }
