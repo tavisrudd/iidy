@@ -10,6 +10,9 @@ pub mod env;
 pub mod git;
 pub mod random;
 pub mod http;
+pub mod s3;
+pub mod ssm;
+pub mod cfn;
 
 // Re-export the main loader functions
 pub use file::{load_file_import, load_filehash_import};
@@ -17,6 +20,9 @@ pub use env::load_env_import;
 pub use git::load_git_import;
 pub use random::load_random_import;
 pub use http::load_http_import;
+pub use s3::load_s3_import;
+pub use ssm::{load_ssm_import, load_ssm_path_import};
+pub use cfn::load_cfn_import;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
@@ -64,20 +70,28 @@ impl ImportLoader for ProductionImportLoader {
                 load_http_import(location, base_location, &client).await
             },
             ImportType::S3 => {
-                // Placeholder for S3 loader - implementation from original file
-                Err(anyhow!("S3 imports not yet implemented in new module structure"))
+                match &self.aws_config {
+                    Some(aws_config) => load_s3_import(location, aws_config).await,
+                    None => Err(anyhow!("AWS configuration required for S3 imports. Use with_aws_config() to configure.")),
+                }
             },
             ImportType::Cfn => {
-                // Placeholder for CloudFormation loader - implementation from original file
-                Err(anyhow!("CloudFormation imports not yet implemented in new module structure"))
+                match &self.aws_config {
+                    Some(aws_config) => load_cfn_import(location, aws_config).await,
+                    None => Err(anyhow!("AWS configuration required for CloudFormation imports. Use with_aws_config() to configure.")),
+                }
             },
             ImportType::Ssm => {
-                // Placeholder for SSM loader - implementation from original file
-                Err(anyhow!("SSM parameter imports not yet implemented in new module structure"))
+                match &self.aws_config {
+                    Some(aws_config) => load_ssm_import(location, aws_config).await,
+                    None => Err(anyhow!("AWS configuration required for SSM parameter imports. Use with_aws_config() to configure.")),
+                }
             },
             ImportType::SsmPath => {
-                // Placeholder for SSM path loader - implementation from original file
-                Err(anyhow!("SSM parameter path imports not yet implemented in new module structure"))
+                match &self.aws_config {
+                    Some(aws_config) => load_ssm_path_import(location, aws_config).await,
+                    None => Err(anyhow!("AWS configuration required for SSM parameter path imports. Use with_aws_config() to configure.")),
+                }
             },
         }
     }
