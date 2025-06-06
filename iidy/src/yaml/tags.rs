@@ -1313,7 +1313,7 @@ impl TracingTagResolver {
         }
     }
     
-    fn trace_resolution<T: std::fmt::Debug, F>(&self, tag_name: &str, tag: &T, operation: F) -> Result<Value>
+    fn trace_resolution<T: std::fmt::Debug, F>(&self, tag_name: &str, _tag: &T, operation: F) -> Result<Value>
     where
         F: FnOnce() -> Result<Value>,
     {

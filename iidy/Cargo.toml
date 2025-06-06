@@ -72,3 +72,14 @@ tokio-test = "0.4"
 
 # Property-based testing
 proptest = "1.0"
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+
+[[bench]]
+name = "yaml_preprocessing_benchmarks"
+harness = false
+
+[[bench]]
+name = "simple_benchmark"
+harness = false
