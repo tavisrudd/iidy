@@ -279,12 +279,14 @@ Based on codebase research, the following components are already in place:
 - [x] Add comprehensive tests for enhanced include functionality
 - [ ] Wire up include path resolution with imports (deferred to Phase 1.6)
 
-### Phase 1.6: Full AST Resolution
-- [ ] Remove temporary AST-to-Value bridge in preprocess.rs
-- [ ] Implement full AST resolution pipeline
-- [ ] Add comprehensive error handling with stack frames
-- [ ] Performance optimization for recursive resolution
-- [ ] Refactor resolve_ functions into a trait for different implementations (std vs debug vs trace)
+### Phase 1.6: Full AST Resolution ✅ (Complete)
+- [x] Remove temporary AST-to-Value bridge in preprocess.rs
+- [x] Implement full AST resolution pipeline
+- [x] Add comprehensive error handling with stack frames
+- [x] Integrated with existing stack-args processing
+- [x] Added async/sync preprocessing interfaces
+- [ ] Performance optimization for recursive resolution (deferred to Phase 1.7)
+- [ ] Refactor resolve_ functions into a trait for different implementations (deferred to Phase 1.7)
 
 ### Phase 1.7: Integration and Testing
 - [ ] Complete handlebars helper library
@@ -348,14 +350,39 @@ Successfully completed enhanced include system with:
 - 4 new tests covering all query selector scenarios
 - All tests passing with full functionality validation
 
+### ✅ Phase 1.6 Completion (2025-06-05)
+
+Successfully implemented full AST resolution pipeline and enhanced error handling:
+
+**Full AST Resolution Pipeline:**
+- Removed temporary AST-to-Value bridge in `preprocess.rs`
+- Implemented async/await preprocessing with full two-phase pipeline
+- Integrated with existing stack-args processing system
+- Added both async and sync preprocessing interfaces
+
+**Enhanced Error Handling Infrastructure:**
+- Implemented `ProcessingEnv` modeled after iidy-js `Env` structure
+- Added `StackFrame` for precise error location tracking
+- Created `GlobalAccumulator` (optional) for CloudFormation templates vs. generic YAML docs
+- Added structured error types with `PreprocessError` and `WithStackContext` trait
+- Comprehensive stack frame management with location inheritance
+
+**Key Architecture Features:**
+- `ProcessingEnv` with optional `GlobalAccumulator` (addresses concern about non-CFN docs)
+- `mk_sub_env()` method for creating scoped environments with variable inheritance
+- Stack frame tracking with location and path context
+- TagContext integration for backward compatibility
+- Rich error messages with stack context
+
 ## Next Steps
 
-1. Begin Phase 1.6: Full AST Resolution
-2. Remove temporary AST-to-Value bridge in preprocess.rs
-3. Implement full AST resolution pipeline
+1. Begin Phase 1.7: Integration and Testing
+2. Complete handlebars helper library (remaining string manipulation functions)
+3. Add comprehensive test coverage matching iidy-js behavior
 4. Consider tag resolver trait refactoring for better testing and extensibility
+5. Performance optimization for recursive resolution
 
 ---
 
 *Last updated: 2025-06-05*
-*Status: Phase 1.5 Complete → Ready for Phase 1.6*
+*Status: Phase 1.6 Complete → Ready for Phase 1.7*

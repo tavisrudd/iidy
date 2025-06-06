@@ -1,81 +1,47 @@
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde_yaml::Value;
+use std::path::PathBuf;
 
-use crate::yaml::{parse_yaml_with_custom_tags, TagContext};
+use crate::yaml::{TagContext, YamlPreprocessor};
+use crate::yaml::imports::loaders::ProductionImportLoader;
 
 /// YAML preprocessing system that processes iidy custom tags and handlebars templates.
 ///
 /// This function converts a serde_yaml::Value to a YAML string, processes it through
-/// the custom tag parser, and then deserializes the result to the requested type.
-/// 
-/// Currently implements AST parsing but not full resolution - that will be added
-/// when the AST resolution system is completed.
-pub fn preprocess<T: DeserializeOwned>(value: Value) -> Result<T> {
+/// the full two-phase preprocessing pipeline, and then deserializes the result to the requested type.
+pub async fn preprocess<T: DeserializeOwned>(value: Value) -> Result<T> {
+    preprocess_with_base_location(value, "input.yaml").await
+}
+
+/// YAML preprocessing with a specific base location for resolving relative imports
+pub async fn preprocess_with_base_location<T: DeserializeOwned>(value: Value, base_location: &str) -> Result<T> {
     // Convert Value back to YAML string for parsing with custom tags
     let yaml_string = serde_yaml::to_string(&value)?;
     
-    // Parse with our custom tag system
-    let ast = parse_yaml_with_custom_tags(&yaml_string)?;
+    // Use the full preprocessing pipeline
+    let loader = ProductionImportLoader::new();
+    let mut preprocessor = YamlPreprocessor::new(loader);
     
-    // TODO: Once AST resolution is implemented, add this:
-    // let mut preprocessor = YamlPreprocessor::new();
-    // let context = create_preprocessing_context()?;
-    // let resolved = preprocessor.resolve_ast_with_context(ast, &context)?;
-    // Ok(serde_yaml::from_value(resolved)?)
+    // Process through the full two-phase pipeline
+    let resolved = preprocessor.process(&yaml_string, base_location).await?;
     
-    // For now, convert the AST back to a Value and deserialize
-    // This at least exercises the parsing logic and validates the syntax
-    let processed_value = ast_to_value(ast)?;
-    Ok(serde_yaml::from_value(processed_value)?)
+    // Deserialize to the requested type
+    Ok(serde_yaml::from_value(resolved)?)
 }
 
-/// Convert AST back to serde_yaml::Value for deserialization
-/// This is a temporary bridge until full AST resolution is implemented
-fn ast_to_value(ast: crate::yaml::YamlAst) -> Result<Value> {
-    use crate::yaml::YamlAst;
-    
-    match ast {
-        YamlAst::Null => Ok(Value::Null),
-        YamlAst::Bool(b) => Ok(Value::Bool(b)),
-        YamlAst::Number(n) => {
-            // Number already preserves its original representation
-            Ok(Value::Number(n))
-        },
-        YamlAst::String(s) => Ok(Value::String(s)),
-        YamlAst::Sequence(seq) => {
-            let mut vec = Vec::new();
-            for item in seq {
-                vec.push(ast_to_value(item)?);
-            }
-            Ok(Value::Sequence(vec))
-        },
-        YamlAst::Mapping(pairs) => {
-            let mut map = serde_yaml::Mapping::new();
-            for (key, value) in pairs {
-                let key_value = ast_to_value(key)?;
-                let value_value = ast_to_value(value)?;
-                map.insert(key_value, value_value);
-            }
-            Ok(Value::Mapping(map))
-        },
-        YamlAst::PreprocessingTag(_tag) => {
-            // For now, preprocessing tags are not resolved, so we represent them as null
-            // TODO: Once AST resolution is implemented, this should never be reached
-            // because all preprocessing tags should be resolved before this conversion
-            Ok(Value::Null)
-        },
-        YamlAst::UnknownYamlTag(tag) => {
-            // Return the tag's value as-is for unknown tags by recursively converting it
-            ast_to_value(*tag.value)
-        }
-    }
+/// Synchronous version for backward compatibility (uses blocking runtime)
+pub fn preprocess_sync<T: DeserializeOwned>(value: Value) -> Result<T> {
+    // Create a tokio runtime for the async preprocessing
+    let rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(preprocess_with_base_location(value, "input.yaml"))
 }
 
-/// Create a preprocessing context with environment variables and default settings
-/// This will be expanded once the TagContext system is fully wired up
-fn _create_preprocessing_context() -> Result<TagContext> {
-    let mut context = TagContext::new();
+/// Create a preprocessing context with environment variables and default settings  
+/// This is now mainly used for adding environment variables that can be accessed during preprocessing
+fn _create_preprocessing_context(base_location: &str) -> Result<TagContext> {
+    let mut context = TagContext::new()
+        .with_base_path(PathBuf::from(base_location));
     
     // Add common environment variables that might be used in stack-args
     if let Ok(env) = std::env::var("ENVIRONMENT") {
@@ -102,59 +68,69 @@ mod tests {
         value: i32,
     }
     
-    #[test]
-    fn test_preprocess_simple_yaml() -> Result<()> {
+    #[tokio::test]
+    async fn test_preprocess_simple_yaml() -> Result<()> {
         let yaml_value = serde_yaml::from_str::<Value>(r#"
 name: "test"
 value: 42
 "#)?;
         
-        let result: TestConfig = preprocess(yaml_value)?;
+        let result: TestConfig = preprocess_with_base_location(yaml_value, "test.yaml").await?;
         assert_eq!(result.name, "test");
         assert_eq!(result.value, 42);
         
         Ok(())
     }
     
-    #[test]
-    fn test_preprocess_with_custom_tags() -> Result<()> {
-        // Test that YAML with custom tags can be parsed (even if not resolved yet)
+    #[tokio::test]
+    async fn test_preprocess_with_custom_tags() -> Result<()> {
+        // Test full preprocessing with custom tags
         let yaml_value = serde_yaml::from_str::<Value>(r#"
+$defs:
+  app_name: "my-app"
+  environment: "production"
+
 name: "test"
 stack_name: !$join
-  array: ["my-app", "production"]
+  array: ["{{app_name}}", "{{environment}}"]
   delimiter: "-"
 "#)?;
         
-        // Should not panic and should parse the structure
-        let result = preprocess::<std::collections::HashMap<String, Value>>(yaml_value);
-        assert!(result.is_ok(), "Custom tag parsing should not fail");
+        let result = preprocess_with_base_location::<std::collections::HashMap<String, Value>>(yaml_value, "test.yaml").await?;
+        
+        // Verify the custom tag was processed
+        if let Some(Value::String(stack_name)) = result.get("stack_name") {
+            assert_eq!(stack_name, "my-app-production");
+        } else {
+            panic!("Expected stack_name to be processed");
+        }
         
         Ok(())
     }
     
     #[test]
-    fn test_ast_to_value_conversion() -> Result<()> {
-        use crate::yaml::YamlAst;
-        
-        // Test basic scalar conversions
-        assert_eq!(ast_to_value(YamlAst::Null)?, Value::Null);
-        assert_eq!(ast_to_value(YamlAst::Bool(true))?, Value::Bool(true));
-        assert_eq!(ast_to_value(YamlAst::String("test".to_string()))?, Value::String("test".to_string()));
-        
-        // Test number conversion
-        let number_ast = YamlAst::Number(serde_yaml::Number::from(42));
-        let number_value = ast_to_value(number_ast)?;
-        assert!(matches!(number_value, Value::Number(_)));
-        
-        Ok(())
-    }
-    
-    #[test]
-    fn test_complex_yaml_structure() -> Result<()> {
+    fn test_preprocess_sync() -> Result<()> {
         let yaml_value = serde_yaml::from_str::<Value>(r#"
+name: "test"
+value: 42
+"#)?;
+        
+        let result: TestConfig = preprocess_sync(yaml_value)?;
+        assert_eq!(result.name, "test");
+        assert_eq!(result.value, 42);
+        
+        Ok(())
+    }
+    
+    #[tokio::test]
+    async fn test_complex_yaml_structure_with_preprocessing() -> Result<()> {
+        let yaml_value = serde_yaml::from_str::<Value>(r#"
+$defs:
+  db_host: "db.example.com"
+  cache_host: "cache.example.com"
+
 database:
-  host: "localhost"
+  host: !$ db_host
   port: 5432
   settings:
     - "ssl=true"
@@ -162,11 +138,19 @@ database:
 features:
   enabled: true
   count: 10
+  cache_endpoint: !$ cache_host
 "#)?;
         
-        let result = preprocess::<std::collections::HashMap<String, Value>>(yaml_value)?;
+        let result = preprocess_with_base_location::<std::collections::HashMap<String, Value>>(yaml_value, "test.yaml").await?;
         assert!(result.contains_key("database"));
         assert!(result.contains_key("features"));
+        
+        // Verify preprocessing worked
+        if let Some(Value::Mapping(database)) = result.get("database") {
+            if let Some(Value::String(host)) = database.get(&Value::String("host".to_string())) {
+                assert_eq!(host, "db.example.com");
+            }
+        }
         
         Ok(())
     }

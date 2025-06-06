@@ -2,24 +2,162 @@
 //! 
 //! Contains the implementation logic for each custom preprocessing tag
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde_yaml::Value;
 use std::collections::HashMap;
 
 use crate::yaml::ast::*;
 
-/// Context for resolving preprocessing tags
+/// Enhanced error types for preprocessing with stack frame context
+#[derive(thiserror::Error, Debug)]
+pub enum PreprocessError {
+    #[error("Could not find '{key}' at {path}")]
+    VariableNotFound { key: String, path: String },
+    
+    #[error("Include path '{path}' not found\n  at {location}")]
+    IncludeNotFound { path: String, location: String },
+    
+    #[error("Invalid template parameter '{param}' in {context}\n  at {location}")]
+    ParameterValidation { param: String, context: String, location: String },
+    
+    #[error("Import error: {message}\n  importing {import_location}\n  from {base_location}")]
+    ImportError { message: String, import_location: String, base_location: String },
+    
+    #[error("Tag resolution error: {message}\n  at {path}\n  in {location}")]
+    TagResolutionError { message: String, path: String, location: String },
+}
+
+/// Helper trait for adding stack frame context to errors
+pub trait WithStackContext<T> {
+    fn with_stack_context(self, context: &TagContext, operation: &str) -> Result<T>;
+}
+
+impl<T> WithStackContext<T> for Result<T> {
+    fn with_stack_context(self, context: &TagContext, operation: &str) -> Result<T> {
+        self.with_context(|| {
+            let current_path = context.current_path();
+            let current_location = context.current_location().unwrap_or_else(|| "unknown".to_string());
+            format!("{} at {} in {}", operation, current_path, current_location)
+        })
+    }
+}
+
+/// Stack frame for error reporting and debugging (matches iidy-js StackFrame)
+#[derive(Debug, Clone)]
+pub struct StackFrame {
+    /// Location of the operation (file path or description) - optional like iidy-js
+    pub location: Option<String>,
+    /// Path within the document (e.g., "config.database.host")
+    pub path: String,
+}
+
+/// Global accumulator for document-wide state (optional, not all docs need this)
+#[derive(Debug, Clone, Default)]
+pub struct GlobalAccumulator {
+    /// CloudFormation global sections (Parameters, Outputs, etc.) if processing CFN templates
+    pub cfn_sections: Option<serde_yaml::Mapping>,
+    /// Other document-wide accumulations as needed
+    pub metadata: serde_yaml::Mapping,
+}
+
+/// Processing environment that tracks state during YAML preprocessing
+/// Modeled after iidy-js Env but more flexible for non-CFN documents
+#[derive(Debug, Clone)]
+pub struct ProcessingEnv {
+    /// Global accumulator (optional - only used for CloudFormation templates or docs that need it)
+    pub global_accumulator: Option<GlobalAccumulator>,
+    /// Current scope variables (imports, defs, template parameters, loop variables)
+    pub env_values: HashMap<String, Value>,
+    /// Call stack for error reporting
+    pub stack: Vec<StackFrame>,
+}
+
+impl Default for ProcessingEnv {
+    fn default() -> Self {
+        Self {
+            global_accumulator: None,
+            env_values: HashMap::new(),
+            stack: Vec::new(),
+        }
+    }
+}
+
+impl ProcessingEnv {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Create a new environment with CloudFormation global accumulator
+    pub fn new_with_cfn_accumulator() -> Self {
+        Self {
+            global_accumulator: Some(GlobalAccumulator::default()),
+            env_values: HashMap::new(),
+            stack: Vec::new(),
+        }
+    }
+    
+    /// Create sub-environment with extended variables and stack (mimics iidy-js mkSubEnv)
+    pub fn mk_sub_env(&self, new_values: HashMap<String, Value>, frame: StackFrame) -> Self {
+        let mut env_values = self.env_values.clone();
+        env_values.extend(new_values);
+        
+        let mut stack = self.stack.clone();
+        stack.push(StackFrame {
+            location: frame.location.or_else(|| self.current_location()),
+            path: frame.path,
+        });
+        
+        Self {
+            global_accumulator: self.global_accumulator.clone(),
+            env_values,
+            stack,
+        }
+    }
+    
+    /// Get current location from stack (like iidy-js)
+    pub fn current_location(&self) -> Option<String> {
+        self.stack.last().and_then(|f| f.location.clone())
+    }
+    
+    /// Get current path from stack
+    pub fn current_path(&self) -> String {
+        self.stack.last().map(|f| f.path.clone()).unwrap_or_default()
+    }
+    
+    /// Add variable to current scope
+    pub fn add_variable(&mut self, key: String, value: Value) {
+        self.env_values.insert(key, value);
+    }
+    
+    /// Get variable from current scope
+    pub fn get_variable(&self, key: &str) -> Option<&Value> {
+        self.env_values.get(key)
+    }
+}
+
+/// Context for resolving preprocessing tags (lighter weight than ProcessingEnv)
 #[derive(Debug, Default)]
 pub struct TagContext {
     /// Variable bindings for current scope
     pub variables: HashMap<String, Value>,
     /// Base path for resolving relative includes
     pub base_path: Option<std::path::PathBuf>,
+    /// Stack frames for error reporting
+    pub stack: Vec<StackFrame>,
 }
 
 impl TagContext {
     pub fn new() -> Self {
         Self::default()
+    }
+    
+    /// Create TagContext from ProcessingEnv for backward compatibility
+    pub fn from_processing_env(env: &ProcessingEnv) -> Self {
+        Self {
+            variables: env.env_values.clone(),
+            base_path: None, // TODO: Should be derived from current location if it's a file path
+            stack: env.stack.clone(),
+        }
     }
 
     /// Create a new context with additional variable bindings
@@ -29,6 +167,7 @@ impl TagContext {
         Self {
             variables: new_vars,
             base_path: self.base_path.clone(),
+            stack: self.stack.clone(),
         }
     }
 
@@ -47,6 +186,22 @@ impl TagContext {
     pub fn with_base_path<P: Into<std::path::PathBuf>>(mut self, path: P) -> Self {
         self.base_path = Some(path.into());
         self
+    }
+    
+    /// Add a stack frame for error reporting
+    pub fn with_stack_frame(mut self, frame: StackFrame) -> Self {
+        self.stack.push(frame);
+        self
+    }
+    
+    /// Get current location from stack
+    pub fn current_location(&self) -> Option<String> {
+        self.stack.last().and_then(|f| f.location.clone())
+    }
+    
+    /// Get current path from stack
+    pub fn current_path(&self) -> String {
+        self.stack.last().map(|f| f.path.clone()).unwrap_or_default()
     }
 }
 

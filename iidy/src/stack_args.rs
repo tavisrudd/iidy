@@ -112,7 +112,7 @@ pub fn load_stack_args_str(
         ensure_environment_tag(map, env);
     }
 
-    let processed: StackArgs = preprocess::preprocess(value)?;
+    let processed: StackArgs = preprocess::preprocess_sync(value)?;
     Ok(processed)
 }
 

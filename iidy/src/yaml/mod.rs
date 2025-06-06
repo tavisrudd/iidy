@@ -270,6 +270,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
     }
 
+    #[allow(dead_code)]
     fn resolve_preprocessing_tag(&mut self, tag: PreprocessingTag) -> Result<Value> {
         self.resolve_preprocessing_tag_with_context(tag, &TagContext::new())
     }
@@ -1161,6 +1162,82 @@ result: !$
         } else {
             panic!("Expected a mapping result");
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_error_handling_infrastructure() -> Result<()> {
+        // Test that we can create ProcessingEnv and TagContext with stack frames
+        use crate::yaml::tags::{ProcessingEnv, TagContext, StackFrame, GlobalAccumulator};
+
+        // Test ProcessingEnv creation and usage
+        let mut env = ProcessingEnv::new();
+        env.add_variable("test_var".to_string(), Value::String("test_value".to_string()));
+        
+        let sub_env = env.mk_sub_env(
+            [("new_var".to_string(), Value::String("new_value".to_string()))].into(),
+            StackFrame {
+                location: Some("test.yaml".to_string()),
+                path: "Root.config".to_string(),
+            }
+        );
+        
+        assert_eq!(sub_env.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
+        assert_eq!(sub_env.get_variable("new_var"), Some(&Value::String("new_value".to_string())));
+        assert_eq!(sub_env.current_location(), Some("test.yaml".to_string()));
+        assert_eq!(sub_env.current_path(), "Root.config");
+        
+        // Test CloudFormation environment
+        let cfn_env = ProcessingEnv::new_with_cfn_accumulator();
+        assert!(cfn_env.global_accumulator.is_some());
+        
+        // Test TagContext integration
+        let context = TagContext::from_processing_env(&sub_env);
+        assert_eq!(context.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
+        assert_eq!(context.current_location(), Some("test.yaml".to_string()));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_successful_stack_frame_context() -> Result<()> {
+        use crate::yaml::tags::{TagContext, StackFrame};
+
+        let yaml_input = r#"
+$defs:
+  config:
+    database: "db.example.com"
+
+result: !$ config.database
+"#;
+
+        let loader = ProductionImportLoader::new();
+        let mut preprocessor = YamlPreprocessor::new(loader);
+        let result = preprocessor.process(yaml_input, "test.yaml").await?;
+
+        // Should succeed and resolve the include
+        if let Value::Mapping(map) = result {
+            if let Some(Value::String(result_value)) = map.get(&Value::String("result".to_string())) {
+                assert_eq!(result_value, "db.example.com");
+            } else {
+                panic!("Expected result to be resolved");
+            }
+        } else {
+            panic!("Expected a mapping result");
+        }
+
+        // Test TagContext with stack frames
+        let context = TagContext::new()
+            .with_variable("test_var", Value::String("test_value".to_string()))
+            .with_stack_frame(StackFrame {
+                location: Some("test.yaml".to_string()),
+                path: "Root.config".to_string(),
+            });
+
+        assert_eq!(context.current_location(), Some("test.yaml".to_string()));
+        assert_eq!(context.current_path(), "Root.config");
+        assert_eq!(context.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
 
         Ok(())
     }

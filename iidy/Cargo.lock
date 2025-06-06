@@ -1857,6 +1857,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "terminal_size",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-test",
  "url",
