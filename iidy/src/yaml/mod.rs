@@ -202,6 +202,8 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     import_loader: L,
     /// Enable YAML 1.1 boolean compatibility for CloudFormation
     yaml_11_compatibility: bool,
+    /// Map of preprocessing tag unique identifiers to their actual tags
+    preprocessing_tag_map: std::collections::HashMap<String, ast::PreprocessingTag>,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -209,6 +211,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Self { 
             import_loader,
             yaml_11_compatibility: true, // Default to CloudFormation compatibility
+            preprocessing_tag_map: std::collections::HashMap::new(),
         }
     }
     
@@ -217,6 +220,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Self { 
             import_loader,
             yaml_11_compatibility: false,
+            preprocessing_tag_map: std::collections::HashMap::new(),
         }
     }
     
@@ -261,7 +265,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
 
     /// Phase 1: Load all imports and definitions to build the complete environment
     async fn load_imports_and_defs(
-        &self,
+        &mut self,
         ast: &YamlAst,
         base_location: &str,
         env_values: &mut EnvValues,
@@ -287,7 +291,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Process $defs by copying values to environment (unprocessed)
-    fn process_defs(&self, defs_ast: &YamlAst, env_values: &mut EnvValues) -> Result<()> {
+    fn process_defs(&mut self, defs_ast: &YamlAst, env_values: &mut EnvValues) -> Result<()> {
         if let YamlAst::Mapping(pairs) = defs_ast {
             for (key, value) in pairs {
                 if let YamlAst::String(key_str) = key {
@@ -310,7 +314,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
 
     /// Process $imports by loading external data with handlebars interpolation
     async fn process_imports(
-        &self,
+        &mut self,
         imports_ast: &YamlAst,
         base_location: &str,
         env_values: &mut EnvValues,
@@ -382,7 +386,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     /// Process an imported document recursively, matching iidy-js loadImports behavior
     /// This ensures that imported documents get their own $defs and $imports processed
     fn process_imported_document<'a>(
-        &'a self,
+        &'a mut self,
         doc: Value,
         doc_location: &'a str,
         import_records: &'a mut Vec<ImportRecord>,
@@ -412,8 +416,10 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     }
                     
                     // Create a temporary mutable preprocessor for resolving this document
+                    // Inherit configuration from parent preprocessor
                     let loader = ProductionImportLoader::new();
-                    let mut temp_preprocessor = YamlPreprocessor::new(loader);
+                    let mut temp_preprocessor = YamlPreprocessor::new(loader)
+                        .with_yaml_11_compatibility(self.yaml_11_compatibility);
                     return temp_preprocessor.resolve_ast_with_context(doc_ast, &doc_context);
                 }
             }
@@ -432,7 +438,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Convert AST to Value without processing (for Phase 1 storage)
-    fn ast_to_value_unprocessed(&self, ast: YamlAst) -> Result<Value> {
+    fn ast_to_value_unprocessed(&mut self, ast: YamlAst) -> Result<Value> {
         match ast {
             YamlAst::Null => Ok(Value::Null),
             YamlAst::Bool(b) => Ok(Value::Bool(b)),
@@ -454,9 +460,11 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 }
                 Ok(Value::Mapping(result))
             }
-            YamlAst::PreprocessingTag(_) => {
-                // Store preprocessing tags as a special marker for Phase 2
-                Ok(Value::String("__PREPROCESSING_TAG__".to_string()))
+            YamlAst::PreprocessingTag(tag) => {
+                // Store preprocessing tags with unique identifiers to prevent collision
+                let tag_id = format!("__PREPROCESSING_TAG_{}__", uuid::Uuid::new_v4().simple());
+                self.preprocessing_tag_map.insert(tag_id.clone(), tag.clone());
+                Ok(Value::String(tag_id))
             }
             YamlAst::UnknownYamlTag(tag) => {
                 // Store unknown tags by converting their value

@@ -99,7 +99,7 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
                 other => other,
             };
             
-            let value = convert_value_to_ast(actual_value).unwrap();
+            let value = convert_value_to_ast(actual_value)?;
             Ok(YamlAst::UnknownYamlTag(UnknownTag { tag: tag_name.to_string(), value: Box::new(value) }))
         }
     }
