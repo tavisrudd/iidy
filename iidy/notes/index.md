@@ -94,4 +94,20 @@ The project follows a modular Rust architecture:
 - Property-based testing enhancements
 - Real AWS integration validation
 
-This documentation reflects the evolution from initial planning through complete implementation of a robust, production-ready CloudFormation tool.
+## Implementation Roadmap
+
+### [2025-05-05-plan.md](2025-05-05-plan.md)
+**Comprehensive Implementation Plan for Feature Parity**
+
+Complete analysis of missing functionality compared to iidy-js and detailed implementation roadmap. This plan identifies gaps in:
+
+- YAML preprocessing language (custom tags, import sources, handlebars helpers)
+- SSM Parameter Store integration (`iidy param` commands)
+- Template approval workflow system
+- Professional UX and output formatting
+- Advanced CLI features and environment management
+
+**Status**: 📋 Planning (6-phase implementation plan)
+**Priority**: Phases 1-3 are critical for production readiness
+
+This documentation reflects the evolution from initial planning through complete token management implementation, with a clear roadmap for achieving full feature parity with the original iidy-js tool.
