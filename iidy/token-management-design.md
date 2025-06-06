@@ -478,12 +478,13 @@ The `CfnRequestBuilder` handles these inconsistencies transparently.
 
 ## Phase 5: Documentation and Polish
 
-### Commit 13: Add comprehensive documentation
+### ✅ Commit 13: Add comprehensive documentation (COMPLETED)
 **Files**: `CLAUDE.md`, inline docs, `examples/` (new)
-- Document token management strategy
-- Add examples of multi-step operations
-- Document testing approach with fixtures
-- Add troubleshooting guide for token issues
+- ✅ Document token management strategy (in token-management-design.md)
+- ✅ Add reference in CLAUDE.md
+- ✅ Add examples of multi-step operations (in End-User Guide section)
+- ✅ Document testing approach (in Testing Approach section)
+- ✅ Add troubleshooting guide for token issues (in End-User Guide section)
 
 ### Commit 14: Performance optimization and cleanup
 **Files**: Various
@@ -555,6 +556,208 @@ This plan ensures we build the token management system incrementally with proper
 - **Performance**: Faster than HTTP-level mocking
 
 This design addresses the fundamental limitations identified in the JavaScript implementation while leveraging Rust's type system for enhanced safety and testability.
+
+---
+
+## End-User Guide: Using --client-request-token
+
+### What is a Client Request Token?
+
+A client request token is an idempotency key that ensures CloudFormation operations can be safely retried without creating duplicate resources or performing unintended actions. If you retry an operation with the same token, CloudFormation recognizes it as a retry and returns the result of the original request.
+
+### Basic Usage
+
+```bash
+# Let iidy generate a token automatically (recommended for most users)
+iidy create-stack stack-args.yaml
+
+# Provide your own token for explicit control
+iidy create-stack --client-request-token my-unique-token-123 stack-args.yaml
+
+# Retry a failed operation with the same token
+iidy create-stack --client-request-token my-unique-token-123 stack-args.yaml
+```
+
+### Token Display
+
+iidy always displays the token being used, making it easy to retry operations:
+
+```
+🎲 Generated idempotency token abc123ef-4567-89ab-cdef-0123456789ab (save this for retries)
+```
+
+The token format is designed for easy copy-paste from terminal output.
+
+### Multi-Step Operations
+
+For operations with multiple AWS API calls (like changesets), iidy automatically derives unique sub-tokens:
+
+```bash
+# This command makes multiple API calls, each with its own derived token
+iidy update-stack --changeset stack-args.yaml
+```
+
+Output shows all tokens used:
+```
+🎲 Generated idempotency token abc123ef-4567-89ab-cdef-0123456789ab (save this for retries)
+   🔄 Step 'create-changeset' token abc123ef-a7b2c8d4 (derived from abc123ef)
+   🔄 Step 'execute-changeset' token abc123ef-f1e9d3b7 (derived from abc123ef)
+```
+
+### Retry Scenarios
+
+#### Scenario 1: Network Timeout
+```bash
+# First attempt times out
+$ iidy create-stack stack-args.yaml
+🎲 Generated idempotency token abc123ef-4567-89ab-cdef-0123456789ab (save this for retries)
+Error: Network timeout
+
+# Retry with the same token
+$ iidy create-stack --client-request-token abc123ef-4567-89ab-cdef-0123456789ab stack-args.yaml
+🔑 Using provided idempotency token abc123ef-4567-89ab-cdef-0123456789ab
+✅ Stack already created (idempotent retry detected)
+```
+
+#### Scenario 2: Multi-Step Operation Failure
+```bash
+# Changeset creation succeeds but execution fails
+$ iidy update-stack --changeset stack-args.yaml
+🎲 Generated idempotency token abc123ef-4567-89ab-cdef-0123456789ab (save this for retries)
+   🔄 Step 'create-changeset' token abc123ef-a7b2c8d4 (derived from abc123ef)
+✅ Changeset created
+   🔄 Step 'execute-changeset' token abc123ef-f1e9d3b7 (derived from abc123ef)
+Error: Changeset execution failed
+
+# Retry - iidy will skip already-completed steps
+$ iidy update-stack --changeset --client-request-token abc123ef-4567-89ab-cdef-0123456789ab stack-args.yaml
+🔑 Using provided idempotency token abc123ef-4567-89ab-cdef-0123456789ab
+   🔄 Step 'create-changeset' token abc123ef-a7b2c8d4 (derived from abc123ef)
+⏩ Changeset already exists (skipping creation)
+   🔄 Step 'execute-changeset' token abc123ef-f1e9d3b7 (derived from abc123ef)
+✅ Changeset executed successfully
+```
+
+### Best Practices
+
+1. **Let iidy generate tokens**: Unless you have specific requirements, let iidy auto-generate tokens
+2. **Save tokens for production operations**: Copy the generated token when running important operations
+3. **Use meaningful tokens for automation**: When scripting, use descriptive tokens like `deploy-v2.1.0-prod`
+4. **Token format**: Any string up to 128 characters, alphanumeric plus hyphens recommended
+5. **Token lifetime**: AWS remembers tokens for at least 12 hours; some operations retain them longer
+
+### Testing with Tokens
+
+When testing CloudFormation templates, you can use predictable tokens:
+
+```bash
+# Development testing with predictable tokens
+iidy create-stack --client-request-token test-feature-xyz-001 stack-args.yaml
+
+# Easy to clean up if needed
+iidy delete-stack --client-request-token delete-feature-xyz-001 stack-args.yaml
+```
+
+### Troubleshooting
+
+**Q: What if I lost the token from a failed operation?**
+A: Check the CloudFormation console - operations will show their client request tokens in the event details.
+
+**Q: Can I use the same token for different stacks?**
+A: Tokens are scoped per stack name and operation type. You can use the same token for different stacks.
+
+**Q: Why are there multiple tokens for changeset operations?**
+A: Each AWS API call needs its own token. iidy derives these automatically to maintain idempotency for each step.
+
+---
+
+## Testing Approach
+
+### Current Testing Strategy
+
+The token management system is tested through multiple layers:
+
+1. **Unit Tests** (`src/timing.rs`)
+   - Token derivation determinism
+   - TokenInfo creation and manipulation
+   - SHA256 hashing consistency
+
+2. **Integration Tests** (`tests/token_integration.rs`)
+   - Full token workflow from CLI to AWS operations
+   - Token normalization in main.rs
+   - Multi-step operation token derivation
+   - Copy-paste friendly format validation
+
+3. **Offline Testing**
+   - All tests run without network access
+   - No AWS API calls required
+   - Deterministic results for CI/CD
+
+### Example Test Cases
+
+```rust
+#[test]
+fn test_token_derivation_deterministic() {
+    let token = TokenInfo::new_user_provided("test-token-123");
+    let derived1 = token.derive_for_step("create-changeset");
+    let derived2 = token.derive_for_step("create-changeset");
+    assert_eq!(derived1.value, derived2.value);
+}
+
+#[test]
+fn test_multi_step_operation_tokens() {
+    let primary = TokenInfo::new_auto_generated();
+    let create_token = primary.derive_for_step("create-changeset");
+    let exec_token = primary.derive_for_step("execute-changeset");
+    
+    // Each step gets a unique token
+    assert_ne!(create_token.value, exec_token.value);
+    
+    // But same step always gets same token
+    let create_token2 = primary.derive_for_step("create-changeset");
+    assert_eq!(create_token.value, create_token2.value);
+}
+```
+
+### Future Testing Enhancements
+
+While the current tests are comprehensive, the fixture-based testing infrastructure (Phase 4, Commit 11) would add:
+
+1. **Mock AWS Responses**: Test error handling and retry scenarios
+2. **Fixture Sets**: Predefined test scenarios (happy path, network errors, AWS errors)
+3. **Property-Based Testing**: Fuzz testing for token derivation
+4. **Performance Benchmarks**: Ensure token operations remain fast
+
+### Running Tests
+
+```bash
+# Run all tests including token tests
+cargo test
+
+# Run only token-specific tests
+cargo test token
+
+# Run with verbose output to see token values
+cargo test -- --nocapture
+```
+
+### Future: End-to-End Testing with Fixtures
+
+A planned enhancement is to support running the iidy CLI with test fixture responses for end-to-end testing and demonstrations:
+
+```bash
+# Future capability: Run with test fixtures
+iidy create-stack --x-load-test-fixture fixtures/happy-path.json stack-args.yaml
+iidy update-stack --x-load-test-fixture fixtures/changeset-demo.json --changeset stack-args.yaml
+```
+
+This feature would:
+- Enable fully offline end-to-end testing of complete workflows
+- Support demonstrations without AWS credentials
+- Allow testing of error scenarios and edge cases
+- Provide reproducible test environments for CI/CD
+
+The `--x-load-test-fixture` flag would load a local file that activates and configures the test infrastructure, replacing real AWS API calls with mock responses. This builds upon the trait-based testing architecture already designed but not yet implemented.
 
 ---
 

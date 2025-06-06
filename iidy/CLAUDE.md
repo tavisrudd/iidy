@@ -6,6 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Use the standard rust / cargo stuff.
 - prefer fd to find, rg to grep
 
+## Token Management
+See [token-management-design.md](token-management-design.md) for comprehensive documentation on the client request token management system, including architecture, multi-step operations, and testing strategy.
+
 ## Architecture Overview
 
 This is a Rust rewrite of `iidy` https://github.com/unbounce/iidy, a CloudFormation deployment tool. The project follows a modular structure:
