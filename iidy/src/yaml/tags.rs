@@ -385,7 +385,6 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
         };
         
         {
-            use crate::yaml::error_wrapper::tag_parsing_error;
             
             // Try to find the line number by searching for the include reference
             let include_pattern = format!("!$ {}", base_path);
@@ -407,7 +406,8 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
                 file_path.clone()
             };
             
-            return Err(tag_parsing_error("property access", &format!("property '{}' not found in '{}'", property_path, root_var), &location, Some(&format!("check available properties in '{}'", root_var))));
+            use crate::yaml::error_wrapper::variable_not_found_error;
+            return Err(variable_not_found_error(&format!("{}.{}", root_var, property_path), &location, &yaml_path, available_vars));
         }
     } else {
         // Root variable doesn't exist
@@ -644,7 +644,7 @@ fn parse_bracket_content(chars: &mut std::iter::Peekable<std::str::Chars>, conte
 
 /// Resolve an if tag
 pub fn resolve_if_tag(tag: &IfTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let condition_result = resolver.resolve_ast(&tag.condition, context)?;
+    let condition_result = resolver.resolve_ast(&tag.test, context)?;
     
     let is_truthy = match condition_result {
         Value::Bool(b) => b,
@@ -792,17 +792,18 @@ pub fn resolve_not_tag(tag: &NotTag, context: &TagContext, resolver: &dyn AstRes
 
 /// Resolve a split tag
 pub fn resolve_split_tag(tag: &SplitTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
+    let delimiter_result = resolver.resolve_ast(&tag.delimiter, context)?;
     let string_result = resolver.resolve_ast(&tag.string, context)?;
     
-    match string_result {
-        Value::String(s) => {
+    match (delimiter_result, string_result) {
+        (Value::String(delimiter), Value::String(s)) => {
             let parts: Vec<Value> = s
-                .split(&tag.delimiter)
+                .split(&delimiter)
                 .map(|part| Value::String(part.to_string()))
                 .collect();
             Ok(Value::Sequence(parts))
         }
-        _ => Err(anyhow!("Split string must be a string value")),
+        _ => Err(anyhow!("Split requires string delimiter and string to split")),
     }
 }
 
@@ -905,12 +906,12 @@ pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver
 
 /// Resolve a mergeMap tag (map followed by merge)
 pub fn resolve_merge_map_tag(tag: &MergeMapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    let items_result = resolver.resolve_ast(&tag.items, context)?;
     
-    match source_result {
+    match items_result {
         Value::Sequence(seq) => {
             let mut result = serde_yaml::Mapping::new();
-            let var_name = tag.var_name.as_deref().unwrap_or("item");
+            let var_name = tag.var.as_deref().unwrap_or("item");
             
             for item in seq {
                 // Create new context with the current item bound to the variable
@@ -918,48 +919,63 @@ pub fn resolve_merge_map_tag(tag: &MergeMapTag, context: &TagContext, resolver: 
                 item_bindings.insert(var_name.to_string(), item);
                 let item_context = context.with_bindings(item_bindings);
                 
-                let transformed = resolver.resolve_ast(&tag.transform, &item_context)?;
+                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
                 match transformed {
                     Value::Mapping(map) => {
                         result.extend(map);
                     }
-                    _ => return Err(anyhow!("MergeMap transform must produce mappings")),
+                    _ => return Err(anyhow!("MergeMap template must produce mappings")),
                 }
             }
             
             Ok(Value::Mapping(result))
         }
-        _ => Err(anyhow!("MergeMap source must be a sequence")),
+        _ => Err(anyhow!("MergeMap items must be a sequence")),
     }
 }
 
 /// Resolve a mapListToHash tag (convert list of key-value pairs to hash)
 pub fn resolve_map_list_to_hash_tag(tag: &MapListToHashTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    // According to iidy-js compatibility, !$mapListToHash delegates to !$map internally,
+    // then converts the result to a hash using the key-value pairs
+    let map_tag = MapTag {
+        items: tag.items.clone(),
+        template: tag.template.clone(),
+        var: tag.var.clone(),
+        filter: tag.filter.clone(),
+    };
     
-    match source_result {
+    let mapped_result = resolve_map_tag(&map_tag, context, resolver)?;
+    
+    match mapped_result {
         Value::Sequence(seq) => {
             let mut result = serde_yaml::Mapping::new();
-            let key_field = tag.key_field.as_deref().unwrap_or("key");
-            let value_field = tag.value_field.as_deref().unwrap_or("value");
             
             for item in seq {
                 match item {
+                    Value::Sequence(ref pair) if pair.len() == 2 => {
+                        let key = &pair[0];
+                        let value = &pair[1];
+                        result.insert(key.clone(), value.clone());
+                    }
                     Value::Mapping(ref map) => {
-                        let key_value = map.get(&Value::String(key_field.to_string()));
-                        let value_value = map.get(&Value::String(value_field.to_string()));
+                        // Handle object format with key/value fields
+                        let key_value = map.get(&Value::String("key".to_string()));
+                        let value_value = map.get(&Value::String("value".to_string()));
                         
                         if let (Some(key), Some(value)) = (key_value, value_value) {
                             result.insert(key.clone(), value.clone());
+                        } else {
+                            return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields"));
                         }
                     }
-                    _ => return Err(anyhow!("MapListToHash requires sequence of mappings with {} and {} fields", key_field, value_field)),
+                    _ => return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields")),
                 }
             }
             
             Ok(Value::Mapping(result))
         }
-        _ => Err(anyhow!("MapListToHash source must be a sequence")),
+        _ => Err(anyhow!("MapListToHash template must produce a sequence of key-value pairs")),
     }
 }
 
@@ -1004,12 +1020,12 @@ pub fn resolve_map_values_tag(tag: &MapValuesTag, context: &TagContext, resolver
 
 /// Resolve a groupBy tag (group items by key)
 pub fn resolve_group_by_tag(tag: &GroupByTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
+    let items_result = resolver.resolve_ast(&tag.items, context)?;
     
-    match source_result {
+    match items_result {
         Value::Sequence(seq) => {
             let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
-            let var_name = tag.var_name.as_deref().unwrap_or("item");
+            let var_name = tag.var.as_deref().unwrap_or("item");
             
             for item in seq {
                 // Create new context with the current item bound to the variable

@@ -6,6 +6,123 @@ use anyhow::{anyhow, Result};
 use serde_yaml::{Mapping, Sequence, Value};
 
 use crate::yaml::ast::*;
+use std::collections::HashSet;
+
+/// Validate that a mapping has exactly the required keys and optionally allowed keys, with no extras
+/// Also provides helpful suggestions for common wrong field names
+fn validate_exact_keys(
+    map: &serde_yaml::Mapping,
+    required_keys: &[&str],
+    optional_keys: &[&str],
+    tag_name: &str,
+    file_path: &str,
+    input: &str,
+) -> Result<()> {
+    let provided_keys: HashSet<String> = map.keys()
+        .filter_map(|k| if let Value::String(s) = k { Some(s.clone()) } else { None })
+        .collect();
+    
+    let required_set: HashSet<String> = required_keys.iter().map(|s| s.to_string()).collect();
+    let optional_set: HashSet<String> = optional_keys.iter().map(|s| s.to_string()).collect();
+    let all_valid_keys: HashSet<String> = required_set.union(&optional_set).cloned().collect();
+    
+    // First, check for common wrong field names and provide specific suggestions
+    let common_mistakes = [
+        ("source", "items"),
+        ("transform", "template"),
+        ("condition", "test"),
+    ];
+    
+    for (wrong_key, correct_key) in &common_mistakes {
+        if provided_keys.contains(*wrong_key) && required_set.contains(*correct_key) && !provided_keys.contains(*correct_key) {
+            use crate::yaml::error_wrapper::tag_parsing_error;
+            
+            // Try to find the line number by searching for the wrong key
+            let line_number = if !input.is_empty() {
+                input.lines().enumerate().find_map(|(idx, line)| {
+                    if line.contains(&format!("{}:", wrong_key)) {
+                        Some(idx + 1)
+                    } else {
+                        None
+                    }
+                }).unwrap_or(0)
+            } else {
+                0
+            };
+            
+            let location = format_location(file_path, line_number);
+            let suggestion = format!("use '{}' instead of '{}' in {} tags", correct_key, wrong_key, tag_name);
+            
+            return Err(tag_parsing_error(tag_name, &format!("'{}' should be '{}'", wrong_key, correct_key), &location, Some(&suggestion)));
+        }
+    }
+    
+    // Check for missing required keys
+    let missing: Vec<String> = required_set.difference(&provided_keys).cloned().collect();
+    if !missing.is_empty() {
+        use crate::yaml::error_wrapper::missing_required_field_error;
+        
+        // Try to find the line number by searching for the tag
+        let line_number = find_tag_line_number(tag_name, input);
+        let location = format_location(file_path, line_number);
+        
+        return Err(missing_required_field_error(
+            tag_name,
+            &missing[0], // Show the first missing field
+            &location,
+            "<parsing>",
+            required_keys.iter().map(|s| s.to_string()).collect()
+        ));
+    }
+    
+    // Check for extra keys
+    let extra: Vec<String> = provided_keys.difference(&all_valid_keys).cloned().collect();
+    if !extra.is_empty() {
+        use crate::yaml::error_wrapper::tag_parsing_error;
+        
+        let line_number = find_tag_line_number(tag_name, input);
+        let location = format_location(file_path, line_number);
+        
+        let all_keys: Vec<String> = required_keys.iter()
+            .map(|s| s.to_string())
+            .chain(optional_keys.iter().map(|s| format!("{} (optional)", s)))
+            .collect();
+        
+        let suggestion = if extra.len() == 1 {
+            format!("unexpected field '{}'. Valid fields are: {}", extra[0], all_keys.join(", "))
+        } else {
+            format!("unexpected fields: {}. Valid fields are: {}", extra.join(", "), all_keys.join(", "))
+        };
+        
+        return Err(tag_parsing_error(tag_name, &suggestion, &location, None));
+    }
+    
+    Ok(())
+}
+
+/// Helper to find the line number where a tag appears
+fn find_tag_line_number(tag_name: &str, input: &str) -> usize {
+    if !input.is_empty() {
+        input.lines().enumerate().find_map(|(idx, line)| {
+            if line.contains(tag_name) {
+                Some(idx + 1)
+            } else {
+                None
+            }
+        }).unwrap_or(0)
+    } else {
+        0
+    }
+}
+
+/// Helper to format location string
+fn format_location(file_path: &str, line_number: usize) -> String {
+    if line_number > 0 {
+        format!("{}:{}", file_path, line_number)
+    } else {
+        file_path.to_string()
+    }
+}
 
 /// Parse YAML text with support for custom preprocessing tags
 pub fn parse_yaml_with_custom_tags(input: &str) -> Result<YamlAst> {
@@ -175,10 +292,11 @@ fn parse_include_tag(value: Value, _file_path: &str, _input: &str) -> Result<Yam
 /// Parse !$if tag
 fn parse_if_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let condition_val = map.get(&Value::String("condition".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'condition' in if tag"))?;
-        let then_val = map.get(&Value::String("then".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'then' in if tag"))?;
+        // Validate that we have exactly the required keys and optionally allowed keys
+        validate_exact_keys(&map, &["test", "then"], &["else"], "!$if", file_path, input)?;
+        
+        let condition_val = map.get(&Value::String("test".to_string())).unwrap(); // Safe due to validation
+        let then_val = map.get(&Value::String("then".to_string())).unwrap(); // Safe due to validation
         let else_val = map.get(&Value::String("else".to_string()));
 
         let condition = Box::new(convert_value_to_ast(condition_val.clone(), file_path, input)?);
@@ -190,113 +308,23 @@ fn parse_if_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
         };
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::If(IfTag {
-            condition,
+            test: condition,
             then_value,
             else_value,
         })))
     } else {
-        Err(anyhow!("If tag must be a mapping"))
+        Err(anyhow!("!$if requires a mapping with keys 'test', 'then', and optionally 'else'"))
     }
 }
 
 /// Parse !$map tag
 fn parse_map_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        // Check for unexpected keys with helpful suggestions
-        let unexpected_key_errors = [
-            ("source", "items", "use 'items' instead of 'source'"),
-            ("transform", "template", "use 'template' instead of 'transform'"),
-        ];
+        // Validate that we have exactly the required keys and optionally allowed keys
+        validate_exact_keys(&map, &["items", "template"], &["var", "filter"], "!$map", file_path, input)?;
         
-        for (wrong_key, correct_key, suggestion) in &unexpected_key_errors {
-            if map.contains_key(&Value::String(wrong_key.to_string())) && !map.contains_key(&Value::String(correct_key.to_string())) {
-                use crate::yaml::error_wrapper::tag_parsing_error;
-                
-                // Try to find the line number by searching for the wrong key
-                let line_number = if !input.is_empty() {
-                    input.lines().enumerate().find_map(|(idx, line)| {
-                        if line.contains(&format!("{}:", wrong_key)) {
-                            Some(idx + 1)
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(0)
-                } else {
-                    0
-                };
-                
-                let location = if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
-                } else {
-                    file_path.to_string()
-                };
-                
-                return Err(tag_parsing_error("!$map", &format!("'{}' should be '{}'", wrong_key, correct_key), &location, Some(suggestion)));
-            }
-        }
-        
-        let items_val = map.get(&Value::String("items".to_string()))
-            .ok_or_else(|| {
-                use crate::yaml::error_wrapper::missing_required_field_error;
-                
-                // Try to find the line number by searching for the !$map tag
-                let line_number = if !input.is_empty() {
-                    input.lines().enumerate().find_map(|(idx, line)| {
-                        if line.contains("!$map") {
-                            Some(idx + 1)
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(0)
-                } else {
-                    0
-                };
-                
-                let location = if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
-                } else {
-                    file_path.to_string()
-                };
-                
-                missing_required_field_error(
-                    "!$map",
-                    "items",
-                    &location,
-                    "<parsing>",
-                    vec!["items".to_string(), "template".to_string()]
-                )
-            })?;
-        let template_val = map.get(&Value::String("template".to_string()))
-            .ok_or_else(|| {
-                use crate::yaml::error_wrapper::missing_required_field_error;
-                
-                // Try to find the line number by searching for the !$map tag
-                let line_number = if !input.is_empty() {
-                    input.lines().enumerate().find_map(|(idx, line)| {
-                        if line.contains("!$map") {
-                            Some(idx + 1)
-                        } else {
-                            None
-                        }
-                    }).unwrap_or(0)
-                } else {
-                    0
-                };
-                
-                let location = if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
-                } else {
-                    file_path.to_string()
-                };
-                
-                missing_required_field_error(
-                    "!$map",
-                    "template",
-                    &location,
-                    "<parsing>",
-                    vec!["items".to_string(), "template".to_string()]
-                )
-            })?;
+        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
+        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
         let var_name = extract_optional_string_field(&map, "var");
         
         // Optional filter
@@ -355,10 +383,11 @@ fn parse_concat_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAs
 /// Parse !$let tag
 fn parse_let_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let bindings_val = map.get(&Value::String("bindings".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'bindings' in let tag"))?;
-        let expression_val = map.get(&Value::String("expression".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'expression' in let tag"))?;
+        // Validate that we have exactly the required keys
+        validate_exact_keys(&map, &["bindings", "expression"], &[], "!$let", file_path, input)?;
+        
+        let bindings_val = map.get(&Value::String("bindings".to_string())).unwrap(); // Safe due to validation
+        let expression_val = map.get(&Value::String("expression".to_string())).unwrap(); // Safe due to validation
 
         let mut bindings = Vec::new();
         if let Value::Mapping(bindings_map) = bindings_val {
@@ -421,9 +450,10 @@ fn parse_split_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst
         let delimiter = extract_string_field(&map, "delimiter")?;
 
         let string = Box::new(convert_value_to_ast(string_val.clone(), file_path, input)?);
+        let delimiter = Box::new(YamlAst::String(delimiter));
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Split(
-            SplitTag { string, delimiter },
+            SplitTag { delimiter, string },
         )))
     } else {
         Err(anyhow!("Split tag must be a mapping"))
@@ -467,10 +497,11 @@ fn extract_optional_string_field(map: &Mapping, field: &str) -> Option<String> {
 /// Parse !$concatMap tag
 fn parse_concat_map_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let items_val = map.get(&Value::String("items".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'items' in concatMap tag"))?;
-        let template_val = map.get(&Value::String("template".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'template' in concatMap tag"))?;
+        // Validate that we have exactly the required keys and optionally allowed keys
+        validate_exact_keys(&map, &["items", "template"], &["var", "filter"], "!$concatMap", file_path, input)?;
+        
+        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
+        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
         let var_name = extract_optional_string_field(&map, "var");
         
         // Optional filter
@@ -497,19 +528,19 @@ fn parse_concat_map_tag(value: Value, file_path: &str, input: &str) -> Result<Ya
 /// Parse !$mergeMap tag
 fn parse_merge_map_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in mergeMap tag"))?;
-        let transform_val = map.get(&Value::String("transform".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'transform' in mergeMap tag"))?;
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in mergeMap tag"))?;
+        let template_val = map.get(&Value::String("template".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'template' in mergeMap tag"))?;
         let var_name = extract_optional_string_field(&map, "var");
 
-        let source = Box::new(convert_value_to_ast(source_val.clone(), file_path, input)?);
-        let transform = Box::new(convert_value_to_ast(transform_val.clone(), file_path, input)?);
+        let items = Box::new(convert_value_to_ast(items_val.clone(), file_path, input)?);
+        let template = Box::new(convert_value_to_ast(template_val.clone(), file_path, input)?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::MergeMap(MergeMapTag {
-            source,
-            transform,
-            var_name,
+            items,
+            template,
+            var: var_name,
         })))
     } else {
         Err(anyhow!("MergeMap tag must be a mapping"))
@@ -519,17 +550,26 @@ fn parse_merge_map_tag(value: Value, file_path: &str, input: &str) -> Result<Yam
 /// Parse !$mapListToHash tag
 fn parse_map_list_to_hash_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in mapListToHash tag"))?;
-        let key_field = extract_optional_string_field(&map, "key");
-        let value_field = extract_optional_string_field(&map, "value");
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in mapListToHash tag"))?;
+        let template_val = map.get(&Value::String("template".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'template' in mapListToHash tag"))?;
+        let var_name = extract_optional_string_field(&map, "var");
+        let filter_val = map.get(&Value::String("filter".to_string()));
 
-        let source = Box::new(convert_value_to_ast(source_val.clone(), file_path, input)?);
+        let items = Box::new(convert_value_to_ast(items_val.clone(), file_path, input)?);
+        let template = Box::new(convert_value_to_ast(template_val.clone(), file_path, input)?);
+        let filter = if let Some(filter_val) = filter_val {
+            Some(Box::new(convert_value_to_ast(filter_val.clone(), file_path, input)?))
+        } else {
+            None
+        };
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapListToHash(MapListToHashTag {
-            source,
-            key_field,
-            value_field,
+            items,
+            template,
+            var: var_name,
+            filter,
         })))
     } else {
         Err(anyhow!("MapListToHash tag must be a mapping"))
@@ -561,19 +601,26 @@ fn parse_map_values_tag(value: Value, file_path: &str, input: &str) -> Result<Ya
 /// Parse !$groupBy tag
 fn parse_group_by_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        let source_val = map.get(&Value::String("source".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'source' in groupBy tag"))?;
+        let items_val = map.get(&Value::String("items".to_string()))
+            .ok_or_else(|| anyhow!("Missing 'items' in groupBy tag"))?;
         let key_val = map.get(&Value::String("key".to_string()))
             .ok_or_else(|| anyhow!("Missing 'key' in groupBy tag"))?;
         let var_name = extract_optional_string_field(&map, "var");
+        let template_val = map.get(&Value::String("template".to_string()));
 
-        let source = Box::new(convert_value_to_ast(source_val.clone(), file_path, input)?);
+        let items = Box::new(convert_value_to_ast(items_val.clone(), file_path, input)?);
         let key = Box::new(convert_value_to_ast(key_val.clone(), file_path, input)?);
+        let template = if let Some(template_val) = template_val {
+            Some(Box::new(convert_value_to_ast(template_val.clone(), file_path, input)?))
+        } else {
+            None
+        };
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::GroupBy(GroupByTag {
-            source,
+            items,
             key,
-            var_name,
+            var: var_name,
+            template,
         })))
     } else {
         Err(anyhow!("GroupBy tag must be a mapping"))
@@ -582,6 +629,8 @@ fn parse_group_by_tag(value: Value, file_path: &str, input: &str) -> Result<Yaml
 
 /// Parse !$fromPairs tag
 fn parse_from_pairs_tag(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
+    // TODO: Consider implementing single element array unwrapping trick like other tags
+    // to work around YAML tag syntax restrictions when using variables
     let source = Box::new(convert_value_to_ast(value, file_path, input)?);
     Ok(YamlAst::PreprocessingTag(PreprocessingTag::FromPairs(FromPairsTag {
         source,

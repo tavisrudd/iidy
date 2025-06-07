@@ -3,10 +3,15 @@ source: tests/error_examples_snapshots.rs
 expression: error_output
 ---
 Tag error: 'source' should be 'items' @ example-templates/errors/tag-map-uses-source.yaml:6 (errno: IY4002)
-  -> use 'items' instead of 'source'
+  -> use 'items' instead of 'source' in !$map tags
 
    5 | configs: !$map
    6 |   source: !$ services
      |   ^^^^^^
    7 |   template: "{{item}}-config"
+
+   example:
+   !$map
+     items: [1, 2, 3]
+     template: "{{item}}"
    For more info, run: iidy explain IY4002

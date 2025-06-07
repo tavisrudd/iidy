@@ -2,10 +2,13 @@
 source: tests/error_examples_snapshots.rs
 expression: error_output
 ---
-Tag error: property 'storage' not found in 'config' @ example-templates/errors/variable-include-not-found.yaml:7 (errno: IY4002)
-  -> check available properties in 'config'
+Variable error: 'config.storage' not found @ example-templates/errors/variable-include-not-found.yaml:7:10 (errno: IY2001)
+  -> variable not defined in current scope
 
    6 | 
    7 | host: !$ config.storage
-     |          ^^^^^^^^^^^^^^
-   For more info, run: iidy explain IY4002
+     |          ^^^^^^^^^^^^^^ variable not defined
+
+   available variables: config
+
+   For more info: iidy explain IY2001

@@ -140,8 +140,8 @@ impl EnhancedPreprocessingError {
             Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
         };
         
-        output.push_str(&format!("{}{}: {}{} @ {}{}{} {}(errno: {}){}\n", 
-            bold_red, error_type, short_message, reset,
+        output.push_str(&format!("{}{}{}: {} @ {}{}{} {}(errno: {}){}\n", 
+            bold_red, error_type, reset, short_message,
             cyan, loc, reset,
             grey, self.error_id().code(), reset
         ));
@@ -283,7 +283,7 @@ impl EnhancedPreprocessingError {
                 match missing_field.as_str() {
                     "template" => help.push("example: template: \"{{item}}\"".to_string()),
                     "items" => help.push("example: items: [1, 2, 3]".to_string()),
-                    "condition" => help.push("example: condition: true".to_string()),
+                    "test" => help.push("example: test: true".to_string()),
                     _ => {}
                 }
             },

@@ -114,7 +114,7 @@ pub fn type_mismatch_error(
     }
 }
 
-/// Wrapper for missing required field errors
+/// Wrapper for missing required field errors - now uses tag_parsing_error for consistency
 #[allow(unused_variables)]
 pub fn missing_required_field_error(
     tag_name: &str,
@@ -123,41 +123,11 @@ pub fn missing_required_field_error(
     yaml_path: &str,
     required_fields: Vec<String>,
 ) -> anyhow::Error {
-    {
-        // Enhanced error format - parse line number from file_path if present
-        let (actual_file_path, line_number) = if file_path.contains(':') {
-            let parts: Vec<&str> = file_path.split(':').collect();
-            if parts.len() >= 2 {
-                if let Ok(line_num) = parts[1].parse::<usize>() {
-                    (parts[0], line_num)
-                } else {
-                    (file_path, 0)
-                }
-            } else {
-                (file_path, 0)
-            }
-        } else {
-            (file_path, 0)
-        };
-        
-        // Try to read source file and show context if we have a line number
-        let source_lines = if line_number > 0 {
-            std::fs::read_to_string(actual_file_path).ok()
-                .map(|content| content.lines().map(|s| s.to_string()).collect::<Vec<_>>())
-        } else {
-            None
-        };
-        
-        let location = SourceLocation::new(actual_file_path, line_number, 0, yaml_path);
-        let error = EnhancedPreprocessingError::missing_required_field(
-            tag_name,
-            missing_field,
-            location,
-            required_fields,
-        );
-        let enhanced_display = error.display_with_context(source_lines.as_deref());
-        anyhow::Error::new(EnhancedErrorWrapper { message: enhanced_display })
-    }
+    let message = format!("'{}' missing in {} tag", missing_field, tag_name);
+    let suggestion = format!("add '{}' field to {} tag", missing_field, tag_name);
+    
+    // Use the consistent tag_parsing_error function so we get examples
+    tag_parsing_error(tag_name, &message, file_path, Some(&suggestion))
 }
 
 /// Wrapper for YAML syntax errors
@@ -262,7 +232,7 @@ pub fn yaml_syntax_error(
     }
 }
 
-/// Wrapper for tag parsing errors
+/// Wrapper for tag parsing errors with automatic example generation
 #[allow(unused_variables)]
 pub fn tag_parsing_error(
     tag_name: &str,
@@ -333,6 +303,9 @@ pub fn tag_parsing_error(
                     } else if let Some(col) = error_line.find("transform:") {
                         let spaces = " ".repeat(col);
                         context.push_str(&format!("     | {}{}^^^^^^^^^{}\n", spaces, red, reset));
+                    } else if let Some(col) = error_line.find("condition:") {
+                        let spaces = " ".repeat(col);
+                        context.push_str(&format!("     | {}{}^^^^^^^^^{}\n", spaces, red, reset));
                     } else if let Some(col) = error_line.find("!$mapp") {
                         let spaces = " ".repeat(col);
                         context.push_str(&format!("     | {}{}^^^^^^{}\n", spaces, red, reset));
@@ -370,9 +343,21 @@ pub fn tag_parsing_error(
             String::from("\n")
         };
         
-        let final_display = format!("{}{}{}{}   For more info, run: iidy explain IY4002{}\n", 
-            error_display, guidance, context_display, light_blue, reset);
+        // Generate appropriate example based on tag name
+        let example_display = match tag_name {
+            "!$map" => format!("\n{}   example:\n   !$map\n     items: [1, 2, 3]\n     template: \"{{{{item}}}}\"{}\n", light_blue, reset),
+            "!$if" => format!("\n{}   example:\n   !$if\n     test: !$eq [\"prod\", \"{{{{env}}}}\"]\n     then: \"production\"\n     else: \"development\"{}\n", light_blue, reset),
+            "!$let" => format!("\n{}   example:\n   !$let\n     bindings:\n       x: 42\n     expression: \"{{{{x}}}}\"{}\n", light_blue, reset),
+            "!$concatMap" => format!("\n{}   example:\n   !$concatMap\n     items: [1, 2, 3]\n     template: [\"{{{{item}}}}-a\", \"{{{{item}}}}-b\"]{}\n", light_blue, reset),
+            // Only show examples for known iidy tags that commonly have errors
+            _ if tag_name.starts_with("!$") => format!("\n{}   example:\n   {}\n     <proper syntax required>{}\n", light_blue, tag_name, reset),
+            _ => String::new(),
+        };
+        
+        let final_display = format!("{}{}{}{}{}   For more info, run: iidy explain IY4002{}\n", 
+            error_display, guidance, context_display, example_display, light_blue, reset);
         
         anyhow::Error::new(EnhancedErrorWrapper { message: final_display })
     }
 }
+
