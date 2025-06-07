@@ -1,4 +1,4 @@
-//! Edge case tests for ParseContext position tracking
+//! Edge case tests for ParseContext core functionality
 
 use iidy::yaml::parser::ParseContext;
 
@@ -7,237 +7,93 @@ fn test_empty_string_source() {
     let context = ParseContext::new("empty.yaml", "");
     
     assert_eq!(context.source.as_ref(), "");
-    
-    // Finding anything in empty string should return None
-    assert!(context.find_position_of("anything").is_none());
-    // find_position_of should return None for any search in empty string
-    assert!(context.find_position_of("test").is_none());
-    
+    assert_eq!(context.yaml_path, "");
+    assert_eq!(context.location_string(), "empty.yaml");
 }
 
 #[test]
-fn test_single_character_source() {
-    let context = ParseContext::new("single.yaml", "a");
+fn test_special_characters_in_file_location() {
+    let context = ParseContext::new("file with spaces.yaml", "content");
+    assert_eq!(context.location_string(), "file with spaces.yaml");
     
-    let pos = context.find_position_of("a").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
-    assert_eq!(pos.offset, 0);
+    let context = ParseContext::new("path/to/file.yaml", "content");
+    assert_eq!(context.location_string(), "path/to/file.yaml");
     
-    assert!(context.find_position_of("b").is_none());
+    let context = ParseContext::new("https://example.com/template.yaml", "content");
+    assert_eq!(context.location_string(), "https://example.com/template.yaml");
 }
 
 #[test]
-fn test_only_newlines_source() {
-    let context = ParseContext::new("newlines.yaml", "\n\n\n");
+fn test_complex_yaml_path_building() {
+    let context = ParseContext::new("test.yaml", "content");
     
+    // Test deeply nested paths
+    let deep_context = context
+        .with_path("Resources")
+        .with_path("Database")
+        .with_array_index(0)
+        .with_path("Properties")
+        .with_path("ConnectionStrings")
+        .with_array_index(2)
+        .with_path("Value");
     
-    // Finding newlines should work but position calculation should be correct
-    let pos = context.find_position_of("\n").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
-    assert_eq!(pos.offset, 0);
+    assert_eq!(deep_context.yaml_path, "Resources.Database[0].Properties.ConnectionStrings[2].Value");
 }
 
 #[test]
-fn test_unicode_emoji_position_tracking() {
-    // Test with various emoji and unicode characters
-    let source = "🚀 Deploy:\n  🔧 Config: ☕\n  📦 Package: 🎯";
-    let context = ParseContext::new("unicode.yaml", source);
+fn test_unicode_in_paths() {
+    let context = ParseContext::new("测试.yaml", "内容");
     
-    // Find rocket emoji
-    let pos = context.find_position_of("🚀").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
+    let unicode_context = context
+        .with_path("资源")
+        .with_path("数据库");
     
-    // Find "Deploy"
-    let pos = context.find_position_of("Deploy").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 3); // "🚀 " = 2 chars (emoji counts as 1 char in Rust strings)
-    
-    // Find wrench emoji
-    let pos = context.find_position_of("🔧").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 3); // "  " = 2 spaces
-    
-    // Find coffee emoji
-    let pos = context.find_position_of("☕").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 13); // "  🔧 Config: " = 12 chars
-    
-    // Find target emoji
-    let pos = context.find_position_of("🎯").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 14); // "  📦 Package: " = 13 chars
+    assert_eq!(unicode_context.yaml_path, "资源.数据库");
+    assert_eq!(unicode_context.location_string(), "测试.yaml");
 }
 
 #[test]
-fn test_unicode_combining_characters() {
-    // Test with combining characters (é = e + ´)
-    let source = "café\nnaïve\nrésumé";  // These use composed characters
-    let context = ParseContext::new("combining.yaml", source);
+fn test_memory_efficiency_with_shared_strings() {
+    let source = "a".repeat(10000); // Large string
+    let context = ParseContext::new("test.yaml", &source);
     
-    let pos = context.find_position_of("café").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
+    // Creating multiple contexts should share the source string efficiently
+    let context1 = context.with_path("Resources");
+    let context2 = context1.with_path("MyBucket");
+    let context3 = context2.with_array_index(0);
     
-    let pos = context.find_position_of("naïve").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 1);
-    
-    let pos = context.find_position_of("résumé").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 1);
+    // All contexts should share the same source data (Rc<str>)
+    assert_eq!(context.source.as_ref(), source);
+    assert_eq!(context1.source.as_ref(), source);
+    assert_eq!(context2.source.as_ref(), source);
+    assert_eq!(context3.source.as_ref(), source);
 }
 
 #[test]
-fn test_asian_characters_position_tracking() {
-    // Test with Chinese, Japanese, Korean characters
-    let source = "中文: value\n日本語: test\n한국어: content";
-    let context = ParseContext::new("asian.yaml", source);
+fn test_context_cloning_behavior() {
+    let context = ParseContext::new("test.yaml", "content");
+    let context1 = context.with_path("Resources");
     
-    let pos = context.find_position_of("中文").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
+    // Original context should be unchanged
+    assert_eq!(context.yaml_path, "");
+    assert_eq!(context1.yaml_path, "Resources");
     
-    let pos = context.find_position_of("value").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 5); // "中文: " = 4 chars
-    
-    let pos = context.find_position_of("日本語").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 1);
-    
-    let pos = context.find_position_of("한국어").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 1);
+    // Both should share the same source and file location
+    assert_eq!(context.source.as_ptr(), context1.source.as_ptr());
+    assert_eq!(context.file_location.as_ptr(), context1.file_location.as_ptr());
 }
 
 #[test]
-fn test_mixed_line_endings() {
-    // Test with common line endings
-    let source = "line1\nline2\r\nline3";
-    let context = ParseContext::new("mixed.yaml", source);
+fn test_find_tag_position_in_context_with_empty_path() {
+    let yaml_source = "root: !$map\n  items: [1, 2]\n  template: '{{item}}'";
+    let context = ParseContext::new("test.yaml", yaml_source);
     
-    let pos = context.find_position_of("line2").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 1);
-    
-    let pos = context.find_position_of("line3").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 1);
-}
-
-#[test]
-fn test_very_long_lines() {
-    // Test with long lines
-    let long_content = "x".repeat(1000);
-    let source = format!("short\n{}\nend", long_content);
-    let context = ParseContext::new("long.yaml", &source);
-    
-    let pos = context.find_position_of("short").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
-    
-    // Find the beginning of the long content
-    let pos = context.find_position_of("x").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 1);
-    
-    let pos = context.find_position_of("end").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 1);
-}
-
-#[test]
-fn test_tabs_vs_spaces_position_tracking() {
-    // Test consistent handling of tabs vs spaces
-    let source = "line1\n\tindented_with_tab\n    indented_with_spaces\n\t\tmixed\t\tindent";
-    let context = ParseContext::new("tabs.yaml", source);
-    
-    let pos = context.find_position_of("indented_with_tab").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 2); // Tab counts as 1 character
-    
-    let pos = context.find_position_of("indented_with_spaces").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 5); // 4 spaces + 1
-    
-    let pos = context.find_position_of("mixed").unwrap();
-    assert_eq!(pos.line, 4);
-    assert_eq!(pos.column, 3); // 2 tabs = 2 chars
-}
-
-#[test]
-fn test_zero_width_characters() {
-    // Test with zero-width characters that might be invisible but affect position
-    let source = "normal\u{200B}text\nmore\u{FEFF}content"; // Zero-width space and BOM
-    let context = ParseContext::new("zerowidth.yaml", source);
-    
-    // Find text after zero-width space
-    let pos = context.find_position_of("text").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 8); // "normal" + zero-width space + 1
-    
-    // Find content after BOM
-    let pos = context.find_position_of("content").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 6); // "more" + BOM + 1
-}
-
-#[test]
-fn test_basic_position_calculations() {
-    let source = "abc\ndef\nghi";
-    let context = ParseContext::new("boundary.yaml", source);
-    
-    // Test finding different strings at known positions
-    let pos = context.find_position_of("def").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 1);
-    assert_eq!(pos.offset, 4);
-    
-    let pos = context.find_position_of("ghi").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 1);
-    assert_eq!(pos.offset, 8);
-    
-    // Test finding something that doesn't exist
-    let pos = context.find_position_of("xyz");
-    assert!(pos.is_none());
-}
-
-#[test]
-fn test_special_yaml_characters_in_search() {
-    let source = "key: value\nspecial: \":[]{}|>\"\nanother: !tag value";
-    let context = ParseContext::new("special.yaml", source);
-    
-    // Find YAML special characters
-    let pos = context.find_position_of(":").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 4);
-    
-    let pos = context.find_position_of("!tag").unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 10);
-    
-    // Find brackets and braces
-    let pos = context.find_position_of("[").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 12); // "special: \":" = 11 chars, so "[" starts at column 12
-}
-
-#[test]
-fn test_malformed_utf8_handling() {
-    // Create a string with valid UTF-8 
-    // (Rust strings are always valid UTF-8, so we can't test invalid UTF-8 directly)
-    let source = "valid utf8: 测试\nmore: content";
-    let context = ParseContext::new("utf8.yaml", source);
-    
-    let pos = context.find_position_of("测试").unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 13); // "valid utf8: " = 12 chars
-    
-    let pos = context.find_position_of("content").unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 7);
+    // Empty path should still work for finding tags at root level
+    let result = context.find_tag_position_in_context("!$map");
+    // This may or may not find the tag depending on tree-sitter availability
+    // The important thing is that it doesn't crash and returns an Option
+    match result {
+        Some(pos) => println!("Found !$map at line {}, column {}", pos.line, pos.column),
+        None => println!("!$map not found (expected if tree-sitter fails)"),
+    }
 }

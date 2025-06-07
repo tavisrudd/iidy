@@ -32,14 +32,6 @@ fn test_yaml_path_generation() {
     let ctx4 = ctx1.with_path("MapOp3");
     println!("Path after MapOp3: '{}'", ctx4.yaml_path);
     
-    // Test position finding
-    println!("\nTesting position finding:");
-    
-    // Find the first !$map position
-    if let Some(pos) = context.find_position_of("!$map") {
-        println!("First !$map found at line {}, column {}, offset {}", pos.line, pos.column, pos.offset);
-    }
-    
     // Test context-aware finding with different paths
     println!("\nTesting context-aware finding:");
     

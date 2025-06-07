@@ -37,13 +37,8 @@ fn debug_array_context_paths() {
     let third_operation_ctx = third_item_ctx.with_path("operation");
     println!("Third operation path: '{}'", third_operation_ctx.yaml_path);
     
-    // Test position finding with context
+    // Test context-aware position finding
     println!("\nContext-aware position finding:");
-    
-    // Test finding the first occurrence
-    if let Some(pos) = context.find_position_of("!$map") {
-        println!("First !$map found at line {}, column {}", pos.line, pos.column);
-    }
     
     // Test context-aware tag finding
     if let Some(pos) = third_operation_ctx.find_tag_position_in_context("!$map") {

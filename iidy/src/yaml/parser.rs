@@ -68,21 +68,8 @@ impl ParseContext {
     }
     
     
-    /// Find the position of any text within the source using the best available strategy
-    pub fn find_position_of(&self, search_text: &str) -> Option<Position> {
-        // Try tree-sitter first for precision, fall back to manual for edge cases
-        let tree_sitter_finder = TreeSitterLocationFinder::new();
-        if let Some(position) = tree_sitter_finder.find_position_of(&self.source, search_text) {
-            return Some(position);
-        }
-        
-        // Fallback to manual approach for edge cases (empty strings, invalid YAML, etc.)
-        let manual_finder = ManualLocationFinder;
-        manual_finder.find_position_of(&self.source, search_text)
-    }
     
     /// Find the position of a tag within the current YAML path context
-    /// This is more accurate than find_position_of when there are multiple occurrences
     /// Uses tree-sitter for precise location finding with manual fallback
     pub fn find_tag_position_in_context(&self, tag_name: &str) -> Option<Position> {
         // Try tree-sitter first for most accurate results
