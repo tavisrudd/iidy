@@ -4,6 +4,7 @@
 
 use anyhow::{anyhow, Result};
 use serde_yaml::{Mapping, Sequence, Value};
+use std::rc::Rc;
 
 use crate::yaml::ast::*;
 use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
@@ -13,11 +14,9 @@ use std::collections::HashSet;
 #[derive(Debug, Clone)]
 pub struct ParseContext {
     /// Full file location (can be local path, S3 URL, HTTPS URL, etc.)
-    pub file_location: String,
+    pub file_location: Rc<str>,
     /// Original source text
-    pub source: String,
-    /// Current position in the document
-    pub position: Position,
+    pub source: Rc<str>,
     /// Current path within the YAML structure (e.g., "Resources.MyBucket.Properties")
     pub yaml_path: String,
 }
@@ -26,9 +25,8 @@ impl ParseContext {
     /// Create a new parsing context
     pub fn new(file_location: impl Into<String>, source: impl Into<String>) -> Self {
         Self {
-            file_location: file_location.into(),
-            source: source.into(),
-            position: Position::start(),
+            file_location: file_location.into().into(),
+            source: source.into().into(),
             yaml_path: String::new(),
         }
     }
@@ -36,7 +34,7 @@ impl ParseContext {
     
     /// Get the formatted location string for error messages
     pub fn location_string(&self) -> String {
-        format!("{}:{}:{}", self.file_location, self.position.line, self.position.column)
+        self.file_location.to_string()
     }
     
     /// Create a new context with an extended YAML path
@@ -48,9 +46,8 @@ impl ParseContext {
         };
         
         Self {
-            file_location: self.file_location.clone(),
-            source: self.source.clone(),
-            position: self.position.clone(),
+            file_location: Rc::clone(&self.file_location),
+            source: Rc::clone(&self.source),
             yaml_path: new_path,
         }
     }
@@ -64,22 +61,12 @@ impl ParseContext {
         };
         
         Self {
-            file_location: self.file_location.clone(),
-            source: self.source.clone(),
-            position: self.position.clone(),
+            file_location: Rc::clone(&self.file_location),
+            source: Rc::clone(&self.source),
             yaml_path: new_path,
         }
     }
     
-    /// Update position to a specific line and column
-    pub fn with_position(&self, line: usize, column: usize, offset: usize) -> Self {
-        Self {
-            file_location: self.file_location.clone(),
-            source: self.source.clone(),
-            position: Position::new(line, column, offset),
-            yaml_path: self.yaml_path.clone(),
-        }
-    }
     
     /// Find the position of any text within the source using the best available strategy
     pub fn find_position_of(&self, search_text: &str) -> Option<Position> {
@@ -109,46 +96,7 @@ impl ParseContext {
         manual_finder.find_tag_position_in_context(&self.source, &self.yaml_path, tag_name)
     }
     
-    /// Convert offset to line and column (simple implementation for error handling)
-    pub fn offset_to_position(&self, offset: usize) -> Position {
-        let manual_finder = ManualLocationFinder;
-        manual_finder.offset_to_position(&self.source, offset)
-    }
     
-    /// Get the current line content for context in error messages
-    pub fn current_line_content(&self) -> Option<&str> {
-        self.get_line_content(self.position.line)
-    }
-    
-    /// Get content of a specific line
-    pub fn get_line_content(&self, line_number: usize) -> Option<&str> {
-        self.source.lines().nth(line_number.saturating_sub(1))
-    }
-    
-    /// Extract array index from the YAML path if present
-    /// For example: "ListOperations[2].operation" -> Some(2)
-    pub fn extract_array_index_from_path(&self) -> Option<usize> {
-        // Look for pattern like "[number]" in the path
-        if let Some(start) = self.yaml_path.find('[') {
-            if let Some(end) = self.yaml_path[start..].find(']') {
-                let index_str = &self.yaml_path[start + 1..start + end];
-                return index_str.parse().ok();
-            }
-        }
-        None
-    }
-    
-    /// Find position of text starting from a specific offset (for debugging and testing)
-    pub fn find_position_of_from_offset(&self, search_text: &str, start_offset: usize) -> Option<Position> {
-        let search_start = start_offset.min(self.source.len());
-        
-        if let Some(found_offset) = self.source[search_start..].find(search_text) {
-            let absolute_offset = search_start + found_offset;
-            Some(self.offset_to_position(absolute_offset))
-        } else {
-            None
-        }
-    }
 }
 
 /// Validate that a mapping has exactly the required keys and optionally allowed keys, with no extras

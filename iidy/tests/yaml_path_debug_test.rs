@@ -35,13 +35,9 @@ fn test_yaml_path_generation() {
     // Test position finding
     println!("\nTesting position finding:");
     
-    // Find all !$map positions manually
-    let mut offset = 0;
-    let mut count = 1;
-    while let Some(pos) = context.find_position_of_from_offset("!$map", offset) {
-        println!("!$map #{}: line {}, column {}, offset {}", count, pos.line, pos.column, pos.offset);
-        offset = pos.offset + "!$map".len();
-        count += 1;
+    // Find the first !$map position
+    if let Some(pos) = context.find_position_of("!$map") {
+        println!("First !$map found at line {}, column {}, offset {}", pos.line, pos.column, pos.offset);
     }
     
     // Test context-aware finding with different paths

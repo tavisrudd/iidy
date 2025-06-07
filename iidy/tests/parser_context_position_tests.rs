@@ -8,20 +8,16 @@ fn test_parse_context_creation() {
     let source = "line1\nline2\nline3";
     let context = ParseContext::new("test.yaml", source);
     
-    assert_eq!(context.file_location, "test.yaml");
-    assert_eq!(context.source, source);
-    assert_eq!(context.position.line, 1);
-    assert_eq!(context.position.column, 1);
-    assert_eq!(context.position.offset, 0);
+    assert_eq!(context.file_location.as_ref(), "test.yaml");
+    assert_eq!(context.source.as_ref(), source);
     assert_eq!(context.yaml_path, "");
 }
 
 #[test]
 fn test_location_string_formatting() {
-    let context = ParseContext::new("test.yaml", "content")
-        .with_position(5, 10, 25);
+    let context = ParseContext::new("test.yaml", "content");
     
-    assert_eq!(context.location_string(), "test.yaml:5:10");
+    assert_eq!(context.location_string(), "test.yaml");
 }
 
 #[test]
@@ -81,80 +77,9 @@ fn test_find_position_of_not_found() {
     assert!(pos.is_none());
 }
 
-#[test]
-fn test_find_position_of_from_offset() {
-    let source = "test test test\nmore test content\nfinal test";
-    let context = ParseContext::new("test.yaml", source);
-    
-    // First "test" at beginning
-    let pos = context.find_position_of_from_offset("test", 0).unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 1);
-    assert_eq!(pos.offset, 0);
-    
-    // Second "test" (skip first one)
-    let pos = context.find_position_of_from_offset("test", 1).unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 6); // "test " = 5 chars, so second "test" starts at column 6
-    assert_eq!(pos.offset, 5);
-    
-    // Third "test" (skip first two)
-    let pos = context.find_position_of_from_offset("test", 6).unwrap();
-    assert_eq!(pos.line, 1);
-    assert_eq!(pos.column, 11); // "test test " = 10 chars, so third "test" starts at column 11
-    assert_eq!(pos.offset, 10);
-    
-    // "test" on second line
-    let pos = context.find_position_of_from_offset("test", 15).unwrap();
-    assert_eq!(pos.line, 2);
-    assert_eq!(pos.column, 6); // "more " = 5 chars on line 2
-    
-    // "test" on third line  
-    let pos = context.find_position_of_from_offset("test", 32).unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 7); // "final " = 6 chars on line 3
-}
 
-#[test]
-fn test_find_position_of_from_offset_boundary_cases() {
-    let source = "abc\ndef\nghi";
-    let context = ParseContext::new("test.yaml", source);
-    
-    // Start from offset beyond source length
-    let pos = context.find_position_of_from_offset("def", 100);
-    assert!(pos.is_none());
-    
-    // Start from exact end of source
-    let pos = context.find_position_of_from_offset("def", source.len());
-    assert!(pos.is_none());
-    
-    // Start from offset equal to source length - 1 
-    let pos = context.find_position_of_from_offset("i", source.len() - 1).unwrap();
-    assert_eq!(pos.line, 3);
-    assert_eq!(pos.column, 3);
-}
 
-#[test]
-fn test_get_line_content() {
-    let source = "line1\nline2 content\nline3 more\n";
-    let context = ParseContext::new("test.yaml", source);
-    
-    assert_eq!(context.get_line_content(1), Some("line1"));
-    assert_eq!(context.get_line_content(2), Some("line2 content"));
-    assert_eq!(context.get_line_content(3), Some("line3 more"));
-    assert_eq!(context.get_line_content(4), None); // Beyond end since there's no 4th line
-    assert_eq!(context.get_line_content(5), None); // Beyond end
-    assert_eq!(context.get_line_content(0), Some("line1")); // Line 0 maps to first line due to saturating_sub
-}
 
-#[test]
-fn test_current_line_content() {
-    let source = "line1\nline2 content\nline3 more";
-    let context = ParseContext::new("test.yaml", source)
-        .with_position(2, 5, 10);
-    
-    assert_eq!(context.current_line_content(), Some("line2 content"));
-}
 
 #[test]
 fn test_with_path_navigation() {
@@ -246,17 +171,14 @@ fn test_issue_with_multiple_occurrences_from_beginning() {
     assert_eq!(pos1.line, 1);
     assert_eq!(pos1.column, 1);
     
-    // The issue: find_position_of will find the FIRST occurrence again
-    // not the second occurrence at line 3
+    // The behavior: find_position_of will always find the FIRST occurrence
+    // This is expected behavior - finding the first occurrence is the main use case
     let pos2 = context.find_position_of("!$map").unwrap();
-    assert_eq!(pos2.line, 1); // This is the problem - always finds first occurrence
+    assert_eq!(pos2.line, 1); // Always finds first occurrence
     assert_eq!(pos2.column, 1);
     
-    // To find the second occurrence, we need to use find_position_of_from_offset
-    let first_occurrence_end = pos1.offset + "!$map".len();
-    let pos3 = context.find_position_of_from_offset("!$map", first_occurrence_end).unwrap();
-    assert_eq!(pos3.line, 3);
-    assert_eq!(pos3.column, 13); // "  template: " = 12 chars, so !$map starts at column 13
+    // For finding subsequent occurrences, we now rely on the context-aware methods
+    // or the tree-sitter LocationFinder implementation which can navigate paths
 }
 
 #[test]

@@ -6,18 +6,13 @@ use iidy::yaml::parser::ParseContext;
 fn test_empty_string_source() {
     let context = ParseContext::new("empty.yaml", "");
     
-    assert_eq!(context.source, "");
-    assert_eq!(context.position.line, 1);
-    assert_eq!(context.position.column, 1);
-    assert_eq!(context.position.offset, 0);
+    assert_eq!(context.source.as_ref(), "");
     
     // Finding anything in empty string should return None
     assert!(context.find_position_of("anything").is_none());
-    assert!(context.find_position_of_from_offset("test", 0).is_none());
+    // find_position_of should return None for any search in empty string
+    assert!(context.find_position_of("test").is_none());
     
-    // Line content should return None for any line in empty source
-    assert!(context.get_line_content(1).is_none());
-    assert!(context.current_line_content().is_none());
 }
 
 #[test]
@@ -29,7 +24,6 @@ fn test_single_character_source() {
     assert_eq!(pos.column, 1);
     assert_eq!(pos.offset, 0);
     
-    assert_eq!(context.get_line_content(1), Some("a"));
     assert!(context.find_position_of("b").is_none());
 }
 
@@ -37,11 +31,6 @@ fn test_single_character_source() {
 fn test_only_newlines_source() {
     let context = ParseContext::new("newlines.yaml", "\n\n\n");
     
-    // Should have empty lines
-    assert_eq!(context.get_line_content(1), Some(""));
-    assert_eq!(context.get_line_content(2), Some(""));
-    assert_eq!(context.get_line_content(3), Some(""));
-    assert!(context.get_line_content(4).is_none());
     
     // Finding newlines should work but position calculation should be correct
     let pos = context.find_position_of("\n").unwrap();
@@ -197,24 +186,23 @@ fn test_zero_width_characters() {
 }
 
 #[test]
-fn test_boundary_offset_calculations() {
+fn test_basic_position_calculations() {
     let source = "abc\ndef\nghi";
     let context = ParseContext::new("boundary.yaml", source);
     
-    // Test offset at exact boundaries
-    let pos = context.find_position_of_from_offset("def", 4).unwrap(); // Start right at "def"
+    // Test finding different strings at known positions
+    let pos = context.find_position_of("def").unwrap();
     assert_eq!(pos.line, 2);
     assert_eq!(pos.column, 1);
     assert_eq!(pos.offset, 4);
     
-    // Test offset right before target
-    let pos = context.find_position_of_from_offset("ghi", 7).unwrap(); // Start right before "ghi"
+    let pos = context.find_position_of("ghi").unwrap();
     assert_eq!(pos.line, 3);
     assert_eq!(pos.column, 1);
     assert_eq!(pos.offset, 8);
     
-    // Test offset that would skip target entirely
-    let pos = context.find_position_of_from_offset("def", 5); // Start after "def"
+    // Test finding something that doesn't exist
+    let pos = context.find_position_of("xyz");
     assert!(pos.is_none());
 }
 

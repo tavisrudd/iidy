@@ -37,17 +37,22 @@ fn debug_array_context_paths() {
     let third_operation_ctx = third_item_ctx.with_path("operation");
     println!("Third operation path: '{}'", third_operation_ctx.yaml_path);
     
-    // Test position finding manually
-    println!("\nManual position finding:");
-    let mut offset = 0;
-    let mut count = 1;
-    while let Some(pos) = context.find_position_of_from_offset("!$map", offset) {
-        println!("!$map #{}: line {}, column {}", count, pos.line, pos.column);
-        offset = pos.offset + "!$map".len();
-        count += 1;
+    // Test position finding with context
+    println!("\nContext-aware position finding:");
+    
+    // Test finding the first occurrence
+    if let Some(pos) = context.find_position_of("!$map") {
+        println!("First !$map found at line {}, column {}", pos.line, pos.column);
     }
     
-    // Test context-aware finding
+    // Test context-aware tag finding
+    if let Some(pos) = third_operation_ctx.find_tag_position_in_context("!$map") {
+        println!("!$map in third operation context at line {}, column {}", pos.line, pos.column);
+    }
+    
+    // Test that paths are built correctly
+    assert_eq!(first_operation_ctx.yaml_path, "ListOperations[0].operation");
+    assert_eq!(third_operation_ctx.yaml_path, "ListOperations[2].operation");
     println!("\nContext-aware finding:");
     if let Some(pos) = first_operation_ctx.find_tag_position_in_context("!$map") {
         println!("First operation context finds !$map at line {}, column {}", pos.line, pos.column);
