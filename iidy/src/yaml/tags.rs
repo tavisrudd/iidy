@@ -280,27 +280,22 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
     // Only variables from $defs, $imports, and local scoped variables are allowed
     let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
     
-    // Get location information - file name from base_path if available
-    let location_info = if let Some(base_path) = &context.base_path {
-        format!("in file '{}'", base_path.display())
+    // Get file path
+    let file_path = if let Some(base_path) = &context.base_path {
+        base_path.display().to_string()
     } else {
         context.current_location()
-            .map(|loc| format!("in '{}'", loc))
-            .unwrap_or_else(|| "in unknown location".to_string())
+            .unwrap_or_else(|| "unknown location".to_string())
     };
     
-    // Get YAML path information if available
+    // Get YAML path information
     let yaml_path = context.current_path();
-    let path_info = if !yaml_path.is_empty() {
-        format!(" at path '{}'", yaml_path)
-    } else {
-        String::new()
-    };
     
-    Err(anyhow!(
-        "Variable '{}' not found in environment {}{}\nOnly variables from $defs, $imports, and local scoped variables (like 'item' in !$map) are available.", 
-        root_var, location_info, path_info
-    ))
+    // Get available variables
+    let available_vars: Vec<String> = context.variables.keys().cloned().collect();
+    
+    use crate::yaml::error_wrapper::variable_not_found_error;
+    Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
 }
 
 /// Parse path and query from include path

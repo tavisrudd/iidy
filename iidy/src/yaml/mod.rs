@@ -24,10 +24,23 @@ pub mod parser;
 pub mod tags;
 pub mod imports;
 pub mod handlebars;
+pub mod error_wrapper;
+
+#[cfg(feature = "enhanced-errors")]
+pub mod error_ids;
+#[cfg(feature = "enhanced-errors")]
+pub mod enhanced_errors;
+#[cfg(all(test, feature = "enhanced-errors"))]
+pub mod error_spike_tests;
 
 pub use ast::*;
 pub use parser::parse_yaml_with_custom_tags;
 pub use tags::{TagContext, StackFrame};
+
+#[cfg(feature = "enhanced-errors")]
+pub use error_ids::ErrorId;
+#[cfg(feature = "enhanced-errors")]
+pub use enhanced_errors::{EnhancedPreprocessingError, SourceLocation};
 
 use anyhow::Result;
 use serde_yaml::Value;

@@ -19,12 +19,12 @@ test:
 # Generate coverage summary (fast)
 coverage:
 	@echo "Generating test coverage summary..."
-	cargo tarpaulin --skip-clean --engine llvm --out Stdout --timeout 180 --exclude-files "src/main.rs" "src/demo.rs" "benches/*" "tests/fixtures/*"
+	cargo tarpaulin --lib --tests --skip-clean --engine llvm --out Stdout --timeout 180 --exclude-files "src/main.rs" "src/demo.rs" "benches/*" "tests/fixtures/*"
 
 # Generate HTML coverage report
 coverage-html:
 	@echo "Generating HTML coverage report..."
-	cargo tarpaulin --skip-clean --engine llvm --out Html --timeout 300 \
+	cargo tarpaulin --lib --tests --skip-clean --engine llvm --out Html --timeout 300 \
 		--exclude-files "src/main.rs" "src/demo.rs" "benches/*" "tests/fixtures/*" \
 		--target-dir target/tarpaulin
 	@echo "HTML report generated at: tarpaulin-report.html"
@@ -32,7 +32,7 @@ coverage-html:
 # Generate detailed coverage with multiple formats
 coverage-report:
 	@echo "Generating comprehensive coverage report..."
-	cargo tarpaulin --skip-clean --engine llvm --out Html,Json,Lcov --timeout 300 \
+	cargo tarpaulin --lib --tests --skip-clean --engine llvm --out Html,Json,Lcov --timeout 300 \
 		--exclude-files "src/main.rs" "src/demo.rs" "benches/*" "tests/fixtures/*" \
 		--target-dir target/tarpaulin
 	@echo "Coverage reports generated:"

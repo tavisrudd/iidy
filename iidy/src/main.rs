@@ -11,6 +11,9 @@ use std::path::Path;
 mod demo;
 use tokio::runtime::Runtime;
 
+#[cfg(feature = "enhanced-errors")]
+use iidy::yaml::error_ids::ErrorId;
+
 fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
@@ -139,6 +142,10 @@ fn handle_command(cli: Cli) {
             generate(shell, &mut Cli::command(), "iidy-rs", &mut io::stdout());
             debug!("Completion for {:?}", shell);
         }
+        #[cfg(feature = "enhanced-errors")]
+        Commands::Explain { codes } => {
+            handle_explain_command(codes);
+        }
     }
 }
 
@@ -211,6 +218,24 @@ fn apply_query_to_value(value: serde_yaml::Value, query: &str) -> Result<serde_y
     }
     
     Ok(current)
+}
+
+#[cfg(feature = "enhanced-errors")]
+fn handle_explain_command(codes: Vec<String>) {
+    if codes.is_empty() {
+        eprintln!("Please provide one or more error codes to explain (e.g., IY2001)");
+        return;
+    }
+    
+    for code in codes {
+        // Try to parse the error code
+        if let Some(error_id) = ErrorId::from_code(&code) {
+            println!("{}", error_id.explain());
+            println!();
+        } else {
+            eprintln!("Unknown error code: {}", code);
+        }
+    }
 }
 
 fn main() {

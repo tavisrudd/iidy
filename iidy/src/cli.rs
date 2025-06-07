@@ -310,6 +310,12 @@ pub enum Commands {
     DummySpacer6,
     /// generate shell completion script
     Completion { shell: Option<Shell> },
+    /// explain error codes
+    #[cfg(feature = "enhanced-errors")]
+    Explain { 
+        /// Error code(s) to explain (e.g., IY2001)
+        codes: Vec<String> 
+    },
 }
 
 #[derive(Args, Debug)]
