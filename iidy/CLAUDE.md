@@ -25,6 +25,9 @@ See [notes/2025-05-05-token-management-design.md](notes/2025-05-05-token-managem
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.
 
+## Security
+See [docs/SECURITY.md](docs/SECURITY.md) for comprehensive documentation on the YAML import system security model, including restrictions on remote template imports and base path derivation for relative imports.
+
 ## Architecture Overview
 
 This is a Rust rewrite of `iidy` https://github.com/unbounce/iidy, a CloudFormation deployment tool. The project follows a modular structure:

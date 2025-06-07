@@ -1,6 +1,37 @@
 //! Tag resolution and processing for YAML preprocessing
 //! 
-//! Contains the implementation logic for each custom preprocessing tag
+//! Contains the implementation logic for each custom preprocessing tag and
+//! base path derivation for relative imports.
+//!
+//! # Base Path Derivation for Relative Imports
+//!
+//! The `TagContext::from_processing_env()` function derives base paths to enable
+//! relative imports across different contexts:
+//!
+//! ## Local File Paths
+//! - `/Users/app/configs/main.yaml` → `/Users/app/configs/`
+//! - `./configs/app.yaml` → `./configs/`
+//! - `config.yaml` → `` (empty - current directory)
+//!
+//! ## S3 URLs
+//! - `s3://bucket/file.yaml` → `s3://bucket/`
+//! - `s3://bucket/configs/app.yaml` → `s3://bucket/configs/`
+//! - `s3://bucket/configs/env/prod.yaml` → `s3://bucket/configs/env/`
+//!
+//! ## HTTP/HTTPS URLs
+//! - `https://example.com/file.yaml` → `https://example.com/`
+//! - `https://example.com/configs/app.yaml` → `https://example.com/configs/`
+//! - `http://api.com/templates/base.yaml` → `http://api.com/templates/`
+//!
+//! This enables relative imports to work correctly:
+//! ```yaml
+//! # From s3://bucket/configs/app.yaml
+//! Resources:
+//!   Database: !$ database.config  # Resolves to s3://bucket/configs/database.yaml
+//! ```
+//!
+//! The base path derivation respects the security model - see the `imports` module
+//! documentation for details on import type restrictions.
 
 use anyhow::{anyhow, Context, Result};
 use serde_yaml::Value;
@@ -153,9 +184,57 @@ impl TagContext {
     
     /// Create TagContext from ProcessingEnv for backward compatibility
     pub fn from_processing_env(env: &ProcessingEnv) -> Self {
+        // Derive base_path from current location
+        let base_path = env.current_location()
+            .and_then(|location| {
+                // Check if it's a URL by looking for common URL schemes
+                if location.starts_with("http://") || location.starts_with("https://") || location.starts_with("s3://") {
+                    // Parse as URL
+                    if let Ok(url) = url::Url::parse(&location) {
+                        match url.scheme() {
+                            "s3" => {
+                                // For S3 URLs: s3://bucket/path/file.yaml -> s3://bucket/path/
+                                // For root files: s3://bucket/file.yaml -> s3://bucket/
+                                let path = url.path();
+                                if let Some(last_slash) = path.rfind('/') {
+                                    let dir_path = &path[..last_slash + 1];
+                                    let base_url = format!("s3://{}{}", url.host_str().unwrap_or(""), dir_path);
+                                    return Some(std::path::PathBuf::from(base_url));
+                                }
+                                // If no slash found, return bucket root
+                                let base_url = format!("s3://{}/", url.host_str().unwrap_or(""));
+                                Some(std::path::PathBuf::from(base_url))
+                            }
+                            "http" | "https" => {
+                                // For HTTP URLs: https://example.com/configs/app/file.yaml -> https://example.com/configs/app/
+                                // For root files: https://example.com/file.yaml -> https://example.com/
+                                let path = url.path();
+                                if let Some(last_slash) = path.rfind('/') {
+                                    let dir_path = &path[..last_slash + 1];
+                                    let mut base_url = url.clone();
+                                    base_url.set_path(dir_path);
+                                    return Some(std::path::PathBuf::from(base_url.as_str()));
+                                }
+                                // If no slash found, return domain root
+                                let mut base_url = url.clone();
+                                base_url.set_path("/");
+                                Some(std::path::PathBuf::from(base_url.as_str()))
+                            }
+                            _ => None // Unknown URL scheme
+                        }
+                    } else {
+                        None // Failed to parse URL
+                    }
+                } else {
+                    // Treat as local file path and use proper path parsing
+                    let path = std::path::Path::new(&location);
+                    path.parent().map(|p| p.to_path_buf())
+                }
+            });
+        
         Self {
             variables: env.env_values.clone(),
-            base_path: None, // TODO: Should be derived from current location if it's a file path
+            base_path,
             stack: env.stack.clone(),
         }
     }
@@ -1438,6 +1517,287 @@ impl TagResolver for DebugTagResolver {
 /// Tracing implementation that collects performance metrics
 pub struct TracingTagResolver {
     inner: StandardTagResolver,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tagcontext_from_processing_env_local_file_paths() {
+        // Test local file path base_path derivation
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("/Users/test/configs/app/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "/Users/test/configs/app"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_s3_urls() {
+        // Test S3 URL base_path derivation
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("s3://my-bucket/configs/app/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "s3://my-bucket/configs/app/"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_s3_root_file() {
+        // Test S3 URL with root file - should return bucket root for relative imports
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("s3://my-bucket/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        // Root files should have bucket root as base path to support relative imports
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "s3://my-bucket/"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_https_urls() {
+        // Test HTTPS URL base_path derivation
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("https://example.com/configs/app/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "https://example.com/configs/app/"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_http_urls() {
+        // Test HTTP URL base_path derivation
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("http://example.com/configs/app/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "http://example.com/configs/app/"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_http_root_file() {
+        // Test HTTP URL with root file - should return domain root for relative imports
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("https://example.com/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        // Root files should have domain root as base path to support relative imports
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "https://example.com/"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_comprehensive_relative_import_scenarios() {
+        // Test all the scenarios you mentioned for relative imports
+        let test_cases = vec![
+            // S3 cases
+            ("s3://bucket/file.yaml", "s3://bucket/"),
+            ("s3://bucket/folder/file.yaml", "s3://bucket/folder/"),
+            ("s3://bucket/folder/subfolder/file.yaml", "s3://bucket/folder/subfolder/"),
+            // HTTPS cases  
+            ("https://example.com/file.yaml", "https://example.com/"),
+            ("https://example.com/folder/file.yaml", "https://example.com/folder/"),
+            ("https://example.com/folder/subfolder/file.yaml", "https://example.com/folder/subfolder/"),
+            // HTTP cases
+            ("http://example.com/file.yaml", "http://example.com/"),
+            ("http://example.com/folder/file.yaml", "http://example.com/folder/"),
+            ("http://example.com/folder/subfolder/file.yaml", "http://example.com/folder/subfolder/"),
+        ];
+        
+        for (location, expected_base) in test_cases {
+            let mut env = ProcessingEnv::new();
+            env.stack.push(StackFrame {
+                location: Some(location.to_string()),
+                path: "Root".to_string(),
+            });
+            
+            let context = TagContext::from_processing_env(&env);
+            
+            assert!(context.base_path.is_some(), "Expected base_path for location: {}", location);
+            assert_eq!(
+                context.base_path.unwrap().to_string_lossy(),
+                expected_base,
+                "Mismatch for location: {}",
+                location
+            );
+        }
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_no_location() {
+        // Test when there's no location in the stack
+        let env = ProcessingEnv::new();
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_none());
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_relative_path() {
+        // Test relative local file path
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("configs/app/config.yaml".to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        assert_eq!(
+            context.base_path.unwrap().to_string_lossy(),
+            "configs/app"
+        );
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_native_paths() {
+        // Test native paths for the current platform
+        #[cfg(unix)]
+        let test_path = "/Users/test/configs/app/config.yaml";
+        #[cfg(windows)]
+        let test_path = "C:\\Users\\test\\configs\\app\\config.yaml";
+        
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some(test_path.to_string()),
+            path: "Root".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert!(context.base_path.is_some());
+        let base_path = context.base_path.unwrap();
+        let base_path_str = base_path.to_string_lossy();
+        
+        // Should contain parent directory components
+        #[cfg(unix)]
+        assert!(base_path_str.contains("configs") && base_path_str.contains("app"));
+        #[cfg(windows)]
+        assert!(base_path_str.contains("C:") && base_path_str.contains("configs") && base_path_str.contains("app"));
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_variables_preserved() {
+        // Test that variables are correctly copied from ProcessingEnv
+        let mut env = ProcessingEnv::new();
+        env.add_variable("test_var".to_string(), Value::String("test_value".to_string()));
+        env.add_variable("config".to_string(), Value::String("production".to_string()));
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert_eq!(context.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
+        assert_eq!(context.get_variable("config"), Some(&Value::String("production".to_string())));
+    }
+    
+    #[test] 
+    fn test_tagcontext_from_processing_env_stack_preserved() {
+        // Test that stack frames are correctly copied
+        let mut env = ProcessingEnv::new();
+        env.stack.push(StackFrame {
+            location: Some("test.yaml".to_string()),
+            path: "Root.config".to_string(),
+        });
+        env.stack.push(StackFrame {
+            location: Some("imported.yaml".to_string()), 
+            path: "Root.config.database".to_string(),
+        });
+        
+        let context = TagContext::from_processing_env(&env);
+        
+        assert_eq!(context.stack.len(), 2);
+        assert_eq!(context.current_location(), Some("imported.yaml".to_string()));
+        assert_eq!(context.current_path(), "Root.config.database");
+    }
+    
+    #[test]
+    fn test_tagcontext_from_processing_env_edge_cases() {
+        // Test various edge cases for URL and path parsing
+        let test_cases = vec![
+            // (location, expected_base_path)
+            ("s3://bucket", Some("s3://bucket/")), // No slash after bucket -> bucket root
+            ("s3://bucket/", Some("s3://bucket/")), // Just trailing slash -> bucket root  
+            ("https://example.com", Some("https://example.com/")), // No path -> domain root
+            ("https://example.com/", Some("https://example.com/")), // Just root path -> domain root
+            ("http://example.com/file", Some("http://example.com/")), // Root file -> domain root
+            ("file.yaml", Some("")), // Just filename -> empty parent (using std::path::Path)
+            ("./config.yaml", Some(".")), // Current directory
+            ("../config.yaml", Some("..")), // Parent directory
+        ];
+        
+        for (location, expected) in test_cases {
+            let mut env = ProcessingEnv::new();
+            env.stack.push(StackFrame {
+                location: Some(location.to_string()),
+                path: "Root".to_string(),
+            });
+            
+            let context = TagContext::from_processing_env(&env);
+            
+            match expected {
+                Some(expected_path) => {
+                    assert!(context.base_path.is_some(), "Expected base_path for location: {}", location);
+                    assert_eq!(
+                        context.base_path.unwrap().to_string_lossy(),
+                        expected_path,
+                        "Mismatch for location: {}",
+                        location
+                    );
+                }
+                None => {
+                    assert!(context.base_path.is_none(), "Expected no base_path for location: {}", location);
+                }
+            }
+        }
+    }
 }
 
 impl TracingTagResolver {
