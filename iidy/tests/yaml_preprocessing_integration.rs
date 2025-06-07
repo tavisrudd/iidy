@@ -38,7 +38,7 @@ cache:
 
 # Test conditional logic
 database_url: !$if
-  condition: !$eq ["prod", "{{{{environment}}}}"]
+  test: !$eq ["prod", "{{{{environment}}}}"]
   then: "prod://{{{{config.database_host}}}}:{{{{config.database_port}}}}"
   else: "dev://localhost:5432"
 

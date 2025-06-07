@@ -46,7 +46,7 @@ fn test_debug_tag_resolver() -> Result<()> {
     
     // Test if tag - this will print debug output
     let if_tag = IfTag {
-        condition: Box::new(YamlAst::Bool(true)),
+        test: Box::new(YamlAst::Bool(true)),
         then_value: Box::new(YamlAst::String("then_result".to_string())),
         else_value: Some(Box::new(YamlAst::String("else_result".to_string()))),
     };
@@ -65,7 +65,7 @@ fn test_tracing_tag_resolver() -> Result<()> {
     
     // Test if tag - this will print timing output
     let if_tag = IfTag {
-        condition: Box::new(YamlAst::Bool(false)),
+        test: Box::new(YamlAst::Bool(false)),
         then_value: Box::new(YamlAst::String("then_result".to_string())),
         else_value: Some(Box::new(YamlAst::String("else_result".to_string()))),
     };
@@ -88,7 +88,7 @@ fn test_resolver_trait_consistency() -> Result<()> {
     let ast_resolver = MockAstResolver;
     
     let if_tag = IfTag {
-        condition: Box::new(YamlAst::Bool(true)),
+        test: Box::new(YamlAst::Bool(true)),
         then_value: Box::new(YamlAst::String("success".to_string())),
         else_value: None,
     };

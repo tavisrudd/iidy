@@ -285,15 +285,15 @@ Resources:
         - !Ref DatabaseSecurityGroup
       DBSubnetGroupName: !Ref DatabaseSubnetGroup
       BackupRetentionPeriod: !$if
-        condition: !$eq ["{{environment}}", "production"]
+        test: !$eq ["{{environment}}", "production"]
         then: 30
         else: 7
       DeleteAutomatedBackups: !$if
-        condition: !$eq ["{{environment}}", "production"]
+        test: !$eq ["{{environment}}", "production"]
         then: false
         else: true
       DeletionProtection: !$if
-        condition: !$eq ["{{environment}}", "production"]
+        test: !$eq ["{{environment}}", "production"]
         then: true
         else: false
       Tags:

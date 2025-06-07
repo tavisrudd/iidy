@@ -67,7 +67,7 @@ Resources:
       # Backup configuration with CloudFormation conditions
       BackupRetentionPeriod: "{{db_config.backup_retention}}"
       DeleteAutomatedBackups: !$if
-        condition: !$eq ["{{environment}}", "production"]
+        test: !$eq ["{{environment}}", "production"]
         then: false
         else: true
       
@@ -184,7 +184,7 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/{{app_name}}-${Environment}-processor"
       RetentionInDays: !$if
-        condition: !$eq ["{{environment}}", "production"]
+        test: !$eq ["{{environment}}", "production"]
         then: 30
         else: 7
       Tags:
@@ -194,7 +194,7 @@ Resources:
           Value: !Ref Environment
         - Key: "RetentionPolicy"
           Value: !$if
-            condition: !$eq ["{{environment}}", "production"]
+            test: !$eq ["{{environment}}", "production"]
             then: "30-days"
             else: "7-days"
 

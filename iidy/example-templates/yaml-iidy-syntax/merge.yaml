@@ -36,7 +36,7 @@ database_config: !$merge
 final_config: !$merge
   - !$ base_config
   - !$if
-      condition: !$eq ["{{environment}}", "production"]
+      test: !$eq ["{{environment}}", "production"]
       then: !$ production_overrides
       else:
         replicas: 1
@@ -67,7 +67,7 @@ service_definition: !$merge
               - name: "app"
                 image: "my-app:latest"
       - !$if
-          condition: !$eq ["{{environment}}", "production"]
+          test: !$eq ["{{environment}}", "production"]
           then:
             replicas: 5
           else: {}

@@ -27,7 +27,7 @@ Resources:
 
   # Conditional database resource based on environment
   DatabaseInstance: !$if
-    condition: !$eq ["{{environment}}", "prod"]
+    test: !$eq ["{{environment}}", "prod"]
     then:
       Type: "AWS::RDS::DBInstance"
       Properties:
@@ -84,7 +84,7 @@ Outputs:
       Name: !Sub "{{app_name}}-{{environment}}-bucket-name"
   
   DatabaseEndpoint: !$if
-    condition: !$eq ["{{environment}}", "prod"]
+    test: !$eq ["{{environment}}", "prod"]
     then:
       Description: "Database endpoint URL"
       Value: !GetAtt DatabaseInstance.Endpoint.Address

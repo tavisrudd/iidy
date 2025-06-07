@@ -103,7 +103,7 @@ $defs:
 
 # Valid iidy tags should continue to work
 test_if: !$if
-  condition: !$eq ["test", "test"]
+  test: !$eq ["test", "test"]
   then: "success"
   else: "failure"
 
@@ -139,6 +139,125 @@ test_escape: !$escape "{{test_var}}"
             assert_eq!(map_result[1], serde_yaml::Value::String("b".to_string()));
         }
     }
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_invalid_extra_fields_detected() -> Result<()> {
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
+    // Test !$map with invalid extra field
+    let yaml_input = r#"
+test_map: !$map
+  items: [1, 2, 3]
+  template: "{{item}}"
+  invalid_field: "should_not_be_here"
+"#;
+
+    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    
+    // Should fail with unexpected field error
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("unexpected field 'invalid_field'"));
+    assert!(error_msg.contains("Valid fields are: items, template, var (optional), filter (optional)"));
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_missing_required_fields_detected() -> Result<()> {
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
+    // Test !$if with missing required field
+    let yaml_input = r#"
+test_if: !$if
+  then: "success"
+  # Missing required 'test' field
+"#;
+
+    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    
+    // Should fail with missing required field error
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("'test' missing in !$if tag"));
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_validation_comprehensive() -> Result<()> {
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
+    // Test that we get helpful suggestion for old field names
+    let yaml_old_source = r#"
+test_map: !$map
+  source: [1, 2, 3]
+  template: "{{item}}"
+"#;
+
+    let result = preprocess_yaml_with_base_location(yaml_old_source, "test.yaml").await;
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("'source' should be 'items'"));
+    assert!(error_msg.contains("use 'items' instead of 'source'"));
+    
+    // Test that we get specific error for completely invalid fields
+    let yaml_invalid = r#"
+test_let: !$let
+  bindings:
+    x: 1
+  expression: "{{x}}"
+  completely_invalid: "not allowed"
+"#;
+
+    let result = preprocess_yaml_with_base_location(yaml_invalid, "test.yaml").await;
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    assert!(error_msg.contains("unexpected field 'completely_invalid'"));
+    assert!(error_msg.contains("Valid fields are: bindings, expression"));
+    
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_enhanced_error_messages_with_examples() -> Result<()> {
+    // Force NO_COLOR to avoid ANSI codes
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
+    // Test that error messages include helpful examples
+    let yaml_old_transform = r#"
+test_map: !$map
+  items: [1, 2, 3]
+  transform: "{{item}}"
+"#;
+
+    let result = preprocess_yaml_with_base_location(yaml_old_transform, "test.yaml").await;
+    assert!(result.is_err());
+    let error_msg = result.unwrap_err().to_string();
+    
+    // Check that the error includes the suggestion with tag name
+    assert!(error_msg.contains("'transform' should be 'template'"));
+    assert!(error_msg.contains("use 'template' instead of 'transform' in !$map tags"));
+    
+    // Check that it includes a helpful example
+    assert!(error_msg.contains("example:"));
+    assert!(error_msg.contains("!$map"));
+    assert!(error_msg.contains("items: [1, 2, 3]"));
+    assert!(error_msg.contains("template: \"{{item}}\""));
     
     Ok(())
 }

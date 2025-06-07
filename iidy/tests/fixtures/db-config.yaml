@@ -1,6 +1,6 @@
 # Database configuration example
 host: !$if
-  condition: !$eq [!$ environment, "production"]
+  test: !$eq [!$ environment, "production"]
   then: "prod-db.example.com"
   else: "dev-db.example.com"
 
@@ -14,15 +14,15 @@ credentials:
 
 connection_pool:
   min_size: !$if
-    condition: !$eq [!$ environment, "production"]
+    test: !$eq [!$ environment, "production"]
     then: 5
     else: 1
   max_size: !$if
-    condition: !$eq [!$ environment, "production"]
+    test: !$eq [!$ environment, "production"]
     then: 20
     else: 5
 
 ssl_mode: !$if
-  condition: !$eq [!$ environment, "production"]
+  test: !$eq [!$ environment, "production"]
   then: "require"
   else: "disable"

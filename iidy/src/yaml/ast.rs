@@ -88,8 +88,8 @@ pub struct IncludeTag {
 /// Conditional tag for if/then/else logic
 #[derive(Debug, Clone, PartialEq)]
 pub struct IfTag {
-    /// Condition to evaluate
-    pub condition: Box<YamlAst>,
+    /// Test condition to evaluate
+    pub test: Box<YamlAst>,
     /// Value to use if condition is true
     pub then_value: Box<YamlAst>,
     /// Optional value to use if condition is false
@@ -126,9 +126,9 @@ pub struct ConcatTag {
 /// Variable binding tag
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetTag {
-    /// Variable bindings
+    /// Variable bindings (key-value pairs)
     pub bindings: Vec<(String, YamlAst)>,
-    /// Expression to evaluate with bound variables
+    /// Expression to evaluate with bound variables (the "in" field)
     pub expression: Box<YamlAst>,
 }
 
@@ -148,13 +148,13 @@ pub struct NotTag {
     pub expression: Box<YamlAst>,
 }
 
-/// String splitting tag
+/// String splitting tag (uses array format like iidy-js: [delimiter, string])
 #[derive(Debug, Clone, PartialEq)]
 pub struct SplitTag {
+    /// Delimiter to split on
+    pub delimiter: Box<YamlAst>,
     /// String to split
     pub string: Box<YamlAst>,
-    /// Delimiter to split on
-    pub delimiter: String,
 }
 
 /// Array joining tag (takes [delimiter, array] format like iidy-js)
@@ -182,23 +182,25 @@ pub struct ConcatMapTag {
 /// MergeMap tag for map followed by merge  
 #[derive(Debug, Clone, PartialEq)]
 pub struct MergeMapTag {
-    /// Source list/array to transform
-    pub source: Box<YamlAst>,
-    /// Transformation expression
-    pub transform: Box<YamlAst>,
+    /// Items list/array to transform
+    pub items: Box<YamlAst>,
+    /// Template expression for transformation
+    pub template: Box<YamlAst>,
     /// Optional variable name for current item (default: "item")
-    pub var_name: Option<String>,
+    pub var: Option<String>,
 }
 
-/// MapListToHash tag for converting list of key-value pairs to hash
+/// MapListToHash tag for converting list of key-value pairs to hash (matches iidy-js field names)
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapListToHashTag {
-    /// Source list of key-value pairs
-    pub source: Box<YamlAst>,
-    /// Key field name (default: "key")
-    pub key_field: Option<String>,
-    /// Value field name (default: "value")
-    pub value_field: Option<String>,
+    /// Items list/array to transform
+    pub items: Box<YamlAst>,
+    /// Template expression for transformation
+    pub template: Box<YamlAst>,
+    /// Optional variable name for current item (default: "item")
+    pub var: Option<String>,
+    /// Optional filter condition
+    pub filter: Option<Box<YamlAst>>,
 }
 
 /// MapValues tag for transforming object values while preserving keys (matches iidy-js field names)
@@ -215,12 +217,14 @@ pub struct MapValuesTag {
 /// GroupBy tag for grouping items by key
 #[derive(Debug, Clone, PartialEq)]
 pub struct GroupByTag {
-    /// Source list/array to group
-    pub source: Box<YamlAst>,
+    /// Items list/array to group (matches iidy-js)
+    pub items: Box<YamlAst>,
     /// Key expression or field name
     pub key: Box<YamlAst>,
     /// Optional variable name for current item (default: "item")
-    pub var_name: Option<String>,
+    pub var: Option<String>,
+    /// Optional template for transforming grouped items
+    pub template: Option<Box<YamlAst>>,
 }
 
 /// FromPairs tag for converting key-value pairs to object

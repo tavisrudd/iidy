@@ -52,7 +52,7 @@ environment_settings: !$mapValues
       cpu: !$ item.value.cpu
       memory: !$ item.value.memory
     monitoring: !$if
-      condition: !$eq ["{{item.key}}", "production"]
+      test: !$eq ["{{item.key}}", "production"]
       then:
         enabled: true
         level: "detailed"

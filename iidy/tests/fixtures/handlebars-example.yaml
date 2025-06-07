@@ -28,9 +28,8 @@ database:
 
 # Array processing with variables
 security_groups: !$map
-  source: "{{security_group_ids}}"
-  var: "sg_id"
-  transform: "{{sg_id}}"
+  items: "{{security_group_ids}}"
+  template: "{{item}}"
 
 # Complex nested variable substitution
 monitoring:
@@ -68,7 +67,7 @@ parameters: !$merge
     
   - # Conditional parameters
     !$if
-      condition: "{{#if (eq environment 'production')}}true{{else}}false{{/if}}"
+      test: "{{#if (eq environment 'production')}}true{{else}}false{{/if}}"
       then:
         DBInstanceClass: "db.r5.xlarge"
         DBMultiAZ: true

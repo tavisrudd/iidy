@@ -13,10 +13,10 @@ stack_name: !$let
   bindings:
     env: !$, "{{environment}}"
     region_short: !$if
-      condition: !$eq [!$, "{{region}}", "us-east-1"]
+      test: !$eq [!$, "{{region}}", "us-east-1"]
       then: "use1"
       else: !$if
-        condition: !$eq [!$, "{{region}}", "us-west-2"] 
+        test: !$eq [!$, "{{region}}", "us-west-2"] 
         then: "usw2"
         else: "euw1"
   expression: !$join ["-", [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]]
@@ -28,7 +28,7 @@ resources: !$merge
     
   - # Environment-specific resources
     !$if
-      condition: !$eq [!$, "{{environment}}", "production"]
+      test: !$eq [!$, "{{environment}}", "production"]
       then:
         production: !$ ./prod-resources.yaml
       else:
@@ -39,16 +39,15 @@ parameters: !$let
   bindings:
     base_params: !$ ./base-parameters.yaml
     env_params: !$if
-      condition: !$eq [!$, "{{environment}}", "production"]
+      test: !$eq [!$, "{{environment}}", "production"]
       then: !$ ./prod-parameters.yaml
       else: !$ ./dev-parameters.yaml
     
     # Transform parameter values
     transformed_params: !$map
-      source: !$, "{{env_params}}"
-      var: "param"
-      transform: !$if
-        condition: !$eq [!$, "{{param.type}}", "secure"]
+      items: !$, "{{env_params}}"
+      template: !$if
+        test: !$eq [!$, "{{param.type}}", "secure"]
         then: !$join ["", ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]]
         else: !$, "{{param.value}}"
         
@@ -65,50 +64,49 @@ tags: !$merge
   - # Environment-specific tags
     Environment: !$, "{{environment}}"
     CostCenter: !$if
-      condition: !$eq [!$, "{{environment}}", "production"]
+      test: !$eq [!$, "{{environment}}", "production"]
       then: "PROD-001"
       else: "DEV-001"
       
   - # Dynamic tags based on region
     Region: !$, "{{region}}"
     DataResidency: !$if
-      condition: !$eq [!$, "{{region}}", "eu-west-1"]
+      test: !$eq [!$, "{{region}}", "eu-west-1"]
       then: "EU"
       else: "US"
 
 # Notification configuration with conditional logic
 notifications: !$if
-  condition: !$not !$eq [!$, "{{environment}}", "development"]
+  test: !$not !$eq [!$, "{{environment}}", "development"]
   then: !$map
-    source: !$split
+    items: !$split
       string: !$if
-        condition: !$eq [!$, "{{environment}}", "production"]
+        test: !$eq [!$, "{{environment}}", "production"]
         then: "ops-team@company.com,infra-team@company.com,alerts@company.com"
         else: "dev-team@company.com,staging-alerts@company.com"
       delimiter: ","
-    var: "email"
-    transform: !$join ["", ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{email}}"]]
+    template: !$join ["", ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{item}}"]]
   else: []
 
 # Complex capability determination
 capabilities: !$concat
   - ["CAPABILITY_IAM"]
   - !$if
-      condition: !$eq [!$, "{{environment}}", "production"]
+      test: !$eq [!$, "{{environment}}", "production"]
       then: ["CAPABILITY_NAMED_IAM"]
       else: []
   - !$if
-      condition: !$eq [!$, "{{has_custom_resources}}", "true"]
+      test: !$eq [!$, "{{has_custom_resources}}", "true"]
       then: ["CAPABILITY_AUTO_EXPAND"]
       else: []
 
 # Conditional service role with complex ARN construction
 service_role: !$if
-  condition: !$not !$eq [!$, "{{environment}}", "development"]
+  test: !$not !$eq [!$, "{{environment}}", "development"]
   then: !$let
     bindings:
       account_id: !$if
-        condition: !$eq [!$, "{{environment}}", "production"]
+        test: !$eq [!$, "{{environment}}", "production"]
         then: "123456789012"
         else: "987654321098"
       role_name: !$join ["", ["CloudFormation", !$, "{{environment}}", "ServiceRole"]]
@@ -119,7 +117,7 @@ service_role: !$if
 resource_types: !$concat
   - ["AWS::*"]
   - !$if
-      condition: !$eq [!$, "{{enable_third_party}}", "true"]
+      test: !$eq [!$, "{{enable_third_party}}", "true"]
       then: !$split
         string: "Custom::*,AWS::CloudFormation::CustomResource"
         delimiter: ","

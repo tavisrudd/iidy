@@ -4,7 +4,7 @@
 //! rather than testing individual components in isolation.
 
 use anyhow::Result;
-use iidy::yaml::parse_yaml_with_custom_tags;
+use iidy::yaml::parser::parse_yaml_with_custom_tags_from_file;
 use std::path::Path;
 
 /// Helper function to load and parse fixture files
@@ -41,7 +41,7 @@ TimeoutInMinutes: 30
 OnFailure: ROLLBACK
 "#;
     
-    let ast = parse_yaml_with_custom_tags(yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(yaml_content, "stack-args-test.yaml")?;
     
     // Should successfully parse the complete stack-args structure
     assert!(matches!(ast, iidy::yaml::YamlAst::Mapping(_)), "Stack-args should parse as a mapping");
@@ -87,7 +87,7 @@ tags:
   Version: "{{version}}"
 "#;
     
-    let ast = parse_yaml_with_custom_tags(yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(yaml_content, "handlebars-test.yaml")?;
     
     // Should successfully parse handlebars template structure
     assert!(matches!(ast, iidy::yaml::YamlAst::Mapping(_)), "Handlebars example should parse as a mapping");
@@ -139,7 +139,7 @@ capabilities: !$concat
   - ["CAPABILITY_NAMED_IAM"]
 "#;
     
-    let ast = parse_yaml_with_custom_tags(yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(yaml_content, "complex-test.yaml")?;
     
     // Should successfully parse complex nested structure
     assert!(matches!(ast, iidy::yaml::YamlAst::Mapping(_)), "Complex example should parse as a mapping");
@@ -159,7 +159,7 @@ capabilities: !$concat
 #[test]
 fn test_database_config_workflow() -> Result<()> {
     let yaml_content = load_fixture("db-config.yaml")?;
-    let ast = parse_yaml_with_custom_tags(&yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "db-config.yaml")?;
     
     // Database config should parse successfully
     assert!(ast.is_preprocessing_tag() || matches!(ast, iidy::yaml::YamlAst::Mapping(_)), 
@@ -177,7 +177,7 @@ fn test_database_config_workflow() -> Result<()> {
 #[test] 
 fn test_default_features_workflow() -> Result<()> {
     let yaml_content = load_fixture("default-features.yaml")?;
-    let ast = parse_yaml_with_custom_tags(&yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "default-features.yaml")?;
     
     // Default features should parse successfully  
     assert!(ast.is_preprocessing_tag() || matches!(ast, iidy::yaml::YamlAst::Mapping(_)),
@@ -201,7 +201,7 @@ stack_name: !$join
   # Missing closing bracket and delimiter field
 "#;
     
-    let result = parse_yaml_with_custom_tags(malformed_yaml);
+    let result = parse_yaml_with_custom_tags_from_file(malformed_yaml, "malformed-test.yaml");
     
     // Should fail gracefully with meaningful error
     assert!(result.is_err(), "Malformed YAML should fail to parse");
@@ -227,8 +227,8 @@ fn test_parsing_consistency_across_fixtures() -> Result<()> {
         let yaml_content = load_fixture(fixture)?;
         
         // Parse the same content twice
-        let ast1 = parse_yaml_with_custom_tags(&yaml_content);
-        let ast2 = parse_yaml_with_custom_tags(&yaml_content);
+        let ast1 = parse_yaml_with_custom_tags_from_file(&yaml_content, fixture);
+        let ast2 = parse_yaml_with_custom_tags_from_file(&yaml_content, fixture);
         
         // Both should have the same outcome (succeed or fail)
         assert_eq!(ast1.is_ok(), ast2.is_ok(), 
@@ -271,7 +271,7 @@ fn test_end_to_end_preprocessing_workflow_placeholder() -> Result<()> {
     // once AST resolution is fully implemented
     
     let yaml_content = load_fixture("stack-args.yaml")?;
-    let ast = parse_yaml_with_custom_tags(&yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "stack-args.yaml")?;
     
     // Currently we can only test parsing
     assert!(matches!(ast, iidy::yaml::YamlAst::Mapping(_)));

@@ -158,7 +158,7 @@ service_configs: !$map
     name: "{{environment}}-{{item}}"
     config: *service_template  # Use alias in transformation
     port: !$if
-      condition: !$eq ["{{item}}", "api"] 
+      test: !$eq ["{{item}}", "api"] 
       then: 8080
       else: 3000
 "#;

@@ -1,0 +1,147 @@
+# Example demonstrating !$split tag for string to array conversion
+# The !$split tag takes a string and delimiter, returning an array of substrings
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Example of !$split tag for string to array conversion'
+
+$defs:
+  csvData: "apple,banana,cherry,date"
+  pathString: "/var/log/app/service.log"
+  taggedString: "env:production,team:backend,service:api"
+  emailList: "user1@example.com;user2@example.com;admin@example.com"
+  versionString: "1.2.3-rc.1"
+
+Parameters:
+  # Example 1: Simple comma-separated values
+  FruitList:
+    Type: CommaDelimitedList
+    Default: !$split
+      string: "apple,banana,cherry,date"
+      delimiter: ","
+
+  # Example 2: Split file path into components
+  PathComponents:
+    Type: CommaDelimitedList
+    Default: !$split
+      string: "/usr/local/bin"
+      delimiter: "/"
+
+Resources:
+  # Example 3: Processing tag string into individual tags
+  ResourceTags:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/tags
+      Type: String
+      Value: !$toJsonString
+        - !$map
+            items: !$split
+              string: "Name:MyResource,Environment:Production,Version:1.2.3"
+              delimiter: ","
+            template: !$split
+              string: !$ item
+              delimiter: ":"
+
+  # Example 4: Email list processing
+  NotificationConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/notifications
+      Type: String
+      Value: !$toJsonString
+        - emails: !$split
+            delimiter: ";"
+            string: "admin@example.com;user@example.com;support@example.com"
+          count: 3
+
+  # Example 5: Version string parsing
+  VersionInfo:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/version
+      Type: String
+      Value: !$toJsonString
+        - !$let
+            bindings:
+              versionParts: !$split
+                string: "1.2.3"
+                delimiter: "."
+              majorMinorPatch: !$split
+                string: "1.2.3"
+                delimiter: "-"
+            expression:
+              version: "1.2.3"
+              parts: ["1", "2", "3"]
+              release: ["1", "2", "3"]
+
+  # Example 6: Creating security group rules from port ranges
+  SecurityGroupRules:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/security-rules
+      Type: String
+      Value: !$toJsonString
+        - !$map
+            items: !$split
+              string: "80,443,8080,8443"
+              delimiter: ","
+            template:
+              IpProtocol: tcp
+              FromPort: !$ item
+              ToPort: !$ item
+              CidrIp: "0.0.0.0/0"
+
+  # Example 7: Processing environment variables from string
+  EnvironmentConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/environment
+      Type: String
+      Value: !$toJsonString
+        - !$mapListToHash
+            items: !$split
+              string: "NODE_ENV=production,PORT=3000,DEBUG=false"
+              delimiter: ","
+            template: !$split
+              string: !$ item
+              delimiter: "="
+
+  # Example 8: Domain and subdomain extraction
+  DomainConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /app/config/domains
+      Type: String
+      Value: !$toJsonString
+        - !$map
+            items: !$split
+              string: "api.prod.example.com,web.prod.example.com,admin.prod.example.com"
+              delimiter: ","
+            template:
+              full: !$ item
+              subdomain: !$split
+                string: !$ item  
+                delimiter: "."
+
+Outputs:
+  # Example 9: Split and join operations
+  ProcessedFruits:
+    Description: Processed fruit list
+    Value: !$join
+      - " | "
+      - !$split
+          string: "apple,banana,cherry,date"
+          delimiter: ","
+
+  # Example 10: Count items after splitting
+  EmailCount:
+    Description: Number of email addresses
+    Value: 3  # Length of the split email list
+
+  PathDepth:
+    Description: Path depth (number of components)
+    Value: !$join
+      - " -> "
+      - !$split
+          string: "/usr/local/bin"
+          delimiter: "/"

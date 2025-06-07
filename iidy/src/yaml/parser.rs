@@ -124,10 +124,6 @@ fn format_location(file_path: &str, line_number: usize) -> String {
     }
 }
 
-/// Parse YAML text with support for custom preprocessing tags
-pub fn parse_yaml_with_custom_tags(input: &str) -> Result<YamlAst> {
-    parse_yaml_with_custom_tags_from_file(input, "input.yaml")
-}
 
 /// Parse YAML text with file context for better error reporting  
 pub fn parse_yaml_with_custom_tags_from_file(input: &str, file_path: &str) -> Result<YamlAst> {
