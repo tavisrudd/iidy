@@ -25,6 +25,8 @@ pub mod tags;
 pub mod imports;
 pub mod handlebars;
 pub mod error_wrapper;
+pub mod tree_sitter_location;
+pub mod location;
 
 pub mod error_ids;
 pub mod enhanced_errors;

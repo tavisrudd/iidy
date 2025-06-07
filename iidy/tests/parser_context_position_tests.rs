@@ -1,6 +1,7 @@
 //! Tests for ParseContext position tracking and error reporting accuracy
 
-use iidy::yaml::parser::{ParseContext, Position};
+use iidy::yaml::parser::ParseContext;
+use iidy::yaml::location::Position;
 
 #[test]
 fn test_parse_context_creation() {

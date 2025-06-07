@@ -6,72 +6,8 @@ use anyhow::{anyhow, Result};
 use serde_yaml::{Mapping, Sequence, Value};
 
 use crate::yaml::ast::*;
+use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
 use std::collections::HashSet;
-
-/// Information about indentation on a line
-#[derive(Debug, Clone, Copy)]
-struct IndentInfo {
-    spaces: usize,
-    tabs: usize,
-}
-
-/// Configuration for ParseContext behavior
-#[derive(Debug, Clone)]
-pub struct ParseConfig {
-    /// Maximum distance to search for tags after a key (default: 1000)
-    pub max_search_window: usize,
-    /// Expected indentation size for depth estimation (default: 2)
-    pub indent_size: usize,
-    /// Maximum occurrences to check before giving up (default: 50)
-    pub max_occurrence_checks: usize,
-}
-
-impl Default for ParseConfig {
-    fn default() -> Self {
-        Self {
-            max_search_window: 1000,
-            indent_size: 2,
-            max_occurrence_checks: 50,
-        }
-    }
-}
-
-impl ParseConfig {
-    /// Create a new config with custom indentation size
-    pub fn with_indent_size(indent_size: usize) -> Self {
-        Self {
-            indent_size,
-            ..Default::default()
-        }
-    }
-    
-    /// Auto-detect indentation size from source text
-    pub fn auto_detect_indent(source: &str) -> Self {
-        let detected_indent = detect_indent_size(source);
-        Self::with_indent_size(detected_indent)
-    }
-}
-
-/// Position within a YAML document for precise error reporting
-#[derive(Debug, Clone, PartialEq)]
-pub struct Position {
-    /// Line number (1-based)
-    pub line: usize,
-    /// Column number (1-based) 
-    pub column: usize,
-    /// Byte offset in the source text
-    pub offset: usize,
-}
-
-impl Position {
-    pub fn new(line: usize, column: usize, offset: usize) -> Self {
-        Self { line, column, offset }
-    }
-    
-    pub fn start() -> Self {
-        Self { line: 1, column: 1, offset: 0 }
-    }
-}
 
 /// Parsing context that tracks location and position for better error reporting
 #[derive(Debug, Clone)]
@@ -84,28 +20,16 @@ pub struct ParseContext {
     pub position: Position,
     /// Current path within the YAML structure (e.g., "Resources.MyBucket.Properties")
     pub yaml_path: String,
-    /// Configuration for parsing behavior
-    config: ParseConfig,
 }
 
 impl ParseContext {
-    /// Create a new parsing context with default configuration
+    /// Create a new parsing context
     pub fn new(file_location: impl Into<String>, source: impl Into<String>) -> Self {
-        Self::with_config(file_location, source, ParseConfig::default())
-    }
-    
-    /// Create a new parsing context with custom configuration
-    pub fn with_config(
-        file_location: impl Into<String>, 
-        source: impl Into<String>,
-        config: ParseConfig
-    ) -> Self {
         Self {
             file_location: file_location.into(),
             source: source.into(),
             position: Position::start(),
             yaml_path: String::new(),
-            config,
         }
     }
     
@@ -128,7 +52,6 @@ impl ParseContext {
             source: self.source.clone(),
             position: self.position.clone(),
             yaml_path: new_path,
-            config: self.config.clone(),
         }
     }
     
@@ -145,7 +68,6 @@ impl ParseContext {
             source: self.source.clone(),
             position: self.position.clone(),
             yaml_path: new_path,
-            config: self.config.clone(),
         }
     }
     
@@ -156,111 +78,51 @@ impl ParseContext {
             source: self.source.clone(),
             position: Position::new(line, column, offset),
             yaml_path: self.yaml_path.clone(),
-            config: self.config.clone(),
         }
     }
     
-    /// Convert offset to line and column (simple implementation for error handling)
-    fn offset_to_position(&self, offset: usize) -> Position {
-        let mut line = 1;
-        let mut column = 1;
-        
-        for (i, ch) in self.source.char_indices() {
-            if i >= offset {
-                break;
-            }
-            if ch == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
-            }
-        }
-        
-        Position::new(line, column, offset)
-    }
-    
-    /// Find the line and column for a specific substring in the source
-    /// This is more reliable than the current find_tag_line_number approach
+    /// Find the position of any text within the source using the best available strategy
     pub fn find_position_of(&self, search_text: &str) -> Option<Position> {
-        self.find_position_of_from_offset(search_text, 0)
+        // Try tree-sitter first for precision, fall back to manual for edge cases
+        let tree_sitter_finder = TreeSitterLocationFinder::new();
+        if let Some(position) = tree_sitter_finder.find_position_of(&self.source, search_text) {
+            return Some(position);
+        }
+        
+        // Fallback to manual approach for edge cases (empty strings, invalid YAML, etc.)
+        let manual_finder = ManualLocationFinder;
+        manual_finder.find_position_of(&self.source, search_text)
     }
     
     /// Find the position of a tag within the current YAML path context
     /// This is more accurate than find_position_of when there are multiple occurrences
-    /// It attempts to find the tag occurrence that matches the current YAML path context
+    /// Uses tree-sitter for precise location finding with manual fallback
     pub fn find_tag_position_in_context(&self, tag_name: &str) -> Option<Position> {
-        if self.yaml_path.is_empty() {
-            // No context path, fall back to first occurrence
-            return self.find_position_of(tag_name);
+        // Try tree-sitter first for most accurate results
+        let tree_sitter_finder = TreeSitterLocationFinder::new();
+        if let Some(position) = tree_sitter_finder.find_tag_position_in_context(&self.source, &self.yaml_path, tag_name) {
+            return Some(position);
         }
         
-        // Strategy: Find the YAML structure around our current path, then find the tag within that context
-        let path_segments: Vec<&str> = self.yaml_path.split('.').collect();
-        
-        // For simple cases, try to find a unique context pattern
-        if let Some(last_segment) = path_segments.last() {
-            // Clean up array indices like "MyKey[0]" -> "MyKey"
-            let clean_segment = if let Some(bracket_pos) = last_segment.find('[') {
-                &last_segment[..bracket_pos]
-            } else {
-                last_segment
-            };
-            
-            // Look for patterns like "LastSegment: !$tag" or "LastSegment:\n  ...!$tag"
-            // This helps distinguish between different occurrences
-            if let Some(context_pos) = self.find_yaml_key_context(clean_segment, tag_name) {
-                return Some(context_pos);
-            }
-        }
-        
-        // If we can't find a specific context, try to use the path depth to find the right occurrence
-        self.find_tag_at_approximate_depth(tag_name, path_segments.len())
+        // Fallback to manual approach if tree-sitter fails
+        let manual_finder = ManualLocationFinder;
+        manual_finder.find_tag_position_in_context(&self.source, &self.yaml_path, tag_name)
     }
     
-    /// Find a tag within the context of a specific YAML key
-    /// Looks for patterns like "key: !$tag" or "key:\n  field: !$tag"
-    /// Takes into account array indices in the path for more precise matching
-    fn find_yaml_key_context(&self, key_name: &str, tag_name: &str) -> Option<Position> {
-        // Extract array index if present in the yaml_path
-        let array_index = self.extract_array_index_from_path();
-        
-        // Find all occurrences of the key
-        let mut key_offset = 0;
-        let mut key_occurrence = 0;
-        
-        while let Some(key_pos) = self.find_position_of_from_offset(&format!("{}:", key_name), key_offset) {
-            // If we have an array index, we want to find the nth occurrence of this key
-            // where n matches the array index
-            if let Some(target_index) = array_index {
-                if key_occurrence != target_index {
-                    key_occurrence += 1;
-                    key_offset = key_pos.offset + key_name.len() + 1;
-                    continue;
-                }
-            }
-            
-            // Look for the tag within a reasonable distance after this key
-            let search_start = key_pos.offset;
-            let search_end = std::cmp::min(
-                self.source.len(),
-                search_start + self.config.max_search_window
-            );
-            
-            // Look for the tag after this key position
-            if let Some(tag_pos) = self.find_position_of_from_offset(tag_name, search_start) {
-                if tag_pos.offset < search_end {
-                    // Found a tag after this key within reasonable distance
-                    return Some(tag_pos);
-                }
-            }
-            
-            // Move to next key occurrence
-            key_occurrence += 1;
-            key_offset = key_pos.offset + key_name.len() + 1; // +1 for the ':'
-        }
-        
-        None
+    /// Convert offset to line and column (simple implementation for error handling)
+    pub fn offset_to_position(&self, offset: usize) -> Position {
+        let manual_finder = ManualLocationFinder;
+        manual_finder.offset_to_position(&self.source, offset)
+    }
+    
+    /// Get the current line content for context in error messages
+    pub fn current_line_content(&self) -> Option<&str> {
+        self.get_line_content(self.position.line)
+    }
+    
+    /// Get content of a specific line
+    pub fn get_line_content(&self, line_number: usize) -> Option<&str> {
+        self.source.lines().nth(line_number.saturating_sub(1))
     }
     
     /// Extract array index from the YAML path if present
@@ -276,129 +138,7 @@ impl ParseContext {
         None
     }
     
-    /// Find a tag at approximately the right depth based on YAML path
-    /// Uses indentation and nesting level as hints, handling inconsistent indentation
-    fn find_tag_at_approximate_depth(&self, tag_name: &str, expected_depth: usize) -> Option<Position> {
-        let mut offset = 0;
-        let mut occurrence_count = 0;
-        let mut candidates = Vec::new();
-        
-        // Collect all occurrences with their estimated depths
-        while let Some(tag_pos) = self.find_position_of_from_offset(tag_name, offset) {
-            if let Some(line_content) = self.get_line_content(tag_pos.line) {
-                let indent_info = self.analyze_line_indentation(line_content);
-                let estimated_depth = self.estimate_depth_from_indent(indent_info, expected_depth);
-                
-                candidates.push((tag_pos.clone(), estimated_depth));
-            }
-            
-            occurrence_count += 1;
-            offset = tag_pos.offset + tag_name.len();
-            
-            // Safety limit to avoid infinite loops
-            if occurrence_count > self.config.max_occurrence_checks {
-                break;
-            }
-        }
-        
-        // Find the best match based on depth and other heuristics
-        self.select_best_depth_candidate(candidates, expected_depth)
-            .or_else(|| self.find_position_of(tag_name))
-    }
-    
-    /// Analyze indentation characteristics of a line
-    fn analyze_line_indentation(&self, line: &str) -> IndentInfo {
-        let mut spaces = 0;
-        let mut tabs = 0;
-        
-        for ch in line.chars() {
-            match ch {
-                ' ' => spaces += 1,
-                '\t' => tabs += 1,
-                _ => break,
-            }
-        }
-        
-        IndentInfo { spaces, tabs }
-    }
-    
-    /// Estimate depth from indentation, handling mixed tabs/spaces and inconsistent sizing
-    fn estimate_depth_from_indent(&self, indent_info: IndentInfo, expected_depth: usize) -> usize {
-        if indent_info.tabs > 0 && indent_info.spaces > 0 {
-            // Mixed indentation - use heuristic
-            // Treat each tab as equivalent to config.indent_size spaces
-            let total_spaces = indent_info.spaces + (indent_info.tabs * self.config.indent_size);
-            (total_spaces / self.config.indent_size).max(1)
-        } else if indent_info.tabs > 0 {
-            // Tab-based indentation
-            indent_info.tabs.max(1)
-        } else if indent_info.spaces > 0 {
-            // Space-based indentation - try to auto-detect indent size if inconsistent
-            let detected_indent = self.detect_likely_indent_size(indent_info.spaces, expected_depth);
-            (indent_info.spaces / detected_indent).max(1)
-        } else {
-            // No indentation
-            1
-        }
-    }
-    
-    /// Detect likely indent size based on current indentation and expected depth
-    fn detect_likely_indent_size(&self, spaces: usize, expected_depth: usize) -> usize {
-        if expected_depth <= 1 {
-            return self.config.indent_size;
-        }
-        
-        // Try to infer indent size: spaces / expected_depth
-        let inferred = spaces / expected_depth;
-        if inferred > 0 && inferred <= 8 {
-            inferred
-        } else {
-            self.config.indent_size
-        }
-    }
-    
-    /// Select the best candidate based on depth matching and other factors
-    fn select_best_depth_candidate(&self, candidates: Vec<(Position, usize)>, expected_depth: usize) -> Option<Position> {
-        if candidates.is_empty() {
-            return None;
-        }
-        
-        // Score each candidate
-        let mut scored_candidates: Vec<_> = candidates.into_iter()
-            .map(|(pos, depth)| {
-                let depth_score = self.calculate_depth_score(depth, expected_depth);
-                let path_score = self.calculate_path_score(&pos);
-                let total_score = depth_score + path_score;
-                (pos, total_score)
-            })
-            .collect();
-        
-        // Sort by score (higher is better)
-        scored_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        
-        scored_candidates.into_iter().next().map(|(pos, _)| pos)
-    }
-    
-    /// Calculate score for depth matching (higher = better match)
-    fn calculate_depth_score(&self, actual_depth: usize, expected_depth: usize) -> f64 {
-        let diff = (actual_depth as i32 - expected_depth as i32).abs();
-        match diff {
-            0 => 100.0,                    // Perfect match
-            1 => 80.0,                     // Very close
-            2 => 60.0,                     // Close
-            3 => 40.0,                     // Somewhat close
-            _ => 20.0 / (diff as f64),     // Decreasing score for larger differences
-        }
-    }
-    
-    /// Calculate score based on path context (higher = better match)
-    fn calculate_path_score(&self, _pos: &Position) -> f64 {
-        // Future enhancement: could analyze surrounding context
-        // For now, just return neutral score
-        0.0
-    }
-    
-    /// Find position of text starting from a specific offset (for handling multiple matches)
+    /// Find position of text starting from a specific offset (for debugging and testing)
     pub fn find_position_of_from_offset(&self, search_text: &str, start_offset: usize) -> Option<Position> {
         let search_start = start_offset.min(self.source.len());
         
@@ -409,45 +149,6 @@ impl ParseContext {
             None
         }
     }
-    
-    /// Get the current line content for context in error messages
-    pub fn current_line_content(&self) -> Option<&str> {
-        self.get_line_content(self.position.line)
-    }
-    
-    /// Get content of a specific line
-    pub fn get_line_content(&self, line_number: usize) -> Option<&str> {
-        self.source.lines().nth(line_number.saturating_sub(1))
-    }
-}
-
-/// Auto-detect the most likely indentation size from source text
-fn detect_indent_size(source: &str) -> usize {
-    let mut indent_counts = std::collections::HashMap::new();
-    let mut prev_indent = 0;
-    
-    for line in source.lines() {
-        if line.trim().is_empty() {
-            continue; // Skip empty lines
-        }
-        
-        let current_indent = line.len() - line.trim_start().len();
-        
-        if current_indent > prev_indent {
-            let diff = current_indent - prev_indent;
-            *indent_counts.entry(diff).or_insert(0) += 1;
-        }
-        
-        prev_indent = current_indent;
-    }
-    
-    // Find the most common indentation increase
-    indent_counts
-        .into_iter()
-        .max_by_key(|(_, count)| *count)
-        .map(|(size, _)| size)
-        .filter(|&size| size > 0 && size <= 8)
-        .unwrap_or(2) // Default to 2 if no clear pattern
 }
 
 /// Validate that a mapping has exactly the required keys and optionally allowed keys, with no extras

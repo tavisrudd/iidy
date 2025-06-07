@@ -1,6 +1,8 @@
-//! Tests for inconsistent indentation handling in ParseContext
+//! Tests for position finding with inconsistent indentation
+//! These tests verify that our location finding system works correctly
+//! regardless of indentation inconsistencies in the YAML source.
 
-use iidy::yaml::parser::{ParseContext, ParseConfig};
+use iidy::yaml::parser::ParseContext;
 
 #[test]
 fn test_mixed_tabs_and_spaces() {
@@ -73,37 +75,7 @@ fn test_varying_indent_sizes() {
 }
 
 #[test]
-fn test_auto_detect_indent_size() {
-    // Test 4-space indentation
-    let yaml_4_spaces = r#"Resources:
-    Level1:
-        Level2:
-            Level3: value"#;
-    
-    let config_4 = ParseConfig::auto_detect_indent(yaml_4_spaces);
-    assert_eq!(config_4.indent_size, 4);
-    
-    // Test 2-space indentation
-    let yaml_2_spaces = r#"Resources:
-  Level1:
-    Level2:
-      Level3: value"#;
-    
-    let config_2 = ParseConfig::auto_detect_indent(yaml_2_spaces);
-    assert_eq!(config_2.indent_size, 2);
-    
-    // Test inconsistent indentation (should default to 2)
-    let yaml_mixed = r#"Resources:
- Level1:
-   Level2:
-     Level3: value"#;
-    
-    let config_mixed = ParseConfig::auto_detect_indent(yaml_mixed);
-    assert_eq!(config_mixed.indent_size, 2); // Should fall back to default
-}
-
-#[test]
-fn test_indentation_with_custom_config() {
+fn test_nested_tags_with_inconsistent_indentation() {
     let yaml_content = r#"Resources:
   Tag1: !$if
     test: true
@@ -115,16 +87,14 @@ fn test_indentation_with_custom_config() {
           test: true
           then: "third""#;
 
-    // Use custom indent size of 2
-    let config = ParseConfig::with_indent_size(2);
-    let context = ParseContext::with_config("test.yaml", yaml_content, config);
+    let context = ParseContext::new("test.yaml", yaml_content);
     
-    // Test that depth estimation works with custom config
+    // Test that our location finding system works regardless of indentation inconsistencies
     let tag1_ctx = context.with_path("Resources").with_path("Tag1");
     let tag2_ctx = context.with_path("Resources").with_path("Tag1").with_path("Tag2");
     let tag3_ctx = context.with_path("Resources").with_path("Tag1").with_path("Tag2").with_path("Tag3");
     
-    // All should find their respective tags
+    // All should find their respective tags using tree-sitter (or manual fallback)
     assert!(tag1_ctx.find_tag_position_in_context("!$if").is_some());
     assert!(tag2_ctx.find_tag_position_in_context("!$if").is_some());
     assert!(tag3_ctx.find_tag_position_in_context("!$if").is_some());
