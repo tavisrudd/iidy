@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: error_output
 ---
-Tag error: '!$mapp' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo.yaml:5 (errno: IY4002)
+Tag error: '!$mapp' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo.yaml:5:9 (errno: IY4002)
   -> check tag spelling or see documentation for valid tags
 
    4 | 

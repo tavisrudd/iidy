@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run tests: `cargo test --test example_templates_snapshots`
 - Review snapshots: `cargo insta review` (requires `cargo install cargo-insta`)
 - Accept changes: `cargo insta accept`
+- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure
 
 ## Coverage Reporting
 - **Quick coverage**: `make coverage-quick`

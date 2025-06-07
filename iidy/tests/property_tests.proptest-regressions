@@ -7,3 +7,4 @@
 cc 6d25073e5e486318eaf0fdc4937f1cade388e7fbd1a9f7bf155ff59b951cee59 # shrinks to var_name = "a", var_value = "\""
 cc 13bf472263cdcd78b79eee7ebae9308438195c6971b45991e60b34e966a86541 # shrinks to malformed_yaml = "!"
 cc a16541bddd079e300796fce20d26cda9d7dc453c3ac17998a70c5403074e5057 # shrinks to var_name = "if", var_value = ""
+cc da8a182e96a464024c14be73aa9c32d27d0ac05e4fb50e36b035cadd1555aa1e # shrinks to var_name = "lt", var_value = ""
