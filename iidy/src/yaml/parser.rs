@@ -106,6 +106,130 @@ impl ParseContext {
         self.find_position_of_from_offset(search_text, 0)
     }
     
+    /// Find the position of a tag within the current YAML path context
+    /// This is more accurate than find_position_of when there are multiple occurrences
+    /// It attempts to find the tag occurrence that matches the current YAML path context
+    pub fn find_tag_position_in_context(&self, tag_name: &str) -> Option<Position> {
+        if self.yaml_path.is_empty() {
+            // No context path, fall back to first occurrence
+            return self.find_position_of(tag_name);
+        }
+        
+        // Strategy: Find the YAML structure around our current path, then find the tag within that context
+        let path_segments: Vec<&str> = self.yaml_path.split('.').collect();
+        
+        // For simple cases, try to find a unique context pattern
+        if let Some(last_segment) = path_segments.last() {
+            // Clean up array indices like "MyKey[0]" -> "MyKey"
+            let clean_segment = if let Some(bracket_pos) = last_segment.find('[') {
+                &last_segment[..bracket_pos]
+            } else {
+                last_segment
+            };
+            
+            // Look for patterns like "LastSegment: !$tag" or "LastSegment:\n  ...!$tag"
+            // This helps distinguish between different occurrences
+            if let Some(context_pos) = self.find_yaml_key_context(clean_segment, tag_name) {
+                return Some(context_pos);
+            }
+        }
+        
+        // If we can't find a specific context, try to use the path depth to find the right occurrence
+        self.find_tag_at_approximate_depth(tag_name, path_segments.len())
+    }
+    
+    /// Find a tag within the context of a specific YAML key
+    /// Looks for patterns like "key: !$tag" or "key:\n  field: !$tag"
+    /// Takes into account array indices in the path for more precise matching
+    fn find_yaml_key_context(&self, key_name: &str, tag_name: &str) -> Option<Position> {
+        // Extract array index if present in the yaml_path
+        let array_index = self.extract_array_index_from_path();
+        
+        // Find all occurrences of the key
+        let mut key_offset = 0;
+        let mut key_occurrence = 0;
+        
+        while let Some(key_pos) = self.find_position_of_from_offset(&format!("{}:", key_name), key_offset) {
+            // If we have an array index, we want to find the nth occurrence of this key
+            // where n matches the array index
+            if let Some(target_index) = array_index {
+                if key_occurrence != target_index {
+                    key_occurrence += 1;
+                    key_offset = key_pos.offset + key_name.len() + 1;
+                    continue;
+                }
+            }
+            
+            // Look for the tag within a reasonable distance after this key
+            let search_start = key_pos.offset;
+            let search_end = std::cmp::min(
+                self.source.len(),
+                search_start + 1000 // Search within 1000 chars after the key
+            );
+            
+            // Look for the tag after this key position
+            if let Some(tag_pos) = self.find_position_of_from_offset(tag_name, search_start) {
+                if tag_pos.offset < search_end {
+                    // Found a tag after this key within reasonable distance
+                    return Some(tag_pos);
+                }
+            }
+            
+            // Move to next key occurrence
+            key_occurrence += 1;
+            key_offset = key_pos.offset + key_name.len() + 1; // +1 for the ':'
+        }
+        
+        None
+    }
+    
+    /// Extract array index from the YAML path if present
+    /// For example: "ListOperations[2].operation" -> Some(2)
+    pub fn extract_array_index_from_path(&self) -> Option<usize> {
+        // Look for pattern like "[number]" in the path
+        if let Some(start) = self.yaml_path.find('[') {
+            if let Some(end) = self.yaml_path[start..].find(']') {
+                let index_str = &self.yaml_path[start + 1..start + end];
+                return index_str.parse().ok();
+            }
+        }
+        None
+    }
+    
+    /// Find a tag at approximately the right depth based on YAML path
+    /// Uses indentation and nesting level as hints
+    fn find_tag_at_approximate_depth(&self, tag_name: &str, expected_depth: usize) -> Option<Position> {
+        let mut offset = 0;
+        let mut occurrence_count = 0;
+        
+        while let Some(tag_pos) = self.find_position_of_from_offset(tag_name, offset) {
+            // Estimate the nesting depth by looking at indentation
+            if let Some(line_content) = self.get_line_content(tag_pos.line) {
+                let leading_spaces = line_content.len() - line_content.trim_start().len();
+                let estimated_depth = (leading_spaces / 2).max(1); // Assume 2-space indentation
+                
+                // If the depth roughly matches our expected depth, this might be the right occurrence
+                if estimated_depth >= expected_depth.saturating_sub(1) && 
+                   estimated_depth <= expected_depth + 1 {
+                    // For now, return the first one that matches depth
+                    // In a more sophisticated implementation, we could try to match the path more precisely
+                    return Some(tag_pos);
+                }
+            }
+            
+            occurrence_count += 1;
+            offset = tag_pos.offset + tag_name.len();
+            
+            // Safety limit to avoid infinite loops
+            if occurrence_count > 50 {
+                break;
+            }
+        }
+        
+        // If no depth-based match found, fall back to first occurrence
+        self.find_position_of(tag_name)
+    }
+    
     /// Find position of text starting from a specific offset (for handling multiple matches)
     pub fn find_position_of_from_offset(&self, search_text: &str, start_offset: usize) -> Option<Position> {
         let search_start = start_offset.min(self.source.len());
@@ -173,8 +297,8 @@ fn validate_exact_keys(
         if provided_keys.contains(*wrong_key) && required_set.contains(*correct_key) && !provided_keys.contains(*correct_key) {
             use crate::yaml::error_wrapper::tag_parsing_error;
             
-            // Use ParseContext to find the position of the wrong key
-            let location = if let Some(position) = context.find_position_of(&format!("{}:", wrong_key)) {
+            // Use ParseContext to find the position of the wrong key in its current context
+            let location = if let Some(position) = context.find_tag_position_in_context(&format!("{}:", wrong_key)) {
                 format!("{}:{}:{}", context.file_location, position.line, position.column)
             } else {
                 context.location_string()
@@ -191,8 +315,8 @@ fn validate_exact_keys(
     if !missing.is_empty() {
         use crate::yaml::error_wrapper::missing_required_field_error;
         
-        // Use ParseContext to find the position of the tag
-        let location = if let Some(position) = context.find_position_of(tag_name) {
+        // Use ParseContext to find the position of the tag in its current context
+        let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
             format!("{}:{}:{}", context.file_location, position.line, position.column)
         } else {
             context.location_string()
@@ -212,8 +336,8 @@ fn validate_exact_keys(
     if !extra.is_empty() {
         use crate::yaml::error_wrapper::tag_parsing_error;
         
-        // Use ParseContext to find the position of the tag
-        let location = if let Some(position) = context.find_position_of(tag_name) {
+        // Use ParseContext to find the position of the tag in its current context
+        let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
             format!("{}:{}:{}", context.file_location, position.line, position.column)
         } else {
             context.location_string()
@@ -325,8 +449,8 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
                 {
                     use crate::yaml::error_wrapper::tag_parsing_error;
                     
-                    // Use ParseContext to find the position of the tag
-                    let location = if let Some(position) = context.find_position_of(&tag) {
+                    // Use ParseContext to find the position of the tag in its current context
+                    let location = if let Some(position) = context.find_tag_position_in_context(&tag) {
                         format!("{}:{}:{}", context.file_location, position.line, position.column)
                     } else {
                         context.location_string()

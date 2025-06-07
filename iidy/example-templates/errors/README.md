@@ -12,6 +12,7 @@ This directory contains focused examples of various error types to test and demo
 - `tag-map-uses-source.yaml` - !$map tag uses 'source' instead of 'items'
 - `tag-map-uses-transform.yaml` - !$map tag uses 'transform' instead of 'template'
 - `tag-missing-required-field.yaml` - Missing required 'template' field in !$map
+- `multiple-occurrence-error-positioning.yaml` - Error positioning with multiple !$if tags (13th is missing 'test')
 
 ### Variable Errors (IY2001)
 - `variable-not-found.yaml` - Handlebars variable not found in $defs
