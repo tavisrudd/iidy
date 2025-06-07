@@ -4,7 +4,7 @@
 //! for all scalar values. This is a critical invariant of the iidy preprocessing system.
 
 use anyhow::Result;
-use iidy::yaml::{parse_yaml_with_custom_tags, handlebars::interpolate_handlebars_string};
+use iidy::yaml::{parser::parse_yaml_with_custom_tags_from_file, handlebars::interpolate_handlebars_string};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 
@@ -105,7 +105,7 @@ fn test_import_syntax(var_name: &str, _var_value: &JsonValue) -> Result<String> 
     // For now, we can only test that the AST parses correctly
     // Once AST resolution is implemented, this should return the actual resolved value
     let yaml_content = format!("result: !$ {}", var_name);
-    let ast = parse_yaml_with_custom_tags(&yaml_content)?;
+    let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "equivalence-test.yaml")?;
     
     // Currently we can only verify parsing succeeds
     // The AST should be a mapping with a key "result" that has a preprocessing tag value
@@ -344,7 +344,7 @@ mod future_resolution_tests {
             
             // Test 2: Import syntax in YAML context
             let yaml_with_import = format!("result: !$ {}", var_name);
-            let _ast = parse_yaml_with_custom_tags(&yaml_with_import)?;
+            let _ast = parse_yaml_with_custom_tags_from_file(&yaml_with_import, "equivalence-full-test.yaml")?;
             
             // TODO: Once AST resolution is implemented:
             // let mut preprocessor = YamlPreprocessor::new();

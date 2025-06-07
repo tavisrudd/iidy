@@ -32,7 +32,7 @@ pub mod enhanced_errors;
 pub mod error_spike_tests;
 
 pub use ast::*;
-pub use parser::{parse_yaml_with_custom_tags, parse_yaml_with_custom_tags_from_file};
+pub use parser::parse_yaml_with_custom_tags_from_file;
 pub use tags::{TagContext, StackFrame};
 pub use error_wrapper::{EnhancedErrorWrapper, EnhancedError};
 
@@ -977,7 +977,7 @@ $defs:
   environment: "prod"
 
 database_host: !$if
-  condition: !$eq ["prod", "{{environment}}"]
+  test: !$eq ["prod", "{{environment}}"]
   then: "prod-db.example.com"
   else: "dev-db.example.com"
 "#;
@@ -1040,8 +1040,8 @@ $defs:
   data: ["a", "b"]
 
 result: !$mergeMap
-  source: !$ data
-  transform: 
+  items: !$ data
+  template: 
     "prefix_{{item}}": "value_{{item}}"
 "#;
 
@@ -1077,7 +1077,8 @@ $defs:
       value: 30
 
 result: !$mapListToHash
-  source: !$ data
+  items: !$ data
+  template: !$ item
 "#;
 
         let loader = ProductionImportLoader::new();
@@ -1147,7 +1148,7 @@ $defs:
       category: "A"
 
 result: !$groupBy
-  source: !$ data
+  items: !$ data
   key: !$ item.category
 "#;
 
