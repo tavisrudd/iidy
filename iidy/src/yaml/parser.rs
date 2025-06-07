@@ -9,34 +9,52 @@ use crate::yaml::ast::*;
 
 /// Parse YAML text with support for custom preprocessing tags
 pub fn parse_yaml_with_custom_tags(input: &str) -> Result<YamlAst> {
-    let value: Value = serde_yaml::from_str(input)?;
-    convert_value_to_ast(value)
+    // TODO can we get the real file_path and input context passed through here?
+    parse_yaml_with_custom_tags_from_file(input, "input.yaml")
+}
+
+/// Parse YAML text with file context for better error reporting  
+pub fn parse_yaml_with_custom_tags_from_file(input: &str, file_path: &str) -> Result<YamlAst> {
+    let value: Value = serde_yaml::from_str(input)
+        .map_err(|e| crate::yaml::error_wrapper::yaml_syntax_error(e, file_path, input))?;
+    convert_value_to_ast_with_context(value, file_path, input)
+}
+
+/// Convert a serde_yaml::Value to our custom AST with file context
+fn convert_value_to_ast_with_context(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
+    convert_value_to_ast_internal(value, file_path, input)
 }
 
 /// Convert a serde_yaml::Value to our custom AST
 fn convert_value_to_ast(value: Value) -> Result<YamlAst> {
+    // TODO can we get the real file_path and input context passed through here?
+    convert_value_to_ast_internal(value, "input.yaml", "")
+}
+
+/// Internal conversion function that handles both legacy and context-aware calls
+fn convert_value_to_ast_internal(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     match value {
         Value::Null => Ok(YamlAst::Null),
         Value::Bool(b) => Ok(YamlAst::Bool(b)),
         Value::Number(n) => Ok(YamlAst::Number(n)),
         Value::String(s) => Ok(YamlAst::String(s)),
-        Value::Sequence(seq) => convert_sequence_to_ast(seq),
-        Value::Mapping(map) => convert_mapping_to_ast(map),
-        Value::Tagged(tagged) => parse_tagged_value(*tagged),
+        Value::Sequence(seq) => convert_sequence_to_ast_with_context(seq, file_path, input),
+        Value::Mapping(map) => convert_mapping_to_ast_with_context(map, file_path, input),
+        Value::Tagged(tagged) => parse_tagged_value_with_context(*tagged, file_path, input),
     }
 }
 
-/// Convert a YAML sequence to AST
-fn convert_sequence_to_ast(seq: Sequence) -> Result<YamlAst> {
+/// Convert a YAML sequence to AST with file context
+fn convert_sequence_to_ast_with_context(seq: Sequence, file_path: &str, input: &str) -> Result<YamlAst> {
     let mut ast_seq = Vec::new();
     for item in seq {
-        ast_seq.push(convert_value_to_ast(item)?);
+        ast_seq.push(convert_value_to_ast_internal(item, file_path, input)?);
     }
     Ok(YamlAst::Sequence(ast_seq))
 }
 
-/// Convert a YAML mapping to AST, checking for special preprocessing keys
-fn convert_mapping_to_ast(map: Mapping) -> Result<YamlAst> {
+/// Convert a YAML mapping to AST with file context
+fn convert_mapping_to_ast_with_context(map: Mapping, file_path: &str, input: &str) -> Result<YamlAst> {
     // Check for special preprocessing keys like $imports, $defs
     if let Some(preprocessing_tag) = check_for_preprocessing_keys(&map)? {
         return Ok(YamlAst::PreprocessingTag(preprocessing_tag));
@@ -45,22 +63,23 @@ fn convert_mapping_to_ast(map: Mapping) -> Result<YamlAst> {
     // Regular mapping
     let mut ast_map = Vec::new();
     for (key, value) in map {
-        let key_ast = convert_value_to_ast(key)?;
-        let value_ast = convert_value_to_ast(value)?;
+        let key_ast = convert_value_to_ast_internal(key, file_path, input)?;
+        let value_ast = convert_value_to_ast_internal(value, file_path, input)?;
         ast_map.push((key_ast, value_ast));
     }
     Ok(YamlAst::Mapping(ast_map))
 }
 
 /// Parse a tagged YAML value (handles !$ tags)
-fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst> {
+fn parse_tagged_value_with_context(tagged: serde_yaml::value::TaggedValue, file_path: &str, input: &str) -> Result<YamlAst> {
     let tag = tagged.tag.to_string();
     let value = tagged.value;
 
+    // TODO can always pass through the real file_path and input context here?
     match tag.as_str() {
         "!$" | "!$include" => parse_include_tag(value),
         "!$if" => parse_if_tag(value),
-        "!$map" => parse_map_tag(value),
+        "!$map" => parse_map_tag_with_context(value, file_path, input),
         "!$merge" => parse_merge_tag(value),
         "!$concat" => parse_concat_tag(value),
         "!$let" => parse_let_tag(value),
@@ -80,35 +99,69 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst>
         "!$parseJson" => parse_parse_json_tag(value),
         "!$escape" => parse_escape_tag(value),
         _ => {
-            // Check for unknown iidy preprocessing tags (likely typos)
+            // Check for unknown iidy preprocessing tags (likely typos) with context
             if tag.starts_with("!$") {
-                return Err(anyhow!("Unknown iidy preprocessing tag '{}'. Preprocessing tags must start with '!$' and be one of the supported tags like !$if, !$map, !$merge, etc. This is likely a typo.", tag));
+                {
+                    use crate::yaml::error_wrapper::tag_parsing_error;
+                    
+                    // Try to find the line number by searching for the tag
+                    let line_number = if !input.is_empty() {
+                        input.lines().enumerate().find_map(|(idx, line)| {
+                            if line.contains(&tag) {
+                                Some(idx + 1)
+                            } else {
+                                None
+                            }
+                        }).unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    
+                    let location = if line_number > 0 {
+                        format!("{}:{}", file_path, line_number)
+                    } else {
+                        file_path.to_string()
+                    };
+                    
+                    return Err(tag_parsing_error("unknown tag", &format!("'{}' is not a valid iidy tag", tag), &location, Some("check tag spelling or see documentation for valid tags")));
+                }
             }
             
-            // Unknown tag (like CloudFormation !Ref, !Sub), preserve with content processing
-            // Strip the '!' prefix to get the actual tag name
-            let tag_name = if tag.starts_with('!') {
-                tag.strip_prefix('!').unwrap_or(&tag)
-            } else {
-                &tag
+            // For other tags, reconstruct the tagged value and use the original parser
+            let reconstructed = serde_yaml::value::TaggedValue {
+                tag: tagged.tag,
+                value,
             };
-            
-            // Handle array syntax: !Ref [expression] should extract the expression
-            let actual_value = match value {
-                Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
-                other => other,
-            };
-            
-            let value = convert_value_to_ast(actual_value)?;
-            Ok(YamlAst::UnknownYamlTag(UnknownTag { tag: tag_name.to_string(), value: Box::new(value) }))
+            parse_non_iidy_tagged_value(reconstructed)
         }
     }
+}
+
+fn parse_non_iidy_tagged_value(tagged: serde_yaml::value::TaggedValue) -> Result<YamlAst> {
+    let tag = tagged.tag.to_string();
+    let value = tagged.value;
+    // Unknown tag (like CloudFormation !Ref, !Sub), preserve with content processing
+    // Strip the '!' prefix to get the actual tag name
+    let tag_name = if tag.starts_with('!') {
+        tag.strip_prefix('!').unwrap_or(&tag)
+    } else {
+        &tag
+    };
+    
+    // Handle array syntax: !Ref [expression] should extract the expression
+    let actual_value = match value {
+        Value::Sequence(seq) if seq.len() == 1 => seq.into_iter().next().unwrap(),
+        other => other,
+    };
+    
+    let value = convert_value_to_ast(actual_value)?;
+    Ok(YamlAst::UnknownYamlTag(UnknownTag { tag: tag_name.to_string(), value: Box::new(value) }))
 }
 
 /// Check if a mapping contains special preprocessing keys
 fn check_for_preprocessing_keys(_map: &Mapping) -> Result<Option<PreprocessingTag>> {
     // For now, we'll focus on tagged values
-    // Future: Handle $imports, $defs, etc. here
+    // TODO Handle $imports, $defs, etc. here
     Ok(None)
 }
 
@@ -159,24 +212,69 @@ fn parse_if_tag(value: Value) -> Result<YamlAst> {
     }
 }
 
-/// Parse !$map tag
-fn parse_map_tag(value: Value) -> Result<YamlAst> {
+/// Parse !$map tag with file context for better error reporting
+fn parse_map_tag_with_context(value: Value, file_path: &str, input: &str) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        // Check for common mistakes
-        if map.contains_key(&Value::String("source".to_string())) && !map.contains_key(&Value::String("items".to_string())) {
-            return Err(anyhow!("!$map tag uses 'items' not 'source'. Did you mean 'items'?"));
-        }
-        if map.contains_key(&Value::String("transform".to_string())) && !map.contains_key(&Value::String("template".to_string())) {
-            return Err(anyhow!("!$map tag uses 'template' not 'transform'. Did you mean 'template'?"));
+        // Check for unexpected keys with helpful suggestions
+        let unexpected_key_errors = [
+            ("source", "items", "use 'items' instead of 'source'"),
+            ("transform", "template", "use 'template' instead of 'transform'"),
+        ];
+        
+        for (wrong_key, correct_key, suggestion) in &unexpected_key_errors {
+            if map.contains_key(&Value::String(wrong_key.to_string())) && !map.contains_key(&Value::String(correct_key.to_string())) {
+                use crate::yaml::error_wrapper::tag_parsing_error;
+                
+                // Try to find the line number by searching for the wrong key
+                let line_number = if !input.is_empty() {
+                    input.lines().enumerate().find_map(|(idx, line)| {
+                        if line.contains(&format!("{}:", wrong_key)) {
+                            Some(idx + 1)
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(0)
+                } else {
+                    0
+                };
+                
+                let location = if line_number > 0 {
+                    format!("{}:{}", file_path, line_number)
+                } else {
+                    file_path.to_string()
+                };
+                
+                return Err(tag_parsing_error("!$map", &format!("'{}' should be '{}'", wrong_key, correct_key), &location, Some(suggestion)));
+            }
         }
         
         let items_val = map.get(&Value::String("items".to_string()))
             .ok_or_else(|| {
                 use crate::yaml::error_wrapper::missing_required_field_error;
+                
+                // Try to find the line number by searching for the !$map tag
+                let line_number = if !input.is_empty() {
+                    input.lines().enumerate().find_map(|(idx, line)| {
+                        if line.contains("!$map") {
+                            Some(idx + 1)
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(0)
+                } else {
+                    0
+                };
+                
+                let location = if line_number > 0 {
+                    format!("{}:{}", file_path, line_number)
+                } else {
+                    file_path.to_string()
+                };
+                
                 missing_required_field_error(
                     "!$map",
                     "items",
-                    "unknown", // We don't have file path in parser
+                    &location,
                     "<parsing>",
                     vec!["items".to_string(), "template".to_string()]
                 )
@@ -184,10 +282,30 @@ fn parse_map_tag(value: Value) -> Result<YamlAst> {
         let template_val = map.get(&Value::String("template".to_string()))
             .ok_or_else(|| {
                 use crate::yaml::error_wrapper::missing_required_field_error;
+                
+                // Try to find the line number by searching for the !$map tag
+                let line_number = if !input.is_empty() {
+                    input.lines().enumerate().find_map(|(idx, line)| {
+                        if line.contains("!$map") {
+                            Some(idx + 1)
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(0)
+                } else {
+                    0
+                };
+                
+                let location = if line_number > 0 {
+                    format!("{}:{}", file_path, line_number)
+                } else {
+                    file_path.to_string()
+                };
+                
                 missing_required_field_error(
                     "!$map",
                     "template",
-                    "unknown",
+                    &location,
                     "<parsing>",
                     vec!["items".to_string(), "template".to_string()]
                 )
@@ -196,13 +314,13 @@ fn parse_map_tag(value: Value) -> Result<YamlAst> {
         
         // Optional filter
         let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
-            Some(Box::new(convert_value_to_ast(filter_val.clone())?))
+            Some(Box::new(convert_value_to_ast_internal(filter_val.clone(), file_path, input)?))
         } else {
             None
         };
 
-        let items = Box::new(convert_value_to_ast(items_val.clone())?);
-        let template = Box::new(convert_value_to_ast(template_val.clone())?);
+        let items = Box::new(convert_value_to_ast_internal(items_val.clone(), file_path, input)?);
+        let template = Box::new(convert_value_to_ast_internal(template_val.clone(), file_path, input)?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Map(MapTag {
             items,

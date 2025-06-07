@@ -1,0 +1,8 @@
+---
+source: tests/yaml_preprocessing_typo_detection.rs
+expression: error_msg
+---
+Tag error: '!$typo' is not a valid iidy tag @ test.yaml:2 (errno: IY4002)
+  -> check tag spelling or see documentation for valid tags
+
+   For more info, run: iidy explain IY4002

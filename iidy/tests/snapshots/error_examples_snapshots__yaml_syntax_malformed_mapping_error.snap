@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: error_output
+---
+Syntax error: invalid YAML structure @ example-templates/errors/yaml-syntax-malformed-mapping.yaml:7:22 (errno: IY1001)
+  -> tags cannot be chained - use list syntax
+
+   6 |       BucketName: !Sub "my-bucket"
+   7 |       Enabled: !$not !$eq
+     |                      ^
+   8 |         - "true"
+
+   fix: put the inner tag in a list to separate it from the outer tag
+   example: !$not [!$eq ["a", "b"]]
+
+   For more info, run: iidy explain IY1001

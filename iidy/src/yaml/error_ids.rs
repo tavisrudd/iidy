@@ -181,6 +181,7 @@ impl ErrorId {
     /// Get detailed explanation for CLI help
     pub fn detailed_explanation(&self) -> &'static str {
         match self {
+            ErrorId::InvalidYamlSyntax => include_str!("../docs/errors/IY1001.md"),
             ErrorId::VariableNotFound => include_str!("../docs/errors/IY2001.md"),
             ErrorId::TypeMismatchInOperation => include_str!("../docs/errors/IY5001.md"),
             ErrorId::MissingRequiredTagField => include_str!("../docs/errors/IY4002.md"),
@@ -298,6 +299,7 @@ impl ErrorId {
     pub fn explain(&self) -> String {
         // Try to load from embedded documentation files first
         match self {
+            ErrorId::InvalidYamlSyntax => self.detailed_explanation().to_string(),
             ErrorId::VariableNotFound => self.detailed_explanation().to_string(),
             ErrorId::TypeMismatchInOperation => self.detailed_explanation().to_string(),
             ErrorId::MissingRequiredTagField => self.detailed_explanation().to_string(),

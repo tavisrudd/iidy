@@ -26,20 +26,17 @@ pub mod imports;
 pub mod handlebars;
 pub mod error_wrapper;
 
-#[cfg(feature = "enhanced-errors")]
 pub mod error_ids;
-#[cfg(feature = "enhanced-errors")]
 pub mod enhanced_errors;
-#[cfg(all(test, feature = "enhanced-errors"))]
+#[cfg(test)]
 pub mod error_spike_tests;
 
 pub use ast::*;
-pub use parser::parse_yaml_with_custom_tags;
+pub use parser::{parse_yaml_with_custom_tags, parse_yaml_with_custom_tags_from_file};
 pub use tags::{TagContext, StackFrame};
+pub use error_wrapper::{EnhancedErrorWrapper, EnhancedError};
 
-#[cfg(feature = "enhanced-errors")]
 pub use error_ids::ErrorId;
-#[cfg(feature = "enhanced-errors")]
 pub use enhanced_errors::{EnhancedPreprocessingError, SourceLocation};
 
 use anyhow::Result;
@@ -246,7 +243,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     /// Main processing entry point - implements the two-phase pipeline
     pub async fn process(&mut self, input: &str, base_location: &str) -> Result<Value> {
         // Parse YAML with custom tag support
-        let ast = parser::parse_yaml_with_custom_tags(input)?;
+        let ast = parser::parse_yaml_with_custom_tags_from_file(input, base_location)?;
         
         // Phase 1: Import loading and environment building
         let mut env_values = EnvValues::new();
@@ -413,7 +410,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 if has_imports || has_defs {
                     // This document needs recursive preprocessing - parse it back to AST and process
                     let doc_yaml = serde_yaml::to_string(&doc)?;
-                    let doc_ast = parser::parse_yaml_with_custom_tags(&doc_yaml)?;
+                    let doc_ast = parser::parse_yaml_with_custom_tags_from_file(&doc_yaml, doc_location)?;
                     
                     // Recursively process this document with its own environment
                     let mut doc_env_values = EnvValues::new();
@@ -708,7 +705,59 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         // Apply handlebars interpolation to the string
         match interpolate_handlebars_string(&s, &env_values, "yaml-string") {
             Ok(processed_string) => Ok(Value::String(processed_string)),
-            Err(e) => Err(anyhow::anyhow!("Handlebars processing failed: {}", e)),
+            Err(e) => {
+                // Enhanced error handling for handlebars processing
+                {
+                    let error_msg = e.to_string();
+                    
+                    // Extract variable name from handlebars error if possible
+                    if error_msg.contains("Variable") && error_msg.contains("not found") {
+                        // Parse the variable name from the error message
+                        let var_name = if let Some(start) = error_msg.find("Variable \"") {
+                            let start = start + 10; // Skip 'Variable "'
+                            if let Some(end) = error_msg[start..].find('"') {
+                                &error_msg[start..start + end]
+                            } else {
+                                "unknown"
+                            }
+                        } else {
+                            "unknown"
+                        };
+                        
+                        // Get file path and try to find the line number
+                        let file_path = if let Some(base_path) = &context.base_path {
+                            base_path.display().to_string()
+                        } else {
+                            context.current_location().unwrap_or_else(|| "unknown location".to_string())
+                        };
+                        
+                        let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            let line_number = content.lines().enumerate().find_map(|(idx, line)| {
+                                if line.contains(&format!("{{{{{}}}}}", var_name)) {
+                                    Some(idx + 1)
+                                } else {
+                                    None
+                                }
+                            }).unwrap_or(0);
+                            
+                            if line_number > 0 {
+                                format!("{}:{}", file_path, line_number)
+                            } else {
+                                file_path
+                            }
+                        } else {
+                            file_path
+                        };
+                        
+                        let available_vars: Vec<String> = env_values.keys().cloned().collect();
+                        use crate::yaml::error_wrapper::variable_not_found_error;
+                        return Err(variable_not_found_error(var_name, &location, &context.current_path(), available_vars));
+                    }
+                }
+                
+                // Fallback to basic error
+                Err(anyhow::anyhow!("Handlebars processing failed: {}", e))
+            }
         }
     }
 

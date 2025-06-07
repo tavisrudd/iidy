@@ -11,7 +11,6 @@ use std::path::Path;
 mod demo;
 use tokio::runtime::Runtime;
 
-#[cfg(feature = "enhanced-errors")]
 use iidy::yaml::error_ids::ErrorId;
 
 fn handle_command(cli: Cli) {
@@ -122,7 +121,17 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer5 => {}
         Commands::Render(args) => {
             if let Err(e) = rt.block_on(handle_render_command(&args)) {
-                eprintln!("error rendering template: {e:?}");
+                // Check if this is an enhanced error by looking at the error chain
+                let is_enhanced = e.chain().any(|err| {
+                    err.downcast_ref::<iidy::yaml::error_wrapper::EnhancedErrorWrapper>().is_some()
+                });
+                
+                if is_enhanced {
+                    eprintln!(); // Add blank line before enhanced errors for better readability
+                    eprintln!("{}", e);
+                } else {
+                    eprintln!("error rendering template: {}", e);
+                }
             }
         }
         Commands::GetImport(args) => println!("get-import {:?}", args),
@@ -142,7 +151,6 @@ fn handle_command(cli: Cli) {
             generate(shell, &mut Cli::command(), "iidy-rs", &mut io::stdout());
             debug!("Completion for {:?}", shell);
         }
-        #[cfg(feature = "enhanced-errors")]
         Commands::Explain { codes } => {
             handle_explain_command(codes);
         }
@@ -220,7 +228,6 @@ fn apply_query_to_value(value: serde_yaml::Value, query: &str) -> Result<serde_y
     Ok(current)
 }
 
-#[cfg(feature = "enhanced-errors")]
 fn handle_explain_command(codes: Vec<String>) {
     if codes.is_empty() {
         eprintln!("Please provide one or more error codes to explain (e.g., IY2001)");

@@ -6,7 +6,6 @@ license = "MIT"
 
 [features]
 default = []
-enhanced-errors = []
 
 [lib]
 name = "iidy"

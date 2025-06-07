@@ -4,9 +4,15 @@
 
 use anyhow::Result;
 use iidy::yaml::preprocess_yaml_with_base_location;
+use insta::assert_snapshot;
 
 #[tokio::test]
 async fn test_unknown_iidy_tag_detection() {
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
     let yaml_input = r#"
 test_typo: !$typo "this should fail"
 "#;
@@ -16,50 +22,54 @@ test_typo: !$typo "this should fail"
     // Should fail with unknown tag error
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("Unknown iidy preprocessing tag '!$typo'"));
-    assert!(error_msg.contains("likely a typo"));
+    assert_snapshot!("unknown_iidy_tag_detection", error_msg);
 }
 
 #[tokio::test]
 async fn test_unknown_and_or_tags_detected() {
-    let yaml_input = r#"
-test_and: !$and [true, false]
-test_or: !$or [true, false]
-"#;
-
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
     // Test !$and
     let result_and = preprocess_yaml_with_base_location("test_and: !$and [true, false]", "test.yaml").await;
     assert!(result_and.is_err());
-    let error_msg = result_and.unwrap_err().to_string();
-    assert!(error_msg.contains("Unknown iidy preprocessing tag '!$and'"));
+    let error_msg_and = result_and.unwrap_err().to_string();
+    assert_snapshot!("unknown_and_tag_detected", error_msg_and);
     
     // Test !$or
     let result_or = preprocess_yaml_with_base_location("test_or: !$or [true, false]", "test.yaml").await;
     assert!(result_or.is_err());
-    let error_msg = result_or.unwrap_err().to_string();
-    assert!(error_msg.contains("Unknown iidy preprocessing tag '!$or'"));
+    let error_msg_or = result_or.unwrap_err().to_string();
+    assert_snapshot!("unknown_or_tag_detected", error_msg_or);
 }
 
 #[tokio::test]
 async fn test_other_common_typos() {
+    // Force NO_COLOR to avoid ANSI codes in snapshots
+    unsafe {
+        std::env::set_var("NO_COLOR", "1");
+    }
+    
     let test_cases = vec![
-        "!$maps",     // typo of !$map
-        "!$iff",      // typo of !$if
-        "!$equ",      // typo of !$eq
-        "!$nott",     // typo of !$not
-        "!$merges",   // typo of !$merge
-        "!$joins",    // typo of !$join
-        "!$splits",   // typo of !$split
-        "!$lets",     // typo of !$let
+        ("!$maps", "maps_typo"),     // typo of !$map
+        ("!$iff", "iff_typo"),       // typo of !$if
+        ("!$equ", "equ_typo"),       // typo of !$eq
+        ("!$nott", "nott_typo"),     // typo of !$not
+        ("!$merges", "merges_typo"), // typo of !$merge
+        ("!$joins", "joins_typo"),   // typo of !$join
+        ("!$splits", "splits_typo"), // typo of !$split
+        ("!$lets", "lets_typo"),     // typo of !$let
     ];
     
-    for typo in test_cases {
+    for (typo, snapshot_name) in test_cases {
         let yaml_input = format!("test: {} \"value\"", typo);
         let result = preprocess_yaml_with_base_location(&yaml_input, "test.yaml").await;
         
         assert!(result.is_err(), "Should fail for typo: {}", typo);
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains(&format!("Unknown iidy preprocessing tag '{}'", typo)));
+        assert_snapshot!(snapshot_name, error_msg);
     }
 }
 

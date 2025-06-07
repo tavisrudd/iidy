@@ -276,8 +276,8 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
         return Ok(value);
     }
     
-    // Variable not found - error immediately with location context
-    // Only variables from $defs, $imports, and local scoped variables are allowed
+    // Variable not found - provide more specific error context
+    // Check if the root variable exists to give a better error message
     let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
     
     // Get file path
@@ -294,8 +294,47 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
     // Get available variables
     let available_vars: Vec<String> = context.variables.keys().cloned().collect();
     
-    use crate::yaml::error_wrapper::variable_not_found_error;
-    Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
+    // Check if root variable exists
+    if let Some(_root_value) = context.get_variable(root_var) {
+        // Root variable exists, but path resolution failed - this means a property doesn't exist
+        let property_path = if base_path.contains('.') {
+            base_path.split('.').skip(1).collect::<Vec<_>>().join(".")
+        } else if base_path.contains('[') {
+            base_path.split('[').skip(1).collect::<Vec<_>>().join("[")
+        } else {
+            base_path.to_string()
+        };
+        
+        {
+            use crate::yaml::error_wrapper::tag_parsing_error;
+            
+            // Try to find the line number by searching for the include reference
+            let include_pattern = format!("!$ {}", base_path);
+            let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                let line_number = content.lines().enumerate().find_map(|(idx, line)| {
+                    if line.contains(&include_pattern) {
+                        Some(idx + 1)
+                    } else {
+                        None
+                    }
+                }).unwrap_or(0);
+                
+                if line_number > 0 {
+                    format!("{}:{}", file_path, line_number)
+                } else {
+                    file_path.clone()
+                }
+            } else {
+                file_path.clone()
+            };
+            
+            return Err(tag_parsing_error("property access", &format!("property '{}' not found in '{}'", property_path, root_var), &location, Some(&format!("check available properties in '{}'", root_var))));
+        }
+    } else {
+        // Root variable doesn't exist
+        use crate::yaml::error_wrapper::variable_not_found_error;
+        Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
+    }
 }
 
 /// Parse path and query from include path

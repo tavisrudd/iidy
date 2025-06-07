@@ -107,73 +107,140 @@ impl EnhancedPreprocessingError {
         }
     }
     
-    /// Display error with Rust-style formatting including error ID
+    /// Display error with clean, user-friendly formatting
     pub fn display_with_context(&self, source_lines: Option<&[String]>) -> String {
         let mut output = String::new();
+        let loc = self.location();
+        let use_color = std::env::var("NO_COLOR").is_err() && atty::is(atty::Stream::Stderr);
         
-        // Error header with ID
-        output.push_str(&format!("error[{}]: {}\n", 
-            self.error_id().code(), 
-            self.main_message()
+        // Color codes
+        let red = if use_color { "\x1b[31m" } else { "" };
+        let bold_red = if use_color { "\x1b[1;31m" } else { "" };
+        let _yellow = if use_color { "\x1b[33m" } else { "" };
+        let cyan = if use_color { "\x1b[36m" } else { "" };
+        let blue_grey = if use_color { "\x1b[38;5;245m" } else { "" }; // lighter grey for source context
+        let light_blue = if use_color { "\x1b[38;5;75m" } else { "" }; // light blue for help text
+        let grey = if use_color { "\x1b[90m" } else { "" }; // grey for line numbers
+        let reset = if use_color { "\x1b[0m" } else { "" };
+        
+        // Error header - concise and scannable
+        let error_type = match self {
+            Self::VariableNotFound { .. } => "Variable error",
+            Self::TypeMismatch { .. } => "Type error", 
+            Self::MissingRequiredField { .. } => "Missing field error",
+            Self::ImportError { .. } => "Import error",
+            Self::HandlebarsError { .. } => "Template error",
+        };
+        
+        let short_message = match self {
+            Self::VariableNotFound { variable, .. } => format!("'{}' not found", variable),
+            Self::TypeMismatch { expected, found, .. } => format!("expected {}, found {}", expected, found),
+            Self::MissingRequiredField { missing_field, tag_name, .. } => format!("'{}' missing in {} tag", missing_field, tag_name),
+            Self::ImportError { import_type, location_str, .. } => format!("{} import failed: {}", import_type, location_str),
+            Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
+        };
+        
+        output.push_str(&format!("{}{}: {}{} @ {}{}{} {}(errno: {}){}\n", 
+            bold_red, error_type, short_message, reset,
+            cyan, loc, reset,
+            grey, self.error_id().code(), reset
         ));
         
-        // Source location
-        let loc = self.location();
-        if loc.line > 0 {
-            output.push_str(&format!("  --> {}\n", loc));
-        }
+        // Add specific guidance on next line
+        let guidance = match self {
+            Self::VariableNotFound { .. } => "variable not defined in current scope",
+            Self::TypeMismatch { .. } => "data type mismatch",
+            Self::MissingRequiredField { .. } => "required field missing",
+            Self::ImportError { .. } => "import failed",
+            Self::HandlebarsError { .. } => "template syntax error",
+        };
         
-        // Source context if available
+        output.push_str(&format!("{}  -> {}{}\n", light_blue, guidance, reset));
+        
+        // Show source context prominently (helps user find the problem quickly)
         if let Some(lines) = source_lines {
             if loc.line > 0 && loc.line <= lines.len() {
-                output.push_str("   |\n");
+                output.push_str("\n");
                 
-                // Show the problematic line
-                let line_content = &lines[loc.line - 1];
-                output.push_str(&format!("{:4} | {}\n", loc.line, line_content));
-                
-                // Show caret pointing to the error
-                if loc.column > 0 {
-                    let spaces = " ".repeat(loc.column - 1);
-                    let carets = "^".repeat(self.error_span_length().min(line_content.len() - loc.column + 1));
-                    output.push_str(&format!("   | {}{} {}\n", spaces, carets, self.inline_description()));
+                // Show line before for context (if available) - in blue-grey with grey line number
+                if loc.line > 1 {
+                    let prev_line = &lines[loc.line - 2];
+                    output.push_str(&format!("{}{:4}{} | {}{}{}\n", grey, loc.line - 1, reset, blue_grey, prev_line, reset));
                 }
                 
-                output.push_str("   |\n");
+                // Show the problematic line with highlighting - make line number red to draw attention
+                let line_content = &lines[loc.line - 1];
+                output.push_str(&format!("{}{:4}{} | {}\n", red, loc.line, reset, line_content));
+                
+                // Show caret pointing to the error with color
+                if loc.column > 0 && loc.column <= line_content.len() {
+                    let spaces = " ".repeat(loc.column - 1); // column offset
+                    let span_len = self.error_span_length().min(line_content.len() - loc.column + 1);
+                    let carets = "^".repeat(span_len.max(1));
+                    
+                    // Use red color for the error highlight and blue-grey for description
+                    output.push_str(&format!("     | {}{}{}{} {}{}{}\n", 
+                        spaces, red, carets, reset, blue_grey, self.inline_description(), reset));
+                }
+                
+                // Show line after for context (if available) - in blue-grey with grey line number
+                if loc.line < lines.len() {
+                    let next_line = &lines[loc.line];
+                    output.push_str(&format!("{}{:4}{} | {}{}{}\n", grey, loc.line + 1, reset, blue_grey, next_line, reset));
+                }
+                
+                output.push_str("\n");
             }
         }
         
-        // Help and suggestions
-        for note in self.notes() {
-            output.push_str(&format!("   = note: {}\n", note));
+        // Most important information - specific help for this error (in light blue, no prefixes)
+        match self {
+            Self::VariableNotFound { suggestions, available_vars, .. } => {
+                // Show suggestions first (most actionable)
+                if !suggestions.is_empty() {
+                    output.push_str(&format!("{}   did you mean '{}'?{}\n", light_blue, suggestions.join("' or '"), reset));
+                }
+                
+                // Show available variables (scan-friendly, one line) - sort for stable output
+                if !available_vars.is_empty() {
+                    let mut sorted_vars = available_vars.clone();
+                    sorted_vars.sort();
+                    output.push_str(&format!("{}   available variables: {}{}\n", light_blue, sorted_vars.join(", "), reset));
+                }
+            },
+            Self::MissingRequiredField { missing_field, tag_name, .. } => {
+                // Show the specific fix needed
+                output.push_str(&format!("{}   add '{}' field to {} tag{}\n", light_blue, missing_field, tag_name, reset));
+                
+                // Show example if available
+                let help_messages = self.help_messages();
+                if let Some(help) = help_messages.first() {
+                    if help.starts_with("example:") {
+                        output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                    }
+                }
+            },
+            Self::TypeMismatch { expected, found, help, .. } => {
+                output.push_str(&format!("{}   expected {}, found {}{}\n", light_blue, expected, found, reset));
+                if let Some(type_help) = help {
+                    output.push_str(&format!("{}   {}{}\n", light_blue, type_help, reset));
+                }
+            },
+            _ => {
+                // For other error types, show first help message if available
+                let help_messages = self.help_messages();
+                if let Some(help) = help_messages.first() {
+                    output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                }
+            }
         }
         
-        for help in self.help_messages() {
-            output.push_str(&format!("   = help: {}\n", help));
-        }
-        
-        // Reference to detailed help
-        output.push_str(&format!("   = help: for more information about this error, try `iidy explain {}`\n", 
-            self.error_id().code()));
+        // Reference to detailed help (compact, in light blue)
+        output.push_str(&format!("\n{}   For more info: iidy explain {}{}\n", light_blue, self.error_id().code(), reset));
         
         output
     }
-    
-    fn main_message(&self) -> String {
-        match self {
-            Self::VariableNotFound { variable, .. } => 
-                format!("variable '{}' not found", variable),
-            Self::TypeMismatch { expected, found, .. } => 
-                format!("type mismatch: expected {}, found {}", expected, found),
-            Self::MissingRequiredField { tag_name, missing_field, .. } => 
-                format!("missing required field '{}' in {} tag", missing_field, tag_name),
-            Self::ImportError { import_type, location_str, .. } => 
-                format!("failed to load {} import: {}", import_type, location_str),
-            Self::HandlebarsError { template, .. } => 
-                format!("handlebars template error in: {}", template),
-        }
-    }
-    
+        
     fn inline_description(&self) -> String {
         match self {
             Self::VariableNotFound { .. } => "variable not defined".to_string(),
@@ -191,35 +258,16 @@ impl EnhancedPreprocessingError {
             _ => 8, // Default span length
         }
     }
-    
-    fn notes(&self) -> Vec<String> {
-        match self {
-            Self::VariableNotFound { .. } => vec![
-                "only variables from $defs, $imports, and local scoped variables are available".to_string()
-            ],
-            Self::TypeMismatch { context, .. } => vec![
-                format!("this operation requires compatible data types"),
-                format!("in context: {}", context)
-            ],
-            Self::MissingRequiredField { tag_name, required_fields, .. } => vec![
-                format!("{} tag requires the following fields: {}", tag_name, required_fields.join(", "))
-            ],
-            Self::ImportError { .. } => vec![
-                "import paths are resolved relative to the current file".to_string()
-            ],
-            Self::HandlebarsError { .. } => vec![
-                "handlebars templates use {{variable}} syntax".to_string()
-            ],
-        }
-    }
-    
+        
     fn help_messages(&self) -> Vec<String> {
         let mut help = Vec::new();
         
         match self {
             Self::VariableNotFound { available_vars, suggestions, .. } => {
                 if !available_vars.is_empty() {
-                    help.push(format!("available variables in this scope: {}", available_vars.join(", ")));
+                    let mut sorted_vars = available_vars.clone();
+                    sorted_vars.sort();
+                    help.push(format!("available variables in this scope: {}", sorted_vars.join(", ")));
                 }
                 for suggestion in suggestions {
                     help.push(format!("did you mean '{}'?", suggestion));
@@ -398,8 +446,8 @@ mod tests {
         assert_eq!(error.error_id(), ErrorId::VariableNotFound);
         
         let display = error.to_string();
-        assert!(display.contains("error[IY2001]"));
-        assert!(display.contains("variable 'app_nme' not found"));
+        assert!(display.contains("IY2001"));
+        assert!(display.contains("'app_nme' not found"));
         assert!(display.contains("did you mean 'app_name'?"));
     }
     

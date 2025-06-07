@@ -1,0 +1,11 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: error_output
+---
+Tag error: 'transform' should be 'template' @ example-templates/errors/tag-map-uses-transform.yaml:7 (errno: IY4002)
+  -> use 'template' instead of 'transform'
+
+   6 |   items: !$ services
+   7 |   transform: "{{item}}-config"
+     |   ^^^^^^^^^
+   For more info, run: iidy explain IY4002
