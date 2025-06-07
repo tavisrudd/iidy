@@ -162,10 +162,36 @@ fn parse_if_tag(value: Value) -> Result<YamlAst> {
 /// Parse !$map tag
 fn parse_map_tag(value: Value) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
+        // Check for common mistakes
+        if map.contains_key(&Value::String("source".to_string())) && !map.contains_key(&Value::String("items".to_string())) {
+            return Err(anyhow!("!$map tag uses 'items' not 'source'. Did you mean 'items'?"));
+        }
+        if map.contains_key(&Value::String("transform".to_string())) && !map.contains_key(&Value::String("template".to_string())) {
+            return Err(anyhow!("!$map tag uses 'template' not 'transform'. Did you mean 'template'?"));
+        }
+        
         let items_val = map.get(&Value::String("items".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'items' in map tag"))?;
+            .ok_or_else(|| {
+                use crate::yaml::error_wrapper::missing_required_field_error;
+                missing_required_field_error(
+                    "!$map",
+                    "items",
+                    "unknown", // We don't have file path in parser
+                    "<parsing>",
+                    vec!["items".to_string(), "template".to_string()]
+                )
+            })?;
         let template_val = map.get(&Value::String("template".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'template' in map tag"))?;
+            .ok_or_else(|| {
+                use crate::yaml::error_wrapper::missing_required_field_error;
+                missing_required_field_error(
+                    "!$map",
+                    "template",
+                    "unknown",
+                    "<parsing>",
+                    vec!["items".to_string(), "template".to_string()]
+                )
+            })?;
         let var_name = extract_optional_string_field(&map, "var");
         
         // Optional filter

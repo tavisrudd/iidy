@@ -1,0 +1,7 @@
+database:
+  host: "dev.db.example.com"
+  port: 5432
+api:
+  timeout: 30
+monitoring:
+  enabled: true
