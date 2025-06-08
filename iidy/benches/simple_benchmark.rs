@@ -127,8 +127,8 @@ $defs:
 name: "{{app_name}}-{{environment}}"
 
 service_configs: !$map
-  source: !$ services
-  transform:
+  items: !$ services
+  template:
     name: "{{app_name}}-{{item}}-{{environment}}"
     type: "{{item}}"
 
@@ -156,32 +156,33 @@ name: "{{app_name}}-{{environment}}"
 
 # Generate service configurations for each region
 regional_services: !$concatMap
-  source: !$ regions
-  var_name: "region"
-  transform: !$map
-    source: !$ services
-    var_name: "service"
-    transform:
+  items: !$ regions
+  var: "region"
+  template: !$map
+    items: !$ services
+    var: "service"
+    template:
       name: "{{app_name}}-{{service}}-{{region}}-{{environment}}"
       region: "{{region}}"
       service: "{{service}}"
       environment: "{{environment}}"
 
 # Generate configuration mappings
-service_mappings: !$fromPairs !$map
-  source: !$ services
-  transform:
-    - "{{item}}"
-    - type: "{{item}}"
-      replicas: !$if
-        condition: !$eq ["{{item}}", "database"]
-        then: 1
-        else: 3
-      resources:
-        memory: !$if
-          condition: !$eq ["{{item}}", "database"]
-          then: "2Gi"
-          else: "1Gi"
+service_mappings: !$fromPairs
+  - !$map
+      items: !$ services
+      template:
+        - "{{item}}"
+        - type: "{{item}}"
+          replicas: !$if
+            test: !$eq ["{{item}}", "database"]
+            then: 1
+            else: 3
+          resources:
+            memory: !$if
+              test: !$eq ["{{item}}", "database"]
+              then: "2Gi"
+              else: "1Gi"
 
 # Test complex nested transformations
 complex_config: !$merge
@@ -216,8 +217,8 @@ $defs:
   count: {}
 
 simple_map: !$map
-  source: !$ services
-  transform: "service-{{{{item}}}}"
+  items: !$ services
+  template: "service-{{{{item}}}}"
 "#, services_yaml, size);
         
         // Removed debug output for clean benchmark results

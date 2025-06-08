@@ -4,10 +4,9 @@
 //! baselines and identify optimization opportunities.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use iidy::yaml::{preprocess_yaml_with_base_location, preprocess_yaml_sync};
-use iidy::yaml::tags::{TagResolver, StandardTagResolver, DebugTagResolver, TracingTagResolver, TagContext};
-use iidy::yaml::ast::IncludeTag;
-use iidy::yaml::handlebars::engine::{create_handlebars_registry, interpolate_handlebars_string};
+use iidy::yaml::preprocess_yaml_with_base_location;
+// Removed complex tag resolver imports that aren't available
+use iidy::yaml::handlebars::interpolate_handlebars_string;
 use serde_yaml::Value;
 use std::collections::HashMap;
 use tempfile::NamedTempFile;
@@ -59,40 +58,43 @@ fn bench_handlebars_interpolation(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark tag resolution with different resolvers
-fn bench_tag_resolvers(c: &mut Criterion) {
-    let mut group = c.benchmark_group("tag_resolvers");
+/// Benchmark basic YAML parsing without complex tag resolution
+fn bench_yaml_parsing(c: &mut Criterion) {
+    let mut group = c.benchmark_group("yaml_parsing");
     
-    let context = TagContext::new()
-        .with_variable("config", Value::String("test-value".to_string()))
-        .with_variable("environment", Value::String("prod".to_string()));
+    let simple_yaml = r#"
+name: "test-app"
+version: "1.0.0"
+config:
+  debug: true
+  timeout: 30
+"#;
     
-    let include_tag = IncludeTag {
-        path: "config".to_string(),
-        query: None,
-    };
+    let complex_yaml = r#"
+name: "complex-app"
+version: "2.0.0"
+services:
+  - name: "api"
+    port: 8080
+    env:
+      - name: "DATABASE_URL"
+        value: "postgres://localhost:5432/app"
+  - name: "web"
+    port: 3000
+    env:
+      - name: "API_URL"
+        value: "http://localhost:8080"
+"#;
     
-    // Standard resolver
-    group.bench_function("standard_resolver", |b| {
-        let resolver = StandardTagResolver;
+    group.bench_function("simple_yaml", |b| {
         b.iter(|| {
-            resolver.resolve_include(black_box(&include_tag), black_box(&context)).unwrap()
+            serde_yaml::from_str::<Value>(black_box(simple_yaml)).unwrap()
         })
     });
     
-    // Debug resolver (with logging overhead)
-    group.bench_function("debug_resolver", |b| {
-        let resolver = DebugTagResolver::new();
+    group.bench_function("complex_yaml", |b| {
         b.iter(|| {
-            resolver.resolve_include(black_box(&include_tag), black_box(&context)).unwrap()
-        })
-    });
-    
-    // Tracing resolver (with timing overhead)
-    group.bench_function("tracing_resolver", |b| {
-        let resolver = TracingTagResolver::new();
-        b.iter(|| {
-            resolver.resolve_include(black_box(&include_tag), black_box(&context)).unwrap()
+            serde_yaml::from_str::<Value>(black_box(complex_yaml)).unwrap()
         })
     });
     
@@ -141,13 +143,13 @@ $imports:
 
 name: "{{{{app_name}}}}-{{{{environment}}}}"
 database_url: !$if
-  condition: !$eq ["prod", "{{{{environment}}}}"]
+  test: !$eq ["prod", "{{{{environment}}}}"]
   then: "{{{{config.database_host}}}}:{{{{config.database_port}}}}"
   else: "localhost:5432"
 
 services: !$map
-  source: ["api", "web", "worker"]
-  transform: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
+  items: ["api", "web", "worker"]
+  template: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
 "#, config_path);
             
             preprocess_yaml_with_base_location(
@@ -177,63 +179,59 @@ Parameters:
 
 Resources:
   # Generate S3 buckets for each region
-  S3Buckets: !$fromPairs !$map
-    source: !$ regions
-    transform:
-      - "{{toLowerCase app_name}}-{{item}}-{{environment}}-bucket"
-      - Type: "AWS::S3::Bucket"
-        Properties:
-          BucketName: "{{toLowerCase app_name}}-{{item}}-{{environment}}-bucket"
-          Tags: !$map
-            source:
-              - {Key: "Name", Value: "{{app_name}}-{{item}}-bucket"}
-              - {Key: "Environment", Value: "{{environment}}"}
-              - {Key: "Region", Value: "{{item}}"}
-            transform: !$ item
+  S3Buckets: !$map
+    items: !$ regions
+    template:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        BucketName: "{{toLowerCase app_name}}-{{item}}-{{environment}}-bucket"
+        Tags:
+          - Key: "Name" 
+            Value: "{{app_name}}-{{item}}-bucket"
+          - Key: "Environment"
+            Value: "{{environment}}"
+          - Key: "Region"
+            Value: "{{item}}"
 
   # Generate Auto Scaling Groups for different instance types
-  AutoScalingGroups: !$mergeMap
-    source: !$ instance_types
-    transform: !$let
-      bindings:
-        instance_type: "{{item}}"
-        group_name: "{{app_name}}-{{item}}-{{environment}}-asg"
-      expression: !$fromPairs
-        - - "{{group_name}}"
-          - Type: "AWS::AutoScaling::AutoScalingGroup"
-            Properties:
-              LaunchTemplate:
-                LaunchTemplateId: !Ref LaunchTemplate
-                Version: !GetAtt LaunchTemplate.LatestVersionNumber
-              MinSize: !$if
-                condition: !$eq ["{{instance_type}}", "t3.micro"]
-                then: 1
-                else: 2
-              MaxSize: !$if
-                condition: !$eq ["{{instance_type}}", "t3.micro"]
-                then: 3
-                else: 6
-              DesiredCapacity: !$if
-                condition: !$eq ["{{instance_type}}", "t3.micro"]
-                then: 1
-                else: 2
+  AutoScalingGroups: !$map
+    items: !$ instance_types
+    template:
+      Type: "AWS::AutoScaling::AutoScalingGroup"
+      Properties:
+        LaunchTemplate:
+          LaunchTemplateId: !Ref LaunchTemplate
+          Version: !GetAtt LaunchTemplate.LatestVersionNumber
+        MinSize: !$if
+          test: !$eq ["{{item}}", "t3.micro"]
+          then: 1
+          else: 2
+        MaxSize: !$if
+          test: !$eq ["{{item}}", "t3.micro"]
+          then: 3
+          else: 6
+        DesiredCapacity: !$if
+          test: !$eq ["{{item}}", "t3.micro"]
+          then: 1
+          else: 2
 
   # Generate security groups with complex rules
   SecurityGroupRules: !$concatMap
-    source: !$ regions
-    transform: !$map
-      source: ["web", "api", "database"]
-      transform:
-        GroupName: "{{app_name}}-{{item}}-{{outer}}-sg"
+    items: !$ regions
+    var: "region"
+    template: !$map
+      items: ["web", "api", "database"]
+      template:
+        GroupName: "{{app_name}}-{{item}}-{{region}}-sg"
         IpPermissions: !$if
-          condition: !$eq ["{{item}}", "database"]
+          test: !$eq ["{{item}}", "database"]
           then:
             - IpProtocol: "tcp"
               FromPort: 5432
               ToPort: 5432
-              SourceSecurityGroupName: "{{app_name}}-api-{{outer}}-sg"
+              SourceSecurityGroupName: "{{app_name}}-api-{{region}}-sg"
           else: !$if
-            condition: !$eq ["{{item}}", "api"]
+            test: !$eq ["{{item}}", "api"]
             then:
               - IpProtocol: "tcp"
                 FromPort: 8080
@@ -250,11 +248,10 @@ Resources:
                 CidrIp: "0.0.0.0/0"
 
 Outputs:
-  BucketNames: !$toJsonString !$mapValues
-    source: !$ S3Buckets
-    transform: !$ value.Properties.BucketName
-    
-  SecurityGroups: !$toYamlString !$ SecurityGroupRules
+  AppName:
+    Value: "{{app_name}}"
+  Environment:
+    Value: "{{environment}}"
 "#;
             
             preprocess_yaml_with_base_location(
@@ -267,20 +264,39 @@ Outputs:
     group.finish();
 }
 
-/// Benchmark sync vs async preprocessing
-fn bench_sync_vs_async(c: &mut Criterion) {
+/// Benchmark preprocessing with different document sizes
+fn bench_document_sizes(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
-    let mut group = c.benchmark_group("sync_vs_async");
+    let mut group = c.benchmark_group("document_sizes");
     
-    let yaml_input = r#"
+    // Small document
+    let small_yaml = r#"
+$defs:
+  app_name: "benchmark-app"
+  environment: "test"
+
+name: "{{app_name}}-{{environment}}"
+"#;
+    
+    group.bench_function("small_document", |b| {
+        b.to_async(&rt).iter(|| async {
+            preprocess_yaml_with_base_location(
+                black_box(small_yaml),
+                "small.yaml"
+            ).await.unwrap()
+        })
+    });
+    
+    // Medium document
+    let medium_yaml = r#"
 $defs:
   app_name: "benchmark-app"
   environment: "test"
 
 name: "{{app_name}}-{{environment}}"
 services: !$map
-  source: ["api", "web", "worker"]
-  transform: "{{app_name}}-{{item}}-{{environment}}"
+  items: ["api", "web", "worker"]
+  template: "{{app_name}}-{{item}}-{{environment}}"
 
 config: !$merge
   - name: "{{app_name}}"
@@ -289,20 +305,11 @@ config: !$merge
     version: "1.0.0"
 "#;
     
-    group.bench_function("sync_preprocessing", |b| {
-        b.iter(|| {
-            preprocess_yaml_sync(
-                black_box(yaml_input),
-                black_box("sync.yaml")
-            ).unwrap()
-        })
-    });
-    
-    group.bench_function("async_preprocessing", |b| {
+    group.bench_function("medium_document", |b| {
         b.to_async(&rt).iter(|| async {
             preprocess_yaml_with_base_location(
-                black_box(yaml_input),
-                "async.yaml"
+                black_box(medium_yaml),
+                "medium.yaml"
             ).await.unwrap()
         })
     });
@@ -336,7 +343,7 @@ $defs:
   environment: "prod"
   
 result: !$if
-  condition: !$eq ["prod", "{{environment}}"]
+  test: !$eq ["prod", "{{environment}}"]
   then: "production_config"
   else: "development_config"
 "#;
@@ -353,8 +360,8 @@ $defs:
   app_name: "benchmark-app"
   
 results: !$map
-  source: !$ services
-  transform: "{{app_name}}-{{item}}-service"
+  items: !$ services
+  template: "{{app_name}}-{{item}}-service"
 "#;
             preprocess_yaml_with_base_location(black_box(yaml), "map.yaml").await.unwrap()
         })
@@ -370,12 +377,12 @@ $defs:
   app_name: "benchmark-app"
   
 results: !$concatMap
-  source: !$ environments
-  var_name: "env"
-  transform: !$map
-    source: !$ services
-    var_name: "service"
-    transform:
+  items: !$ environments
+  var: "env"
+  template: !$map
+    items: !$ services
+    var: "service"
+    template:
       name: "{{app_name}}-{{service}}-{{env}}"
       environment: "{{env}}"
       type: "{{service}}"
@@ -406,7 +413,7 @@ $defs:
     cpu: "500m"
 
 services: !$map
-  source: ["#);
+  items: ["#);
         
         for i in 0..*size {
             yaml_content.push_str(&format!("service-{}", i));
@@ -416,12 +423,13 @@ services: !$map
         }
         
         yaml_content.push_str(r#""]
-  transform: !$merge
+  template: !$merge
     - name: "{{app_name}}-{{item}}"
     - !$ base_config
 
-large_mapping: !$fromPairs !$map
-  source: ["#);
+large_mapping: !$fromPairs
+    - !$map
+        items: ["#);
         
         for i in 0..*size {
             yaml_content.push_str(&format!("key-{}", i));
@@ -431,9 +439,9 @@ large_mapping: !$fromPairs !$map
         }
         
         yaml_content.push_str(r#""]
-  transform:
-    - "{{item}}"
-    - "value-{{item}}"
+        template:
+          - "{{item}}"
+          - "value-{{item}}"
 "#);
         
         group.bench_with_input(
@@ -456,9 +464,9 @@ large_mapping: !$fromPairs !$map
 criterion_group!(
     benches,
     bench_handlebars_interpolation,
-    bench_tag_resolvers,
+    bench_yaml_parsing,
     bench_preprocessing_pipeline,
-    bench_sync_vs_async,
+    bench_document_sizes,
     bench_tag_types,
     bench_memory_usage
 );
