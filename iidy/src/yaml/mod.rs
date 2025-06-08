@@ -673,14 +673,21 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Create a tagged value that preserves CloudFormation tags like !Ref, !Sub
-    /// Uses serde_yaml::value::TaggedValue to properly serialize YAML tags
+    /// 
+    /// Creates a mapping structure that can be serialized to both YAML and JSON.
+    /// 
+    /// **Syntax Note**: This produces `'!Sub': value` format instead of proper YAML tags 
+    /// like `!Sub value` because serde_yaml 0.9 cannot serialize `Value::Tagged` 
+    /// (throws "serializing nested enums in YAML is not supported yet").
+    /// 
+    /// **TODO**: When serde_yaml is replaced (it's deprecated), migrate to proper YAML 
+    /// tag syntax using a modern YAML library like serde_yml that supports tagged value
+    /// serialization.
     fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
-        // Use serde_yaml::value::TaggedValue for proper YAML tag serialization
-        let tagged_value = serde_yaml::value::TaggedValue {
-            tag: serde_yaml::value::Tag::new(format!("!{}", tag)),
-            value,
-        };
-        Ok(Value::Tagged(Box::new(tagged_value)))
+        // Create a mapping with the tag as key - this works for both YAML and JSON serialization
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(Value::String(format!("!{}", tag)), value);
+        Ok(Value::Mapping(map))
     }
 
     #[allow(dead_code)]
@@ -1836,16 +1843,15 @@ Resources:
                     if let Some(Value::Mapping(properties)) = bucket.get(&Value::String("Properties".to_string())) {
                         // Check that !Sub tag is preserved with processed handlebars
                         if let Some(bucket_name) = properties.get(&Value::String("BucketName".to_string())) {
-                            if let Value::Tagged(tagged) = bucket_name {
-                                assert_eq!(tagged.tag.to_string(), "!Sub");
-                                // The handlebars {{environment}} should be processed to "production"  
-                                if let Value::String(value) = &tagged.value {
+                            if let Value::Mapping(tag_map) = bucket_name {
+                                if let Some(Value::String(value)) = tag_map.get(&Value::String("!Sub".to_string())) {
+                                    // The handlebars {{environment}} should be processed to "production"  
                                     assert_eq!(value, "$production-my-bucket");
                                 } else {
-                                    panic!("Expected tagged value to be a string");
+                                    panic!("Expected !Sub tag to have string value");
                                 }
                             } else {
-                                panic!("Expected !Sub to be preserved as tagged value");
+                                panic!("Expected !Sub to be preserved as mapping");
                             }
                         }
 
@@ -1853,13 +1859,12 @@ Resources:
                         if let Some(Value::Sequence(tags)) = properties.get(&Value::String("Tags".to_string())) {
                             if tags.len() >= 2 {
                                 if let Value::Mapping(env_tag) = &tags[0] {
-                                    if let Some(Value::Tagged(ref_tagged)) = env_tag.get(&Value::String("Value".to_string())) {
-                                        assert_eq!(ref_tagged.tag.to_string(), "!Ref");
-                                        // The handlebars {{param}} should be processed to "MyParameter"
-                                        if let Value::String(ref_value) = &ref_tagged.value {
+                                    if let Some(Value::Mapping(ref_map)) = env_tag.get(&Value::String("Value".to_string())) {
+                                        if let Some(Value::String(ref_value)) = ref_map.get(&Value::String("!Ref".to_string())) {
+                                            // The handlebars {{param}} should be processed to "MyParameter"
                                             assert_eq!(ref_value, "MyParameter");
                                         } else {
-                                            panic!("Expected Ref tagged value to be a string");
+                                            panic!("Expected !Ref tag to have string value");
                                         }
                                     }
                                 }

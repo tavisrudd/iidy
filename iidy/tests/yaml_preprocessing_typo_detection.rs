@@ -87,10 +87,10 @@ test_base64: !Base64 "content"
     
     // Should succeed and preserve CloudFormation tags
     let output = serde_yaml::to_string(&result)?;
-    assert!(output.contains("!Ref MyResource"));
-    assert!(output.contains("!Sub Hello ${World}"));
-    assert!(output.contains("!GetAtt Resource.Property"));
-    assert!(output.contains("!Base64 content"));
+    assert!(output.contains("'!Ref': MyResource"));
+    assert!(output.contains("'!Sub': Hello ${World}"));
+    assert!(output.contains("'!GetAtt': Resource.Property"));
+    assert!(output.contains("'!Base64': content"));
     
     Ok(())
 }

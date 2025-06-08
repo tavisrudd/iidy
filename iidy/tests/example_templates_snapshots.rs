@@ -278,8 +278,8 @@ Resources:
     
     // Verify that handlebars were processed but CloudFormation syntax preserved
     let result_str = serde_yaml::to_string(&result).expect("Failed to serialize result");
-    assert!(result_str.contains("!Sub my-app-${AWS::StackName}-bucket"), "Handlebars should be processed inside !Sub");
-    assert!(result_str.contains("!Ref prod"), "Handlebars should be processed inside !Ref");
+    assert!(result_str.contains("'!Sub': my-app-${AWS::StackName}-bucket"), "Handlebars should be processed inside !Sub");
+    assert!(result_str.contains("'!Ref': prod"), "Handlebars should be processed inside !Ref");
 }
 
 #[cfg(test)]

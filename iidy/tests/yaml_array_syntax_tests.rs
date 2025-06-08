@@ -248,9 +248,9 @@ test_getatt_array: !GetAtt ["MyResource.Property"]
     let output = serde_yaml::to_string(&result)?;
     
     // Both syntaxes should produce identical CloudFormation tag structures
-    assert!(output.contains("!Ref MyResource"));
-    assert!(output.contains("!Sub Hello ${param}"));
-    assert!(output.contains("!GetAtt MyResource.Property"));
+    assert!(output.contains("'!Ref': MyResource"));
+    assert!(output.contains("'!Sub': Hello ${param}"));
+    assert!(output.contains("'!GetAtt': MyResource.Property"));
     
     // Should not contain array structures
     assert!(!output.contains("!Ref\n- MyResource"));
