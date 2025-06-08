@@ -4,14 +4,10 @@ use env_logger;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
 
-use iidy::{cfn, cli::{Cli, Commands, RenderArgs}, yaml::preprocess_yaml_with_spec};
-use anyhow::Result;
-use std::fs;
-use std::path::Path;
+use iidy::{cfn, cli::{Cli, Commands}, color::ColorContext, render::handle_render_command, explain::handle_explain_command};
 mod demo;
 use tokio::runtime::Runtime;
 
-use iidy::yaml::error_ids::ErrorId;
 
 fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
@@ -157,93 +153,8 @@ fn handle_command(cli: Cli) {
     }
 }
 
-async fn handle_render_command(args: &RenderArgs) -> Result<()> {
-    // Read the template file
-    let template_content = fs::read_to_string(&args.template)?;
-    
-    // Get the base location from the template file path for relative imports
-    let base_location = &args.template;
-    
-    // Process the YAML with the new preprocessing system using specified YAML spec
-    let processed_value = preprocess_yaml_with_spec(&template_content, base_location, &args.yaml_spec).await?;
-    
-    // Apply query selector if provided
-    let output_value = if let Some(query) = &args.query {
-        apply_query_to_value(processed_value, query)?
-    } else {
-        processed_value
-    };
-    
-    // Format output based on requested format
-    let formatted_output = match args.format.as_str() {
-        "json" => serde_json::to_string_pretty(&output_value)?,
-        "yaml" | "yml" => serde_yaml::to_string(&output_value)?,
-        _ => return Err(anyhow::anyhow!("Unsupported format: {}. Use 'yaml' or 'json'", args.format)),
-    };
-    
-    // Output to file or stdout
-    if args.outfile == "stdout" || args.outfile == "-" {
-        println!("{}", formatted_output);
-    } else {
-        // Check if file exists and handle overwrite logic
-        if Path::new(&args.outfile).exists() && !args.overwrite {
-            return Err(anyhow::anyhow!(
-                "Output file '{}' exists. Use --overwrite to overwrite it.", 
-                args.outfile
-            ));
-        }
-        
-        fs::write(&args.outfile, formatted_output)?;
-        eprintln!("Template rendered to: {}", args.outfile);
-    }
-    
-    Ok(())
-}
 
-fn apply_query_to_value(value: serde_yaml::Value, query: &str) -> Result<serde_yaml::Value> {
-    // Simple query support - handles dot notation like "Resources.MyBucket"
-    let parts: Vec<&str> = query.split('.').collect();
-    let mut current = value;
-    
-    for part in parts {
-        if part.is_empty() {
-            continue;
-        }
-        
-        match current {
-            serde_yaml::Value::Mapping(ref map) => {
-                let key = serde_yaml::Value::String(part.to_string());
-                if let Some(next_value) = map.get(&key) {
-                    current = next_value.clone();
-                } else {
-                    return Err(anyhow::anyhow!("Query path '{}' not found at key '{}'", query, part));
-                }
-            }
-            _ => {
-                return Err(anyhow::anyhow!("Cannot query '{}' on non-mapping value", part));
-            }
-        }
-    }
-    
-    Ok(current)
-}
 
-fn handle_explain_command(codes: Vec<String>) {
-    if codes.is_empty() {
-        eprintln!("Please provide one or more error codes to explain (e.g., IY2001)");
-        return;
-    }
-    
-    for code in codes {
-        // Try to parse the error code
-        if let Some(error_id) = ErrorId::from_code(&code) {
-            println!("{}", error_id.explain());
-            println!();
-        } else {
-            eprintln!("Unknown error code: {}", code);
-        }
-    }
-}
 
 fn main() {
     env_logger::Builder::from_default_env().init();
@@ -251,6 +162,16 @@ fn main() {
     match Cli::try_parse() {
         Ok(cli) => {
             debug!("CLI options: {:?}", cli);
+            
+            // Initialize color context early for global access
+            let theme = match cli.global_opts.theme {
+                iidy::cli::Theme::Auto => iidy::terminal::Theme::Auto,
+                iidy::cli::Theme::Light => iidy::terminal::Theme::Light,
+                iidy::cli::Theme::Dark => iidy::terminal::Theme::Dark,
+                iidy::cli::Theme::HighContrast => iidy::terminal::Theme::HighContrast,
+            };
+            ColorContext::init_global(cli.global_opts.color.clone(), theme);
+            
             handle_command(cli)
         },
         Err(e)

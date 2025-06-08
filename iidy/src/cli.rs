@@ -1,8 +1,7 @@
-use atty;
-use atty::Stream;
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
+use std::io::IsTerminal;
 
 const AWS_REGIONS: [&str; 26] = [
     "us-east-1",
@@ -34,7 +33,7 @@ const AWS_REGIONS: [&str; 26] = [
 ];
 
 fn styles() -> Styles {
-    if atty::is(Stream::Stdout) {
+    if std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err() {
         Styles::styled()
             .header(AnsiColor::Yellow.on_default() | Effects::BOLD)
             .usage(AnsiColor::Yellow.on_default() | Effects::BOLD)
@@ -81,6 +80,9 @@ pub struct GlobalOpts {
 
     #[arg(long, value_enum, global = true, default_value_t = ColorChoice::Auto, help = "Whether to color output using ANSI escape codes")]
     pub color: ColorChoice,
+
+    #[arg(long, value_enum, global = true, default_value_t = Theme::Auto, help = "Color theme to use for output")]
+    pub theme: Theme,
 
     #[arg(
         long,
@@ -186,6 +188,15 @@ pub enum ColorChoice {
     Auto,
     Always,
     Never,
+}
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum Theme {
+    Auto,
+    Light,
+    Dark,
+    #[value(name = "high-contrast")]
+    HighContrast,
 }
 
 #[derive(ValueEnum, Clone, Debug)]

@@ -15,6 +15,10 @@ path = "src/lib.rs"
 name = "iidy"
 path = "src/main.rs"
 
+[[bin]]
+name = "iidy-pocs"
+path = "src/pocs/main.rs"
+
 [dependencies]
 atty = "0.2.14"
 
@@ -30,7 +34,7 @@ aws-sdk-s3 = "1"
 aws-sdk-ssm = "1"
 aws-smithy-types = "1"
 
-# Date/time handling
+# Date/time handling  
 chrono = { version = "0.4", features = ["serde"] }
 
 # YAML parsing
@@ -64,11 +68,17 @@ uuid = { version = "1.0", features = ["v4"] }
 # Timing/NTP support
 ntp = "0.5"
 
+# Terminal output and color theming
+owo-colors = "4.0"
+anstyle = "1.0.10"
+indicatif = "0.17"
+textwrap = "0.16"
+ratatui = "0.27"
+
 # Utilities for demo feature
 tempfile = "3"
 terminal_size = "0.4"
 crossterm = "0.29"
-anstyle = "1.0.10"
 log = "0.4.27"
 env_logger = "0.11.8"
 

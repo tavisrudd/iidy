@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 - Use the standard rust / cargo stuff.
 - prefer fd to find, rg to grep
+- Use our local @tmp/ dir instead of the system level /tmp
 
 ## Testing
 - **All tests**: `cargo test` or `make test`
@@ -13,6 +14,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Review snapshots: `cargo insta review` (requires `cargo install cargo-insta`)
 - Accept changes: `cargo insta accept`
 - Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure
+
+## Proof of Concepts (POCs)
+- **POCs binary**: `cargo run --bin iidy-pocs <demo-name>`
+- **Available demos**: `theme-demo`, `spinner-demo`, `ratatui-demo`
+- **Location**: All POC code is in `src/pocs/` directory
+- **Purpose**: Demonstrations and experimental features for iidy
+- See `src/pocs/README.md` for detailed documentation
 
 ## Coverage Reporting
 - **Quick coverage**: `make coverage-quick`

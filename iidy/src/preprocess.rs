@@ -1,18 +1,9 @@
 use anyhow::Result;
 use serde::de::DeserializeOwned;
 use serde_yaml::Value;
-use std::path::PathBuf;
 
-use crate::yaml::{TagContext, YamlPreprocessor};
+use crate::yaml::YamlPreprocessor;
 use crate::yaml::imports::loaders::ProductionImportLoader;
-
-/// YAML preprocessing system that processes iidy custom tags and handlebars templates.
-///
-/// This function converts a serde_yaml::Value to a YAML string, processes it through
-/// the full two-phase preprocessing pipeline, and then deserializes the result to the requested type.
-pub async fn preprocess<T: DeserializeOwned>(value: Value) -> Result<T> {
-    preprocess_with_base_location(value, "input.yaml").await
-}
 
 /// YAML preprocessing with a specific base location for resolving relative imports
 pub async fn preprocess_with_base_location<T: DeserializeOwned>(value: Value, base_location: &str) -> Result<T> {
@@ -35,26 +26,6 @@ pub fn preprocess_sync<T: DeserializeOwned>(value: Value) -> Result<T> {
     // Create a tokio runtime for the async preprocessing
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(preprocess_with_base_location(value, "input.yaml"))
-}
-
-/// Create a preprocessing context with environment variables and default settings  
-/// This is now mainly used for adding environment variables that can be accessed during preprocessing
-fn _create_preprocessing_context(base_location: &str) -> Result<TagContext> {
-    let mut context = TagContext::new()
-        .with_base_path(PathBuf::from(base_location));
-    
-    // Add common environment variables that might be used in stack-args
-    if let Ok(env) = std::env::var("ENVIRONMENT") {
-        context = context.with_variable("environment", Value::String(env));
-    }
-    if let Ok(app_name) = std::env::var("APP_NAME") {
-        context = context.with_variable("app_name", Value::String(app_name));
-    }
-    if let Ok(region) = std::env::var("AWS_REGION") {
-        context = context.with_variable("region", Value::String(region));
-    }
-    
-    Ok(context)
 }
 
 #[cfg(test)]
