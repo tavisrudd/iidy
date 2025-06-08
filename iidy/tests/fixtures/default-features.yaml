@@ -46,9 +46,5 @@ MonitoringFeatures:
     
   AlertingTargets: !$if
     test: !$eq [!$ environment, "production"]
-    then: !$split
-      string: "ops-team@company.com,alerts@company.com"
-      delimiter: ","
-    else: !$split
-      string: "dev-team@company.com"
-      delimiter: ","
+    then: !$split [",", "ops-team@company.com,alerts@company.com"]
+    else: !$split [",", "dev-team@company.com"]

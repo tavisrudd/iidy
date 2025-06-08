@@ -15,16 +15,12 @@ Parameters:
   # Example 1: Simple comma-separated values
   FruitList:
     Type: CommaDelimitedList
-    Default: !$split
-      string: "apple,banana,cherry,date"
-      delimiter: ","
+    Default: !$split [",", "apple,banana,cherry,date"]
 
   # Example 2: Split file path into components
   PathComponents:
     Type: CommaDelimitedList
-    Default: !$split
-      string: "/usr/local/bin"
-      delimiter: "/"
+    Default: !$split ["/", "/usr/local/bin"]
 
 Resources:
   # Example 3: Processing tag string into individual tags
@@ -35,12 +31,8 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$map
-            items: !$split
-              string: "Name:MyResource,Environment:Production,Version:1.2.3"
-              delimiter: ","
-            template: !$split
-              string: !$ item
-              delimiter: ":"
+            items: !$split [",", "Name:MyResource,Environment:Production,Version:1.2.3"]
+            template: !$split [":", !$ item]
 
   # Example 4: Email list processing
   NotificationConfig:
@@ -49,9 +41,7 @@ Resources:
       Name: /app/config/notifications
       Type: String
       Value: !$toJsonString
-        - emails: !$split
-            delimiter: ";"
-            string: "admin@example.com;user@example.com;support@example.com"
+        - emails: !$split [";", "admin@example.com;user@example.com;support@example.com"]
           count: 3
 
   # Example 5: Version string parsing
@@ -62,14 +52,9 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$let
-            bindings:
-              versionParts: !$split
-                string: "1.2.3"
-                delimiter: "."
-              majorMinorPatch: !$split
-                string: "1.2.3"
-                delimiter: "-"
-            expression:
+            versionParts: !$split [".", "1.2.3"]
+            majorMinorPatch: !$split ["-", "1.2.3"]
+            in:
               version: "1.2.3"
               parts: ["1", "2", "3"]
               release: ["1", "2", "3"]
@@ -82,9 +67,7 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$map
-            items: !$split
-              string: "80,443,8080,8443"
-              delimiter: ","
+            items: !$split [",", "80,443,8080,8443"]
             template:
               IpProtocol: tcp
               FromPort: !$ item
@@ -99,12 +82,8 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$mapListToHash
-            items: !$split
-              string: "NODE_ENV=production,PORT=3000,DEBUG=false"
-              delimiter: ","
-            template: !$split
-              string: !$ item
-              delimiter: "="
+            items: !$split [",", "NODE_ENV=production,PORT=3000,DEBUG=false"]
+            template: !$split ["=", !$ item]
 
   # Example 8: Domain and subdomain extraction
   DomainConfig:
@@ -114,14 +93,10 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$map
-            items: !$split
-              string: "api.prod.example.com,web.prod.example.com,admin.prod.example.com"
-              delimiter: ","
+            items: !$split [",", "api.prod.example.com,web.prod.example.com,admin.prod.example.com"]
             template:
               full: !$ item
-              subdomain: !$split
-                string: !$ item  
-                delimiter: "."
+              subdomain: !$split [".", !$ item]
 
 Outputs:
   # Example 9: Split and join operations
@@ -129,9 +104,7 @@ Outputs:
     Description: Processed fruit list
     Value: !$join
       - " | "
-      - !$split
-          string: "apple,banana,cherry,date"
-          delimiter: ","
+      - !$split [",", "apple,banana,cherry,date"]
 
   # Example 10: Count items after splitting
   EmailCount:
@@ -142,6 +115,4 @@ Outputs:
     Description: Path depth (number of components)
     Value: !$join
       - " -> "
-      - !$split
-          string: "/usr/local/bin"
-          delimiter: "/"
+      - !$split ["/", "/usr/local/bin"]

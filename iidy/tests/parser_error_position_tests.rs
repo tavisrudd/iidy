@@ -213,16 +213,15 @@ fn test_join_tag_wrong_format_error() {
 #[test]
 fn test_split_tag_missing_delimiter_error() {
     let yaml_content = r#"Transform:
-  SplitResult: !$split
-    string: "a,b,c"
-    # missing delimiter field"#;
+  SplitResult: !$split ["a,b,c"]
+    # missing second element (string), only has one element"#;
 
     let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
     
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     
-    // Should report missing delimiter field
-    assert!(error_msg.contains("delimiter"), 
-            "Error should mention missing delimiter field, but got: {}", error_msg);
+    // Should report wrong number of elements for split tag
+    assert!(error_msg.contains("two elements"), 
+            "Error should mention split needs two elements, but got: {}", error_msg);
 }

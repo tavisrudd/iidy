@@ -78,11 +78,11 @@ notifications: !$if
   test: !$not !$eq [!$, "{{environment}}", "development"]
   then: !$map
     items: !$split
-      string: !$if
-        test: !$eq [!$, "{{environment}}", "production"]
-        then: "ops-team@company.com,infra-team@company.com,alerts@company.com"
-        else: "dev-team@company.com,staging-alerts@company.com"
-      delimiter: ","
+      - ","
+      - !$if
+          test: !$eq [!$, "{{environment}}", "production"]
+          then: "ops-team@company.com,infra-team@company.com,alerts@company.com"
+          else: "dev-team@company.com,staging-alerts@company.com"
     template: !$join ["", ["arn:aws:sns:", !$, "{{region}}", ":123456789012:cfn-", !$, "{{item}}"]]
   else: []
 
@@ -115,7 +115,5 @@ resource_types: !$concat
   - ["AWS::*"]
   - !$if
       test: !$eq [!$, "{{enable_third_party}}", "true"]
-      then: !$split
-        string: "Custom::*,AWS::CloudFormation::CustomResource"
-        delimiter: ","
+      then: !$split [",", "Custom::*,AWS::CloudFormation::CustomResource"]
       else: []

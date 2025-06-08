@@ -200,8 +200,8 @@ proptest! {
             
             // Test that split tag parses correctly
             let split_yaml = format!(
-                "result: !$split\n  string: \"{}\"\n  delimiter: \"{}\"",
-                joined, delimiter
+                "result: !$split [\"{}\", \"{}\"]",
+                delimiter, joined
             );
             
             let ast = parse_yaml_with_custom_tags_from_file(&split_yaml, "prop-test-split.yaml");

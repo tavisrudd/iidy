@@ -496,21 +496,21 @@ fn parse_not_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     })))
 }
 
-/// Parse !$split tag
+/// Parse !$split tag (expects [delimiter, string] format like iidy-js)
 fn parse_split_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        let string_val = map.get(&Value::String("string".to_string()))
-            .ok_or_else(|| anyhow!("Missing 'string' in split tag"))?;
-        let delimiter = extract_string_field(&map, "delimiter")?;
+    if let Value::Sequence(seq) = value {
+        if seq.len() != 2 {
+            return Err(anyhow!("Split tag must be a sequence with two elements: [delimiter, string]"));
+        }
 
-        let string = Box::new(convert_value_to_ast(string_val.clone(), &context.with_path("string"))?);
-        let delimiter = Box::new(YamlAst::String(delimiter));
+        let delimiter = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
+        let string = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Split(
             SplitTag { delimiter, string },
         )))
     } else {
-        Err(anyhow!("Split tag must be a mapping"))
+        Err(anyhow!("Split tag must be a sequence with format [delimiter, string]"))
     }
 }
 
