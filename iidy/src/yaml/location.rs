@@ -46,8 +46,13 @@ pub struct TreeSitterLocationFinder;
 
 impl LocationFinder for ManualLocationFinder {
     fn find_tag_position_in_context(&self, source: &str, yaml_path: &str, tag_name: &str) -> Option<Position> {
+        use crate::debug::debug_log;
+        
+        debug_log!("ManualLocationFinder: Finding tag '{}' in yaml_path '{}'", tag_name, yaml_path);
+        
         if yaml_path.is_empty() {
             // No context path, fall back to first occurrence
+            debug_log!("ManualLocationFinder: yaml_path is empty, falling back to first occurrence search");
             return self.find_position_of(source, tag_name);
         }
         
@@ -108,10 +113,18 @@ impl TreeSitterLocationFinder {
 impl LocationFinder for TreeSitterLocationFinder {
     fn find_tag_position_in_context(&self, source: &str, yaml_path: &str, tag_name: &str) -> Option<Position> {
         use crate::yaml::tree_sitter_location::find_tag_position_with_tree_sitter;
+        use crate::debug::debug_log;
+        
+        debug_log!("TreeSitterLocationFinder: Finding tag '{}' in yaml_path '{}'", tag_name, yaml_path);
         
         match find_tag_position_with_tree_sitter(source, yaml_path, tag_name) {
-            Ok(pos) => Some(Position::new(pos.line, pos.column, pos.offset)),
-            Err(_) => {
+            Ok(pos) => {
+                debug_log!("TreeSitterLocationFinder: Found tag '{}' at line {}, column {}", tag_name, pos.line, pos.column);
+                Some(Position::new(pos.line, pos.column, pos.offset))
+            },
+            Err(_e) => {
+                debug_log!("TreeSitterLocationFinder: Failed to find tag '{}' in path '{}': {}", tag_name, yaml_path, _e);
+                debug_log!("TreeSitterLocationFinder: Falling back to ManualLocationFinder");
                 // Fallback to manual approach if tree-sitter fails
                 let manual_finder = ManualLocationFinder;
                 manual_finder.find_tag_position_in_context(source, yaml_path, tag_name)
@@ -149,41 +162,126 @@ impl LocationFinder for TreeSitterLocationFinder {
 
 // Manual implementation methods (extracted from ParseContext)
 impl ManualLocationFinder {
-    /// Find a tag within the context of a specific YAML key
-    /// Looks for patterns like "key: !$tag" or "key:\n  field: !$tag"
-    /// Takes into account array indices in the path for more precise matching
-    fn find_yaml_key_context(&self, source: &str, yaml_path: &str, key_name: &str, tag_name: &str) -> Option<Position> {
-        // Extract array index if present in the yaml_path
-        let array_index = extract_array_index_from_path(yaml_path);
+    /// Find a tag within the context of a specific YAML key using path-aware search
+    /// For paths like "Resources.Resource2.Properties.Value[0]", this will:
+    /// 1. Find Resource2 within Resources section
+    /// 2. Find Properties within that Resource2
+    /// 3. Find Value within Properties 
+    /// 4. Find the nth array element if array index is present
+    /// 5. Look for the tag within that context
+    fn find_yaml_key_context(&self, source: &str, yaml_path: &str, _key_name: &str, tag_name: &str) -> Option<Position> {
+        
+        
+        // Parse the full path to understand the context
+        let path_segments: Vec<&str> = yaml_path.split('.').collect();
+        if path_segments.is_empty() {
+            return None;
+        }
+        
+        // Extract array index from the last segment if present
+        let (last_key, array_index) = if let Some(last_segment) = path_segments.last() {
+            if let Some(bracket_start) = last_segment.find('[') {
+                if let Some(bracket_end) = last_segment.find(']') {
+                    let key_part = &last_segment[..bracket_start];
+                    let index_str = &last_segment[bracket_start + 1..bracket_end];
+                    let array_index = index_str.parse::<usize>().ok();
+                    (key_part, array_index)
+                } else {
+                    (*last_segment, None)
+                }
+            } else {
+                (*last_segment, None)
+            }
+        } else {
+            return None;
+        };
+        
+        
+        // If this is a path with multiple segments, try to find the context by looking for 
+        // the preceding segments in sequence
+        if path_segments.len() > 1 {
+            let preceding_segments = &path_segments[..path_segments.len() - 1];
+            
+            // Look for patterns that match the path structure
+            // For "Resources.Resource2.Properties.Value[0]", look for:
+            // Resources: ... Resource2: ... Properties: ... Value: ... [array element 0] ... !$tag
+            if let Some(context_pos) = self.find_nested_context(source, preceding_segments, last_key, array_index, tag_name) {
+                return Some(context_pos);
+            }
+        }
+        
+        // Fallback: simple key search with array index
+        self.find_simple_key_context(source, last_key, array_index, tag_name)
+    }
+    
+    /// Find tag in nested YAML context by following path segments
+    fn find_nested_context(&self, source: &str, preceding_segments: &[&str], target_key: &str, array_index: Option<usize>, tag_name: &str) -> Option<Position> {
+        
+        // Start from the beginning and try to find each segment in sequence
+        let mut search_offset = 0;
+        
+        // Find each preceding segment in order
+        for &segment in preceding_segments {
+            let pattern = format!("{}:", segment);
+            if let Some(segment_pos) = self.find_position_of_from_offset(source, &pattern, search_offset) {
+                search_offset = segment_pos.offset + pattern.len();
+            } else {
+                return None;
+            }
+        }
+        
+        // Now look for the target key after the last segment
+        let target_pattern = format!("{}:", target_key);
+        let mut target_offset = search_offset;
+        let mut target_occurrence = 0;
+        
+        // If we have an array index, we need to find the nth occurrence of the target key
+        let target_occurrence_needed = array_index.unwrap_or(0);
+        
+        while let Some(target_pos) = self.find_position_of_from_offset(source, &target_pattern, target_offset) {
+            if target_occurrence == target_occurrence_needed {
+                // Look for the tag within a reasonable distance after this target key
+                let search_start = target_pos.offset;
+                let search_end = std::cmp::min(source.len(), search_start + 500); // reasonable search window
+                
+                if let Some(tag_pos) = self.find_position_of_from_offset(source, tag_name, search_start) {
+                    if tag_pos.offset < search_end {
+                        return Some(tag_pos);
+                    }
+                }
+                break;
+            }
+            
+            target_occurrence += 1;
+            target_offset = target_pos.offset + target_pattern.len();
+        }
+        
+        None
+    }
+    
+    /// Simple key context search (fallback method)
+    fn find_simple_key_context(&self, source: &str, key_name: &str, array_index: Option<usize>, tag_name: &str) -> Option<Position> {
         
         // Find all occurrences of the key
         let mut key_offset = 0;
         let mut key_occurrence = 0;
+        let target_occurrence = array_index.unwrap_or(0);
         
         while let Some(key_pos) = self.find_position_of_from_offset(source, &format!("{}:", key_name), key_offset) {
-            // If we have an array index, we want to find the nth occurrence of this key
-            // where n matches the array index
-            if let Some(target_index) = array_index {
-                if key_occurrence != target_index {
-                    key_occurrence += 1;
-                    key_offset = key_pos.offset + key_name.len() + 1;
-                    continue;
+            if key_occurrence == target_occurrence {
+                // Look for the tag within a reasonable distance after this key
+                let search_start = key_pos.offset;
+                let search_end = std::cmp::min(source.len(), search_start + 1000); // max search window
+                
+                // Look for the tag after this key position
+                if let Some(tag_pos) = self.find_position_of_from_offset(source, tag_name, search_start) {
+                    if tag_pos.offset < search_end {
+                        return Some(tag_pos);
+                    }
                 }
+                break;
             }
             
-            // Look for the tag within a reasonable distance after this key
-            let search_start = key_pos.offset;
-            let search_end = std::cmp::min(source.len(), search_start + 1000); // max search window
-            
-            // Look for the tag after this key position
-            if let Some(tag_pos) = self.find_position_of_from_offset(source, tag_name, search_start) {
-                if tag_pos.offset < search_end {
-                    // Found a tag after this key within reasonable distance
-                    return Some(tag_pos);
-                }
-            }
-            
-            // Move to next key occurrence
             key_occurrence += 1;
             key_offset = key_pos.offset + key_name.len() + 1; // +1 for the ':'
         }
@@ -232,18 +330,6 @@ impl ManualLocationFinder {
     }
 }
 
-/// Extract array index from the YAML path if present
-/// For example: "ListOperations[2].operation" -> Some(2)
-fn extract_array_index_from_path(yaml_path: &str) -> Option<usize> {
-    // Look for pattern like "[number]" in the path
-    if let Some(start) = yaml_path.find('[') {
-        if let Some(end) = yaml_path[start..].find(']') {
-            let index_str = &yaml_path[start + 1..start + end];
-            return index_str.parse().ok();
-        }
-    }
-    None
-}
 
 /// Get content of a specific line
 fn get_line_content(source: &str, line_number: usize) -> Option<&str> {

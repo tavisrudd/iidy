@@ -20,53 +20,6 @@ async fn render_template_file(template_path: &str) -> Result<serde_yaml::Value, 
     Ok(result)
 }
 
-#[tokio::test]
-async fn test_basic_test_template() {
-    let result = render_template_file("basic-test.yaml").await
-        .expect("Failed to render basic-test.yaml");
-    
-    assert_yaml_snapshot!("basic_test", result);
-}
-
-#[tokio::test]
-async fn test_config_template() {
-    let result = render_template_file("config.yaml").await
-        .expect("Failed to render config.yaml");
-    
-    assert_yaml_snapshot!("config", result);
-}
-
-#[tokio::test]
-async fn test_import_test_template() {
-    let result = render_template_file("import-test.yaml").await
-        .expect("Failed to render import-test.yaml");
-    
-    assert_yaml_snapshot!("import_test", result);
-}
-
-#[tokio::test]
-async fn test_simple_cloudformation_template() {
-    let result = render_template_file("simple-cloudformation.yaml").await
-        .expect("Failed to render simple-cloudformation.yaml");
-    
-    assert_yaml_snapshot!("simple_cloudformation", result);
-}
-
-#[tokio::test]
-async fn test_advanced_cloudformation_template() {
-    let result = render_template_file("advanced-cloudformation.yaml").await
-        .expect("Failed to render advanced-cloudformation.yaml");
-    
-    assert_yaml_snapshot!("advanced_cloudformation", result);
-}
-
-#[tokio::test]
-async fn test_cloudformation_tags_demo_template() {
-    let result = render_template_file("cloudformation-tags-demo.yaml").await
-        .expect("Failed to render cloudformation-tags-demo.yaml");
-    
-    assert_yaml_snapshot!("cloudformation_tags_demo", result);
-}
 
 /// Auto-discovery test for all valid example templates
 #[tokio::test]
@@ -96,7 +49,7 @@ async fn test_all_example_templates_auto_discovery() {
                     
                 } else if path.is_dir() {
                     // Skip certain directories
-                    if ["invalid", "expected-outputs", ".git"].contains(&name.as_str()) {
+                    if ["invalid", "expected-outputs", "errors", ".git"].contains(&name.as_str()) {
                         continue;
                     }
                     
@@ -118,15 +71,7 @@ async fn test_all_example_templates_auto_discovery() {
     let example_dir = Path::new("example-templates");
     let discovered_templates = discover_templates(example_dir, "");
     
-    for (relative_path, filename) in discovered_templates {
-        let template_name = filename.strip_suffix(".yaml").unwrap();
-        
-        // Skip files that already have dedicated tests
-        if ["basic-test", "config", "import-test", "simple-cloudformation", 
-            "advanced-cloudformation", "cloudformation-tags-demo"].contains(&template_name) {
-            continue;
-        }
-        
+    for (relative_path, _filename) in discovered_templates {
         // Test the template
         let result = render_template_file(&relative_path).await;
         
@@ -138,7 +83,11 @@ async fn test_all_example_templates_auto_discovery() {
                 assert_yaml_snapshot!(snapshot_name, output);
             }
             Err(e) => {
-                // Log but don't fail for auto-discovered templates that might be invalid
+                // Files in yaml-iidy-syntax/ should never fail - these are demonstration files
+                if relative_path.starts_with("yaml-iidy-syntax/") {
+                    panic!("yaml-iidy-syntax template {} must render without errors, but failed with: {}", relative_path, e);
+                }
+                // Log but don't fail for other auto-discovered templates that might be invalid
                 eprintln!("Warning: Auto-discovered template {} failed to render: {}", relative_path, e);
             }
         }
@@ -292,7 +241,7 @@ mod performance_tests {
     async fn test_rendering_performance() {
         let start = Instant::now();
         
-        // Render all templates
+        // Render a subset of templates for performance testing
         let templates = [
             "basic-test.yaml",
             "config.yaml", 

@@ -172,7 +172,7 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$mapListToHash
-            items: !$map
+            source: !$map
               items:
                 - env: "dev"
                   domain: "dev.example.com"
@@ -199,7 +199,6 @@ Resources:
                     test: !$eq [!$ item.env, "prod"]
                     then: "warn"
                     else: "debug"
-            template: !$ item
 
   # Example 9: Feature flags configuration
   FeatureFlags:
@@ -209,7 +208,7 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$mapListToHash
-            items:
+            source:
               - key: "new_dashboard"
                 value: true
               - key: "beta_features"
@@ -218,7 +217,6 @@ Resources:
                 value: true
               - key: "experimental_ui"
                 value: false
-            template: !$ item
 
   # Example 10: Service discovery mappings
   ServiceDiscovery:
@@ -228,7 +226,7 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$mapListToHash
-            items: !$map
+            source: !$map
               items:
                 - svc: "user-service"
                   region: "us-east-1"
@@ -245,7 +243,6 @@ Resources:
                   endpoint: !$join ["", [!$ item.svc, ".", !$ item.region, ".example.com:", !$ item.port]]
                   region: !$ item.region
                   healthCheck: !$join ["", ["http://", !$ item.svc, ".", !$ item.region, ".example.com:", !$ item.port, "/health"]]
-            template: !$ item
 
 Outputs:
   EnvironmentVariableCount:

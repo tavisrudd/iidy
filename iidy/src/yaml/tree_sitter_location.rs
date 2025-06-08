@@ -23,6 +23,31 @@ pub fn parse_yaml_source(parser: &mut Parser, source: &str) -> Result<tree_sitte
         .ok_or_else(|| anyhow!("Failed to parse YAML with tree-sitter"))
 }
 
+/// Find a child YAML node by key name within a mapping
+pub fn find_child_by_key<'a>(
+    mapping_node: &Node<'a>,
+    key_name: &str,
+    source: &str,
+) -> Option<Node<'a>> {
+    let mut cursor = mapping_node.walk();
+    
+    // Look through all children to find the mapping pair with the right key
+    for child in mapping_node.named_children(&mut cursor) {
+        match child.kind() {
+            "block_mapping_pair" | "flow_mapping_pair" => {
+                if let Some(key_node) = child.child_by_field_name("key") {
+                    let key_text = &source[key_node.byte_range()];
+                    if key_text.trim() == key_name {
+                        return Some(child);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Find a YAML node by following a path like ["Resources", "MyBucket", "Properties"]
 pub fn find_yaml_node_by_path<'a>(
     root: &Node<'a>,
@@ -214,10 +239,11 @@ pub fn find_tag_position_with_tree_sitter(
     };
     
     // Handle array indices in path (e.g., "Resources.Items[2].operation")
-    let (clean_path, array_indices) = parse_path_with_indices(&path_segments);
+    let (clean_path, index_positions) = parse_path_with_indices(&path_segments);
+    
     
     // Handle simple case without array indices first
-    if array_indices.is_empty() {
+    if index_positions.is_empty() {
         // Simple path like "Resources.MyBucket.Properties.BucketName"
         let target_node = find_yaml_node_by_path(&root, &clean_path, source)
             .ok_or_else(|| anyhow!("Could not find YAML path: {}", yaml_path))?;
@@ -232,24 +258,47 @@ pub fn find_tag_position_with_tree_sitter(
     }
     
     // Complex case with array indices
-    // For path like "ListOperations[2].operation", we:
-    // 1. Navigate to "ListOperations" 
-    // 2. Apply array index [2]
-    // 3. Navigate to "operation"
+    // For path like "Resources.Resource2.Properties.Value[0]", we:
+    // 1. Navigate to "Resources.Resource2.Properties.Value" 
+    // 2. Apply array index [0] to Value
+    // 3. Continue with any remaining path segments
     
     let mut target_node = root;
-    let mut path_idx = 0;
-    let mut array_idx = 0;
     
-    while path_idx < clean_path.len() {
+    for (path_idx, &segment) in clean_path.iter().enumerate() {
         // Navigate to the next path segment
-        target_node = find_yaml_node_by_path(&target_node, &clean_path[path_idx..path_idx+1], source)
-            .ok_or_else(|| anyhow!("Could not find YAML path segment: {}", clean_path[path_idx]))?;
-        
-        path_idx += 1;
+        if path_idx == 0 {
+            // For the first segment, use full path navigation from root
+            target_node = find_yaml_node_by_path(&target_node, &[segment], source)
+                .ok_or_else(|| anyhow!("Could not find YAML path segment: {}", segment))?;
+        } else {
+            // For subsequent segments, we need to navigate from current position
+            // First get to the mapping if we're at a mapping pair
+            let mut search_node = target_node;
+            if target_node.kind() == "block_mapping_pair" {
+                if let Some(value_node) = target_node.child_by_field_name("value") {
+                    search_node = value_node;
+                }
+            }
+            
+            // If search_node is a block_node, navigate to its mapping
+            if search_node.kind() == "block_node" {
+                let mut cursor = search_node.walk();
+                for child in search_node.named_children(&mut cursor) {
+                    if child.kind() == "block_mapping" {
+                        search_node = child;
+                        break;
+                    }
+                }
+            }
+            
+            // Now find the child by key
+            target_node = find_child_by_key(&search_node, segment, source)
+                .ok_or_else(|| anyhow!("Could not find YAML path segment: {}", segment))?;
+        }
         
         // Check if we need to apply an array index after this path segment
-        if array_idx < array_indices.len() {
+        if let Some(&(_, array_index)) = index_positions.iter().find(|(seg_idx, _)| *seg_idx == path_idx) {
             // We need to navigate into the value of this mapping pair to get to the sequence
             if target_node.kind() == "block_mapping_pair" {
                 if let Some(value_node) = target_node.child_by_field_name("value") {
@@ -269,13 +318,11 @@ pub fn find_tag_position_with_tree_sitter(
             }
             
             // Apply the array index
-            target_node = find_array_element(&target_node, array_indices[array_idx], source)
-                .ok_or_else(|| anyhow!("Could not find array index {} in path", array_indices[array_idx]))?;
-            
-            array_idx += 1;
+            target_node = find_array_element(&target_node, array_index, source)
+                .ok_or_else(|| anyhow!("Could not find array index {} in path", array_index))?;
             
             // If we have more path segments, we need to navigate into the block_mapping of this array element
-            if path_idx < clean_path.len() && target_node.kind() == "block_node" {
+            if path_idx + 1 < clean_path.len() && target_node.kind() == "block_node" {
                 let mut cursor = target_node.walk();
                 for child in target_node.named_children(&mut cursor) {
                     if child.kind() == "block_mapping" {
@@ -299,12 +346,13 @@ pub fn find_tag_position_with_tree_sitter(
 }
 
 /// Parse a path with array indices like ["Resources", "Items[2]", "operation"]
-/// Returns (clean_path, indices) where clean_path has indices removed
-pub fn parse_path_with_indices<'a>(path_segments: &'a [&'a str]) -> (Vec<&'a str>, Vec<usize>) {
+/// Returns (clean_path, index_positions) where clean_path has indices removed 
+/// and index_positions maps segment index to array index
+pub fn parse_path_with_indices<'a>(path_segments: &'a [&'a str]) -> (Vec<&'a str>, Vec<(usize, usize)>) {
     let mut clean_path = Vec::new();
-    let mut indices = Vec::new();
+    let mut index_positions = Vec::new();
     
-    for &segment in path_segments {
+    for (_segment_idx, &segment) in path_segments.iter().enumerate() {
         if let Some(bracket_start) = segment.find('[') {
             if let Some(bracket_end) = segment.find(']') {
                 // Extract the key part before the bracket
@@ -315,8 +363,9 @@ pub fn parse_path_with_indices<'a>(path_segments: &'a [&'a str]) -> (Vec<&'a str
                 
                 // Extract and parse the index
                 let index_str = &segment[bracket_start + 1..bracket_end];
-                if let Ok(index) = index_str.parse::<usize>() {
-                    indices.push(index);
+                if let Ok(array_index) = index_str.parse::<usize>() {
+                    // Record that after this clean_path segment, we need to apply this array index
+                    index_positions.push((clean_path.len() - 1, array_index));
                 }
             }
         } else {
@@ -324,7 +373,7 @@ pub fn parse_path_with_indices<'a>(path_segments: &'a [&'a str]) -> (Vec<&'a str
         }
     }
     
-    (clean_path, indices)
+    (clean_path, index_positions)
 }
 
 #[cfg(test)]
@@ -379,9 +428,9 @@ ListOperations:
     #[test]
     fn test_path_parsing_with_indices() {
         let path = vec!["Resources", "Items[2]", "operation"];
-        let (clean_path, indices) = parse_path_with_indices(&path);
+        let (clean_path, index_positions) = parse_path_with_indices(&path);
         
         assert_eq!(clean_path, vec!["Resources", "Items", "operation"]);
-        assert_eq!(indices, vec![2]);
+        assert_eq!(index_positions, vec![(1, 2)]); // index 2 applies after segment 1 ("Items")
     }
 }

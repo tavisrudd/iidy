@@ -39,11 +39,15 @@ impl ParseContext {
     
     /// Create a new context with an extended YAML path
     pub fn with_path(&self, segment: &str) -> Self {
+        use crate::debug::debug_log;
+        
         let new_path = if self.yaml_path.is_empty() {
             segment.to_string()
         } else {
             format!("{}.{}", self.yaml_path, segment)
         };
+        
+        debug_log!("ParseContext: Building yaml_path from '{}' + '{}' = '{}'", self.yaml_path, segment, new_path);
         
         Self {
             file_location: Rc::clone(&self.file_location),

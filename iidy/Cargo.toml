@@ -3,9 +3,11 @@ name = "iidy"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+default-run = "iidy"
 
 [features]
 default = []
+debug-logging = []
 
 [lib]
 name = "iidy"
@@ -29,7 +31,6 @@ clap_complete = {version="4.5.51", features=[]} # debug
 # AWS CloudFormation SDK and config helpers
 aws-config = "1"
 aws-sdk-cloudformation = "1"
-aws-sdk-ec2 = "1"
 aws-sdk-s3 = "1"
 aws-sdk-ssm = "1"
 aws-smithy-types = "1"

@@ -271,12 +271,8 @@ Resources:
       Value: !$toJsonString
         - !$fromPairs
             - !$map
-                items: !$split
-                  string: "API_KEY=secret123,DB_HOST=localhost,DB_PORT=5432,LOG_LEVEL=debug"
-                  delimiter: ","
-                template: !$split
-                  string: !$ item
-                  delimiter: "="
+                items: !$split [",", "API_KEY=secret123,DB_HOST=localhost,DB_PORT=5432,LOG_LEVEL=debug"]
+                template: !$split ["=", !$ item]
 
   # Example 14: Metric thresholds configuration
   MetricThresholds:
