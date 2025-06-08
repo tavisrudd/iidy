@@ -149,6 +149,19 @@ fn quote_numeric_looking_strings(yaml: String) -> String {
 /// Transforms output from `'!Ref': value` to `!Ref value` for all CloudFormation intrinsic functions.
 /// This post-processing step works around serde_yaml's inability to serialize `Value::Tagged` by
 /// converting the mapping format (which serde_yaml can handle) to proper CloudFormation YAML syntax.
+/// 
+/// ## Alternative Approach Evaluated
+/// 
+/// A custom YAML serializer was explored as an alternative to this post-processing approach.
+/// The custom serializer provided direct CloudFormation tag serialization without string manipulation,
+/// but after evaluation, this simpler post-processing approach was chosen because:
+/// 
+/// - **Simplicity**: ~20 lines of regex vs ~500+ lines of custom serializer
+/// - **Maintenance**: Leverages battle-tested serde_yaml for edge cases  
+/// - **Performance**: String post-processing is fast enough for typical templates
+/// - **Robustness**: Minimal code surface area reduces bug risk
+/// 
+/// See commit 34f4a56 for the full custom serializer implementation and detailed analysis.
 fn convert_cf_mappings_to_tags(yaml: String) -> Result<String> {
     use regex::Regex;
     
