@@ -5,7 +5,6 @@ pub mod color;
 pub mod display;
 pub mod explain;
 pub mod pocs;
-pub mod preprocess;
 pub mod render;
 pub mod stack_args;
 pub mod terminal;

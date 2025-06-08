@@ -12,11 +12,6 @@ use crate::yaml::error_ids::ErrorId;
 /// 
 /// # Arguments
 /// * `codes` - Vector of error code strings to explain
-/// 
-/// # Examples
-/// ```
-/// handle_explain_command(vec!["IY2001".to_string()]);
-/// ```
 pub fn handle_explain_command(codes: Vec<String>) {
     if codes.is_empty() {
         eprintln!("Please provide one or more error codes to explain (e.g., IY2001)");

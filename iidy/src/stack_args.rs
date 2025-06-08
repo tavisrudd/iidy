@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
-use crate::preprocess;
+use crate::{cli::YamlSpec, yaml::preprocess_yaml_with_spec};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -95,11 +95,20 @@ pub fn load_stack_args_file(path: &Path, environment: Option<&str>) -> Result<St
 
 pub fn load_stack_args_str(
     content: &str,
-    _path: &Path,
+    path: &Path,
     environment: Option<&str>,
 ) -> Result<StackArgs> {
-    // stack-args.yaml is always YAML
-    let mut value: Value = serde_yaml::from_str(content)?;
+    // Create a tokio runtime for async preprocessing
+    let rt = tokio::runtime::Runtime::new()?;
+    
+    // Use YAML v1.1 spec for CloudFormation compatibility
+    let yaml_spec = YamlSpec::V11;
+    
+    // Get base location from path for relative imports
+    let base_location = path.to_string_lossy();
+    
+    // Process the YAML with full preprocessing pipeline
+    let mut value = rt.block_on(preprocess_yaml_with_spec(content, &base_location, &yaml_spec))?;
 
     if let (Some(env), Value::Mapping(map)) = (environment, &mut value) {
         for key in ["Profile", "AssumeRoleARN", "Region"] {
@@ -112,7 +121,8 @@ pub fn load_stack_args_str(
         ensure_environment_tag(map, env);
     }
 
-    let processed: StackArgs = preprocess::preprocess_sync(value)?;
+    // Deserialize to StackArgs
+    let processed: StackArgs = serde_yaml::from_value(value)?;
     Ok(processed)
 }
 
