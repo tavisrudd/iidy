@@ -38,7 +38,7 @@ pub async fn handle_render_command(args: &RenderArgs) -> Result<()> {
     // Format output based on requested format
     let formatted_output = match args.format.as_str() {
         "json" => serde_json::to_string_pretty(&output_value)?,
-        "yaml" | "yml" => serde_yaml::to_string(&output_value)?,
+        "yaml" | "yml" => serialize_yaml_iidy_js_compatible(&output_value)?,
         _ => return Err(anyhow::anyhow!("Unsupported format: {}. Use 'yaml' or 'json'", args.format)),
     };
     
@@ -97,6 +97,48 @@ pub fn apply_query_to_value(value: Value, query: &str) -> Result<Value> {
     }
     
     Ok(current)
+}
+
+/// Serialize YAML in a way that's compatible with iidy-js output formatting
+/// 
+/// This function mimics the behavior of iidy-js's dump function which uses js-yaml
+/// with specific options and post-processing to ensure consistent output formatting.
+fn serialize_yaml_iidy_js_compatible(value: &Value) -> Result<String> {
+    // Use serde_yaml with default settings first
+    let mut yaml_output = serde_yaml::to_string(value)?;
+    
+    // Apply post-processing to match iidy-js formatting:
+    // 1. Quote numeric-looking values that should be strings (like version numbers)
+    yaml_output = quote_numeric_looking_strings(yaml_output);
+    
+    Ok(yaml_output)
+}
+
+/// Post-process YAML output to quote numeric-looking strings like version numbers
+/// 
+/// This matches the behavior of iidy-js which quotes values like "2010-09-09" 
+/// to ensure they're treated as strings rather than numbers or dates.
+fn quote_numeric_looking_strings(yaml: String) -> String {
+    use regex::Regex;
+    
+    // Quote version-like patterns (e.g., "2010-09-09", "1.2.3")
+    // This regex looks for values that look like dates or version numbers
+    // Matches both top-level keys (no indent) and nested keys (with indent)
+    let numeric_pattern = Regex::new(r"^(\s*)([A-Za-z][A-Za-z0-9]*): (\d{4}-\d{2}-\d{2}|\d+[-\.]\d+[-\.]\d+(?:[-\.]\d+)*)$").unwrap();
+    
+    yaml.lines()
+        .map(|line| {
+            if let Some(captures) = numeric_pattern.captures(line) {
+                let indent = &captures[1];
+                let key = &captures[2];
+                let value = &captures[3];
+                format!("{}{}: '{}'", indent, key, value)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -164,6 +206,56 @@ mod tests {
         let result = apply_query_to_value(value, "some.path");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Cannot query 'some' on non-mapping value"));
+    }
+
+    #[test]
+    fn test_yaml_version_quoting() {
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(
+            Value::String("AWSTemplateFormatVersion".to_string()),
+            Value::String("2010-09-09".to_string())
+        );
+        map.insert(
+            Value::String("Description".to_string()),
+            Value::String("Test template".to_string())
+        );
+        map.insert(
+            Value::String("Version".to_string()),
+            Value::String("1.2.3".to_string())
+        );
+        map.insert(
+            Value::String("RegularNumber".to_string()),
+            Value::Number(serde_yaml::Number::from(123))
+        );
+        map.insert(
+            Value::String("RegularFloat".to_string()),
+            Value::Number(serde_yaml::Number::from(1.5))
+        );
+        map.insert(
+            Value::String("DateString".to_string()),
+            Value::String("2023-12-25".to_string())
+        );
+        map.insert(
+            Value::String("DashVersion".to_string()),
+            Value::String("1-2-3".to_string())
+        );
+        let value = Value::Mapping(map);
+        
+        let result = serialize_yaml_iidy_js_compatible(&value).unwrap();
+        
+        // Should quote version numbers, dates, and dash versions
+        assert!(result.contains("AWSTemplateFormatVersion: '2010-09-09'"));
+        assert!(result.contains("Version: '1.2.3'"));
+        assert!(result.contains("DateString: '2023-12-25'"));
+        assert!(result.contains("DashVersion: '1-2-3'"));
+        
+        // Should not quote regular text, regular numbers, or regular floats
+        assert!(result.contains("Description: Test template"));
+        assert!(!result.contains("Description: 'Test template'"));
+        assert!(result.contains("RegularNumber: 123"));
+        assert!(!result.contains("RegularNumber: '123'"));
+        assert!(result.contains("RegularFloat: 1.5"));
+        assert!(!result.contains("RegularFloat: '1.5'"));
     }
 
 }

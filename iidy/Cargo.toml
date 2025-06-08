@@ -37,6 +37,9 @@ aws-smithy-types = "1"
 # Date/time handling  
 chrono = { version = "0.4", features = ["serde"] }
 
+# Regular expressions for YAML post-processing
+regex = "1.10"
+
 # YAML parsing
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
