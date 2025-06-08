@@ -1,8 +1,13 @@
 pub mod aws;
 pub mod cfn;
 pub mod cli;
+pub mod color;
 pub mod display;
+pub mod explain;
+pub mod pocs;
 pub mod preprocess;
+pub mod render;
 pub mod stack_args;
+pub mod terminal;
 pub mod timing;
 pub mod yaml;
