@@ -10,16 +10,15 @@ base_config: !$ ./base-config.yaml
 
 # Generate stack name with complex logic
 stack_name: !$let
-  bindings:
-    env: !$, "{{environment}}"
-    region_short: !$if
-      test: !$eq [!$, "{{region}}", "us-east-1"]
-      then: "use1"
-      else: !$if
-        test: !$eq [!$, "{{region}}", "us-west-2"] 
-        then: "usw2"
-        else: "euw1"
-  expression: !$join ["-", [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]]
+  env: !$, "{{environment}}"
+  region_short: !$if
+    test: !$eq [!$, "{{region}}", "us-east-1"]
+    then: "use1"
+    else: !$if
+      test: !$eq [!$, "{{region}}", "us-west-2"] 
+      then: "usw2"
+      else: "euw1"
+  in: !$join ["-", [!$, "{{app_name}}", !$, "{{env}}", !$, "{{region_short}}"]]
 
 # Conditional resource configuration
 resources: !$merge
@@ -36,22 +35,21 @@ resources: !$merge
 
 # Complex parameter transformation
 parameters: !$let
-  bindings:
-    base_params: !$ ./base-parameters.yaml
-    env_params: !$if
-      test: !$eq [!$, "{{environment}}", "production"]
-      then: !$ ./prod-parameters.yaml
-      else: !$ ./dev-parameters.yaml
-    
-    # Transform parameter values
-    transformed_params: !$map
-      items: !$, "{{env_params}}"
-      template: !$if
-        test: !$eq [!$, "{{param.type}}", "secure"]
-        then: !$join ["", ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]]
-        else: !$, "{{param.value}}"
-        
-  expression: !$merge
+  base_params: !$ ./base-parameters.yaml
+  env_params: !$if
+    test: !$eq [!$, "{{environment}}", "production"]
+    then: !$ ./prod-parameters.yaml
+    else: !$ ./dev-parameters.yaml
+  
+  # Transform parameter values
+  transformed_params: !$map
+    items: !$, "{{env_params}}"
+    template: !$if
+      test: !$eq [!$, "{{param.type}}", "secure"]
+      then: !$join ["", ["/", !$, "{{app_name}}", "/", !$, "{{environment}}", "/", !$, "{{param.name}}"]]
+      else: !$, "{{param.value}}"
+      
+  in: !$merge
     - !$, "{{base_params}}"
     - !$, "{{transformed_params}}"
 
@@ -104,13 +102,12 @@ capabilities: !$concat
 service_role: !$if
   test: !$not !$eq [!$, "{{environment}}", "development"]
   then: !$let
-    bindings:
-      account_id: !$if
-        test: !$eq [!$, "{{environment}}", "production"]
-        then: "123456789012"
-        else: "987654321098"
-      role_name: !$join ["", ["CloudFormation", !$, "{{environment}}", "ServiceRole"]]
-    expression: !$join ["", ["arn:aws:iam::", !$, "{{account_id}}", ":role/", !$, "{{role_name}}"]]
+    account_id: !$if
+      test: !$eq [!$, "{{environment}}", "production"]
+      then: "123456789012"
+      else: "987654321098"
+    role_name: !$join ["", ["CloudFormation", !$, "{{environment}}", "ServiceRole"]]
+    in: !$join ["", ["arn:aws:iam::", !$, "{{account_id}}", ":role/", !$, "{{role_name}}"]]
   else: null
 
 # Resource types with conditional inclusion

@@ -120,11 +120,10 @@ resources: !$merge
       database: !$join ["-", ["{{app_name}}", "{{environment}}", "db"]]
 
 parameters: !$let
-  bindings:
-    base_params:
-      AppName: "{{app_name}}"
-      Environment: "{{environment}}"
-  expression: !$merge
+  base_params:
+    AppName: "{{app_name}}"
+    Environment: "{{environment}}"
+  in: !$merge
     - "{{base_params}}"
     - DatabaseConfig:
         Host: "{{app_name}}-{{environment}}.db.local"

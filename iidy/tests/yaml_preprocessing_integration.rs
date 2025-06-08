@@ -142,9 +142,8 @@ Parameters:
 Resources:
   # Test basic string processing
   S3Bucket: !$let
-    bindings:
-      bucket_name: "{{toLowerCase app_name}}-{{environment}}-bucket"
-    expression:
+    bucket_name: "{{toLowerCase app_name}}-{{environment}}-bucket"
+    in:
       Type: "AWS::S3::Bucket"
       Properties:
         BucketName: "{{bucket_name}}"

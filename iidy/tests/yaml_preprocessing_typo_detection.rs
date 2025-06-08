@@ -215,10 +215,9 @@ test_map: !$map
     
     // Test that we get specific error for completely invalid fields
     let yaml_invalid = r#"
-test_let: !$let
-  bindings:
-    x: 1
-  expression: "{{x}}"
+test_map: !$map
+  items: [1, 2, 3]
+  template: "{{item}}"
   completely_invalid: "not allowed"
 "#;
 
@@ -226,7 +225,7 @@ test_let: !$let
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("unexpected field 'completely_invalid'"));
-    assert!(error_msg.contains("Valid fields are: bindings, expression"));
+    assert!(error_msg.contains("Valid fields are: items, template, var (optional), filter (optional)"));
     
     Ok(())
 }

@@ -13,25 +13,23 @@ $defs:
 Parameters:
   # Example 1: Simple variable binding for calculations
   LoadBalancerPort: !$let
-    bindings:
-      basePort: !$ basePort
-      offset: 3
-    expression: !$eq [!$ basePort, 8080]
+    basePort: !$ basePort
+    offset: 3
+    in: !$eq [!$ basePort, 8080]
 
   # Example 2: Complex variable binding with multiple calculations
   DatabaseConfig: !$let
-    bindings:
-      env: !$ environment
-      count: !$ instanceCount
-      maxConnections: !$if
-        test: !$eq [!$ environment, "production"]
-        then: 100
-        else: 50
-      poolSize: !$if
-        test: !$eq [!$ environment, "production"] 
-        then: 20
-        else: 10
-    expression:
+    env: !$ environment
+    count: !$ instanceCount
+    maxConnections: !$if
+      test: !$eq [!$ environment, "production"]
+      then: 100
+      else: 50
+    poolSize: !$if
+      test: !$eq [!$ environment, "production"] 
+      then: 20
+      else: 10
+    in:
       Host: !$join ["-", [!$ env, "db", "cluster"]]
       Port: 5432
       MaxConnections: !$ maxConnections
@@ -44,19 +42,17 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       MinSize: !$let
-        bindings:
-          env: !$ environment
-          baseCount: !$ instanceCount
-        expression: !$if
+        env: !$ environment
+        baseCount: !$ instanceCount
+        in: !$if
           test: !$eq [!$ env, "production"]
           then: !$ baseCount
           else: 1
       MaxSize: !$let
-        bindings:
-          env: !$ environment
-          baseCount: !$ instanceCount
-          scaleFactor: 3
-        expression: !$if
+        env: !$ environment
+        baseCount: !$ instanceCount
+        scaleFactor: 3
+        in: !$if
           test: !$eq [!$ env, "production"]
           then: !$eq [!$ baseCount, !$ scaleFactor]  # baseCount * scaleFactor would be ideal but we'll use boolean for simplicity
           else: 2
@@ -70,13 +66,12 @@ Resources:
       Type: String
       Value: !$toJsonString
         - !$let
-            bindings:
-              env: !$ environment
-              port: !$ basePort
-              healthCheckPath: "/health"
-              timeoutSeconds: 30
-              retryCount: 3
-            expression:
+            env: !$ environment
+            port: !$ basePort
+            healthCheckPath: "/health"
+            timeoutSeconds: 30
+            retryCount: 3
+            in:
               service:
                 name: !$join ["-", ["myapp", !$ env]]
                 port: !$ port
@@ -96,20 +91,18 @@ Outputs:
   ServiceEndpoint:
     Description: Service endpoint URL
     Value: !$let
-      bindings:
-        env: !$ environment
-        port: !$ basePort
-        protocol: !$if
-          test: !$eq [!$ environment, "production"]
-          then: "https"
-          else: "http"
-      expression: !$join ["", [!$ protocol, "://", !$ env, "-service.example.com:", !$ port]]
+      env: !$ environment
+      port: !$ basePort
+      protocol: !$if
+        test: !$eq [!$ environment, "production"]
+        then: "https"
+        else: "http"
+      in: !$join ["", [!$ protocol, "://", !$ env, "-service.example.com:", !$ port]]
 
   ConfigSummary:
     Description: Configuration summary
     Value: !$let
-      bindings:
-        env: !$ environment
-        count: !$ instanceCount
-        port: !$ basePort
-      expression: !$join [" ", ["Environment:", !$ env, "Instances:", !$ count, "Port:", !$ port]]
+      env: !$ environment
+      count: !$ instanceCount
+      port: !$ basePort
+      in: !$join [" ", ["Environment:", !$ env, "Instances:", !$ count, "Port:", !$ port]]

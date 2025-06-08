@@ -86,19 +86,17 @@ tags: !$merge
     
   - # Dynamic tags based on variables
     !$let
-      bindings:
-        cost_center: "{{#if (eq environment 'production')}}PROD-{{toUpperCase app_name}}{{else}}DEV-{{toUpperCase app_name}}{{/if}}"
-        owner_team: "{{#if (eq environment 'production')}}ops-team{{else}}dev-team{{/if}}"
-      expression:
+      cost_center: "{{#if (eq environment 'production')}}PROD-{{toUpperCase app_name}}{{else}}DEV-{{toUpperCase app_name}}{{/if}}"
+      owner_team: "{{#if (eq environment 'production')}}ops-team{{else}}dev-team{{/if}}"
+      in:
         CostCenter: "{{cost_center}}"
         OwnerTeam: "{{owner_team}}"
 
 # Resource naming with variable patterns
 resource_names: !$let
-  bindings:
-    prefix: "{{toUpperCase app_name}}-{{toUpperCase environment}}"
-    suffix: "{{#if enable_versioning}}{{version}}{{else}}LATEST{{/if}}"
-  expression:
+  prefix: "{{toUpperCase app_name}}-{{toUpperCase environment}}"
+  suffix: "{{#if enable_versioning}}{{version}}{{else}}LATEST{{/if}}"
+  in:
     vpc: "{{prefix}}-VPC"
     subnets:
       public: "{{prefix}}-PUBLIC-SUBNET-{{suffix}}"

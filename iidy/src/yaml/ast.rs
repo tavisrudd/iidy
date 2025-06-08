@@ -123,10 +123,10 @@ pub struct ConcatTag {
     pub sources: Vec<YamlAst>,
 }
 
-/// Variable binding tag
+/// Variable binding tag (matches iidy-js flat format)
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetTag {
-    /// Variable bindings (key-value pairs)
+    /// Variable bindings (key-value pairs) from flat structure
     pub bindings: Vec<(String, YamlAst)>,
     /// Expression to evaluate with bound variables (the "in" field)
     pub expression: Box<YamlAst>,

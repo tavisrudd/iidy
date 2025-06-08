@@ -431,25 +431,27 @@ fn parse_concat_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 /// Parse !$let tag
 fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys
-        validate_exact_keys(&map, &["bindings", "expression"], &[], "!$let", context)?;
+        // Check that we have the required "in" key (iidy-js flat format)
+        let in_key = Value::String("in".to_string());
+        if !map.contains_key(&in_key) {
+            return Err(anyhow!("!$let tag must have an 'in' field"));
+        }
         
-        let bindings_val = map.get(&Value::String("bindings".to_string())).unwrap(); // Safe due to validation
-        let expression_val = map.get(&Value::String("expression".to_string())).unwrap(); // Safe due to validation
+        let expression_val = map.get(&in_key).unwrap().clone(); // Safe due to check above
 
+        // Parse variable bindings from all keys except "in"
         let mut bindings = Vec::new();
-        if let Value::Mapping(bindings_map) = bindings_val {
-            let bindings_context = context.with_path("bindings");
-            for (key, value) in bindings_map {
-                if let Value::String(var_name) = key {
-                    let var_context = bindings_context.with_path(var_name);
+        for (key, value) in map {
+            if let Value::String(var_name) = key {
+                if var_name != "in" {
+                    let var_context = context.with_path(&var_name);
                     let var_value = convert_value_to_ast(value.clone(), &var_context)?;
                     bindings.push((var_name.clone(), var_value));
                 }
             }
         }
 
-        let expression = Box::new(convert_value_to_ast(expression_val.clone(), &context.with_path("expression"))?);
+        let expression = Box::new(convert_value_to_ast(expression_val, &context.with_path("in"))?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Let(LetTag {
             bindings,
