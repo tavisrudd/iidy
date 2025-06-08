@@ -261,6 +261,20 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
         "!$parseJson" => parse_parse_json_tag(value, context),
         "!$escape" => parse_escape_tag(value, context),
         _ => {
+            // Check if this is a CloudFormation intrinsic function
+            let tag_without_exclamation = if tag.starts_with('!') {
+                &tag[1..]
+            } else {
+                &tag
+            };
+            
+            if let Some(cfn_tag) = crate::yaml::ast::CloudFormationTag::from_tag_name(
+                tag_without_exclamation, 
+                convert_value_to_ast(value.clone(), context)?
+            ) {
+                return Ok(YamlAst::CloudFormationTag(cfn_tag));
+            }
+            
             // Check for unknown iidy preprocessing tags (likely typos) with context
             if tag.starts_with("!$") {
                 {

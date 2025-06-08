@@ -1169,6 +1169,10 @@ fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
             // Convert preprocessing tags to a string representation to "escape" them
             Ok(Value::String("__ESCAPED_PREPROCESSING_TAG__".to_string()))
         }
+        YamlAst::CloudFormationTag(cfn_tag) => {
+            // Convert CloudFormation tags to a string representation to "escape" them
+            Ok(Value::String(format!("__ESCAPED_CFN_TAG_{}__", cfn_tag.tag_name())))
+        }
         YamlAst::UnknownYamlTag(tag) => {
             // Convert unknown tags to a string representation  
             Ok(Value::String(format!("__ESCAPED_TAG_{}__", tag.tag)))

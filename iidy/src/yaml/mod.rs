@@ -478,6 +478,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 self.preprocessing_tag_map.insert(tag_id.clone(), tag.clone());
                 Ok(Value::String(tag_id))
             }
+            YamlAst::CloudFormationTag(cfn_tag) => {
+                // Store CloudFormation tags as placeholders for later processing
+                // The inner value will be processed during Phase 2
+                let tag_id = format!("__CFN_TAG_{}__{}__", cfn_tag.tag_name(), uuid::Uuid::new_v4().simple());
+                // Note: We don't store CloudFormation tags in preprocessing_tag_map since they have different processing
+                // They will be handled directly in the resolve_ast_with_context method
+                Ok(Value::String(tag_id))
+            }
             YamlAst::UnknownYamlTag(tag) => {
                 // Store unknown tags by converting their value
                 self.ast_to_value_unprocessed(*tag.value)
@@ -663,8 +671,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::PreprocessingTag(tag) => {
                 self.resolve_preprocessing_tag_with_context(tag, context)
             },
+            YamlAst::CloudFormationTag(cfn_tag) => {
+                // Process CloudFormation intrinsic functions with proper YAML tag generation
+                // The inner AST may contain handlebars templates or preprocessing directives
+                let resolved_value = self.resolve_ast_with_context(cfn_tag.inner_value().clone(), context)?;
+                self.create_cfn_expression(&cfn_tag, resolved_value)
+            },
             YamlAst::UnknownYamlTag(tag) => {
-                // For unknown tags like !Ref, !Sub, preserve the tag structure while processing the content
+                // For unknown tags, preserve the tag structure while processing the content
                 // Based on iidy-js behavior: handlebars/preprocessing happens INSIDE tag values
                 let resolved_value = self.resolve_ast_with_context(*tag.value, context)?;
                 self.create_tagged_value(&tag.tag, resolved_value)
@@ -672,17 +686,162 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
     }
 
-    /// Create a tagged value that preserves CloudFormation tags like !Ref, !Sub
+    /// Create a CloudFormation expression that serializes to proper YAML tag syntax
+    /// 
+    /// This method converts CloudFormation AST nodes to serde mapping structures that
+    /// can be serialized by serde_yaml. The output uses mapping format (`'!Ref': value`)
+    /// which is later post-processed to proper YAML tags (`!Ref value`) in the render pipeline.
+    fn create_cfn_expression(&self, cfn_tag: &crate::yaml::ast::CloudFormationTag, resolved_value: Value) -> Result<Value> {
+        use crate::yaml::ast::CloudFormationTag;
+        
+        // Helper function to unpack single-element arrays (for array syntax support)
+        let unpack_single_element_array = |value: Value| -> Value {
+            match &value {
+                Value::Sequence(seq) if seq.len() == 1 => seq[0].clone(),
+                _ => value,
+            }
+        };
+        
+        // Convert the resolved value to the appropriate CloudFormation expression structure
+        match cfn_tag {
+            CloudFormationTag::Ref(_) => {
+                // Ref expects a string - unpack single-element arrays for compatibility
+                let unpacked = unpack_single_element_array(resolved_value);
+                if let Value::String(resource) = unpacked {
+                    let mut map = serde_yaml::Mapping::new();
+                    map.insert(Value::String("!Ref".to_string()), Value::String(resource));
+                    Ok(Value::Mapping(map))
+                } else {
+                    Err(anyhow::anyhow!("Ref function expects a string value, got: {:?}", unpacked))
+                }
+            },
+            CloudFormationTag::Sub(_) => {
+                // Sub expects a string or array [string, {substitutions}] - unpack single-element arrays
+                let unpacked = unpack_single_element_array(resolved_value);
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Sub".to_string()), unpacked);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::GetAtt(_) => {
+                // GetAtt expects [resource, attribute] or "resource.attribute" - unpack single-element arrays
+                let unpacked = unpack_single_element_array(resolved_value);
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!GetAtt".to_string()), unpacked);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Join(_) => {
+                // Join expects [delimiter, [values]]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Join".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Select(_) => {
+                // Select expects [index, list]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Select".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Split(_) => {
+                // Split expects [delimiter, string]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Split".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Base64(_) => {
+                // Base64 expects a string
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Base64".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::GetAZs(_) => {
+                // GetAZs expects a region string
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!GetAZs".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ImportValue(_) => {
+                // ImportValue expects a string
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!ImportValue".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::FindInMap(_) => {
+                // FindInMap expects [MapName, TopLevelKey, SecondLevelKey]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!FindInMap".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Cidr(_) => {
+                // Cidr expects [ipBlock, count, cidrBits]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Cidr".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Length(_) => {
+                // Length expects a list
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Length".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ToJsonString(_) => {
+                // ToJsonString expects any data structure
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!ToJsonString".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Transform(_) => {
+                // Transform expects a mapping with Name and Parameters
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Transform".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ForEach(_) => {
+                // ForEach expects a mapping with specific structure
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!ForEach".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::If(_) => {
+                // If expects [condition, trueValue, falseValue]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!If".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Equals(_) => {
+                // Equals expects [value1, value2]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Equals".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::And(_) => {
+                // And expects [condition1, condition2, ...]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!And".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Or(_) => {
+                // Or expects [condition1, condition2, ...]
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Or".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Not(_) => {
+                // Not expects a condition
+                let mut map = serde_yaml::Mapping::new();
+                map.insert(Value::String("!Not".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+        }
+    }
+
+    /// Create a tagged value that preserves unknown YAML tags
     /// 
     /// Creates a mapping structure that can be serialized to both YAML and JSON.
+    /// The output is post-processed to convert mapping format to proper YAML tags.
     /// 
-    /// **Syntax Note**: This produces `'!Sub': value` format instead of proper YAML tags 
-    /// like `!Sub value` because serde_yaml 0.9 cannot serialize `Value::Tagged` 
-    /// (throws "serializing nested enums in YAML is not supported yet").
-    /// 
-    /// **TODO**: When serde_yaml is replaced (it's deprecated), migrate to proper YAML 
-    /// tag syntax using a modern YAML library like serde_yml that supports tagged value
-    /// serialization.
+    /// **Implementation Note**: This produces `'!Tag': value` format which is then
+    /// converted to proper `!Tag value` format via `convert_cf_mappings_to_tags()`.
+    /// This approach works around serde_yaml 0.9's inability to serialize `Value::Tagged`.
     fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
         // Create a mapping with the tag as key - this works for both YAML and JSON serialization
         let mut map = serde_yaml::Mapping::new();

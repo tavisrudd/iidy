@@ -108,7 +108,10 @@ fn serialize_yaml_iidy_js_compatible(value: &Value) -> Result<String> {
     let mut yaml_output = serde_yaml::to_string(value)?;
     
     // Apply post-processing to match iidy-js formatting:
-    // 1. Quote numeric-looking values that should be strings (like version numbers)
+    // 1. Convert CloudFormation mapping format to proper YAML tags
+    yaml_output = convert_cf_mappings_to_tags(yaml_output)?;
+    
+    // 2. Quote numeric-looking values that should be strings (like version numbers)
     yaml_output = quote_numeric_looking_strings(yaml_output);
     
     Ok(yaml_output)
@@ -139,6 +142,39 @@ fn quote_numeric_looking_strings(yaml: String) -> String {
         })
         .collect::<Vec<String>>()
         .join("\n")
+}
+
+/// Convert CloudFormation mapping format to proper YAML tags
+/// 
+/// Transforms output from `'!Ref': value` to `!Ref value` for all CloudFormation intrinsic functions.
+/// This post-processing step works around serde_yaml's inability to serialize `Value::Tagged` by
+/// converting the mapping format (which serde_yaml can handle) to proper CloudFormation YAML syntax.
+fn convert_cf_mappings_to_tags(yaml: String) -> Result<String> {
+    use regex::Regex;
+    
+    // First handle single-line patterns like '!Ref': value -> !Ref value
+    let cf_single_line_pattern = Regex::new(r"(\s*)'!(Ref|Sub|GetAtt|Base64|Select|Split|Join|ImportValue|FindInMap|Cidr|Length|ToJsonString|Transform|ForEach|If|Equals|And|Or|Not|GetAZs)': (.+)")?;
+    
+    let mut converted = cf_single_line_pattern.replace_all(&yaml, |caps: &regex::Captures| {
+        let indent = &caps[1];
+        let function = &caps[2];
+        let value = &caps[3];
+        format!("{}!{} {}", indent, function, value)
+    }).to_string();
+    
+    // Then handle multi-line patterns like:
+    // '!Select':    ->    !Select
+    // - 0                 - 0  
+    // - !GetAZs ''        - !GetAZs ''
+    let cf_multi_line_pattern = Regex::new(r"(\s*)'!(Ref|Sub|GetAtt|Base64|Select|Split|Join|ImportValue|FindInMap|Cidr|Length|ToJsonString|Transform|ForEach|If|Equals|And|Or|Not|GetAZs)':")?;
+    
+    converted = cf_multi_line_pattern.replace_all(&converted, |caps: &regex::Captures| {
+        let indent = &caps[1];
+        let function = &caps[2];
+        format!("{}!{}", indent, function)
+    }).to_string();
+    
+    Ok(converted)
 }
 
 #[cfg(test)]

@@ -21,6 +21,9 @@ pub enum YamlAst {
     Mapping(Vec<(YamlAst, YamlAst)>),
     /// Custom preprocessing tag
     PreprocessingTag(PreprocessingTag),
+    /// CloudFormation intrinsic function (may contain YamlAst for preprocessing)
+    CloudFormationTag(CloudFormationTag),
+    /// Unknown YAML tag (for tags we don't recognize)
     UnknownYamlTag(UnknownTag),
 }
 
@@ -28,6 +31,136 @@ pub enum YamlAst {
 pub struct UnknownTag {
     pub tag: String,
     pub value: Box<YamlAst>
+}
+
+/// CloudFormation intrinsic function tags that can contain YamlAst for preprocessing
+/// 
+/// These represent CloudFormation functions parsed from YAML that may still contain
+/// preprocessing directives (handlebars templates, variable references, etc.)
+/// that need to be resolved before converting to final CloudFormation expressions.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CloudFormationTag {
+    /// !Ref - Reference to a parameter, resource, etc.
+    Ref(Box<YamlAst>),
+    /// !Sub - String substitution with CloudFormation variables
+    Sub(Box<YamlAst>),
+    /// !GetAtt - Get an attribute from a resource
+    GetAtt(Box<YamlAst>),
+    /// !Join - Join a list of values with a delimiter
+    Join(Box<YamlAst>),
+    /// !Select - Select an item from a list by index
+    Select(Box<YamlAst>),
+    /// !Split - Split a string into a list
+    Split(Box<YamlAst>),
+    /// !Base64 - Encode content as Base64
+    Base64(Box<YamlAst>),
+    /// !GetAZs - Get availability zones for a region
+    GetAZs(Box<YamlAst>),
+    /// !ImportValue - Import a value from another stack
+    ImportValue(Box<YamlAst>),
+    /// !FindInMap - Find a value in a mapping
+    FindInMap(Box<YamlAst>),
+    /// !Cidr - Generate CIDR blocks
+    Cidr(Box<YamlAst>),
+    /// !Length - Get the length of a list
+    Length(Box<YamlAst>),
+    /// !ToJsonString - Convert data to JSON string
+    ToJsonString(Box<YamlAst>),
+    /// !Transform - Apply a macro transformation
+    Transform(Box<YamlAst>),
+    /// !ForEach - Generate multiple resources
+    ForEach(Box<YamlAst>),
+    /// !If - Conditional evaluation
+    If(Box<YamlAst>),
+    /// !Equals - Test equality
+    Equals(Box<YamlAst>),
+    /// !And - Logical AND
+    And(Box<YamlAst>),
+    /// !Or - Logical OR
+    Or(Box<YamlAst>),
+    /// !Not - Logical NOT
+    Not(Box<YamlAst>),
+}
+
+impl CloudFormationTag {
+    /// Create a CloudFormation tag from a tag name and YamlAst value
+    pub fn from_tag_name(tag: &str, value: YamlAst) -> Option<Self> {
+        match tag {
+            "Ref" => Some(CloudFormationTag::Ref(Box::new(value))),
+            "Sub" => Some(CloudFormationTag::Sub(Box::new(value))),
+            "GetAtt" => Some(CloudFormationTag::GetAtt(Box::new(value))),
+            "Join" => Some(CloudFormationTag::Join(Box::new(value))),
+            "Select" => Some(CloudFormationTag::Select(Box::new(value))),
+            "Split" => Some(CloudFormationTag::Split(Box::new(value))),
+            "Base64" => Some(CloudFormationTag::Base64(Box::new(value))),
+            "GetAZs" => Some(CloudFormationTag::GetAZs(Box::new(value))),
+            "ImportValue" => Some(CloudFormationTag::ImportValue(Box::new(value))),
+            "FindInMap" => Some(CloudFormationTag::FindInMap(Box::new(value))),
+            "Cidr" => Some(CloudFormationTag::Cidr(Box::new(value))),
+            "Length" => Some(CloudFormationTag::Length(Box::new(value))),
+            "ToJsonString" => Some(CloudFormationTag::ToJsonString(Box::new(value))),
+            "Transform" => Some(CloudFormationTag::Transform(Box::new(value))),
+            "ForEach" => Some(CloudFormationTag::ForEach(Box::new(value))),
+            "If" => Some(CloudFormationTag::If(Box::new(value))),
+            "Equals" => Some(CloudFormationTag::Equals(Box::new(value))),
+            "And" => Some(CloudFormationTag::And(Box::new(value))),
+            "Or" => Some(CloudFormationTag::Or(Box::new(value))),
+            "Not" => Some(CloudFormationTag::Not(Box::new(value))),
+            _ => None,
+        }
+    }
+    
+    /// Get the tag name for this CloudFormation function
+    pub fn tag_name(&self) -> &'static str {
+        match self {
+            CloudFormationTag::Ref(_) => "Ref",
+            CloudFormationTag::Sub(_) => "Sub",
+            CloudFormationTag::GetAtt(_) => "GetAtt",
+            CloudFormationTag::Join(_) => "Join",
+            CloudFormationTag::Select(_) => "Select",
+            CloudFormationTag::Split(_) => "Split",
+            CloudFormationTag::Base64(_) => "Base64",
+            CloudFormationTag::GetAZs(_) => "GetAZs",
+            CloudFormationTag::ImportValue(_) => "ImportValue",
+            CloudFormationTag::FindInMap(_) => "FindInMap",
+            CloudFormationTag::Cidr(_) => "Cidr",
+            CloudFormationTag::Length(_) => "Length",
+            CloudFormationTag::ToJsonString(_) => "ToJsonString",
+            CloudFormationTag::Transform(_) => "Transform",
+            CloudFormationTag::ForEach(_) => "ForEach",
+            CloudFormationTag::If(_) => "If",
+            CloudFormationTag::Equals(_) => "Equals",
+            CloudFormationTag::And(_) => "And",
+            CloudFormationTag::Or(_) => "Or",
+            CloudFormationTag::Not(_) => "Not",
+        }
+    }
+    
+    /// Get the inner YamlAst value that needs preprocessing
+    pub fn inner_value(&self) -> &YamlAst {
+        match self {
+            CloudFormationTag::Ref(v) => v,
+            CloudFormationTag::Sub(v) => v,
+            CloudFormationTag::GetAtt(v) => v,
+            CloudFormationTag::Join(v) => v,
+            CloudFormationTag::Select(v) => v,
+            CloudFormationTag::Split(v) => v,
+            CloudFormationTag::Base64(v) => v,
+            CloudFormationTag::GetAZs(v) => v,
+            CloudFormationTag::ImportValue(v) => v,
+            CloudFormationTag::FindInMap(v) => v,
+            CloudFormationTag::Cidr(v) => v,
+            CloudFormationTag::Length(v) => v,
+            CloudFormationTag::ToJsonString(v) => v,
+            CloudFormationTag::Transform(v) => v,
+            CloudFormationTag::ForEach(v) => v,
+            CloudFormationTag::If(v) => v,
+            CloudFormationTag::Equals(v) => v,
+            CloudFormationTag::And(v) => v,
+            CloudFormationTag::Or(v) => v,
+            CloudFormationTag::Not(v) => v,
+        }
+    }
 }
 /// All supported preprocessing tags in the iidy language
 #[derive(Debug, Clone, PartialEq)]
@@ -299,8 +432,9 @@ impl YamlAst {
                 Some(Value::Mapping(result))
             }
             YamlAst::PreprocessingTag(_) => None, // Cannot convert preprocessing tags directly
+            YamlAst::CloudFormationTag(_) => None, // CloudFormation tags need preprocessing
             YamlAst::UnknownYamlTag(_tag) => {
-                // Unknown tags (like !Ref, !Sub) cannot be converted to plain values
+                // Unknown tags cannot be converted to plain values
                 // They need to be preserved as-is in the YAML output
                 None
             }
