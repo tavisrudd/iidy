@@ -3,7 +3,7 @@ use anyhow::Result;
 use iidy::color::ColorContext;
 use iidy::terminal::Theme;
 use iidy::cli::ColorChoice;
-use iidy::pocs::{theme_demo, spinner_demo, ratatui_demo};
+use iidy::pocs::{theme_demo, spinner_demo, ratatui_demo, custom_serializer_demo};
 
 #[derive(Parser)]
 #[command(
@@ -25,6 +25,8 @@ enum Commands {
     SpinnerDemo,
     /// Demonstrate ratatui TUI for describe-stack
     RatatuiDemo,
+    /// Demonstrate custom YAML serializer for CloudFormation intrinsics
+    CustomSerializerDemo,
 }
 
 fn main() -> Result<()> {
@@ -43,6 +45,13 @@ fn main() -> Result<()> {
         Commands::RatatuiDemo => {
             if let Err(e) = ratatui_demo::run_ratatui_demo() {
                 eprintln!("Error running ratatui demo: {}", e);
+            }
+        }
+        Commands::CustomSerializerDemo => {
+            // Use tokio runtime for async demo
+            let rt = tokio::runtime::Runtime::new()?;
+            if let Err(e) = rt.block_on(custom_serializer_demo::run_custom_serializer_demo()) {
+                eprintln!("Error running custom serializer demo: {}", e);
             }
         }
     }
