@@ -6,20 +6,27 @@
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
+use std::io::{self, Read};
 use serde_yaml::Value;
 
 use crate::{cli::RenderArgs, yaml::preprocess_yaml_with_spec};
 
 /// Handle the render command - process YAML template and output in specified format
 pub async fn handle_render_command(args: &RenderArgs) -> Result<()> {
-    // Read the template file
-    let template_content = fs::read_to_string(&args.template)?;
-    
-    // Get the base location from the template file path for relative imports
-    let base_location = &args.template;
+    // Read the template content from file or stdin
+    let (template_content, base_location) = if args.template == "-" {
+        // Read from stdin
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        (buffer, "<stdin>".to_string())
+    } else {
+        // Read from file
+        let content = fs::read_to_string(&args.template)?;
+        (content, args.template.clone())
+    };
     
     // Process the YAML with the new preprocessing system using specified YAML spec
-    let processed_value = preprocess_yaml_with_spec(&template_content, base_location, &args.yaml_spec).await?;
+    let processed_value = preprocess_yaml_with_spec(&template_content, &base_location, &args.yaml_spec).await?;
     
     // Apply query selector if provided
     let output_value = if let Some(query) = &args.query {
@@ -158,4 +165,5 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Cannot query 'some' on non-mapping value"));
     }
+
 }

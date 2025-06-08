@@ -514,6 +514,7 @@ pub struct ApprovalReviewArgs {
 
 #[derive(Args, Debug)]
 pub struct RenderArgs {
+    #[arg(help = "Template file path or '-' to read from stdin")]
     pub template: String,
     #[arg(long, default_value = "stdout")]
     pub outfile: String,
