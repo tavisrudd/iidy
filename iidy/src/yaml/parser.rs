@@ -265,6 +265,20 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
         "!$parseJson" => parse_parse_json_tag(value, context),
         "!$escape" => parse_escape_tag(value, context),
         _ => {
+            // Check for unknown iidy preprocessing tags (likely typos) with context first
+            if tag.starts_with("!$") {
+                use crate::yaml::error_wrapper::tag_parsing_error;
+                
+                // Use ParseContext to find the position of the tag in its current context
+                let location = if let Some(position) = context.find_tag_position_in_context(&tag) {
+                    format!("{}:{}:{}", context.file_location, position.line, position.column)
+                } else {
+                    context.location_string()
+                };
+                
+                return Err(tag_parsing_error("unknown tag", &format!("'{}' is not a valid iidy tag", tag), &location, Some("check tag spelling or see documentation for valid tags")));
+            }
+            
             // Check if this is a CloudFormation intrinsic function
             let tag_without_exclamation = if tag.starts_with('!') {
                 &tag[1..]
@@ -277,22 +291,6 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
                 convert_value_to_ast(value.clone(), context)?
             ) {
                 return Ok(YamlAst::CloudFormationTag(cfn_tag));
-            }
-            
-            // Check for unknown iidy preprocessing tags (likely typos) with context
-            if tag.starts_with("!$") {
-                {
-                    use crate::yaml::error_wrapper::tag_parsing_error;
-                    
-                    // Use ParseContext to find the position of the tag in its current context
-                    let location = if let Some(position) = context.find_tag_position_in_context(&tag) {
-                        format!("{}:{}:{}", context.file_location, position.line, position.column)
-                    } else {
-                        context.location_string()
-                    };
-                    
-                    return Err(tag_parsing_error("unknown tag", &format!("'{}' is not a valid iidy tag", tag), &location, Some("check tag spelling or see documentation for valid tags")));
-                }
             }
             
             // For other tags, reconstruct the tagged value and use the original parser
@@ -450,7 +448,7 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
             if let Value::String(var_name) = key {
                 if var_name != "in" {
                     let var_context = context.with_path(&var_name);
-                    let var_value = convert_value_to_ast(value.clone(), &var_context)?;
+                    let var_value = convert_value_to_ast(value, &var_context)?;
                     bindings.push((var_name.clone(), var_value));
                 }
             }
