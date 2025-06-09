@@ -3,44 +3,13 @@
 //! Benchmarks StandardTagResolver methods directly to measure optimization impact
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::tags::{TagContext, StandardTagResolver, TagResolver, AstResolver};
+use iidy::yaml::tags::{TagContext, StandardTagResolver, TagResolver};
 use iidy::yaml::{YamlPreprocessor};
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use iidy::yaml::ast::*;
 use serde_yaml::Value;
 use std::collections::HashMap;
 
-/// Mock AST resolver for testing
-struct MockAstResolver;
-
-impl AstResolver for MockAstResolver {
-    fn resolve_ast(&self, ast: &YamlAst, _context: &TagContext) -> anyhow::Result<Value> {
-        // Simple mock - convert AST to Value for testing
-        match ast {
-            YamlAst::String(s) => Ok(Value::String(s.clone())),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Sequence(seq) => {
-                let mut result = Vec::new();
-                for item in seq {
-                    result.push(self.resolve_ast(item, _context)?);
-                }
-                Ok(Value::Sequence(result))
-            }
-            YamlAst::Mapping(pairs) => {
-                let mut result = serde_yaml::Mapping::new();
-                for (key, value) in pairs {
-                    let key_val = self.resolve_ast(key, _context)?;
-                    let value_val = self.resolve_ast(value, _context)?;
-                    result.insert(key_val, value_val);
-                }
-                Ok(Value::Mapping(result))
-            }
-            _ => Ok(Value::String("mock".to_string())),
-        }
-    }
-}
 
 /// Benchmark include tag resolution
 fn bench_include_resolution(c: &mut Criterion) {
@@ -91,7 +60,6 @@ fn bench_include_resolution(c: &mut Criterion) {
 fn bench_map_resolution(c: &mut Criterion) {
     let mut group = c.benchmark_group("map_resolution");
     let tag_resolver = StandardTagResolver;
-    let ast_resolver = MockAstResolver;
     let context = TagContext::new();
     
     // Small list
@@ -110,7 +78,7 @@ fn bench_map_resolution(c: &mut Criterion) {
     
     group.bench_function("small_list", |b| {
         b.iter(|| {
-            tag_resolver.resolve_map(black_box(&small_map_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_map(black_box(&small_map_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -126,7 +94,7 @@ fn bench_map_resolution(c: &mut Criterion) {
     
     group.bench_function("large_list", |b| {
         b.iter(|| {
-            tag_resolver.resolve_map(black_box(&large_map_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_map(black_box(&large_map_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -137,7 +105,6 @@ fn bench_map_resolution(c: &mut Criterion) {
 fn bench_merge_resolution(c: &mut Criterion) {
     let mut group = c.benchmark_group("merge_resolution");
     let tag_resolver = StandardTagResolver;
-    let ast_resolver = MockAstResolver;
     let context = TagContext::new();
     
     // Simple merge
@@ -156,7 +123,7 @@ fn bench_merge_resolution(c: &mut Criterion) {
     
     group.bench_function("simple_merge", |b| {
         b.iter(|| {
-            tag_resolver.resolve_merge(black_box(&simple_merge_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_merge(black_box(&simple_merge_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -174,7 +141,7 @@ fn bench_merge_resolution(c: &mut Criterion) {
     
     group.bench_function("complex_merge", |b| {
         b.iter(|| {
-            tag_resolver.resolve_merge(black_box(&complex_merge_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_merge(black_box(&complex_merge_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -185,7 +152,6 @@ fn bench_merge_resolution(c: &mut Criterion) {
 fn bench_string_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("string_operations");
     let tag_resolver = StandardTagResolver;
-    let ast_resolver = MockAstResolver;
     let context = TagContext::new();
     
     // Join operation
@@ -202,7 +168,7 @@ fn bench_string_operations(c: &mut Criterion) {
     
     group.bench_function("join", |b| {
         b.iter(|| {
-            tag_resolver.resolve_join(black_box(&join_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_join(black_box(&join_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -214,7 +180,7 @@ fn bench_string_operations(c: &mut Criterion) {
     
     group.bench_function("split", |b| {
         b.iter(|| {
-            tag_resolver.resolve_split(black_box(&split_tag), black_box(&context), black_box(&ast_resolver)).unwrap()
+            tag_resolver.resolve_split(black_box(&split_tag), black_box(&context)).unwrap()
         })
     });
     
@@ -331,7 +297,6 @@ mod tests {
     fn test_benchmark_setup() {
         // Verify benchmark setup works correctly
         let resolver = StandardTagResolver;
-        let ast_resolver = MockAstResolver;
         let context = TagContext::new();
         
         // Test simple include
@@ -352,7 +317,7 @@ mod tests {
             filter: None,
         };
         
-        let result = resolver.resolve_map(&map_tag, &context, &ast_resolver);
+        let result = resolver.resolve_map(&map_tag, &context);
         assert!(result.is_ok());
     }
 }

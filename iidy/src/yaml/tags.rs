@@ -766,45 +766,142 @@ fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
     }
 }
 
-/// Trait for resolving AST nodes (used to avoid circular dependencies)
-pub trait AstResolver {
-    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext) -> Result<Value>;
-}
-
 /// Trait for resolving preprocessing tags with different implementation strategies
 pub trait TagResolver {
+    // Core AST resolution method (replaces separate AstResolver trait)
+    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext) -> Result<Value>;
+    
+    // Helper method for handlebars processing
+    fn yaml_value_to_json_value(&self, yaml_value: &Value) -> Result<serde_json::Value>;
+    
     // Core tag resolution methods
     fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value>;
-    fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_map(&self, tag: &MapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_let(&self, tag: &LetTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_eq(&self, tag: &EqTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_not(&self, tag: &NotTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_split(&self, tag: &SplitTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_join(&self, tag: &JoinTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext) -> Result<Value>;
+    fn resolve_map(&self, tag: &MapTag, context: &TagContext) -> Result<Value>;
+    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext) -> Result<Value>;
+    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext) -> Result<Value>;
+    fn resolve_let(&self, tag: &LetTag, context: &TagContext) -> Result<Value>;
+    fn resolve_eq(&self, tag: &EqTag, context: &TagContext) -> Result<Value>;
+    fn resolve_not(&self, tag: &NotTag, context: &TagContext) -> Result<Value>;
+    fn resolve_split(&self, tag: &SplitTag, context: &TagContext) -> Result<Value>;
+    fn resolve_join(&self, tag: &JoinTag, context: &TagContext) -> Result<Value>;
     
     // Advanced transformation tags
-    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
+    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext) -> Result<Value>;
+    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext) -> Result<Value>;
+    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext) -> Result<Value>;
+    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext) -> Result<Value>;
+    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext) -> Result<Value>;
+    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext) -> Result<Value>;
     
     // String processing tags
-    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
-    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value>;
+    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext) -> Result<Value>;
+    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext) -> Result<Value>;
+    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext) -> Result<Value>;
+    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext) -> Result<Value>;
+    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext) -> Result<Value>;
 }
 
 /// Standard implementation of TagResolver
 pub struct StandardTagResolver;
 
 impl TagResolver for StandardTagResolver {
+    fn yaml_value_to_json_value(&self, yaml_value: &Value) -> Result<serde_json::Value> {
+        // Call the implementation method directly from the impl block below
+        StandardTagResolver::yaml_value_to_json_value(self, yaml_value)
+    }
+    
+    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext) -> Result<Value> {
+        match ast {
+            YamlAst::Null => Ok(Value::Null),
+            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
+            YamlAst::String(s) => {
+                // Process handlebars templates in strings
+                self.process_string_with_handlebars(s.clone(), context)
+            },
+            YamlAst::Sequence(seq) => {
+                let mut result = Vec::with_capacity(seq.len());
+                for (index, item) in seq.iter().enumerate() {
+                    // Create context with array index for path tracking
+                    let item_context = context.with_array_index(index);
+                    result.push(self.resolve_ast(item, &item_context)?);
+                }
+                Ok(Value::Sequence(result))
+            }
+            YamlAst::Mapping(pairs) => {
+                let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
+                for (key, value) in pairs {
+                    let key_val = self.resolve_ast(key, context)?;
+                    
+                    // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
+                    if let Value::String(key_str) = &key_val {
+                        if key_str == "<<" {
+                            let location_info = if let Some(base_path) = &context.base_path {
+                                format!("in file '{}'", base_path.display())
+                            } else {
+                                context.current_location()
+                                    .map(|loc| format!("in '{}'", loc))
+                                    .unwrap_or_else(|| "in unknown location".to_string())
+                            };
+                            let yaml_path = context.current_path();
+                            let path_info = if !yaml_path.is_empty() {
+                                format!(" at path '{}'", yaml_path)
+                            } else {
+                                String::new()
+                            };
+                            return Err(anyhow::anyhow!(
+                                "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
+                                Consider using iidy's !$merge tag instead:\n\
+                                  combined_config: !$merge\n\
+                                    - *base_config\n\
+                                    - additional_key: additional_value",
+                                location_info, path_info
+                            ));
+                        }
+                        
+                        // Skip preprocessing directive keys in final output (matching iidy-js behavior)
+                        if matches!(key_str.as_str(), "$imports" | "$defs" | "$envValues") {
+                            continue;
+                        }
+                    }
+                    
+                    // Create context with object key for path tracking
+                    let value_context = if let Value::String(key_str) = &key_val {
+                        context.with_path_segment(key_str)
+                    } else {
+                        // For non-string keys, use the key's string representation
+                        let key_str = match &key_val {
+                            Value::Number(n) => n.as_f64().unwrap_or(0.0).to_string(),
+                            Value::Bool(b) => b.to_string(),
+                            _ => format!("{:?}", key_val),
+                        };
+                        context.with_path_segment(&key_str)
+                    };
+                    
+                    let value_val = self.resolve_ast(value, &value_context)?;
+                    result.insert(key_val, value_val);
+                }
+                Ok(Value::Mapping(result))
+            }
+            YamlAst::PreprocessingTag(tag) => {
+                self.resolve_preprocessing_tag_with_context(tag, context)
+            },
+            YamlAst::CloudFormationTag(cfn_tag) => {
+                // Process CloudFormation intrinsic functions with proper YAML tag generation
+                // The inner AST may contain handlebars templates or preprocessing directives
+                let resolved_value = self.resolve_ast(cfn_tag.inner_value(), context)?;
+                self.create_cfn_expression(cfn_tag, resolved_value)
+            },
+            YamlAst::UnknownYamlTag(tag) => {
+                // For unknown tags, preserve the tag structure while processing the content
+                // Based on iidy-js behavior: handlebars/preprocessing happens INSIDE tag values
+                let resolved_value = self.resolve_ast(&tag.value, context)?;
+                self.create_tagged_value(&tag.tag, resolved_value)
+            }
+        }
+    }
+    
     fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value> {
         let path = &tag.path;
         
@@ -881,8 +978,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let condition_result = ast_resolver.resolve_ast(&tag.test, context)?;
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext) -> Result<Value> {
+        let condition_result = self.resolve_ast(&tag.test, context)?;
         
         let is_truthy = match condition_result {
             Value::Bool(b) => b,
@@ -895,16 +992,16 @@ impl TagResolver for StandardTagResolver {
         };
 
         if is_truthy {
-            ast_resolver.resolve_ast(&tag.then_value, context)
+            self.resolve_ast(&tag.then_value, context)
         } else if let Some(ref else_value) = tag.else_value {
-            ast_resolver.resolve_ast(else_value, context)
+            self.resolve_ast(else_value, context)
         } else {
             Ok(Value::Null)
         }
     }
     
-    fn resolve_map(&self, tag: &MapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+    fn resolve_map(&self, tag: &MapTag, context: &TagContext) -> Result<Value> {
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         match items_result {
             Value::Sequence(seq) => {
@@ -920,13 +1017,13 @@ impl TagResolver for StandardTagResolver {
                     
                     // Apply filter if present
                     if let Some(filter) = &tag.filter {
-                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        let filter_result = self.resolve_ast(filter, &item_context)?;
                         if !is_truthy(&filter_result) {
                             continue; // Skip this item
                         }
                     }
                     
-                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    let transformed = self.resolve_ast(&tag.template, &item_context)?;
                     result.push(transformed);
                 }
                 
@@ -936,12 +1033,12 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
+    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext) -> Result<Value> {
         // Pre-allocate with estimated capacity based on number of sources
         let mut result = serde_yaml::Mapping::with_capacity(tag.sources.len() * 4);
         
         for source in &tag.sources {
-            let source_result = ast_resolver.resolve_ast(source, context)?;
+            let source_result = self.resolve_ast(source, context)?;
             match source_result {
                 Value::Mapping(map) => {
                     result.extend(map);
@@ -953,12 +1050,12 @@ impl TagResolver for StandardTagResolver {
         Ok(Value::Mapping(result))
     }
     
-    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
+    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext) -> Result<Value> {
         // Pre-allocate with estimated capacity
         let mut result = Vec::with_capacity(tag.sources.len() * 2);
         
         for source in &tag.sources {
-            let source_result = ast_resolver.resolve_ast(source, context)?;
+            let source_result = self.resolve_ast(source, context)?;
             match source_result {
                 Value::Sequence(mut seq) => {
                     result.append(&mut seq);
@@ -973,30 +1070,30 @@ impl TagResolver for StandardTagResolver {
         Ok(Value::Sequence(result))
     }
     
-    fn resolve_let(&self, tag: &LetTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
+    fn resolve_let(&self, tag: &LetTag, context: &TagContext) -> Result<Value> {
         let mut bindings = HashMap::with_capacity(tag.bindings.len());
         
         // Resolve all variable bindings
         for (var_name, var_expr) in &tag.bindings {
-            let var_value = ast_resolver.resolve_ast(var_expr, context)?;
+            let var_value = self.resolve_ast(var_expr, context)?;
             bindings.insert(var_name.clone(), var_value);
         }
         
         // Create new context with bindings and resolve expression
         let new_context = context.with_bindings_ref(&bindings);
-        ast_resolver.resolve_ast(&tag.expression, &new_context)
+        self.resolve_ast(&tag.expression, &new_context)
     }
     
-    fn resolve_eq(&self, tag: &EqTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let left = ast_resolver.resolve_ast(&tag.left, context)?;
-        let right = ast_resolver.resolve_ast(&tag.right, context)?;
+    fn resolve_eq(&self, tag: &EqTag, context: &TagContext) -> Result<Value> {
+        let left = self.resolve_ast(&tag.left, context)?;
+        let right = self.resolve_ast(&tag.right, context)?;
         
         let is_equal = values_equal(&left, &right);
         Ok(Value::Bool(is_equal))
     }
     
-    fn resolve_not(&self, tag: &NotTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let expr_result = ast_resolver.resolve_ast(&tag.expression, context)?;
+    fn resolve_not(&self, tag: &NotTag, context: &TagContext) -> Result<Value> {
+        let expr_result = self.resolve_ast(&tag.expression, context)?;
         
         let is_truthy = match expr_result {
             Value::Bool(b) => b,
@@ -1011,9 +1108,9 @@ impl TagResolver for StandardTagResolver {
         Ok(Value::Bool(!is_truthy))
     }
     
-    fn resolve_split(&self, tag: &SplitTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let delimiter_result = ast_resolver.resolve_ast(&tag.delimiter, context)?;
-        let string_result = ast_resolver.resolve_ast(&tag.string, context)?;
+    fn resolve_split(&self, tag: &SplitTag, context: &TagContext) -> Result<Value> {
+        let delimiter_result = self.resolve_ast(&tag.delimiter, context)?;
+        let string_result = self.resolve_ast(&tag.string, context)?;
         
         match (delimiter_result, string_result) {
             (Value::String(delimiter), Value::String(s)) => {
@@ -1027,9 +1124,9 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_join(&self, tag: &JoinTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let delimiter_result = ast_resolver.resolve_ast(&tag.delimiter, context)?;
-        let array_result = ast_resolver.resolve_ast(&tag.array, context)?;
+    fn resolve_join(&self, tag: &JoinTag, context: &TagContext) -> Result<Value> {
+        let delimiter_result = self.resolve_ast(&tag.delimiter, context)?;
+        let array_result = self.resolve_ast(&tag.array, context)?;
         
         // Extract delimiter as string
         let delimiter_str = match delimiter_result {
@@ -1058,8 +1155,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext) -> Result<Value> {
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         match items_result {
             Value::Sequence(seq) => {
@@ -1076,13 +1173,13 @@ impl TagResolver for StandardTagResolver {
                     
                     // Apply filter if present
                     if let Some(filter) = &tag.filter {
-                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        let filter_result = self.resolve_ast(filter, &item_context)?;
                         if !is_truthy(&filter_result) {
                             continue; // Skip this item
                         }
                     }
                     
-                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    let transformed = self.resolve_ast(&tag.template, &item_context)?;
                     // Flatten the result - if it's a sequence, extend; otherwise push
                     match transformed {
                         Value::Sequence(mut sub_seq) => {
@@ -1100,8 +1197,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext) -> Result<Value> {
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         match items_result {
             Value::Sequence(seq) => {
@@ -1114,7 +1211,7 @@ impl TagResolver for StandardTagResolver {
                     item_bindings.insert(var_name.to_string(), item);
                     let item_context = context.with_bindings(item_bindings);
                     
-                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    let transformed = self.resolve_ast(&tag.template, &item_context)?;
                     match transformed {
                         Value::Mapping(map) => {
                             result.extend(map);
@@ -1129,9 +1226,9 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
+    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext) -> Result<Value> {
         // Inline map resolution logic
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         let mapped_result = match items_result {
             Value::Sequence(seq) => {
@@ -1147,13 +1244,13 @@ impl TagResolver for StandardTagResolver {
                     
                     // Apply filter if present
                     if let Some(filter) = &tag.filter {
-                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        let filter_result = self.resolve_ast(filter, &item_context)?;
                         if !is_truthy(&filter_result) {
                             continue; // Skip this item
                         }
                     }
                     
-                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    let transformed = self.resolve_ast(&tag.template, &item_context)?;
                     result.push(transformed);
                 }
                 
@@ -1194,8 +1291,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext) -> Result<Value> {
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         match items_result {
             Value::Mapping(map) => {
@@ -1222,7 +1319,7 @@ impl TagResolver for StandardTagResolver {
                     
                     let value_context = context.with_bindings(value_bindings);
                     
-                    let transformed = ast_resolver.resolve_ast(&tag.template, &value_context)?;
+                    let transformed = self.resolve_ast(&tag.template, &value_context)?;
                     result.insert(key, transformed);
                 }
                 
@@ -1232,8 +1329,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext) -> Result<Value> {
+        let items_result = self.resolve_ast(&tag.items, context)?;
         
         match items_result {
             Value::Sequence(seq) => {
@@ -1246,7 +1343,7 @@ impl TagResolver for StandardTagResolver {
                     item_bindings.insert(var_name.to_string(), item.clone());
                     let item_context = context.with_bindings(item_bindings);
                     
-                    let key_result = ast_resolver.resolve_ast(&tag.key, &item_context)?;
+                    let key_result = self.resolve_ast(&tag.key, &item_context)?;
                     let key_str = match key_result {
                         Value::String(s) => s,
                         Value::Number(n) => n.to_string(),
@@ -1269,8 +1366,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let source_result = ast_resolver.resolve_ast(&tag.source, context)?;
+    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext) -> Result<Value> {
+        let source_result = self.resolve_ast(&tag.source, context)?;
         
         match source_result {
             Value::Sequence(seq) => {
@@ -1293,8 +1390,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let data_result = ast_resolver.resolve_ast(&tag.data, context)?;
+    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext) -> Result<Value> {
+        let data_result = self.resolve_ast(&tag.data, context)?;
         
         let yaml_string = serde_yaml::to_string(&data_result)
             .map_err(|e| anyhow!("Failed to convert data to YAML string: {}", e))?;
@@ -1304,8 +1401,8 @@ impl TagResolver for StandardTagResolver {
         Ok(Value::String(trimmed))
     }
     
-    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let yaml_string_result = ast_resolver.resolve_ast(&tag.yaml_string, context)?;
+    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext) -> Result<Value> {
+        let yaml_string_result = self.resolve_ast(&tag.yaml_string, context)?;
         
         match yaml_string_result {
             Value::String(yaml_str) => {
@@ -1316,8 +1413,8 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let data_result = ast_resolver.resolve_ast(&tag.data, context)?;
+    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext) -> Result<Value> {
+        let data_result = self.resolve_ast(&tag.data, context)?;
         
         // Convert serde_yaml::Value to serde_json::Value
         let json_value = yaml_value_to_json_value(&data_result)?;
@@ -1328,8 +1425,8 @@ impl TagResolver for StandardTagResolver {
         Ok(Value::String(json_string))
     }
     
-    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let json_string_result = ast_resolver.resolve_ast(&tag.json_string, context)?;
+    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext) -> Result<Value> {
+        let json_string_result = self.resolve_ast(&tag.json_string, context)?;
         
         match json_string_result {
             Value::String(json_str) => {
@@ -1343,10 +1440,361 @@ impl TagResolver for StandardTagResolver {
         }
     }
     
-    fn resolve_escape(&self, tag: &EscapeTag, _context: &TagContext, _ast_resolver: &dyn AstResolver) -> Result<Value> {
+    fn resolve_escape(&self, tag: &EscapeTag, _context: &TagContext) -> Result<Value> {
         // For the escape tag, we need to convert the AST to Value without any preprocessing
         // This means we manually convert the AST while preserving any preprocessing tags as regular YAML
         escape_ast_to_value(&tag.content)
+    }
+}
+
+impl StandardTagResolver {
+    /// Convert serde_yaml::Value to serde_json::Value for handlebars processing
+    pub fn yaml_value_to_json_value(&self, yaml_value: &Value) -> Result<serde_json::Value> {
+        match yaml_value {
+            Value::Null => Ok(serde_json::Value::Null),
+            Value::Bool(b) => Ok(serde_json::Value::Bool(*b)),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(serde_json::Value::Number(serde_json::Number::from(i)))
+                } else if let Some(u) = n.as_u64() {
+                    Ok(serde_json::Value::Number(serde_json::Number::from(u)))
+                } else if let Some(f) = n.as_f64() {
+                    Ok(serde_json::Number::from_f64(f)
+                        .map(serde_json::Value::Number)
+                        .unwrap_or(serde_json::Value::Null))
+                } else {
+                    Ok(serde_json::Value::Null)
+                }
+            }
+            Value::String(s) => Ok(serde_json::Value::String(s.clone())),
+            Value::Sequence(seq) => {
+                let mut json_seq = Vec::with_capacity(seq.len());
+                for item in seq {
+                    json_seq.push(self.yaml_value_to_json_value(item)?);
+                }
+                Ok(serde_json::Value::Array(json_seq))
+            }
+            Value::Mapping(map) => {
+                let mut json_map = serde_json::Map::new();
+                for (k, v) in map {
+                    let key_str = match k {
+                        Value::String(s) => s.clone(),
+                        Value::Number(n) => n.as_f64().unwrap_or(0.0).to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => format!("{:?}", k), // fallback for other types
+                    };
+                    json_map.insert(key_str, self.yaml_value_to_json_value(v)?);
+                }
+                Ok(serde_json::Value::Object(json_map))
+            }
+            Value::Tagged(_) => Err(anyhow!("Tagged values not supported in handlebars conversion")),
+        }
+    }
+
+    fn process_string_with_handlebars(&self, s: String, context: &TagContext) -> Result<Value> {
+        use crate::yaml::handlebars::interpolate_handlebars_string;
+        use std::collections::HashMap;
+        
+        // Check if string contains handlebars syntax
+        if !s.contains("{{") {
+            return Ok(Value::String(s));
+        }
+        
+        // Convert TagContext variables from serde_yaml::Value to serde_json::Value
+        let mut env_values: HashMap<String, serde_json::Value> = HashMap::with_capacity(context.variables.len());
+        for (key, yaml_value) in &context.variables {
+            let json_value = self.yaml_value_to_json_value(yaml_value)?;
+            env_values.insert(key.clone(), json_value);
+        }
+        
+        // Apply handlebars interpolation to the string
+        match interpolate_handlebars_string(&s, &env_values, "yaml-string") {
+            Ok(processed_string) => Ok(Value::String(processed_string)),
+            Err(e) => {
+                // Enhanced error handling for handlebars processing
+                {
+                    let error_msg = e.to_string();
+                    
+                    // Extract variable name from handlebars error if possible
+                    if error_msg.contains("Variable") && error_msg.contains("not found") {
+                        // Parse the variable name from the error message
+                        let var_name = if let Some(start) = error_msg.find("Variable \"") {
+                            let start = start + 10; // Skip 'Variable "'
+                            if let Some(end) = error_msg[start..].find('"') {
+                                &error_msg[start..start + end]
+                            } else {
+                                "unknown"
+                            }
+                        } else {
+                            "unknown"
+                        };
+                        
+                        // Get file path and try to find the line number
+                        let file_path = if let Some(base_path) = &context.base_path {
+                            base_path.display().to_string()
+                        } else {
+                            context.current_location().unwrap_or_else(|| "unknown location".to_string())
+                        };
+                        
+                        let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                            let line_number = content.lines().enumerate().find_map(|(idx, line)| {
+                                if line.contains(&format!("{{{{{}}}}}", var_name)) {
+                                    Some(idx + 1)
+                                } else {
+                                    None
+                                }
+                            }).unwrap_or(0);
+                            
+                            if line_number > 0 {
+                                format!("{}:{}", file_path, line_number)
+                            } else {
+                                file_path
+                            }
+                        } else {
+                            file_path
+                        };
+                        
+                        let available_vars: Vec<String> = env_values.keys().cloned().collect();
+                        use crate::yaml::error_wrapper::variable_not_found_error;
+                        return Err(variable_not_found_error(var_name, &location, &context.current_path(), available_vars));
+                    }
+                }
+                
+                // Fallback to basic error
+                Err(anyhow!("Handlebars processing failed: {}", e))
+            }
+        }
+    }
+
+    fn resolve_preprocessing_tag_with_context(&self, tag: &PreprocessingTag, context: &TagContext) -> Result<Value> {        
+        match tag {
+            PreprocessingTag::Include(include_tag) => {
+                self.resolve_include(include_tag, context)
+            }
+            PreprocessingTag::If(if_tag) => {
+                self.resolve_if(if_tag, context)
+            }
+            PreprocessingTag::Map(map_tag) => {
+                self.resolve_map(map_tag, context)
+            }
+            PreprocessingTag::Merge(merge_tag) => {
+                self.resolve_merge(merge_tag, context)
+            }
+            PreprocessingTag::Concat(concat_tag) => {
+                self.resolve_concat(concat_tag, context)
+            }
+            PreprocessingTag::Let(let_tag) => {
+                self.resolve_let(let_tag, context)
+            }
+            PreprocessingTag::Eq(eq_tag) => {
+                self.resolve_eq(eq_tag, context)
+            }
+            PreprocessingTag::Not(not_tag) => {
+                self.resolve_not(not_tag, context)
+            }
+            PreprocessingTag::Split(split_tag) => {
+                self.resolve_split(split_tag, context)
+            }
+            PreprocessingTag::Join(join_tag) => {
+                self.resolve_join(join_tag, context)
+            }
+            PreprocessingTag::ConcatMap(concat_map_tag) => {
+                self.resolve_concat_map(concat_map_tag, context)
+            }
+            PreprocessingTag::MergeMap(merge_map_tag) => {
+                self.resolve_merge_map(merge_map_tag, context)
+            }
+            PreprocessingTag::MapListToHash(map_list_to_hash_tag) => {
+                self.resolve_map_list_to_hash(map_list_to_hash_tag, context)
+            }
+            PreprocessingTag::MapValues(map_values_tag) => {
+                self.resolve_map_values(map_values_tag, context)
+            }
+            PreprocessingTag::GroupBy(group_by_tag) => {
+                self.resolve_group_by(group_by_tag, context)
+            }
+            PreprocessingTag::FromPairs(from_pairs_tag) => {
+                self.resolve_from_pairs(from_pairs_tag, context)
+            }
+            PreprocessingTag::ToYamlString(to_yaml_string_tag) => {
+                self.resolve_to_yaml_string(to_yaml_string_tag, context)
+            }
+            PreprocessingTag::ParseYaml(parse_yaml_tag) => {
+                self.resolve_parse_yaml(parse_yaml_tag, context)
+            }
+            PreprocessingTag::ToJsonString(to_json_string_tag) => {
+                self.resolve_to_json_string(to_json_string_tag, context)
+            }
+            PreprocessingTag::ParseJson(parse_json_tag) => {
+                self.resolve_parse_json(parse_json_tag, context)
+            }
+            PreprocessingTag::Escape(escape_tag) => {
+                self.resolve_escape(escape_tag, context)
+            }
+        }
+    }
+
+    /// Create a CloudFormation expression that serializes to proper YAML tag syntax
+    /// 
+    /// This method converts CloudFormation AST nodes to serde mapping structures that
+    /// can be serialized by serde_yaml. The output uses mapping format (`'!Ref': value`)
+    /// which is later post-processed to proper YAML tags (`!Ref value`) in the render pipeline.
+    fn create_cfn_expression(&self, cfn_tag: &crate::yaml::ast::CloudFormationTag, resolved_value: Value) -> Result<Value> {
+        use crate::yaml::ast::CloudFormationTag;
+        
+        // Helper function to unpack single-element arrays (for array syntax support)
+        let unpack_single_element_array = |value: Value| -> Value {
+            match &value {
+                Value::Sequence(seq) if seq.len() == 1 => seq[0].clone(),
+                _ => value,
+            }
+        };
+        
+        // Convert the resolved value to the appropriate CloudFormation expression structure
+        match cfn_tag {
+            CloudFormationTag::Ref(_) => {
+                // Ref expects a string - unpack single-element arrays for compatibility
+                let unpacked = unpack_single_element_array(resolved_value);
+                if let Value::String(resource) = unpacked {
+                    let mut map = serde_yaml::Mapping::with_capacity(1);
+                    map.insert(Value::String("!Ref".to_string()), Value::String(resource));
+                    Ok(Value::Mapping(map))
+                } else {
+                    Err(anyhow::anyhow!("Ref function expects a string value, got: {:?}", unpacked))
+                }
+            },
+            CloudFormationTag::Sub(_) => {
+                // Sub expects a string or array [string, {substitutions}] - unpack single-element arrays
+                let unpacked = unpack_single_element_array(resolved_value);
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Sub".to_string()), unpacked);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::GetAtt(_) => {
+                // GetAtt expects [resource, attribute] or "resource.attribute" - unpack single-element arrays
+                let unpacked = unpack_single_element_array(resolved_value);
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!GetAtt".to_string()), unpacked);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Join(_) => {
+                // Join expects [delimiter, [values]]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Join".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Select(_) => {
+                // Select expects [index, list]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Select".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Split(_) => {
+                // Split expects [delimiter, string]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Split".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Base64(_) => {
+                // Base64 expects a string
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Base64".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::GetAZs(_) => {
+                // GetAZs expects a region string
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!GetAZs".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ImportValue(_) => {
+                // ImportValue expects a string
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!ImportValue".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::FindInMap(_) => {
+                // FindInMap expects [MapName, TopLevelKey, SecondLevelKey]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!FindInMap".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Cidr(_) => {
+                // Cidr expects [ipBlock, count, cidrBits]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Cidr".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Length(_) => {
+                // Length expects a list
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Length".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ToJsonString(_) => {
+                // ToJsonString expects any data structure
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!ToJsonString".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Transform(_) => {
+                // Transform expects a mapping with Name and Parameters
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Transform".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::ForEach(_) => {
+                // ForEach expects a mapping with specific structure
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!ForEach".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::If(_) => {
+                // If expects [condition, trueValue, falseValue]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!If".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Equals(_) => {
+                // Equals expects [value1, value2]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Equals".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::And(_) => {
+                // And expects [condition1, condition2, ...]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!And".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Or(_) => {
+                // Or expects [condition1, condition2, ...]
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Or".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+            CloudFormationTag::Not(_) => {
+                // Not expects a condition
+                let mut map = serde_yaml::Mapping::with_capacity(1);
+                map.insert(Value::String("!Not".to_string()), resolved_value);
+                Ok(Value::Mapping(map))
+            },
+        }
+    }
+
+    /// Create a tagged value that preserves unknown YAML tags
+    /// 
+    /// Creates a mapping structure that can be serialized to both YAML and JSON.
+    /// The output is post-processed to convert mapping format to proper YAML tags.
+    /// 
+    /// **Implementation Note**: This produces `'!Tag': value` format which is then
+    /// converted to proper `!Tag value` format via `convert_cf_mappings_to_tags()`.
+    /// This approach works around serde_yaml 0.9's inability to serialize `Value::Tagged`.
+    fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
+        // Create a mapping with the tag as key - this works for both YAML and JSON serialization
+        let mut map = serde_yaml::Mapping::with_capacity(1);
+        map.insert(Value::String(format!("!{}", tag)), value);
+        Ok(Value::Mapping(map))
     }
 }
 
@@ -1375,128 +1823,136 @@ impl DebugTagResolver {
 }
 
 impl TagResolver for DebugTagResolver {
+    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext) -> Result<Value> {
+        self.inner.resolve_ast(ast, context)
+    }
+    
+    fn yaml_value_to_json_value(&self, yaml_value: &Value) -> Result<serde_json::Value> {
+        self.inner.yaml_value_to_json_value(yaml_value)
+    }
+    
     fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value> {
         let result = self.inner.resolve_include(tag, context);
         self.log_resolution("include", tag, &result);
         result
     }
     
-    fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_if(tag, context, ast_resolver);
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_if(tag, context);
         self.log_resolution("if", tag, &result);
         result
     }
     
-    fn resolve_map(&self, tag: &MapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_map(tag, context, ast_resolver);
+    fn resolve_map(&self, tag: &MapTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_map(tag, context);
         self.log_resolution("map", tag, &result);
         result
     }
     
-    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_merge(tag, context, ast_resolver);
+    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_merge(tag, context);
         self.log_resolution("merge", tag, &result);
         result
     }
     
-    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_concat(tag, context, ast_resolver);
+    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_concat(tag, context);
         self.log_resolution("concat", tag, &result);
         result
     }
     
-    fn resolve_let(&self, tag: &LetTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_let(tag, context, ast_resolver);
+    fn resolve_let(&self, tag: &LetTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_let(tag, context);
         self.log_resolution("let", tag, &result);
         result
     }
     
-    fn resolve_eq(&self, tag: &EqTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_eq(tag, context, ast_resolver);
+    fn resolve_eq(&self, tag: &EqTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_eq(tag, context);
         self.log_resolution("eq", tag, &result);
         result
     }
     
-    fn resolve_not(&self, tag: &NotTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_not(tag, context, ast_resolver);
+    fn resolve_not(&self, tag: &NotTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_not(tag, context);
         self.log_resolution("not", tag, &result);
         result
     }
     
-    fn resolve_split(&self, tag: &SplitTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_split(tag, context, ast_resolver);
+    fn resolve_split(&self, tag: &SplitTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_split(tag, context);
         self.log_resolution("split", tag, &result);
         result
     }
     
-    fn resolve_join(&self, tag: &JoinTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_join(tag, context, ast_resolver);
+    fn resolve_join(&self, tag: &JoinTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_join(tag, context);
         self.log_resolution("join", tag, &result);
         result
     }
     
-    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_concat_map(tag, context, ast_resolver);
+    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_concat_map(tag, context);
         self.log_resolution("concatMap", tag, &result);
         result
     }
     
-    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_merge_map(tag, context, ast_resolver);
+    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_merge_map(tag, context);
         self.log_resolution("mergeMap", tag, &result);
         result
     }
     
-    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_map_list_to_hash(tag, context, ast_resolver);
+    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_map_list_to_hash(tag, context);
         self.log_resolution("mapListToHash", tag, &result);
         result
     }
     
-    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_map_values(tag, context, ast_resolver);
+    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_map_values(tag, context);
         self.log_resolution("mapValues", tag, &result);
         result
     }
     
-    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_group_by(tag, context, ast_resolver);
+    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_group_by(tag, context);
         self.log_resolution("groupBy", tag, &result);
         result
     }
     
-    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_from_pairs(tag, context, ast_resolver);
+    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_from_pairs(tag, context);
         self.log_resolution("fromPairs", tag, &result);
         result
     }
     
-    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_to_yaml_string(tag, context, ast_resolver);
+    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_to_yaml_string(tag, context);
         self.log_resolution("toYamlString", tag, &result);
         result
     }
     
-    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_parse_yaml(tag, context, ast_resolver);
+    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_parse_yaml(tag, context);
         self.log_resolution("parseYaml", tag, &result);
         result
     }
     
-    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_to_json_string(tag, context, ast_resolver);
+    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_to_json_string(tag, context);
         self.log_resolution("toJsonString", tag, &result);
         result
     }
     
-    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_parse_json(tag, context, ast_resolver);
+    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_parse_json(tag, context);
         self.log_resolution("parseJson", tag, &result);
         result
     }
     
-    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        let result = self.inner.resolve_escape(tag, context, ast_resolver);
+    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext) -> Result<Value> {
+        let result = self.inner.resolve_escape(tag, context);
         self.log_resolution("escape", tag, &result);
         result
     }
@@ -1817,87 +2273,95 @@ impl TracingTagResolver {
 }
 
 impl TagResolver for TracingTagResolver {
+    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext) -> Result<Value> {
+        self.inner.resolve_ast(ast, context)
+    }
+    
+    fn yaml_value_to_json_value(&self, yaml_value: &Value) -> Result<serde_json::Value> {
+        self.inner.yaml_value_to_json_value(yaml_value)
+    }
+    
     fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value> {
         self.trace_resolution("include", tag, || self.inner.resolve_include(tag, context))
     }
     
-    fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("if", tag, || self.inner.resolve_if(tag, context, ast_resolver))
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("if", tag, || self.inner.resolve_if(tag, context))
     }
     
-    fn resolve_map(&self, tag: &MapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("map", tag, || self.inner.resolve_map(tag, context, ast_resolver))
+    fn resolve_map(&self, tag: &MapTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("map", tag, || self.inner.resolve_map(tag, context))
     }
     
-    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("merge", tag, || self.inner.resolve_merge(tag, context, ast_resolver))
+    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("merge", tag, || self.inner.resolve_merge(tag, context))
     }
     
-    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("concat", tag, || self.inner.resolve_concat(tag, context, ast_resolver))
+    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("concat", tag, || self.inner.resolve_concat(tag, context))
     }
     
-    fn resolve_let(&self, tag: &LetTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("let", tag, || self.inner.resolve_let(tag, context, ast_resolver))
+    fn resolve_let(&self, tag: &LetTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("let", tag, || self.inner.resolve_let(tag, context))
     }
     
-    fn resolve_eq(&self, tag: &EqTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("eq", tag, || self.inner.resolve_eq(tag, context, ast_resolver))
+    fn resolve_eq(&self, tag: &EqTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("eq", tag, || self.inner.resolve_eq(tag, context))
     }
     
-    fn resolve_not(&self, tag: &NotTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("not", tag, || self.inner.resolve_not(tag, context, ast_resolver))
+    fn resolve_not(&self, tag: &NotTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("not", tag, || self.inner.resolve_not(tag, context))
     }
     
-    fn resolve_split(&self, tag: &SplitTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("split", tag, || self.inner.resolve_split(tag, context, ast_resolver))
+    fn resolve_split(&self, tag: &SplitTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("split", tag, || self.inner.resolve_split(tag, context))
     }
     
-    fn resolve_join(&self, tag: &JoinTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("join", tag, || self.inner.resolve_join(tag, context, ast_resolver))
+    fn resolve_join(&self, tag: &JoinTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("join", tag, || self.inner.resolve_join(tag, context))
     }
     
-    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("concatMap", tag, || self.inner.resolve_concat_map(tag, context, ast_resolver))
+    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("concatMap", tag, || self.inner.resolve_concat_map(tag, context))
     }
     
-    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("mergeMap", tag, || self.inner.resolve_merge_map(tag, context, ast_resolver))
+    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("mergeMap", tag, || self.inner.resolve_merge_map(tag, context))
     }
     
-    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("mapListToHash", tag, || self.inner.resolve_map_list_to_hash(tag, context, ast_resolver))
+    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("mapListToHash", tag, || self.inner.resolve_map_list_to_hash(tag, context))
     }
     
-    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("mapValues", tag, || self.inner.resolve_map_values(tag, context, ast_resolver))
+    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("mapValues", tag, || self.inner.resolve_map_values(tag, context))
     }
     
-    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("groupBy", tag, || self.inner.resolve_group_by(tag, context, ast_resolver))
+    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("groupBy", tag, || self.inner.resolve_group_by(tag, context))
     }
     
-    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("fromPairs", tag, || self.inner.resolve_from_pairs(tag, context, ast_resolver))
+    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("fromPairs", tag, || self.inner.resolve_from_pairs(tag, context))
     }
     
-    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("toYamlString", tag, || self.inner.resolve_to_yaml_string(tag, context, ast_resolver))
+    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("toYamlString", tag, || self.inner.resolve_to_yaml_string(tag, context))
     }
     
-    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("parseYaml", tag, || self.inner.resolve_parse_yaml(tag, context, ast_resolver))
+    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("parseYaml", tag, || self.inner.resolve_parse_yaml(tag, context))
     }
     
-    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("toJsonString", tag, || self.inner.resolve_to_json_string(tag, context, ast_resolver))
+    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("toJsonString", tag, || self.inner.resolve_to_json_string(tag, context))
     }
     
-    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("parseJson", tag, || self.inner.resolve_parse_json(tag, context, ast_resolver))
+    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("parseJson", tag, || self.inner.resolve_parse_json(tag, context))
     }
     
-    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        self.trace_resolution("escape", tag, || self.inner.resolve_escape(tag, context, ast_resolver))
+    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext) -> Result<Value> {
+        self.trace_resolution("escape", tag, || self.inner.resolve_escape(tag, context))
     }
 }
