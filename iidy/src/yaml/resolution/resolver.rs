@@ -151,8 +151,8 @@ pub struct GlobalAccumulator {
 pub struct TagContext {
     /// Variable bindings for current scope
     pub variables: HashMap<String, Value>,
-    /// Base path for resolving relative includes
-    pub base_path: Option<std::path::PathBuf>,
+    /// URI of the input document being processed (for error reporting and relative imports)
+    pub input_uri: Option<String>,
     /// Stack frames for error reporting
     pub stack: Vec<StackFrame>,
     /// Global accumulator (optional - only used for CloudFormation templates or docs that need it)
@@ -212,14 +212,13 @@ impl TagContext {
         Self::default()
     }
     
-    /// Create TagContext with base path derived from a file location
-    /// Useful for testing and when you need to derive base path from a file location
+    /// Create TagContext with input URI for testing
+    /// Useful for testing and when you need to set the input URI
     #[cfg(test)]
     pub fn from_file_location(location: &str) -> Self {
-        let base_path = derive_base_path_from_location(location);
         Self {
             variables: HashMap::new(),
-            base_path,
+            input_uri: Some(location.to_string()),
             stack: vec![StackFrame {
                 location: Some(location.to_string()),
                 path: "Root".to_string(),
@@ -228,13 +227,12 @@ impl TagContext {
         }
     }
     
-    /// Create TagContext with both location and variables for comprehensive testing
+    /// Create TagContext with both input URI and variables for comprehensive testing
     #[cfg(test)]
     pub fn from_location_and_vars(location: &str, variables: HashMap<String, Value>) -> Self {
-        let base_path = derive_base_path_from_location(location);
         Self {
             variables,
-            base_path,
+            input_uri: Some(location.to_string()),
             stack: vec![StackFrame {
                 location: Some(location.to_string()),
                 path: "Root".to_string(),
@@ -247,7 +245,7 @@ impl TagContext {
     pub fn new_with_cfn_accumulator() -> Self {
         Self {
             variables: HashMap::new(),
-            base_path: None,
+            input_uri: None,
             stack: Vec::new(),
             global_accumulator: Some(GlobalAccumulator::default()),
         }
@@ -259,7 +257,7 @@ impl TagContext {
         new_vars.extend(bindings);
         Self {
             variables: new_vars,
-            base_path: self.base_path.clone(),
+            input_uri: self.input_uri.clone(),
             stack: self.stack.clone(),
             global_accumulator: self.global_accumulator.clone(),
         }
@@ -273,7 +271,7 @@ impl TagContext {
             new_vars.extend(bindings.iter().map(|(k, v)| (k.clone(), v.clone())));
             Self {
                 variables: new_vars,
-                base_path: self.base_path.clone(),
+                input_uri: self.input_uri.clone(),
                 stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
             }
@@ -283,7 +281,7 @@ impl TagContext {
             new_vars.extend(bindings.iter().map(|(k, v)| (k.clone(), v.clone())));
             Self {
                 variables: new_vars,
-                base_path: self.base_path.clone(),
+                input_uri: self.input_uri.clone(),
                 stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
             }
@@ -301,9 +299,9 @@ impl TagContext {
         self
     }
 
-    /// Set base path for includes
-    pub fn with_base_path<P: Into<std::path::PathBuf>>(mut self, path: P) -> Self {
-        self.base_path = Some(path.into());
+    /// Set input URI for the context
+    pub fn with_input_uri(mut self, uri: String) -> Self {
+        self.input_uri = Some(uri);
         self
     }
     
@@ -349,7 +347,7 @@ impl TagContext {
         
         Self {
             variables: self.variables.clone(),
-            base_path: self.base_path.clone(),
+            input_uri: self.input_uri.clone(),
             stack: new_stack,
             global_accumulator: self.global_accumulator.clone(),
         }
@@ -376,7 +374,7 @@ impl TagContext {
         
         Self {
             variables: self.variables.clone(),
-            base_path: self.base_path.clone(),
+            input_uri: self.input_uri.clone(),
             stack: new_stack,
             global_accumulator: self.global_accumulator.clone(),
         }
@@ -776,6 +774,10 @@ fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
             // Convert unknown tags to a string representation  
             Ok(Value::String(format!("__ESCAPED_TAG_{}__", tag.tag)))
         }
+        YamlAst::ImportedDocument(doc) => {
+            // Escape the imported document's content
+            escape_ast_to_value(&doc.content)
+        }
     }
 }
 
@@ -868,8 +870,8 @@ impl TagResolver for StandardTagResolver {
                     // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
                     if let Value::String(key_str) = &key_val {
                         if key_str == "<<" {
-                            let location_info = if let Some(base_path) = &context.base_path {
-                                format!("in file '{}'", base_path.display())
+                            let location_info = if let Some(input_uri) = &context.input_uri {
+                                format!("in file '{}'", input_uri)
                             } else {
                                 context.current_location()
                                     .map(|loc| format!("in '{}'", loc))
@@ -931,6 +933,11 @@ impl TagResolver for StandardTagResolver {
                 let resolved_value = self.resolve_ast(&tag.value, context)?;
                 self.create_tagged_value(&tag.tag, resolved_value)
             }
+            YamlAst::ImportedDocument(doc) => {
+                // Process the imported document's content with its original context
+                // The input_uri should already be set correctly for this document
+                self.resolve_ast(&doc.content, context)
+            }
         }
     }
     
@@ -954,8 +961,8 @@ impl TagResolver for StandardTagResolver {
         let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
         
         // Get file path
-        let file_path = if let Some(base_path) = &context.base_path {
-            base_path.display().to_string()
+        let file_path = if let Some(input_uri) = &context.input_uri {
+            input_uri.clone()
         } else {
             context.current_location()
                 .unwrap_or_else(|| "unknown location".to_string())
@@ -1562,8 +1569,8 @@ impl StandardTagResolver {
                         };
                         
                         // Get file path and try to find the line number
-                        let file_path = if let Some(base_path) = &context.base_path {
-                            base_path.display().to_string()
+                        let file_path = if let Some(input_uri) = &context.input_uri {
+                            input_uri.clone()
                         } else {
                             context.current_location().unwrap_or_else(|| "unknown location".to_string())
                         };
@@ -2000,75 +2007,121 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tagcontext_base_path_derivation_local_file_paths() {
-        // Test local file path base_path derivation
+    fn test_tagcontext_input_uri_storage_local_file_paths() {
+        // Test local file path input_uri storage
         let context = TagContext::from_file_location("/Users/test/configs/app/config.yaml");
         
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "/Users/test/configs/app/config.yaml"
+        );
+        
+        // Test that we can derive base path on demand
+        let derived_base = derive_base_path_from_location("/Users/test/configs/app/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "/Users/test/configs/app"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_s3_urls() {
-        // Test S3 URL base_path derivation
+    fn test_tagcontext_input_uri_storage_s3_urls() {
+        // Test S3 URL input_uri storage
         let context = TagContext::from_file_location("s3://my-bucket/configs/app/config.yaml");
         
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "s3://my-bucket/configs/app/config.yaml"
+        );
+        
+        // Test that we can derive base path on demand
+        let derived_base = derive_base_path_from_location("s3://my-bucket/configs/app/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "s3://my-bucket/configs/app/"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_s3_root_file() {
-        // Test S3 URL with root file - should return bucket root for relative imports
+    fn test_tagcontext_input_uri_storage_s3_root_file() {
+        // Test S3 URL with root file - input_uri storage and base path derivation
         let context = TagContext::from_file_location("s3://my-bucket/config.yaml");
         
-        // Root files should have bucket root as base path to support relative imports
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "s3://my-bucket/config.yaml"
+        );
+        
+        // Root files should have bucket root as base path to support relative imports
+        let derived_base = derive_base_path_from_location("s3://my-bucket/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "s3://my-bucket/"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_https_urls() {
-        // Test HTTPS URL base_path derivation
+    fn test_tagcontext_input_uri_storage_https_urls() {
+        // Test HTTPS URL input_uri storage
         let context = TagContext::from_file_location("https://example.com/configs/app/config.yaml");
         
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "https://example.com/configs/app/config.yaml"
+        );
+        
+        // Test that we can derive base path on demand
+        let derived_base = derive_base_path_from_location("https://example.com/configs/app/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "https://example.com/configs/app/"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_http_urls() {
-        // Test HTTP URL base_path derivation
+    fn test_tagcontext_input_uri_storage_http_urls() {
+        // Test HTTP URL input_uri storage
         let context = TagContext::from_file_location("http://example.com/configs/app/config.yaml");
         
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "http://example.com/configs/app/config.yaml"
+        );
+        
+        // Test that we can derive base path on demand
+        let derived_base = derive_base_path_from_location("http://example.com/configs/app/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "http://example.com/configs/app/"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_http_root_file() {
-        // Test HTTP URL with root file - should return domain root for relative imports
+    fn test_tagcontext_input_uri_storage_http_root_file() {
+        // Test HTTP URL with root file - input_uri storage and base path derivation
         let context = TagContext::from_file_location("https://example.com/config.yaml");
         
-        // Root files should have domain root as base path to support relative imports
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "https://example.com/config.yaml"
+        );
+        
+        // Root files should have domain root as base path to support relative imports
+        let derived_base = derive_base_path_from_location("https://example.com/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "https://example.com/"
         );
     }
@@ -2094,11 +2147,22 @@ mod tests {
         for (location, expected_base) in test_cases {
             let context = TagContext::from_file_location(location);
             
-            assert!(context.base_path.is_some(), "Expected base_path for location: {}", location);
+            // Test that input_uri is stored correctly
+            assert!(context.input_uri.is_some(), "Expected input_uri for location: {}", location);
             assert_eq!(
-                context.base_path.unwrap().to_string_lossy(),
+                context.input_uri.as_ref().unwrap(),
+                location,
+                "input_uri mismatch for location: {}", 
+                location
+            );
+            
+            // Test that base path can be derived on demand
+            let derived_base = derive_base_path_from_location(location);
+            assert!(derived_base.is_some(), "Expected derived base_path for location: {}", location);
+            assert_eq!(
+                derived_base.unwrap().to_string_lossy(),
                 expected_base,
-                "Mismatch for location: {}",
+                "Derived base path mismatch for location: {}",
                 location
             );
         }
@@ -2113,19 +2177,27 @@ mod tests {
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_relative_path() {
+    fn test_tagcontext_input_uri_storage_relative_path() {
         // Test relative local file path
         let context = TagContext::from_file_location("configs/app/config.yaml");
         
-        assert!(context.base_path.is_some());
+        assert!(context.input_uri.is_some());
         assert_eq!(
-            context.base_path.unwrap().to_string_lossy(),
+            context.input_uri.unwrap(),
+            "configs/app/config.yaml"
+        );
+        
+        // Test base path derivation
+        let derived_base = derive_base_path_from_location("configs/app/config.yaml");
+        assert!(derived_base.is_some());
+        assert_eq!(
+            derived_base.unwrap().to_string_lossy(),
             "configs/app"
         );
     }
     
     #[test]
-    fn test_tagcontext_base_path_derivation_native_paths() {
+    fn test_tagcontext_input_uri_storage_native_paths() {
         // Test native paths for the current platform
         #[cfg(unix)]
         let test_path = "/Users/test/configs/app/config.yaml";
@@ -2134,8 +2206,14 @@ mod tests {
         
         let context = TagContext::from_file_location(test_path);
         
-        assert!(context.base_path.is_some());
-        let base_path = context.base_path.unwrap();
+        // Test input_uri storage
+        assert!(context.input_uri.is_some());
+        assert_eq!(context.input_uri.unwrap(), test_path);
+        
+        // Test base path derivation
+        let derived_base = derive_base_path_from_location(test_path);
+        assert!(derived_base.is_some());
+        let base_path = derived_base.unwrap();
         let base_path_str = base_path.to_string_lossy();
         
         // Should contain parent directory components

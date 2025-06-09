@@ -27,12 +27,41 @@ pub enum YamlAst {
     CloudFormationTag(CloudFormationTag),
     /// Unknown YAML tag (for tags we don't recognize)
     UnknownYamlTag(UnknownTag),
+    /// Imported document node (represents a document loaded from an external source)
+    ImportedDocument(ImportedDocumentNode),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnknownTag {
     pub tag: String,
     pub value: Box<YamlAst>
+}
+
+/// Represents an imported document within the AST
+/// 
+/// This node type allows tracking of imported documents during traversal,
+/// maintaining the source URI and providing context for error reporting
+/// and debugging during the import resolution process.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportedDocumentNode {
+    /// The source URI from which this document was imported
+    pub source_uri: String,
+    /// The key/alias under which this document was imported (from $imports)
+    pub import_key: String, 
+    /// The resolved AST content of the imported document
+    pub content: Box<YamlAst>,
+    /// Metadata about the import operation
+    pub metadata: ImportMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportMetadata {
+    /// SHA256 hash of the imported content for integrity/caching
+    pub content_hash: Option<String>,
+    /// Timestamp when the import was resolved
+    pub imported_at: Option<std::time::SystemTime>,
+    /// The import type (file, s3, http, etc.)
+    pub import_type: Option<String>,
 }
 
 /// CloudFormation intrinsic function tags that can contain YamlAst for preprocessing
@@ -439,6 +468,10 @@ impl YamlAst {
                 // Unknown tags cannot be converted to plain values
                 // They need to be preserved as-is in the YAML output
                 None
+            }
+            YamlAst::ImportedDocument(doc) => {
+                // Imported documents should use their content
+                doc.content.to_value()
             }
         }
     }

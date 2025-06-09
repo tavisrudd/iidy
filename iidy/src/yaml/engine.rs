@@ -21,7 +21,6 @@
 
 use anyhow::Result;
 use serde_yaml::Value;
-use std::path::PathBuf;
 
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
@@ -62,7 +61,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         
         // Phase 2: Tag processing and final resolution
         let mut context = TagContext::new()
-            .with_base_path(PathBuf::from(base_location))
+            .with_input_uri(base_location.to_string())
             .with_stack_frame(StackFrame {
                 location: Some(base_location.to_string()),
                 path: "<root>".to_string(),
@@ -229,7 +228,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     
                     // Phase 2: Process the document with its own environment context
                     let mut doc_context = TagContext::new()
-                        .with_base_path(PathBuf::from(doc_location));
+                        .with_input_uri(doc_location.to_string());
                     
                     // Add the document's environment variables to context
                     for (key, value) in doc_env_values {
@@ -297,6 +296,10 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::UnknownYamlTag(tag) => {
                 // Store unknown tags by converting their value
                 self.ast_to_value_unprocessed(*tag.value)
+            }
+            YamlAst::ImportedDocument(doc) => {
+                // Convert the imported document's content
+                self.ast_to_value_unprocessed(*doc.content)
             }
         }
     }
