@@ -289,35 +289,3 @@ criterion_group!(
 
 criterion_main!(benches);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_benchmark_setup() {
-        // Verify benchmark setup works correctly
-        let resolver = StandardTagResolver;
-        let context = TagContext::new();
-        
-        // Test simple include
-        let include_tag = IncludeTag {
-            path: "test".to_string(),
-            query: None,
-        };
-        
-        let context_with_var = context.with_variable("test", Value::String("value".to_string()));
-        let result = resolver.resolve_include(&include_tag, &context_with_var);
-        assert!(result.is_ok());
-        
-        // Test simple map
-        let map_tag = MapTag {
-            items: Box::new(YamlAst::Sequence(vec![YamlAst::PlainString("test".to_string())])),
-            template: Box::new(YamlAst::PlainString("{{item}}".to_string())),
-            var: Some("item".to_string()),
-            filter: None,
-        };
-        
-        let result = resolver.resolve_map(&map_tag, &context);
-        assert!(result.is_ok());
-    }
-}

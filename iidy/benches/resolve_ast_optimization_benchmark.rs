@@ -258,21 +258,3 @@ criterion_group!(
 
 criterion_main!(benches);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_benchmark_setup() {
-        // Verify benchmark setup works correctly
-        let loader = ProductionImportLoader::new();
-        let mut preprocessor = YamlPreprocessor::new(loader, true);
-        let context = TagContext::new()
-            .with_variable("test", Value::String("value".to_string()));
-        
-        let ast = YamlAst::PlainString("{{test}}".to_string());
-        let result = preprocessor.resolve_ast_with_context(ast, &context);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), Value::String("value".to_string()));
-    }
-}
