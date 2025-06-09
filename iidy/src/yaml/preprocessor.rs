@@ -35,8 +35,8 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     yaml_11_compatibility: bool,
     /// Map of preprocessing tag unique identifiers to their actual tags
     preprocessing_tag_map: std::collections::HashMap<String, PreprocessingTag>,
-    /// Tag resolver for preprocessing tags
-    tag_resolver: Box<dyn TagResolver>,
+    /// Static tag resolver for preprocessing tags (avoids trait object overhead)
+    tag_resolver: StandardTagResolver,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -46,7 +46,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             import_loader,
             yaml_11_compatibility,
             preprocessing_tag_map: std::collections::HashMap::new(),
-            tag_resolver: Box::new(StandardTagResolver),
+            tag_resolver: StandardTagResolver,
         }
     }
 
@@ -402,8 +402,22 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Phase 2: Resolve AST with complete environment context
-    /// Delegates to the TagResolver for actual resolution
+    /// Optimized with fast paths for common cases to avoid unnecessary overhead
     pub fn resolve_ast_with_context(&mut self, ast: YamlAst, context: &TagContext) -> Result<Value> {
+        // Fast path for simple cases that don't need dynamic dispatch
+        match &ast {
+            // Fast path: Plain strings without handlebars
+            YamlAst::String(s) if !s.contains("{{") => {
+                return Ok(Value::String(s.clone()));
+            }
+            // Fast path: Simple values
+            YamlAst::Null => return Ok(Value::Null),
+            YamlAst::Bool(b) => return Ok(Value::Bool(*b)),
+            YamlAst::Number(n) => return Ok(Value::Number(n.clone())),
+            _ => {}
+        }
+        
+        // For complex cases, delegate to the static resolver (no trait object overhead)
         self.tag_resolver.resolve_ast(&ast, context)
     }
 }

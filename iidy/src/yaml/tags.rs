@@ -45,6 +45,52 @@ fn small_hashmap<K, V>() -> HashMap<K, V> {
     HashMap::with_capacity(2)
 }
 
+/// Fast path optimization helpers for AST processing
+/// 
+/// These helpers enable fast paths for common simple values that don't require
+/// complex processing (no handlebars, preprocessing tags, etc.)
+
+/// Check if an AST value is simple (no processing needed)
+#[inline(always)]
+fn is_simple_ast_value(ast: &YamlAst) -> bool {
+    match ast {
+        YamlAst::Null | YamlAst::Bool(_) | YamlAst::Number(_) => true,
+        YamlAst::String(s) => !s.contains("{{"), // No handlebars templates
+        _ => false,
+    }
+}
+
+/// Check if all items in a sequence are simple values
+#[inline(always)]
+fn is_simple_sequence(seq: &[YamlAst]) -> bool {
+    seq.iter().all(is_simple_ast_value)
+}
+
+/// Check if a mapping contains only simple string keys and simple values
+/// Excludes preprocessing directive keys (starting with '$')
+#[inline(always)]
+fn is_simple_mapping(pairs: &[(YamlAst, YamlAst)]) -> bool {
+    pairs.iter().all(|(key, value)| {
+        match key {
+            YamlAst::String(s) if !s.starts_with('$') => is_simple_ast_value(value),
+            _ => false,
+        }
+    })
+}
+
+/// Convert a simple AST value directly to serde_yaml::Value
+/// Panics if called on non-simple AST (should be checked with is_simple_ast_value first)
+#[inline(always)]
+fn simple_ast_to_value(ast: &YamlAst) -> Value {
+    match ast {
+        YamlAst::Null => Value::Null,
+        YamlAst::Bool(b) => Value::Bool(*b),
+        YamlAst::Number(n) => Value::Number(n.clone()),
+        YamlAst::String(s) => Value::String(s.clone()),
+        _ => unreachable!("simple_ast_to_value called on non-simple AST"),
+    }
+}
+
 
 /// Enhanced error types for preprocessing with stack frame context
 #[derive(thiserror::Error, Debug)]
@@ -822,17 +868,35 @@ impl TagResolver for StandardTagResolver {
             },
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::with_capacity(seq.len());
-                for (index, item) in seq.iter().enumerate() {
-                    // Create context with array index for path tracking
-                    let item_context = context.with_array_index(index);
-                    result.push(self.resolve_ast(item, &item_context)?);
+                
+                if is_simple_sequence(seq) {
+                    // Fast path: convert simple values directly without context creation
+                    for item in seq {
+                        result.push(simple_ast_to_value(item));
+                    }
+                } else {
+                    // Complex path: need full processing with context
+                    for (index, item) in seq.iter().enumerate() {
+                        let item_context = context.with_array_index(index);
+                        result.push(self.resolve_ast(item, &item_context)?);
+                    }
                 }
                 Ok(Value::Sequence(result))
             }
             YamlAst::Mapping(pairs) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
-                for (key, value) in pairs {
-                    let key_val = self.resolve_ast(key, context)?;
+                
+                if is_simple_mapping(pairs) {
+                    // Fast path: simple key-value pairs with no processing needed
+                    for (key, value) in pairs {
+                        let key_val = simple_ast_to_value(key);
+                        let value_val = simple_ast_to_value(value);
+                        result.insert(key_val, value_val);
+                    }
+                } else {
+                    // Complex path: need full processing
+                    for (key, value) in pairs {
+                        let key_val = self.resolve_ast(key, context)?;
                     
                     // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
                     if let Value::String(key_str) = &key_val {
@@ -879,8 +943,9 @@ impl TagResolver for StandardTagResolver {
                         context.with_path_segment(&key_str)
                     };
                     
-                    let value_val = self.resolve_ast(value, &value_context)?;
-                    result.insert(key_val, value_val);
+                        let value_val = self.resolve_ast(value, &value_context)?;
+                        result.insert(key_val, value_val);
+                    }
                 }
                 Ok(Value::Mapping(result))
             }

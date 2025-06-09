@@ -127,3 +127,7 @@ harness = false
 [[bench]]
 name = "resolve_ast_optimization_benchmark"
 harness = false
+
+[[bench]]
+name = "resolve_ast_performance_focused"
+harness = false
