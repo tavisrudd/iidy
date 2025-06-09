@@ -112,3 +112,7 @@ harness = false
 [[bench]]
 name = "parsing_optimization_benchmark"
 harness = false
+
+[[bench]]
+name = "tags_optimization_benchmark"
+harness = false
