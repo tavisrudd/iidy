@@ -249,6 +249,29 @@ impl TagContext {
             stack: self.stack.clone(),
         }
     }
+    
+    /// Create a new context with additional variable bindings (optimized for references)
+    pub fn with_bindings_ref(&self, bindings: &HashMap<String, Value>) -> Self {
+        // For small binding sets, the original extend approach is faster
+        if bindings.len() <= 2 && self.variables.len() <= 10 {
+            let mut new_vars = self.variables.clone();
+            new_vars.extend(bindings.iter().map(|(k, v)| (k.clone(), v.clone())));
+            Self {
+                variables: new_vars,
+                base_path: self.base_path.clone(),
+                stack: self.stack.clone(),
+            }
+        } else {
+            let mut new_vars = HashMap::with_capacity(self.variables.len() + bindings.len());
+            new_vars.extend(self.variables.iter().map(|(k, v)| (k.clone(), v.clone())));
+            new_vars.extend(bindings.iter().map(|(k, v)| (k.clone(), v.clone())));
+            Self {
+                variables: new_vars,
+                base_path: self.base_path.clone(),
+                stack: self.stack.clone(),
+            }
+        }
+    }
 
     /// Get a variable value by name
     pub fn get_variable(&self, name: &str) -> Option<&Value> {
@@ -285,11 +308,15 @@ impl TagContext {
     
     /// Create a new context with an extended path for nested document traversal
     pub fn with_path_segment(&self, segment: &str) -> Self {
-        let current_path = self.current_path();
-        let new_path = if current_path.is_empty() {
-            segment.to_string()
-        } else {
-            format!("{}.{}", current_path, segment)
+        let new_path = match self.stack.last() {
+            Some(frame) if !frame.path.is_empty() => {
+                let mut path = String::with_capacity(frame.path.len() + 1 + segment.len());
+                path.push_str(&frame.path);
+                path.push('.');
+                path.push_str(segment);
+                path
+            }
+            _ => segment.to_string()
         };
         
         let mut new_stack = self.stack.clone();
@@ -509,20 +536,21 @@ fn resolve_dot_notation_path(path: &str, context: &TagContext) -> Option<Value> 
     
     // Start with the root variable
     let root_var = &path_segments[0];
-    let mut current_value = context.get_variable(root_var)?.clone();
+    let mut current_value = context.get_variable(root_var)?;
     
-    // Traverse the path segments
+    // Traverse the path segments using references until the end
     for segment in &path_segments[1..] {
         match current_value {
-            Value::Mapping(ref map) => {
+            Value::Mapping(map) => {
                 let key = Value::String(segment.clone());
-                current_value = map.get(&key)?.clone();
+                current_value = map.get(&key)?;
             }
             _ => return None, // Can't traverse further
         }
     }
     
-    Some(current_value)
+    // Only clone at the final step
+    Some(current_value.clone())
 }
 
 /// Parse path segments handling both dot notation and bracket notation
@@ -671,15 +699,15 @@ pub fn resolve_map_tag(tag: &MapTag, context: &TagContext, resolver: &dyn AstRes
     
     match items_result {
         Value::Sequence(seq) => {
-            let mut result = Vec::new();
+            let mut result = Vec::with_capacity(seq.len());
             let var_name = tag.var.as_deref().unwrap_or("item");
             
             for (idx, item) in seq.into_iter().enumerate() {
                 // Create new context with the current item and index bound to variables
-                let mut item_bindings = HashMap::new();
+                let mut item_bindings = HashMap::with_capacity(2);
                 item_bindings.insert(var_name.to_string(), item);
                 item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
-                let item_context = context.with_bindings(item_bindings);
+                let item_context = context.with_bindings_ref(&item_bindings);
                 
                 // Apply filter if present
                 if let Some(filter) = &tag.filter {
@@ -714,7 +742,8 @@ fn is_truthy(value: &Value) -> bool {
 
 /// Resolve a merge tag
 pub fn resolve_merge_tag(tag: &MergeTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let mut result = serde_yaml::Mapping::new();
+    // Pre-allocate with estimated capacity based on number of sources
+    let mut result = serde_yaml::Mapping::with_capacity(tag.sources.len() * 4);
     
     for source in &tag.sources {
         let source_result = resolver.resolve_ast(source, context)?;
@@ -731,7 +760,8 @@ pub fn resolve_merge_tag(tag: &MergeTag, context: &TagContext, resolver: &dyn As
 
 /// Resolve a concat tag
 pub fn resolve_concat_tag(tag: &ConcatTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let mut result = Vec::new();
+    // Pre-allocate with estimated capacity
+    let mut result = Vec::with_capacity(tag.sources.len() * 2);
     
     for source in &tag.sources {
         let source_result = resolver.resolve_ast(source, context)?;
@@ -751,7 +781,7 @@ pub fn resolve_concat_tag(tag: &ConcatTag, context: &TagContext, resolver: &dyn 
 
 /// Resolve a let tag
 pub fn resolve_let_tag(tag: &LetTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let mut bindings = HashMap::new();
+    let mut bindings = HashMap::with_capacity(tag.bindings.len());
     
     // Resolve all variable bindings
     for (var_name, var_expr) in &tag.bindings {
@@ -760,7 +790,7 @@ pub fn resolve_let_tag(tag: &LetTag, context: &TagContext, resolver: &dyn AstRes
     }
     
     // Create new context with bindings and resolve expression
-    let new_context = context.with_bindings(bindings);
+    let new_context = context.with_bindings_ref(&bindings);
     resolver.resolve_ast(&tag.expression, &new_context)
 }
 
@@ -868,15 +898,16 @@ pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver
     
     match items_result {
         Value::Sequence(seq) => {
-            let mut result = Vec::new();
+            // Pre-allocate with estimated capacity (assuming some expansion)
+            let mut result = Vec::with_capacity(seq.len() * 2);
             let var_name = tag.var.as_deref().unwrap_or("item");
             
             for (idx, item) in seq.into_iter().enumerate() {
                 // Create new context with the current item and index bound to variables
-                let mut item_bindings = HashMap::new();
+                let mut item_bindings = HashMap::with_capacity(2);
                 item_bindings.insert(var_name.to_string(), item);
                 item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
-                let item_context = context.with_bindings(item_bindings);
+                let item_context = context.with_bindings_ref(&item_bindings);
                 
                 // Apply filter if present
                 if let Some(filter) = &tag.filter {
