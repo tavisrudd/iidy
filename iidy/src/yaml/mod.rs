@@ -35,7 +35,7 @@ pub mod error_spike_tests;
 
 pub use ast::*;
 pub use parser::parse_yaml_with_custom_tags_from_file;
-pub use tags::{TagContext, StackFrame};
+pub use tags::{TagContext, StackFrame, TagResolver, StandardTagResolver, AstResolver};
 pub use error_wrapper::{EnhancedErrorWrapper, EnhancedError};
 
 pub use error_ids::ErrorId;
@@ -216,6 +216,8 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     yaml_11_compatibility: bool,
     /// Map of preprocessing tag unique identifiers to their actual tags
     preprocessing_tag_map: std::collections::HashMap<String, ast::PreprocessingTag>,
+    /// Tag resolver for preprocessing tags
+    tag_resolver: Box<dyn TagResolver>,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -224,6 +226,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             import_loader,
             yaml_11_compatibility: true, // Default to CloudFormation compatibility
             preprocessing_tag_map: std::collections::HashMap::new(),
+            tag_resolver: Box::new(StandardTagResolver),
         }
     }
     
@@ -233,7 +236,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             import_loader,
             yaml_11_compatibility: false,
             preprocessing_tag_map: std::collections::HashMap::new(),
+            tag_resolver: Box::new(StandardTagResolver),
         }
+    }
+    
+    /// Create a preprocessor with a custom tag resolver
+    pub fn with_tag_resolver(mut self, tag_resolver: Box<dyn TagResolver>) -> Self {
+        self.tag_resolver = tag_resolver;
+        self
     }
     
     /// Enable or disable YAML 1.1 boolean compatibility
@@ -925,72 +935,70 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
     }
 
-    fn resolve_preprocessing_tag_with_context(&mut self, tag: PreprocessingTag, context: &TagContext) -> Result<Value> {
-        use crate::yaml::tags::*;
-        
+    fn resolve_preprocessing_tag_with_context(&mut self, tag: PreprocessingTag, context: &TagContext) -> Result<Value> {        
         match tag {
             PreprocessingTag::Include(include_tag) => {
-                resolve_include_tag(&include_tag, context)
+                self.tag_resolver.resolve_include(&include_tag, context)
             }
             PreprocessingTag::If(if_tag) => {
-                resolve_if_tag(&if_tag, context, self)
+                self.tag_resolver.resolve_if(&if_tag, context, self)
             }
             PreprocessingTag::Map(map_tag) => {
-                resolve_map_tag(&map_tag, context, self)
+                self.tag_resolver.resolve_map(&map_tag, context, self)
             }
             PreprocessingTag::Merge(merge_tag) => {
-                resolve_merge_tag(&merge_tag, context, self)
+                self.tag_resolver.resolve_merge(&merge_tag, context, self)
             }
             PreprocessingTag::Concat(concat_tag) => {
-                resolve_concat_tag(&concat_tag, context, self)
+                self.tag_resolver.resolve_concat(&concat_tag, context, self)
             }
             PreprocessingTag::Let(let_tag) => {
-                resolve_let_tag(&let_tag, context, self)
+                self.tag_resolver.resolve_let(&let_tag, context, self)
             }
             PreprocessingTag::Eq(eq_tag) => {
-                resolve_eq_tag(&eq_tag, context, self)
+                self.tag_resolver.resolve_eq(&eq_tag, context, self)
             }
             PreprocessingTag::Not(not_tag) => {
-                resolve_not_tag(&not_tag, context, self)
+                self.tag_resolver.resolve_not(&not_tag, context, self)
             }
             PreprocessingTag::Split(split_tag) => {
-                resolve_split_tag(&split_tag, context, self)
+                self.tag_resolver.resolve_split(&split_tag, context, self)
             }
             PreprocessingTag::Join(join_tag) => {
-                resolve_join_tag(&join_tag, context, self)
+                self.tag_resolver.resolve_join(&join_tag, context, self)
             }
             PreprocessingTag::ConcatMap(concat_map_tag) => {
-                resolve_concat_map_tag(&concat_map_tag, context, self)
+                self.tag_resolver.resolve_concat_map(&concat_map_tag, context, self)
             }
             PreprocessingTag::MergeMap(merge_map_tag) => {
-                resolve_merge_map_tag(&merge_map_tag, context, self)
+                self.tag_resolver.resolve_merge_map(&merge_map_tag, context, self)
             }
             PreprocessingTag::MapListToHash(map_list_to_hash_tag) => {
-                resolve_map_list_to_hash_tag(&map_list_to_hash_tag, context, self)
+                self.tag_resolver.resolve_map_list_to_hash(&map_list_to_hash_tag, context, self)
             }
             PreprocessingTag::MapValues(map_values_tag) => {
-                resolve_map_values_tag(&map_values_tag, context, self)
+                self.tag_resolver.resolve_map_values(&map_values_tag, context, self)
             }
             PreprocessingTag::GroupBy(group_by_tag) => {
-                resolve_group_by_tag(&group_by_tag, context, self)
+                self.tag_resolver.resolve_group_by(&group_by_tag, context, self)
             }
             PreprocessingTag::FromPairs(from_pairs_tag) => {
-                resolve_from_pairs_tag(&from_pairs_tag, context, self)
+                self.tag_resolver.resolve_from_pairs(&from_pairs_tag, context, self)
             }
             PreprocessingTag::ToYamlString(to_yaml_string_tag) => {
-                resolve_to_yaml_string_tag(&to_yaml_string_tag, context, self)
+                self.tag_resolver.resolve_to_yaml_string(&to_yaml_string_tag, context, self)
             }
             PreprocessingTag::ParseYaml(parse_yaml_tag) => {
-                resolve_parse_yaml_tag(&parse_yaml_tag, context, self)
+                self.tag_resolver.resolve_parse_yaml(&parse_yaml_tag, context, self)
             }
             PreprocessingTag::ToJsonString(to_json_string_tag) => {
-                resolve_to_json_string_tag(&to_json_string_tag, context, self)
+                self.tag_resolver.resolve_to_json_string(&to_json_string_tag, context, self)
             }
             PreprocessingTag::ParseJson(parse_json_tag) => {
-                resolve_parse_json_tag(&parse_json_tag, context, self)
+                self.tag_resolver.resolve_parse_json(&parse_json_tag, context, self)
             }
             PreprocessingTag::Escape(escape_tag) => {
-                resolve_escape_tag(&escape_tag, context, self)
+                self.tag_resolver.resolve_escape(&escape_tag, context, self)
             }
         }
     }

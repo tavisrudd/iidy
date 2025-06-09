@@ -371,84 +371,6 @@ impl TagContext {
     }
 }
 
-/// Resolve an include tag
-/// !$ tags only access variables in scope (from $defs, $imports, and local scoped variables)
-/// They never perform file loading - that only happens during $imports processing
-pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Value> {
-    let path = &tag.path;
-    
-    // Parse path and query
-    let (base_path, query) = parse_path_and_query(path, &tag.query);
-    
-    // Try to resolve the variable from the environment
-    if let Some(mut value) = resolve_dot_notation_path(&base_path, context) {
-        // Apply query selector if present
-        if let Some(query_str) = query {
-            value = apply_query_selector(&value, &query_str)?;
-        }
-        return Ok(value);
-    }
-    
-    // Variable not found - provide more specific error context
-    // Check if the root variable exists to give a better error message
-    let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
-    
-    // Get file path
-    let file_path = if let Some(base_path) = &context.base_path {
-        base_path.display().to_string()
-    } else {
-        context.current_location()
-            .unwrap_or_else(|| "unknown location".to_string())
-    };
-    
-    // Get YAML path information
-    let yaml_path = context.current_path();
-    
-    // Get available variables
-    let available_vars: Vec<String> = context.variables.keys().cloned().collect();
-    
-    // Check if root variable exists
-    if let Some(_root_value) = context.get_variable(root_var) {
-        // Root variable exists, but path resolution failed - this means a property doesn't exist
-        let property_path = if base_path.contains('.') {
-            base_path.split('.').skip(1).collect::<Vec<_>>().join(".")
-        } else if base_path.contains('[') {
-            base_path.split('[').skip(1).collect::<Vec<_>>().join("[")
-        } else {
-            base_path.to_string()
-        };
-        
-        {
-            
-            // Try to find the line number by searching for the include reference
-            let include_pattern = format!("!$ {}", base_path);
-            let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
-                let line_number = content.lines().enumerate().find_map(|(idx, line)| {
-                    if line.contains(&include_pattern) {
-                        Some(idx + 1)
-                    } else {
-                        None
-                    }
-                }).unwrap_or(0);
-                
-                if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
-                } else {
-                    file_path.clone()
-                }
-            } else {
-                file_path.clone()
-            };
-            
-            use crate::yaml::error_wrapper::variable_not_found_error;
-            return Err(variable_not_found_error(&format!("{}.{}", root_var, property_path), &location, &yaml_path, available_vars));
-        }
-    } else {
-        // Root variable doesn't exist
-        use crate::yaml::error_wrapper::variable_not_found_error;
-        Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
-    }
-}
 
 /// Parse path and query from include path
 /// Supports formats like "config?database" or "config?database,host"
@@ -681,62 +603,7 @@ fn parse_bracket_content(chars: &mut std::iter::Peekable<std::str::Chars>, conte
 }
 
 
-/// Resolve an if tag
-pub fn resolve_if_tag(tag: &IfTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let condition_result = resolver.resolve_ast(&tag.test, context)?;
-    
-    let is_truthy = match condition_result {
-        Value::Bool(b) => b,
-        Value::Null => false,
-        Value::String(s) => !s.is_empty(),
-        Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
-        Value::Sequence(ref seq) => !seq.is_empty(),
-        Value::Mapping(ref map) => !map.is_empty(),
-        _ => true,
-    };
 
-    if is_truthy {
-        resolver.resolve_ast(&tag.then_value, context)
-    } else if let Some(ref else_value) = tag.else_value {
-        resolver.resolve_ast(else_value, context)
-    } else {
-        Ok(Value::Null)
-    }
-}
-
-/// Resolve a map tag
-pub fn resolve_map_tag(tag: &MapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let items_result = resolver.resolve_ast(&tag.items, context)?;
-    
-    match items_result {
-        Value::Sequence(seq) => {
-            let mut result = Vec::with_capacity(seq.len());
-            let var_name = tag.var.as_deref().unwrap_or("item");
-            
-            for (idx, item) in seq.into_iter().enumerate() {
-                // Create new context with the current item and index bound to variables
-                let mut item_bindings = small_hashmap();
-                item_bindings.insert(var_name.to_string(), item);
-                item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
-                let item_context = context.with_bindings_ref(&item_bindings);
-                
-                // Apply filter if present
-                if let Some(filter) = &tag.filter {
-                    let filter_result = resolver.resolve_ast(filter, &item_context)?;
-                    if !is_truthy(&filter_result) {
-                        continue; // Skip this item
-                    }
-                }
-                
-                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
-                result.push(transformed);
-            }
-            
-            Ok(Value::Sequence(result))
-        }
-        _ => Err(anyhow!("Map items must be a sequence")),
-    }
-}
 
 /// Helper function to determine if a value is truthy
 fn is_truthy(value: &Value) -> bool {
@@ -751,134 +618,8 @@ fn is_truthy(value: &Value) -> bool {
     }
 }
 
-/// Resolve a merge tag
-pub fn resolve_merge_tag(tag: &MergeTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    // Pre-allocate with estimated capacity based on number of sources
-    let mut result = serde_yaml::Mapping::with_capacity(tag.sources.len() * 4);
-    
-    for source in &tag.sources {
-        let source_result = resolver.resolve_ast(source, context)?;
-        match source_result {
-            Value::Mapping(map) => {
-                result.extend(map);
-            }
-            _ => return Err(anyhow!("Merge source must be a mapping")),
-        }
-    }
-    
-    Ok(Value::Mapping(result))
-}
 
-/// Resolve a concat tag
-pub fn resolve_concat_tag(tag: &ConcatTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    // Pre-allocate with estimated capacity
-    let mut result = Vec::with_capacity(tag.sources.len() * 2);
-    
-    for source in &tag.sources {
-        let source_result = resolver.resolve_ast(source, context)?;
-        match source_result {
-            Value::Sequence(mut seq) => {
-                result.append(&mut seq);
-            }
-            other => {
-                // Single item, add it to the result
-                result.push(other);
-            }
-        }
-    }
-    
-    Ok(Value::Sequence(result))
-}
 
-/// Resolve a let tag
-pub fn resolve_let_tag(tag: &LetTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let mut bindings = HashMap::with_capacity(tag.bindings.len());
-    
-    // Resolve all variable bindings
-    for (var_name, var_expr) in &tag.bindings {
-        let var_value = resolver.resolve_ast(var_expr, context)?;
-        bindings.insert(var_name.clone(), var_value);
-    }
-    
-    // Create new context with bindings and resolve expression
-    let new_context = context.with_bindings_ref(&bindings);
-    resolver.resolve_ast(&tag.expression, &new_context)
-}
-
-/// Resolve an eq tag
-pub fn resolve_eq_tag(tag: &EqTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let left = resolver.resolve_ast(&tag.left, context)?;
-    let right = resolver.resolve_ast(&tag.right, context)?;
-    
-    let is_equal = values_equal(&left, &right);
-    Ok(Value::Bool(is_equal))
-}
-
-/// Resolve a not tag
-pub fn resolve_not_tag(tag: &NotTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let expr_result = resolver.resolve_ast(&tag.expression, context)?;
-    
-    let is_truthy = match expr_result {
-        Value::Bool(b) => b,
-        Value::Null => false,
-        Value::String(s) => !s.is_empty(),
-        Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
-        Value::Sequence(ref seq) => !seq.is_empty(),
-        Value::Mapping(ref map) => !map.is_empty(),
-        _ => true,
-    };
-    
-    Ok(Value::Bool(!is_truthy))
-}
-
-/// Resolve a split tag
-pub fn resolve_split_tag(tag: &SplitTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let delimiter_result = resolver.resolve_ast(&tag.delimiter, context)?;
-    let string_result = resolver.resolve_ast(&tag.string, context)?;
-    
-    match (delimiter_result, string_result) {
-        (Value::String(delimiter), Value::String(s)) => {
-            let parts: Vec<Value> = s
-                .split(&delimiter)
-                .map(|part| Value::String(part.to_string()))
-                .collect();
-            Ok(Value::Sequence(parts))
-        }
-        _ => Err(anyhow!("Split requires string delimiter and string to split")),
-    }
-}
-
-/// Resolve a join tag (follows iidy-js format: [delimiter, array])
-pub fn resolve_join_tag(tag: &JoinTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let delimiter_result = resolver.resolve_ast(&tag.delimiter, context)?;
-    let array_result = resolver.resolve_ast(&tag.array, context)?;
-    
-    // Extract delimiter as string
-    let delimiter_str = match delimiter_result {
-        Value::String(s) => s,
-        Value::Number(n) => n.to_string(),
-        Value::Bool(b) => b.to_string(),
-        _ => return Err(anyhow!("Join delimiter must be a string-convertible value")),
-    };
-    
-    match array_result {
-        Value::Sequence(seq) => {
-            let strings: Result<Vec<String>, _> = seq
-                .into_iter()
-                .map(|v| match v {
-                    Value::String(s) => Ok(s),
-                    Value::Number(n) => Ok(n.to_string()),
-                    Value::Bool(b) => Ok(b.to_string()),
-                    _ => Err(anyhow!("Join array must contain string-convertible values")),
-                })
-                .collect();
-            
-            let joined = strings?.join(&delimiter_str);
-            Ok(Value::String(joined))
-        }
-        _ => Err(anyhow!("Join array must be a sequence")),
-    }
-}
 
 /// Compare two YAML values for equality
 fn values_equal(left: &Value, right: &Value) -> bool {
@@ -908,325 +649,6 @@ fn values_equal(left: &Value, right: &Value) -> bool {
     }
 }
 
-
-/// Resolve a concatMap tag (map followed by concat)
-pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let items_result = resolver.resolve_ast(&tag.items, context)?;
-    
-    match items_result {
-        Value::Sequence(seq) => {
-            // Pre-allocate with estimated capacity (assuming some expansion)
-            let mut result = Vec::with_capacity(seq.len() * 2);
-            let var_name = tag.var.as_deref().unwrap_or("item");
-            
-            for (idx, item) in seq.into_iter().enumerate() {
-                // Create new context with the current item and index bound to variables
-                let mut item_bindings = small_hashmap();
-                item_bindings.insert(var_name.to_string(), item);
-                item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
-                let item_context = context.with_bindings_ref(&item_bindings);
-                
-                // Apply filter if present
-                if let Some(filter) = &tag.filter {
-                    let filter_result = resolver.resolve_ast(filter, &item_context)?;
-                    if !is_truthy(&filter_result) {
-                        continue; // Skip this item
-                    }
-                }
-                
-                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
-                // Flatten the result - if it's a sequence, extend; otherwise push
-                match transformed {
-                    Value::Sequence(mut sub_seq) => {
-                        result.append(&mut sub_seq);
-                    }
-                    other => {
-                        result.push(other);
-                    }
-                }
-            }
-            
-            Ok(Value::Sequence(result))
-        }
-        _ => Err(anyhow!("ConcatMap items must be a sequence")),
-    }
-}
-
-/// Resolve a mergeMap tag (map followed by merge)
-pub fn resolve_merge_map_tag(tag: &MergeMapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let items_result = resolver.resolve_ast(&tag.items, context)?;
-    
-    match items_result {
-        Value::Sequence(seq) => {
-            let mut result = serde_yaml::Mapping::new();
-            let var_name = tag.var.as_deref().unwrap_or("item");
-            
-            for item in seq {
-                // Create new context with the current item bound to the variable
-                let mut item_bindings = HashMap::new();
-                item_bindings.insert(var_name.to_string(), item);
-                let item_context = context.with_bindings(item_bindings);
-                
-                let transformed = resolver.resolve_ast(&tag.template, &item_context)?;
-                match transformed {
-                    Value::Mapping(map) => {
-                        result.extend(map);
-                    }
-                    _ => return Err(anyhow!("MergeMap template must produce mappings")),
-                }
-            }
-            
-            Ok(Value::Mapping(result))
-        }
-        _ => Err(anyhow!("MergeMap items must be a sequence")),
-    }
-}
-
-/// Resolve a mapListToHash tag (convert list of key-value pairs to hash)
-pub fn resolve_map_list_to_hash_tag(tag: &MapListToHashTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    // According to iidy-js compatibility, !$mapListToHash delegates to !$map internally,
-    // then converts the result to a hash using the key-value pairs
-    let map_tag = MapTag {
-        items: tag.items.clone(),
-        template: tag.template.clone(),
-        var: tag.var.clone(),
-        filter: tag.filter.clone(),
-    };
-    
-    let mapped_result = resolve_map_tag(&map_tag, context, resolver)?;
-    
-    match mapped_result {
-        Value::Sequence(seq) => {
-            let mut result = serde_yaml::Mapping::new();
-            
-            for item in seq {
-                match item {
-                    Value::Sequence(ref pair) if pair.len() == 2 => {
-                        let key = &pair[0];
-                        let value = &pair[1];
-                        result.insert(key.clone(), value.clone());
-                    }
-                    Value::Mapping(ref map) => {
-                        // Handle object format with key/value fields
-                        let key_value = map.get(&Value::String("key".to_string()));
-                        let value_value = map.get(&Value::String("value".to_string()));
-                        
-                        if let (Some(key), Some(value)) = (key_value, value_value) {
-                            result.insert(key.clone(), value.clone());
-                        } else {
-                            return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields"));
-                        }
-                    }
-                    _ => return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields")),
-                }
-            }
-            
-            Ok(Value::Mapping(result))
-        }
-        _ => Err(anyhow!("MapListToHash template must produce a sequence of key-value pairs")),
-    }
-}
-
-/// Resolve a mapValues tag (transform object values while preserving keys)
-pub fn resolve_map_values_tag(tag: &MapValuesTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let items_result = resolver.resolve_ast(&tag.items, context)?;
-    
-    match items_result {
-        Value::Mapping(map) => {
-            let mut result = serde_yaml::Mapping::new();
-            let var_name = tag.var.as_deref().unwrap_or("item");
-            
-            for (key, value) in map {
-                // Create lodash _.mapValues compatible context: item = {key: "keyname", value: actualValue}
-                let mut value_bindings = HashMap::new();
-                
-                // Convert key to string
-                let key_str = match &key {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    _ => format!("{:?}", key),
-                };
-                
-                // Create the item object with key and value properties (lodash style)
-                let mut item_object = serde_yaml::Mapping::new();
-                item_object.insert(Value::String("key".to_string()), Value::String(key_str));
-                item_object.insert(Value::String("value".to_string()), value);
-                value_bindings.insert(var_name.to_string(), Value::Mapping(item_object));
-                
-                let value_context = context.with_bindings(value_bindings);
-                
-                let transformed = resolver.resolve_ast(&tag.template, &value_context)?;
-                result.insert(key, transformed);
-            }
-            
-            Ok(Value::Mapping(result))
-        }
-        _ => Err(anyhow!("MapValues items must be a mapping")),
-    }
-}
-
-/// Resolve a groupBy tag (group items by key)
-pub fn resolve_group_by_tag(tag: &GroupByTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let items_result = resolver.resolve_ast(&tag.items, context)?;
-    
-    match items_result {
-        Value::Sequence(seq) => {
-            let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
-            let var_name = tag.var.as_deref().unwrap_or("item");
-            
-            for item in seq {
-                // Create new context with the current item bound to the variable
-                let mut item_bindings = HashMap::new();
-                item_bindings.insert(var_name.to_string(), item.clone());
-                let item_context = context.with_bindings(item_bindings);
-                
-                let key_result = resolver.resolve_ast(&tag.key, &item_context)?;
-                let key_str = match key_result {
-                    Value::String(s) => s,
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    _ => return Err(anyhow!("GroupBy key must resolve to a string-convertible value")),
-                };
-                
-                groups.entry(key_str).or_insert_with(Vec::new).push(item);
-            }
-            
-            // Convert to YAML mapping
-            let mut result = serde_yaml::Mapping::new();
-            for (key, items) in groups {
-                result.insert(Value::String(key), Value::Sequence(items));
-            }
-            
-            Ok(Value::Mapping(result))
-        }
-        _ => Err(anyhow!("GroupBy source must be a sequence")),
-    }
-}
-
-/// Resolve a fromPairs tag (convert key-value pairs to object)
-pub fn resolve_from_pairs_tag(tag: &FromPairsTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let source_result = resolver.resolve_ast(&tag.source, context)?;
-    
-    match source_result {
-        Value::Sequence(seq) => {
-            let mut result = serde_yaml::Mapping::new();
-            
-            for item in seq {
-                match item {
-                    Value::Sequence(ref pair) if pair.len() == 2 => {
-                        let key = &pair[0];
-                        let value = &pair[1];
-                        result.insert(key.clone(), value.clone());
-                    }
-                    _ => return Err(anyhow!("FromPairs requires sequence of [key, value] pairs")),
-                }
-            }
-            
-            Ok(Value::Mapping(result))
-        }
-        _ => Err(anyhow!("FromPairs source must be a sequence")),
-    }
-}
-
-/// Resolve a toYamlString tag (convert data to YAML string)
-pub fn resolve_to_yaml_string_tag(tag: &ToYamlStringTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let data_result = resolver.resolve_ast(&tag.data, context)?;
-    
-    let yaml_string = serde_yaml::to_string(&data_result)
-        .map_err(|e| anyhow!("Failed to convert data to YAML string: {}", e))?;
-    
-    // Remove trailing newline that serde_yaml adds
-    let trimmed = yaml_string.trim_end().to_string();
-    Ok(Value::String(trimmed))
-}
-
-/// Resolve a parseYaml tag (parse YAML string back to data)
-pub fn resolve_parse_yaml_tag(tag: &ParseYamlTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let yaml_string_result = resolver.resolve_ast(&tag.yaml_string, context)?;
-    
-    match yaml_string_result {
-        Value::String(yaml_str) => {
-            serde_yaml::from_str(&yaml_str)
-                .map_err(|e| anyhow!("Failed to parse YAML string: {}", e))
-        }
-        _ => Err(anyhow!("ParseYaml requires a string input")),
-    }
-}
-
-/// Resolve a toJsonString tag (convert data to JSON string)
-pub fn resolve_to_json_string_tag(tag: &ToJsonStringTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let data_result = resolver.resolve_ast(&tag.data, context)?;
-    
-    // Convert serde_yaml::Value to serde_json::Value
-    let json_value = yaml_value_to_json_value(&data_result)?;
-    
-    let json_string = serde_json::to_string(&json_value)
-        .map_err(|e| anyhow!("Failed to convert data to JSON string: {}", e))?;
-    
-    Ok(Value::String(json_string))
-}
-
-/// Resolve a parseJson tag (parse JSON string back to data)
-pub fn resolve_parse_json_tag(tag: &ParseJsonTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
-    let json_string_result = resolver.resolve_ast(&tag.json_string, context)?;
-    
-    match json_string_result {
-        Value::String(json_str) => {
-            let json_value: serde_json::Value = serde_json::from_str(&json_str)
-                .map_err(|e| anyhow!("Failed to parse JSON string: {}", e))?;
-            
-            // Convert serde_json::Value back to serde_yaml::Value
-            json_value_to_yaml_value(&json_value)
-        }
-        _ => Err(anyhow!("ParseJson requires a string input")),
-    }
-}
-
-/// Resolve an escape tag (prevent preprocessing on child tree)
-pub fn resolve_escape_tag(tag: &EscapeTag, _context: &TagContext, _resolver: &dyn AstResolver) -> Result<Value> {
-    // For the escape tag, we need to convert the AST to Value without any preprocessing
-    // This means we manually convert the AST while preserving any preprocessing tags as regular YAML
-    escape_ast_to_value(&tag.content)
-}
-
-/// Convert AST to Value while escaping preprocessing tags (convert them to regular YAML)
-fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
-    match ast {
-        YamlAst::Null => Ok(Value::Null),
-        YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-        YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-        YamlAst::String(s) => Ok(Value::String(s.clone())),
-        YamlAst::Sequence(seq) => {
-            let mut result = Vec::new();
-            for item in seq {
-                result.push(escape_ast_to_value(item)?);
-            }
-            Ok(Value::Sequence(result))
-        }
-        YamlAst::Mapping(pairs) => {
-            let mut result = serde_yaml::Mapping::new();
-            for (key, value) in pairs {
-                let key_val = escape_ast_to_value(key)?;
-                let value_val = escape_ast_to_value(value)?;
-                result.insert(key_val, value_val);
-            }
-            Ok(Value::Mapping(result))
-        }
-        YamlAst::PreprocessingTag(_) => {
-            // Convert preprocessing tags to a string representation to "escape" them
-            Ok(Value::String("__ESCAPED_PREPROCESSING_TAG__".to_string()))
-        }
-        YamlAst::CloudFormationTag(cfn_tag) => {
-            // Convert CloudFormation tags to a string representation to "escape" them
-            Ok(Value::String(format!("__ESCAPED_CFN_TAG_{}__", cfn_tag.tag_name())))
-        }
-        YamlAst::UnknownYamlTag(tag) => {
-            // Convert unknown tags to a string representation  
-            Ok(Value::String(format!("__ESCAPED_TAG_{}__", tag.tag)))
-        }
-    }
-}
 
 /// Convert serde_json::Value to serde_yaml::Value for JSON parsing results
 fn json_value_to_yaml_value(json_value: &serde_json::Value) -> Result<Value> {
@@ -1274,20 +696,20 @@ fn yaml_value_to_json_value(yaml_value: &Value) -> Result<serde_json::Value> {
             } else if let Some(u) = n.as_u64() {
                 Ok(serde_json::Value::Number(serde_json::Number::from(u)))
             } else if let Some(f) = n.as_f64() {
-                Ok(serde_json::Number::from_f64(f)
+                serde_json::Number::from_f64(f)
                     .map(serde_json::Value::Number)
-                    .unwrap_or(serde_json::Value::Null))
+                    .ok_or_else(|| anyhow!("Invalid float value for JSON"))
             } else {
-                Ok(serde_json::Value::Null)
+                Err(anyhow!("Invalid YAML number"))
             }
         }
         Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         Value::Sequence(seq) => {
-            let mut json_seq = Vec::new();
+            let mut json_arr = Vec::new();
             for item in seq {
-                json_seq.push(yaml_value_to_json_value(item)?);
+                json_arr.push(yaml_value_to_json_value(item)?);
             }
-            Ok(serde_json::Value::Array(json_seq))
+            Ok(serde_json::Value::Array(json_arr))
         }
         Value::Mapping(map) => {
             let mut json_map = serde_json::Map::new();
@@ -1303,6 +725,44 @@ fn yaml_value_to_json_value(yaml_value: &Value) -> Result<serde_json::Value> {
             Ok(serde_json::Value::Object(json_map))
         }
         Value::Tagged(_) => Err(anyhow!("Tagged values not supported in JSON conversion")),
+    }
+}
+
+/// Convert AST to Value while escaping preprocessing tags (convert them to regular YAML)
+fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
+    match ast {
+        YamlAst::Null => Ok(Value::Null),
+        YamlAst::Bool(b) => Ok(Value::Bool(*b)),
+        YamlAst::Number(n) => Ok(Value::Number(n.clone())),
+        YamlAst::String(s) => Ok(Value::String(s.clone())),
+        YamlAst::Sequence(seq) => {
+            let mut result = Vec::new();
+            for item in seq {
+                result.push(escape_ast_to_value(item)?);
+            }
+            Ok(Value::Sequence(result))
+        }
+        YamlAst::Mapping(pairs) => {
+            let mut result = serde_yaml::Mapping::new();
+            for (key, value) in pairs {
+                let key_val = escape_ast_to_value(key)?;
+                let value_val = escape_ast_to_value(value)?;
+                result.insert(key_val, value_val);
+            }
+            Ok(Value::Mapping(result))
+        }
+        YamlAst::PreprocessingTag(_) => {
+            // Convert preprocessing tags to a string representation to "escape" them
+            Ok(Value::String("__ESCAPED_PREPROCESSING_TAG__".to_string()))
+        }
+        YamlAst::CloudFormationTag(cfn_tag) => {
+            // Convert CloudFormation tags to a string representation to "escape" them
+            Ok(Value::String(format!("__ESCAPED_CFN_TAG_{}__", cfn_tag.tag_name())))
+        }
+        YamlAst::UnknownYamlTag(tag) => {
+            // Convert unknown tags to a string representation  
+            Ok(Value::String(format!("__ESCAPED_TAG_{}__", tag.tag)))
+        }
     }
 }
 
@@ -1346,87 +806,547 @@ pub struct StandardTagResolver;
 
 impl TagResolver for StandardTagResolver {
     fn resolve_include(&self, tag: &IncludeTag, context: &TagContext) -> Result<Value> {
-        resolve_include_tag(tag, context)
+        let path = &tag.path;
+        
+        // Parse path and query
+        let (base_path, query) = parse_path_and_query(path, &tag.query);
+        
+        // Try to resolve the variable from the environment
+        if let Some(mut value) = resolve_dot_notation_path(&base_path, context) {
+            // Apply query selector if present
+            if let Some(query_str) = query {
+                value = apply_query_selector(&value, &query_str)?;
+            }
+            return Ok(value);
+        }
+        
+        // Variable not found - provide more specific error context
+        // Check if the root variable exists to give a better error message
+        let root_var = base_path.split('.').next().unwrap_or(&base_path).split('[').next().unwrap_or(&base_path);
+        
+        // Get file path
+        let file_path = if let Some(base_path) = &context.base_path {
+            base_path.display().to_string()
+        } else {
+            context.current_location()
+                .unwrap_or_else(|| "unknown location".to_string())
+        };
+        
+        // Get YAML path information
+        let yaml_path = context.current_path();
+        
+        // Get available variables
+        let available_vars: Vec<String> = context.variables.keys().cloned().collect();
+        
+        // Check if root variable exists
+        if let Some(_root_value) = context.get_variable(root_var) {
+            // Root variable exists, but path resolution failed - this means a property doesn't exist
+            let property_path = if base_path.contains('.') {
+                base_path.split('.').skip(1).collect::<Vec<_>>().join(".")
+            } else if base_path.contains('[') {
+                base_path.split('[').skip(1).collect::<Vec<_>>().join("[")
+            } else {
+                base_path.to_string()
+            };
+            
+            {
+                
+                // Try to find the line number by searching for the include reference
+                let include_pattern = format!("!$ {}", base_path);
+                let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    let line_number = content.lines().enumerate().find_map(|(idx, line)| {
+                        if line.contains(&include_pattern) {
+                            Some(idx + 1)
+                        } else {
+                            None
+                        }
+                    }).unwrap_or(0);
+                    
+                    if line_number > 0 {
+                        format!("{}:{}", file_path, line_number)
+                    } else {
+                        file_path.clone()
+                    }
+                } else {
+                    file_path.clone()
+                };
+                
+                use crate::yaml::error_wrapper::variable_not_found_error;
+                return Err(variable_not_found_error(&format!("{}.{}", root_var, property_path), &location, &yaml_path, available_vars));
+            }
+        } else {
+            // Root variable doesn't exist
+            use crate::yaml::error_wrapper::variable_not_found_error;
+            Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
+        }
     }
     
     fn resolve_if(&self, tag: &IfTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_if_tag(tag, context, ast_resolver)
+        let condition_result = ast_resolver.resolve_ast(&tag.test, context)?;
+        
+        let is_truthy = match condition_result {
+            Value::Bool(b) => b,
+            Value::Null => false,
+            Value::String(s) => !s.is_empty(),
+            Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+            Value::Sequence(ref seq) => !seq.is_empty(),
+            Value::Mapping(ref map) => !map.is_empty(),
+            _ => true,
+        };
+
+        if is_truthy {
+            ast_resolver.resolve_ast(&tag.then_value, context)
+        } else if let Some(ref else_value) = tag.else_value {
+            ast_resolver.resolve_ast(else_value, context)
+        } else {
+            Ok(Value::Null)
+        }
     }
     
     fn resolve_map(&self, tag: &MapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_map_tag(tag, context, ast_resolver)
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        match items_result {
+            Value::Sequence(seq) => {
+                let mut result = Vec::with_capacity(seq.len());
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for (idx, item) in seq.into_iter().enumerate() {
+                    // Create new context with the current item and index bound to variables
+                    let mut item_bindings = small_hashmap();
+                    item_bindings.insert(var_name.to_string(), item);
+                    item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
+                    let item_context = context.with_bindings_ref(&item_bindings);
+                    
+                    // Apply filter if present
+                    if let Some(filter) = &tag.filter {
+                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        if !is_truthy(&filter_result) {
+                            continue; // Skip this item
+                        }
+                    }
+                    
+                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    result.push(transformed);
+                }
+                
+                Ok(Value::Sequence(result))
+            }
+            _ => Err(anyhow!("Map items must be a sequence")),
+        }
     }
     
     fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_merge_tag(tag, context, ast_resolver)
+        // Pre-allocate with estimated capacity based on number of sources
+        let mut result = serde_yaml::Mapping::with_capacity(tag.sources.len() * 4);
+        
+        for source in &tag.sources {
+            let source_result = ast_resolver.resolve_ast(source, context)?;
+            match source_result {
+                Value::Mapping(map) => {
+                    result.extend(map);
+                }
+                _ => return Err(anyhow!("Merge source must be a mapping")),
+            }
+        }
+        
+        Ok(Value::Mapping(result))
     }
     
     fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_concat_tag(tag, context, ast_resolver)
+        // Pre-allocate with estimated capacity
+        let mut result = Vec::with_capacity(tag.sources.len() * 2);
+        
+        for source in &tag.sources {
+            let source_result = ast_resolver.resolve_ast(source, context)?;
+            match source_result {
+                Value::Sequence(mut seq) => {
+                    result.append(&mut seq);
+                }
+                other => {
+                    // Single item, add it to the result
+                    result.push(other);
+                }
+            }
+        }
+        
+        Ok(Value::Sequence(result))
     }
     
     fn resolve_let(&self, tag: &LetTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_let_tag(tag, context, ast_resolver)
+        let mut bindings = HashMap::with_capacity(tag.bindings.len());
+        
+        // Resolve all variable bindings
+        for (var_name, var_expr) in &tag.bindings {
+            let var_value = ast_resolver.resolve_ast(var_expr, context)?;
+            bindings.insert(var_name.clone(), var_value);
+        }
+        
+        // Create new context with bindings and resolve expression
+        let new_context = context.with_bindings_ref(&bindings);
+        ast_resolver.resolve_ast(&tag.expression, &new_context)
     }
     
     fn resolve_eq(&self, tag: &EqTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_eq_tag(tag, context, ast_resolver)
+        let left = ast_resolver.resolve_ast(&tag.left, context)?;
+        let right = ast_resolver.resolve_ast(&tag.right, context)?;
+        
+        let is_equal = values_equal(&left, &right);
+        Ok(Value::Bool(is_equal))
     }
     
     fn resolve_not(&self, tag: &NotTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_not_tag(tag, context, ast_resolver)
+        let expr_result = ast_resolver.resolve_ast(&tag.expression, context)?;
+        
+        let is_truthy = match expr_result {
+            Value::Bool(b) => b,
+            Value::Null => false,
+            Value::String(s) => !s.is_empty(),
+            Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+            Value::Sequence(ref seq) => !seq.is_empty(),
+            Value::Mapping(ref map) => !map.is_empty(),
+            _ => true,
+        };
+        
+        Ok(Value::Bool(!is_truthy))
     }
     
     fn resolve_split(&self, tag: &SplitTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_split_tag(tag, context, ast_resolver)
+        let delimiter_result = ast_resolver.resolve_ast(&tag.delimiter, context)?;
+        let string_result = ast_resolver.resolve_ast(&tag.string, context)?;
+        
+        match (delimiter_result, string_result) {
+            (Value::String(delimiter), Value::String(s)) => {
+                let parts: Vec<Value> = s
+                    .split(&delimiter)
+                    .map(|part| Value::String(part.to_string()))
+                    .collect();
+                Ok(Value::Sequence(parts))
+            }
+            _ => Err(anyhow!("Split requires string delimiter and string to split")),
+        }
     }
     
     fn resolve_join(&self, tag: &JoinTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_join_tag(tag, context, ast_resolver)
+        let delimiter_result = ast_resolver.resolve_ast(&tag.delimiter, context)?;
+        let array_result = ast_resolver.resolve_ast(&tag.array, context)?;
+        
+        // Extract delimiter as string
+        let delimiter_str = match delimiter_result {
+            Value::String(s) => s,
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            _ => return Err(anyhow!("Join delimiter must be a string-convertible value")),
+        };
+        
+        match array_result {
+            Value::Sequence(seq) => {
+                let strings: Result<Vec<String>, _> = seq
+                    .into_iter()
+                    .map(|v| match v {
+                        Value::String(s) => Ok(s),
+                        Value::Number(n) => Ok(n.to_string()),
+                        Value::Bool(b) => Ok(b.to_string()),
+                        _ => Err(anyhow!("Join array must contain string-convertible values")),
+                    })
+                    .collect();
+                
+                let joined = strings?.join(&delimiter_str);
+                Ok(Value::String(joined))
+            }
+            _ => Err(anyhow!("Join array must be a sequence")),
+        }
     }
     
     fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_concat_map_tag(tag, context, ast_resolver)
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        match items_result {
+            Value::Sequence(seq) => {
+                // Pre-allocate with estimated capacity (assuming some expansion)
+                let mut result = Vec::with_capacity(seq.len() * 2);
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for (idx, item) in seq.into_iter().enumerate() {
+                    // Create new context with the current item and index bound to variables
+                    let mut item_bindings = small_hashmap();
+                    item_bindings.insert(var_name.to_string(), item);
+                    item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
+                    let item_context = context.with_bindings_ref(&item_bindings);
+                    
+                    // Apply filter if present
+                    if let Some(filter) = &tag.filter {
+                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        if !is_truthy(&filter_result) {
+                            continue; // Skip this item
+                        }
+                    }
+                    
+                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    // Flatten the result - if it's a sequence, extend; otherwise push
+                    match transformed {
+                        Value::Sequence(mut sub_seq) => {
+                            result.append(&mut sub_seq);
+                        }
+                        other => {
+                            result.push(other);
+                        }
+                    }
+                }
+                
+                Ok(Value::Sequence(result))
+            }
+            _ => Err(anyhow!("ConcatMap items must be a sequence")),
+        }
     }
     
     fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_merge_map_tag(tag, context, ast_resolver)
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        match items_result {
+            Value::Sequence(seq) => {
+                let mut result = serde_yaml::Mapping::new();
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for item in seq {
+                    // Create new context with the current item bound to the variable
+                    let mut item_bindings = HashMap::new();
+                    item_bindings.insert(var_name.to_string(), item);
+                    let item_context = context.with_bindings(item_bindings);
+                    
+                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    match transformed {
+                        Value::Mapping(map) => {
+                            result.extend(map);
+                        }
+                        _ => return Err(anyhow!("MergeMap template must produce mappings")),
+                    }
+                }
+                
+                Ok(Value::Mapping(result))
+            }
+            _ => Err(anyhow!("MergeMap items must be a sequence")),
+        }
     }
     
     fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_map_list_to_hash_tag(tag, context, ast_resolver)
+        // Inline map resolution logic
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        let mapped_result = match items_result {
+            Value::Sequence(seq) => {
+                let mut result = Vec::with_capacity(seq.len());
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for (idx, item) in seq.into_iter().enumerate() {
+                    // Create new context with the current item and index bound to variables
+                    let mut item_bindings = small_hashmap();
+                    item_bindings.insert(var_name.to_string(), item);
+                    item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
+                    let item_context = context.with_bindings_ref(&item_bindings);
+                    
+                    // Apply filter if present
+                    if let Some(filter) = &tag.filter {
+                        let filter_result = ast_resolver.resolve_ast(filter, &item_context)?;
+                        if !is_truthy(&filter_result) {
+                            continue; // Skip this item
+                        }
+                    }
+                    
+                    let transformed = ast_resolver.resolve_ast(&tag.template, &item_context)?;
+                    result.push(transformed);
+                }
+                
+                Value::Sequence(result)
+            }
+            _ => return Err(anyhow!("MapListToHash items must be a sequence")),
+        };
+        
+        match mapped_result {
+            Value::Sequence(seq) => {
+                let mut result = serde_yaml::Mapping::new();
+                
+                for item in seq {
+                    match item {
+                        Value::Sequence(ref pair) if pair.len() == 2 => {
+                            let key = &pair[0];
+                            let value = &pair[1];
+                            result.insert(key.clone(), value.clone());
+                        }
+                        Value::Mapping(ref map) => {
+                            // Handle object format with key/value fields
+                            let key_value = map.get(&Value::String("key".to_string()));
+                            let value_value = map.get(&Value::String("value".to_string()));
+                            
+                            if let (Some(key), Some(value)) = (key_value, value_value) {
+                                result.insert(key.clone(), value.clone());
+                            } else {
+                                return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields"));
+                            }
+                        }
+                        _ => return Err(anyhow!("MapListToHash requires sequence of [key, value] pairs or objects with 'key' and 'value' fields")),
+                    }
+                }
+                
+                Ok(Value::Mapping(result))
+            }
+            _ => Err(anyhow!("MapListToHash template must produce a sequence of key-value pairs")),
+        }
     }
     
     fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_map_values_tag(tag, context, ast_resolver)
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        match items_result {
+            Value::Mapping(map) => {
+                let mut result = serde_yaml::Mapping::new();
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for (key, value) in map {
+                    // Create lodash _.mapValues compatible context: item = {key: "keyname", value: actualValue}
+                    let mut value_bindings = HashMap::new();
+                    
+                    // Convert key to string
+                    let key_str = match &key {
+                        Value::String(s) => s.clone(),
+                        Value::Number(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => format!("{:?}", key),
+                    };
+                    
+                    // Create the item object with key and value properties (lodash style)
+                    let mut item_object = serde_yaml::Mapping::new();
+                    item_object.insert(Value::String("key".to_string()), Value::String(key_str));
+                    item_object.insert(Value::String("value".to_string()), value);
+                    value_bindings.insert(var_name.to_string(), Value::Mapping(item_object));
+                    
+                    let value_context = context.with_bindings(value_bindings);
+                    
+                    let transformed = ast_resolver.resolve_ast(&tag.template, &value_context)?;
+                    result.insert(key, transformed);
+                }
+                
+                Ok(Value::Mapping(result))
+            }
+            _ => Err(anyhow!("MapValues items must be a mapping")),
+        }
     }
     
     fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_group_by_tag(tag, context, ast_resolver)
+        let items_result = ast_resolver.resolve_ast(&tag.items, context)?;
+        
+        match items_result {
+            Value::Sequence(seq) => {
+                let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+                let var_name = tag.var.as_deref().unwrap_or("item");
+                
+                for item in seq {
+                    // Create new context with the current item bound to the variable
+                    let mut item_bindings = HashMap::new();
+                    item_bindings.insert(var_name.to_string(), item.clone());
+                    let item_context = context.with_bindings(item_bindings);
+                    
+                    let key_result = ast_resolver.resolve_ast(&tag.key, &item_context)?;
+                    let key_str = match key_result {
+                        Value::String(s) => s,
+                        Value::Number(n) => n.to_string(),
+                        Value::Bool(b) => b.to_string(),
+                        _ => return Err(anyhow!("GroupBy key must resolve to a string-convertible value")),
+                    };
+                    
+                    groups.entry(key_str).or_insert_with(Vec::new).push(item);
+                }
+                
+                // Convert to YAML mapping
+                let mut result = serde_yaml::Mapping::new();
+                for (key, items) in groups {
+                    result.insert(Value::String(key), Value::Sequence(items));
+                }
+                
+                Ok(Value::Mapping(result))
+            }
+            _ => Err(anyhow!("GroupBy source must be a sequence")),
+        }
     }
     
     fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_from_pairs_tag(tag, context, ast_resolver)
+        let source_result = ast_resolver.resolve_ast(&tag.source, context)?;
+        
+        match source_result {
+            Value::Sequence(seq) => {
+                let mut result = serde_yaml::Mapping::new();
+                
+                for item in seq {
+                    match item {
+                        Value::Sequence(ref pair) if pair.len() == 2 => {
+                            let key = &pair[0];
+                            let value = &pair[1];
+                            result.insert(key.clone(), value.clone());
+                        }
+                        _ => return Err(anyhow!("FromPairs requires sequence of [key, value] pairs")),
+                    }
+                }
+                
+                Ok(Value::Mapping(result))
+            }
+            _ => Err(anyhow!("FromPairs source must be a sequence")),
+        }
     }
     
     fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_to_yaml_string_tag(tag, context, ast_resolver)
+        let data_result = ast_resolver.resolve_ast(&tag.data, context)?;
+        
+        let yaml_string = serde_yaml::to_string(&data_result)
+            .map_err(|e| anyhow!("Failed to convert data to YAML string: {}", e))?;
+        
+        // Remove trailing newline that serde_yaml adds
+        let trimmed = yaml_string.trim_end().to_string();
+        Ok(Value::String(trimmed))
     }
     
     fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_parse_yaml_tag(tag, context, ast_resolver)
+        let yaml_string_result = ast_resolver.resolve_ast(&tag.yaml_string, context)?;
+        
+        match yaml_string_result {
+            Value::String(yaml_str) => {
+                serde_yaml::from_str(&yaml_str)
+                    .map_err(|e| anyhow!("Failed to parse YAML string: {}", e))
+            }
+            _ => Err(anyhow!("ParseYaml requires a string input")),
+        }
     }
     
     fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_to_json_string_tag(tag, context, ast_resolver)
+        let data_result = ast_resolver.resolve_ast(&tag.data, context)?;
+        
+        // Convert serde_yaml::Value to serde_json::Value
+        let json_value = yaml_value_to_json_value(&data_result)?;
+        
+        let json_string = serde_json::to_string(&json_value)
+            .map_err(|e| anyhow!("Failed to convert data to JSON string: {}", e))?;
+        
+        Ok(Value::String(json_string))
     }
     
     fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_parse_json_tag(tag, context, ast_resolver)
+        let json_string_result = ast_resolver.resolve_ast(&tag.json_string, context)?;
+        
+        match json_string_result {
+            Value::String(json_str) => {
+                let json_value: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| anyhow!("Failed to parse JSON string: {}", e))?;
+                
+                // Convert serde_json::Value back to serde_yaml::Value
+                json_value_to_yaml_value(&json_value)
+            }
+            _ => Err(anyhow!("ParseJson requires a string input")),
+        }
     }
     
-    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext, ast_resolver: &dyn AstResolver) -> Result<Value> {
-        resolve_escape_tag(tag, context, ast_resolver)
+    fn resolve_escape(&self, tag: &EscapeTag, _context: &TagContext, _ast_resolver: &dyn AstResolver) -> Result<Value> {
+        // For the escape tag, we need to convert the AST to Value without any preprocessing
+        // This means we manually convert the AST while preserving any preprocessing tags as regular YAML
+        escape_ast_to_value(&tag.content)
     }
 }
 
