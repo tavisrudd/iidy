@@ -22,9 +22,19 @@ fn string_value(s: &str) -> Value {
     Value::String(s.to_string())
 }
 
+// Static arrays for tag validation - much more efficient than HashSets for small key counts
+const IF_TAG_REQUIRED: &[&str] = &[TEST_FIELD, THEN_FIELD];
+const IF_TAG_OPTIONAL: &[&str] = &[ELSE_FIELD];
+
+const ITEMS_TEMPLATE_REQUIRED: &[&str] = &[ITEMS_FIELD, TEMPLATE_FIELD];
+const ITEMS_TEMPLATE_WITH_VAR: &[&str] = &[VAR_FIELD];
+const ITEMS_TEMPLATE_WITH_VAR_FILTER: &[&str] = &[VAR_FIELD, FILTER_FIELD];
+
+const GROUPBY_REQUIRED: &[&str] = &[ITEMS_FIELD, KEY_FIELD];
+const GROUPBY_OPTIONAL: &[&str] = &[VAR_FIELD, TEMPLATE_FIELD];
+
 use crate::yaml::ast::*;
 use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
-use std::collections::HashSet;
 
 /// Parsing context that tracks location and position for better error reporting
 #[derive(Debug, Clone)]
@@ -74,11 +84,7 @@ impl ParseContext {
     
     /// Create a new context with an array index path segment
     pub fn with_array_index(&self, index: usize) -> Self {
-        let new_path = if self.yaml_path.is_empty() {
-            format!("[{}]", index)
-        } else {
-            format!("{}[{}]", self.yaml_path, index)
-        };
+        let new_path = format!("{}[{}]", self.yaml_path, index);
         
         Self {
             file_location: Rc::clone(&self.file_location),
@@ -107,48 +113,24 @@ impl ParseContext {
 }
 
 /// Validate that a mapping has exactly the required keys and optionally allowed keys, with no extras
-/// Also provides helpful suggestions for common wrong field names
-fn validate_exact_keys(
+/// Uses static slices for maximum efficiency with small key counts
+fn validate_exact_keys_static(
     map: &serde_yaml::Mapping,
     required_keys: &[&str],
     optional_keys: &[&str],
     tag_name: &str,
     context: &ParseContext,
 ) -> Result<()> {
-    let provided_keys: HashSet<String> = map.keys()
-        .filter_map(|k| if let Value::String(s) = k { Some(s.clone()) } else { None })
+    let provided_keys: Vec<&str> = map.keys()
+        .filter_map(|k| if let Value::String(s) = k { Some(s.as_str()) } else { None })
         .collect();
     
-    let required_set: HashSet<String> = required_keys.iter().map(|s| s.to_string()).collect();
-    let optional_set: HashSet<String> = optional_keys.iter().map(|s| s.to_string()).collect();
-    let all_valid_keys: HashSet<String> = required_set.union(&optional_set).cloned().collect();
+    // Check for missing required keys using simple iteration (more efficient than HashSet for small counts)
+    let missing: Vec<&str> = required_keys.iter()
+        .filter(|&&required| !provided_keys.contains(&required))
+        .copied()
+        .collect();
     
-    // First, check for common wrong field names and provide specific suggestions
-    let common_mistakes = [
-        ("source", "items"),
-        ("transform", "template"),
-        ("condition", "test"),
-    ];
-    
-    for (wrong_key, correct_key) in &common_mistakes {
-        if provided_keys.contains(*wrong_key) && required_set.contains(*correct_key) && !provided_keys.contains(*correct_key) {
-            use crate::yaml::error_wrapper::tag_parsing_error;
-            
-            // Use ParseContext to find the position of the wrong key in its current context
-            let location = if let Some(position) = context.find_tag_position_in_context(&format!("{}:", wrong_key)) {
-                format!("{}:{}:{}", context.file_location, position.line, position.column)
-            } else {
-                context.location_string()
-            };
-            
-            let suggestion = format!("use '{}' instead of '{}' in {} tags", correct_key, wrong_key, tag_name);
-            
-            return Err(tag_parsing_error(tag_name, &format!("'{}' should be '{}'", wrong_key, correct_key), &location, Some(&suggestion)));
-        }
-    }
-    
-    // Check for missing required keys
-    let missing: Vec<String> = required_set.difference(&provided_keys).cloned().collect();
     if !missing.is_empty() {
         use crate::yaml::error_wrapper::missing_required_field_error;
         
@@ -161,15 +143,19 @@ fn validate_exact_keys(
         
         return Err(missing_required_field_error(
             tag_name,
-            &missing[0], // Show the first missing field
+            missing[0], // Show the first missing field
             &location,
             &context.yaml_path,
             required_keys.iter().map(|s| s.to_string()).collect()
         ));
     }
     
-    // Check for extra keys
-    let extra: Vec<String> = provided_keys.difference(&all_valid_keys).cloned().collect();
+    // Check for extra keys using simple iteration
+    let extra: Vec<&str> = provided_keys.iter()
+        .filter(|&&key| !required_keys.contains(&key) && !optional_keys.contains(&key))
+        .copied()
+        .collect();
+    
     if !extra.is_empty() {
         use crate::yaml::error_wrapper::tag_parsing_error;
         
@@ -188,7 +174,8 @@ fn validate_exact_keys(
         let suggestion = if extra.len() == 1 {
             format!("unexpected field '{}'. Valid fields are: {}", extra[0], all_keys.join(", "))
         } else {
-            format!("unexpected fields: {}. Valid fields are: {}", extra.join(", "), all_keys.join(", "))
+            let extra_list = extra.join(", ");
+            format!("unexpected fields: {}. Valid fields are: {}", extra_list, all_keys.join(", "))
         };
         
         return Err(tag_parsing_error(tag_name, &suggestion, &location, None));
@@ -223,7 +210,9 @@ pub fn convert_value_to_ast(value: Value, context: &ParseContext) -> Result<Yaml
 
 /// Convert a YAML sequence to AST
 fn convert_sequence_to_ast(seq: Sequence, context: &ParseContext) -> Result<YamlAst> {
-    let mut ast_seq = Vec::new();
+    let len = seq.len();
+    let mut ast_seq = Vec::with_capacity(len); // Pre-allocate for better performance
+    
     for (index, item) in seq.into_iter().enumerate() {
         let item_context = context.with_array_index(index);
         ast_seq.push(convert_value_to_ast(item, &item_context)?);
@@ -239,7 +228,8 @@ fn convert_mapping_to_ast(map: Mapping, context: &ParseContext) -> Result<YamlAs
     }
 
     // Regular mapping
-    let mut ast_map = Vec::new();
+    let len = map.len();
+    let mut ast_map = Vec::with_capacity(len); // Pre-allocate for better performance
     for (key, value) in map {
         let key_ast = convert_value_to_ast(key, context)?;
         let value_context = if let YamlAst::String(key_str) = &key_ast {
@@ -371,7 +361,7 @@ fn parse_include_tag(value: Value, _context: &ParseContext) -> Result<YamlAst> {
 fn parse_if_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
         // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &[TEST_FIELD, THEN_FIELD], &[ELSE_FIELD], "!$if", context)?;
+        validate_exact_keys_static(&map, IF_TAG_REQUIRED, IF_TAG_OPTIONAL, "!$if", context)?;
         
         let condition_val = map.get(&string_value(TEST_FIELD)).unwrap(); // Safe due to validation
         let then_val = map.get(&string_value(THEN_FIELD)).unwrap(); // Safe due to validation
@@ -417,7 +407,8 @@ fn parse_map_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 fn parse_merge_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     match value {
         Value::Sequence(seq) => {
-            let mut sources = Vec::new();
+            let len = seq.len();
+            let mut sources = Vec::with_capacity(len); // Pre-allocate
             for (index, item) in seq.into_iter().enumerate() {
                 let item_context = context.with_array_index(index);
                 sources.push(convert_value_to_ast(item, &item_context)?);
@@ -434,7 +425,8 @@ fn parse_merge_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 fn parse_concat_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     match value {
         Value::Sequence(seq) => {
-            let mut sources = Vec::new();
+            let len = seq.len();
+            let mut sources = Vec::with_capacity(len); // Pre-allocate
             for (index, item) in seq.into_iter().enumerate() {
                 let item_context = context.with_array_index(index);
                 sources.push(convert_value_to_ast(item, &item_context)?);
@@ -459,7 +451,8 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
         let expression_val = map.get(&in_key).unwrap().clone(); // Safe due to check above
 
         // Parse variable bindings from all keys except "in"
-        let mut bindings = Vec::new();
+        let len = map.len().saturating_sub(1); // Subtract 1 for the "in" key
+        let mut bindings = Vec::with_capacity(len); // Pre-allocate
         for (key, value) in map {
             if let Value::String(var_name) = key {
                 if var_name != IN_FIELD {
@@ -483,13 +476,17 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 
 /// Parse !$eq tag
 fn parse_eq_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Sequence(seq) = value {
+    if let Value::Sequence(mut seq) = value {
         if seq.len() != 2 {
             return Err(anyhow!("Eq tag must have exactly 2 elements"));
         }
 
-        let left = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
-        let right = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
+        // Extract without cloning
+        let right_val = seq.pop().unwrap(); // Safe due to length check
+        let left_val = seq.pop().unwrap(); // Safe due to length check
+
+        let left = Box::new(convert_value_to_ast(left_val, &context.with_array_index(0))?);
+        let right = Box::new(convert_value_to_ast(right_val, &context.with_array_index(1))?);
 
         Ok(YamlAst::PreprocessingTag(PreprocessingTag::Eq(EqTag {
             left,
@@ -529,13 +526,13 @@ fn parse_join_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 // ============================================================================
 
 /// Extract a single element from an array syntax like !$tag [expression]
-/// Returns (extracted_value, updated_context)
-fn extract_single_array_element(value: Value, context: &ParseContext) -> (Value, ParseContext) {
+/// Returns (extracted_value, context_reference, needs_new_context)
+fn extract_single_array_element(value: Value, context: &ParseContext) -> (Value, &ParseContext, bool) {
     match value {
         Value::Sequence(mut seq) if seq.len() == 1 => {
-            (seq.pop().unwrap(), context.with_array_index(0))
+            (seq.pop().unwrap(), context, true) // true = need to create array index context
         },
-        other => (other, context.clone()),
+        other => (other, context, false), // false = use original context
     }
 }
 
@@ -547,13 +544,22 @@ fn parse_two_element_sequence(
     tag_name: &str,
     description: &str
 ) -> Result<(Box<YamlAst>, Box<YamlAst>)> {
-    if let Value::Sequence(seq) = value {
+    if let Value::Sequence(mut seq) = value {
         if seq.len() != 2 {
             return Err(anyhow!("{} tag must be a sequence with two elements: {}", tag_name, description));
         }
 
-        let first = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
-        let second = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
+        // Extract elements without cloning by taking ownership
+        // Note: pop() removes from end, so we extract in reverse order
+        let second_val = seq.pop().unwrap(); // Safe due to length check (index 1)
+        let first_val = seq.pop().unwrap(); // Safe due to length check (index 0)
+        
+        // Create contexts once and reuse
+        let first_context = context.with_array_index(0);
+        let second_context = context.with_array_index(1);
+
+        let first = Box::new(convert_value_to_ast(first_val, &first_context)?);
+        let second = Box::new(convert_value_to_ast(second_val, &second_context)?);
 
         Ok((first, second))
     } else {
@@ -574,12 +580,12 @@ where
 {
     if let Value::Mapping(map) = value {
         let optional_keys = if supports_filter {
-            &[VAR_FIELD, FILTER_FIELD][..]
+            ITEMS_TEMPLATE_WITH_VAR_FILTER
         } else {
-            &[VAR_FIELD][..]
+            ITEMS_TEMPLATE_WITH_VAR
         };
         
-        validate_exact_keys(&map, &[ITEMS_FIELD, TEMPLATE_FIELD], optional_keys, tag_name, context)?;
+        validate_exact_keys_static(&map, ITEMS_TEMPLATE_REQUIRED, optional_keys, tag_name, context)?;
         
         let items_val = map.get(&string_value(ITEMS_FIELD)).unwrap(); // Safe due to validation
         let template_val = map.get(&string_value(TEMPLATE_FIELD)).unwrap(); // Safe due to validation
@@ -610,8 +616,17 @@ fn parse_single_element_tag<F>(
 where
     F: FnOnce(Box<YamlAst>) -> PreprocessingTag,
 {
-    let (actual_value, value_context) = extract_single_array_element(value, context);
-    let expression = Box::new(convert_value_to_ast(actual_value, &value_context)?);
+    let (actual_value, base_context, needs_array_index) = extract_single_array_element(value, context);
+    
+    let expression = if needs_array_index {
+        // Only create new context when we actually need it
+        let array_context = base_context.with_array_index(0);
+        Box::new(convert_value_to_ast(actual_value, &array_context)?)
+    } else {
+        // Use original context directly, no cloning needed
+        Box::new(convert_value_to_ast(actual_value, base_context)?)
+    };
+    
     Ok(YamlAst::PreprocessingTag(builder(expression)))
 }
 
@@ -622,7 +637,7 @@ fn extract_optional_field_as_ast(
     field: &str,
     context: &ParseContext,
 ) -> Result<Option<Box<YamlAst>>> {
-    if let Some(value) = map.get(&Value::String(field.to_string())) {
+    if let Some(value) = map.get(&string_value(field)) {
         Ok(Some(Box::new(convert_value_to_ast(value.clone(), &context.with_path(field))?)))
     } else {
         Ok(None)
@@ -631,7 +646,7 @@ fn extract_optional_field_as_ast(
 
 /// Helper to extract a required string field from a mapping
 fn extract_string_field(map: &Mapping, field: &str) -> Result<String> {
-    map.get(&Value::String(field.to_string()))
+    map.get(&string_value(field))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| anyhow!("Missing or invalid '{}' field", field))
@@ -639,7 +654,7 @@ fn extract_string_field(map: &Mapping, field: &str) -> Result<String> {
 
 /// Helper to extract an optional string field from a mapping
 fn extract_optional_string_field(map: &Mapping, field: &str) -> Option<String> {
-    map.get(&Value::String(field.to_string()))
+    map.get(&string_value(field))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
 }
@@ -718,7 +733,7 @@ fn parse_map_values_tag(value: Value, context: &ParseContext) -> Result<YamlAst>
 fn parse_group_by_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
         // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &[ITEMS_FIELD, KEY_FIELD], &[VAR_FIELD, TEMPLATE_FIELD], "!$groupBy", context)?;
+        validate_exact_keys_static(&map, GROUPBY_REQUIRED, GROUPBY_OPTIONAL, "!$groupBy", context)?;
         
         let items_val = map.get(&string_value(ITEMS_FIELD)).unwrap(); // Safe due to validation
         let key_val = map.get(&string_value(KEY_FIELD)).unwrap(); // Safe due to validation

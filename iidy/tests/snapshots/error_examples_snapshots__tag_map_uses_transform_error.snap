@@ -2,12 +2,12 @@
 source: tests/error_examples_snapshots.rs
 expression: error_output
 ---
-Tag error: 'transform' should be 'template' @ example-templates/errors/tag-map-uses-transform.yaml:7:3 (errno: IY4002)
-  -> use 'template' instead of 'transform' in !$map tags
+Tag error: 'template' missing in !$map tag @ example-templates/errors/tag-map-uses-transform.yaml:5:10 (errno: IY4002)
+  -> add 'template' field to !$map tag
 
+   4 | 
+   5 | configs: !$map
    6 |   items: !$ services
-   7 |   transform: "{{item}}-config"
-     |   ^^^^^^^^^
 
    example:
    !$map

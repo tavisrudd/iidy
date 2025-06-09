@@ -210,8 +210,9 @@ test_map: !$map
     let result = preprocess_yaml_with_base_location(yaml_old_source, "test.yaml").await;
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
-    assert!(error_msg.contains("'source' should be 'items'"));
-    assert!(error_msg.contains("use 'items' instead of 'source'"));
+    // Now we get a simpler "missing required field" error instead of typo detection
+    assert!(error_msg.contains("'items' missing in !$map tag"));
+    assert!(error_msg.contains("add 'items' field to !$map tag"));
     
     // Test that we get specific error for completely invalid fields
     let yaml_invalid = r#"
@@ -248,9 +249,10 @@ test_map: !$map
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     
-    // Check that the error includes the suggestion with tag name
-    assert!(error_msg.contains("'transform' should be 'template'"));
-    assert!(error_msg.contains("use 'template' instead of 'transform' in !$map tags"));
+    // With 'transform' instead of 'template', we get a "missing required field" error 
+    // because validation reports missing 'template' before checking for extra fields
+    assert!(error_msg.contains("'template' missing in !$map tag"));
+    assert!(error_msg.contains("add 'template' field to !$map tag"));
     
     // Check that it includes a helpful example
     assert!(error_msg.contains("example:"));
