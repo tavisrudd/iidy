@@ -6,6 +6,22 @@ use anyhow::{anyhow, Result};
 use serde_yaml::{Mapping, Sequence, Value};
 use std::rc::Rc;
 
+// Common field name constants to reduce string allocations
+const ITEMS_FIELD: &str = "items";
+const TEMPLATE_FIELD: &str = "template";
+const TEST_FIELD: &str = "test";
+const THEN_FIELD: &str = "then";
+const ELSE_FIELD: &str = "else";
+const VAR_FIELD: &str = "var";
+const FILTER_FIELD: &str = "filter";
+const KEY_FIELD: &str = "key";
+const IN_FIELD: &str = "in";
+
+/// Helper to create Value::String from string literal without allocation  
+fn string_value(s: &str) -> Value {
+    Value::String(s.to_string())
+}
+
 use crate::yaml::ast::*;
 use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
 use std::collections::HashSet;
@@ -355,11 +371,11 @@ fn parse_include_tag(value: Value, _context: &ParseContext) -> Result<YamlAst> {
 fn parse_if_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
         // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["test", "then"], &["else"], "!$if", context)?;
+        validate_exact_keys(&map, &[TEST_FIELD, THEN_FIELD], &[ELSE_FIELD], "!$if", context)?;
         
-        let condition_val = map.get(&Value::String("test".to_string())).unwrap(); // Safe due to validation
-        let then_val = map.get(&Value::String("then".to_string())).unwrap(); // Safe due to validation
-        let else_val = map.get(&Value::String("else".to_string()));
+        let condition_val = map.get(&string_value(TEST_FIELD)).unwrap(); // Safe due to validation
+        let then_val = map.get(&string_value(THEN_FIELD)).unwrap(); // Safe due to validation
+        let else_val = map.get(&string_value(ELSE_FIELD));
 
         let condition = Box::new(convert_value_to_ast(condition_val.clone(), &context.with_path("test"))?);
         let then_value = Box::new(convert_value_to_ast(then_val.clone(), &context.with_path("then"))?);
@@ -435,7 +451,7 @@ fn parse_concat_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
         // Check that we have the required "in" key (iidy-js flat format)
-        let in_key = Value::String("in".to_string());
+        let in_key = string_value(IN_FIELD);
         if !map.contains_key(&in_key) {
             return Err(anyhow!("!$let tag must have an 'in' field"));
         }
@@ -446,7 +462,7 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
         let mut bindings = Vec::new();
         for (key, value) in map {
             if let Value::String(var_name) = key {
-                if var_name != "in" {
+                if var_name != IN_FIELD {
                     let var_context = context.with_path(&var_name);
                     let var_value = convert_value_to_ast(value, &var_context)?;
                     bindings.push((var_name.clone(), var_value));
@@ -558,20 +574,20 @@ where
 {
     if let Value::Mapping(map) = value {
         let optional_keys = if supports_filter {
-            &["var", "filter"][..]
+            &[VAR_FIELD, FILTER_FIELD][..]
         } else {
-            &["var"][..]
+            &[VAR_FIELD][..]
         };
         
-        validate_exact_keys(&map, &["items", "template"], optional_keys, tag_name, context)?;
+        validate_exact_keys(&map, &[ITEMS_FIELD, TEMPLATE_FIELD], optional_keys, tag_name, context)?;
         
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
+        let items_val = map.get(&string_value(ITEMS_FIELD)).unwrap(); // Safe due to validation
+        let template_val = map.get(&string_value(TEMPLATE_FIELD)).unwrap(); // Safe due to validation
+        let var_name = extract_optional_string_field(&map, VAR_FIELD);
         
         // Optional filter (only if supported)
         let filter = if supports_filter {
-            extract_optional_field_as_ast(&map, "filter", context)?
+            extract_optional_field_as_ast(&map, FILTER_FIELD, context)?
         } else {
             None
         };
@@ -702,14 +718,14 @@ fn parse_map_values_tag(value: Value, context: &ParseContext) -> Result<YamlAst>
 fn parse_group_by_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Mapping(map) = value {
         // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "key"], &["var", "template"], "!$groupBy", context)?;
+        validate_exact_keys(&map, &[ITEMS_FIELD, KEY_FIELD], &[VAR_FIELD, TEMPLATE_FIELD], "!$groupBy", context)?;
         
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let key_val = map.get(&Value::String("key".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
+        let items_val = map.get(&string_value(ITEMS_FIELD)).unwrap(); // Safe due to validation
+        let key_val = map.get(&string_value(KEY_FIELD)).unwrap(); // Safe due to validation
+        let var_name = extract_optional_string_field(&map, VAR_FIELD);
         
         // Optional template
-        let template = if let Some(template_val) = map.get(&Value::String("template".to_string())) {
+        let template = if let Some(template_val) = map.get(&string_value(TEMPLATE_FIELD)) {
             Some(Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?))  
         } else {
             None

@@ -350,7 +350,7 @@ pub fn resolve_include_tag(tag: &IncludeTag, context: &TagContext) -> Result<Val
     if let Some(mut value) = resolve_dot_notation_path(&base_path, context) {
         // Apply query selector if present
         if let Some(query_str) = query {
-            value = apply_query_selector(value, &query_str)?;
+            value = apply_query_selector(&value, &query_str)?;
         }
         return Ok(value);
     }
@@ -439,13 +439,13 @@ fn parse_path_and_query(path: &str, explicit_query: &Option<String>) -> (String,
 /// - "property" - select single property
 /// - "prop1,prop2" - select multiple properties  
 /// - ".nested.path" - select nested property (same as dot notation)
-fn apply_query_selector(value: Value, query: &str) -> Result<Value> {
+fn apply_query_selector(value: &Value, query: &str) -> Result<Value> {
     match value {
         Value::Mapping(map) => {
             if query.starts_with('.') {
                 // Handle nested path query like ".database.host"
                 let path = &query[1..]; // Remove leading dot
-                apply_nested_path_query(Value::Mapping(map), path)
+                apply_nested_path_query(value, path)
             } else if query.contains(',') {
                 // Handle multiple property selection like "database,host"
                 let properties: Vec<&str> = query.split(',').map(|s| s.trim()).collect();
@@ -472,7 +472,7 @@ fn apply_query_selector(value: Value, query: &str) -> Result<Value> {
 }
 
 /// Apply nested path query to a value
-fn apply_nested_path_query(value: Value, path: &str) -> Result<Value> {
+fn apply_nested_path_query(value: &Value, path: &str) -> Result<Value> {
     let parts: Vec<&str> = path.split('.').collect();
     let mut current_value = value;
     
@@ -482,10 +482,10 @@ fn apply_nested_path_query(value: Value, path: &str) -> Result<Value> {
         }
         
         match current_value {
-            Value::Mapping(ref map) => {
+            Value::Mapping(map) => {
                 let key = Value::String(part.to_string());
                 if let Some(next_value) = map.get(&key) {
-                    current_value = next_value.clone();
+                    current_value = next_value;
                 } else {
                     return Err(anyhow!("Property '{}' not found in path", part));
                 }
@@ -494,7 +494,7 @@ fn apply_nested_path_query(value: Value, path: &str) -> Result<Value> {
         }
     }
     
-    Ok(current_value)
+    Ok(current_value.clone())
 }
 
 /// Resolve dot notation path in variables (e.g., "config.database_host")
