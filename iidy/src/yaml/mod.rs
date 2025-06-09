@@ -849,11 +849,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Ok(Value::Mapping(map))
     }
 
-    #[allow(dead_code)]
-    fn resolve_preprocessing_tag(&mut self, tag: PreprocessingTag) -> Result<Value> {
-        self.resolve_preprocessing_tag_with_context(tag, &TagContext::new())
-    }
-
     fn process_string_with_handlebars(&self, s: String, context: &TagContext) -> Result<Value> {
         use crate::yaml::handlebars::interpolate_handlebars_string;
         use std::collections::HashMap;

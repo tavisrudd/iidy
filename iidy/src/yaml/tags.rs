@@ -39,6 +39,13 @@ use std::collections::HashMap;
 
 use crate::yaml::ast::*;
 
+/// Create a small HashMap with pre-allocated capacity for common cases
+#[inline(always)]
+fn small_hashmap<K, V>() -> HashMap<K, V> {
+    HashMap::with_capacity(2)
+}
+
+
 /// Enhanced error types for preprocessing with stack frame context
 #[derive(thiserror::Error, Debug)]
 pub enum PreprocessError {
@@ -461,6 +468,7 @@ fn parse_path_and_query(path: &str, explicit_query: &Option<String>) -> (String,
     }
 }
 
+
 /// Apply query selector to a value
 /// Supported query formats:
 /// - "property" - select single property
@@ -476,7 +484,7 @@ fn apply_query_selector(value: &Value, query: &str) -> Result<Value> {
             } else if query.contains(',') {
                 // Handle multiple property selection like "database,host"
                 let properties: Vec<&str> = query.split(',').map(|s| s.trim()).collect();
-                let mut result = serde_yaml::Mapping::new();
+                let mut result = serde_yaml::Mapping::with_capacity(properties.len());
                 
                 for prop in properties {
                     if let Some(prop_value) = map.get(&Value::String(prop.to_string())) {
@@ -497,6 +505,7 @@ fn apply_query_selector(value: &Value, query: &str) -> Result<Value> {
         _ => Err(anyhow!("Query selectors can only be applied to mappings"))
     }
 }
+
 
 /// Apply nested path query to a value
 fn apply_nested_path_query(value: &Value, path: &str) -> Result<Value> {
@@ -601,6 +610,7 @@ fn parse_path_segments(path: &str, context: &TagContext) -> Option<Vec<String>> 
     }
 }
 
+
 /// Parse the content inside brackets and resolve it
 /// Supports:
 /// - Variable references: [environment] -> resolves variable "environment"
@@ -670,6 +680,7 @@ fn parse_bracket_content(chars: &mut std::iter::Peekable<std::str::Chars>, conte
     }
 }
 
+
 /// Resolve an if tag
 pub fn resolve_if_tag(tag: &IfTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
     let condition_result = resolver.resolve_ast(&tag.test, context)?;
@@ -704,7 +715,7 @@ pub fn resolve_map_tag(tag: &MapTag, context: &TagContext, resolver: &dyn AstRes
             
             for (idx, item) in seq.into_iter().enumerate() {
                 // Create new context with the current item and index bound to variables
-                let mut item_bindings = HashMap::with_capacity(2);
+                let mut item_bindings = small_hashmap();
                 item_bindings.insert(var_name.to_string(), item);
                 item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
                 let item_context = context.with_bindings_ref(&item_bindings);
@@ -871,6 +882,11 @@ pub fn resolve_join_tag(tag: &JoinTag, context: &TagContext, resolver: &dyn AstR
 
 /// Compare two YAML values for equality
 fn values_equal(left: &Value, right: &Value) -> bool {
+    // Fast path: check discriminants first to avoid expensive comparisons
+    if std::mem::discriminant(left) != std::mem::discriminant(right) {
+        return false;
+    }
+    
     match (left, right) {
         (Value::Null, Value::Null) => true,
         (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -892,6 +908,7 @@ fn values_equal(left: &Value, right: &Value) -> bool {
     }
 }
 
+
 /// Resolve a concatMap tag (map followed by concat)
 pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver: &dyn AstResolver) -> Result<Value> {
     let items_result = resolver.resolve_ast(&tag.items, context)?;
@@ -904,7 +921,7 @@ pub fn resolve_concat_map_tag(tag: &ConcatMapTag, context: &TagContext, resolver
             
             for (idx, item) in seq.into_iter().enumerate() {
                 // Create new context with the current item and index bound to variables
-                let mut item_bindings = HashMap::with_capacity(2);
+                let mut item_bindings = small_hashmap();
                 item_bindings.insert(var_name.to_string(), item);
                 item_bindings.insert(format!("{}Idx", var_name), Value::Number(serde_yaml::Number::from(idx)));
                 let item_context = context.with_bindings_ref(&item_bindings);
