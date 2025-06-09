@@ -193,7 +193,7 @@ pub fn parse_yaml_with_custom_tags_from_file(input: &str, file_path: &str) -> Re
 }
 
 /// Convert a serde_yaml::Value to our custom AST
-fn convert_value_to_ast(value: Value, context: &ParseContext) -> Result<YamlAst> {
+pub fn convert_value_to_ast(value: Value, context: &ParseContext) -> Result<YamlAst> {
     match value {
         Value::Null => Ok(YamlAst::Null),
         Value::Bool(b) => Ok(YamlAst::Bool(b)),

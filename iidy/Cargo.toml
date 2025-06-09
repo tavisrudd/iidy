@@ -108,3 +108,7 @@ harness = false
 [[bench]]
 name = "simple_benchmark"
 harness = false
+
+[[bench]]
+name = "parsing_optimization_benchmark"
+harness = false
