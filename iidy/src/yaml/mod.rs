@@ -382,7 +382,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         // Check if location contains handlebars syntax
         if location.contains("{{") && location.contains("}}") {
             // Convert env_values from serde_yaml::Value to serde_json::Value for handlebars
-            let mut json_env = std::collections::HashMap::new();
+            let mut json_env = std::collections::HashMap::with_capacity(env_values.len());
             for (key, yaml_value) in env_values {
                 let json_value = yaml_value_to_json_value(yaml_value)?;
                 json_env.insert(key.clone(), json_value);
@@ -406,8 +406,9 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Box::pin(async move {
             // Check if this document has preprocessing directives that need processing
             if let Value::Mapping(ref map) = doc {
-                let has_imports = map.contains_key(&Value::String("$imports".to_string()));
-                let has_defs = map.contains_key(&Value::String("$defs".to_string()));
+                // Check for preprocessing directives without string allocation
+                let has_imports = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$imports"));
+                let has_defs = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$defs"));
                 
                 if has_imports || has_defs {
                     // This document needs recursive preprocessing - parse it back to AST and process
@@ -457,14 +458,14 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::Number(n) => Ok(Value::Number(n)),
             YamlAst::String(s) => Ok(Value::String(s)),
             YamlAst::Sequence(seq) => {
-                let mut result = Vec::new();
+                let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
                     result.push(self.ast_to_value_unprocessed(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
             YamlAst::Mapping(pairs) => {
-                let mut result = serde_yaml::Mapping::new();
+                let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
                     let key_val = self.ast_to_value_unprocessed(key)?;
                     let value_val = self.ast_to_value_unprocessed(value)?;
@@ -546,7 +547,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             }
             Value::Mapping(map) => {
                 // Recursively convert mapping values with path context
-                let mut converted_map = serde_yaml::Mapping::new();
+                let mut converted_map = serde_yaml::Mapping::with_capacity(map.len());
                 for (k, v) in map {
                     let key_str = match &k {
                         Value::String(s) => s.clone(),
@@ -605,7 +606,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 self.process_string_with_handlebars(s, context)
             },
             YamlAst::Sequence(seq) => {
-                let mut result = Vec::new();
+                let mut result = Vec::with_capacity(seq.len());
                 for (index, item) in seq.into_iter().enumerate() {
                     // Create context with array index for path tracking
                     let item_context = context.with_array_index(index);
@@ -614,7 +615,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 Ok(Value::Sequence(result))
             }
             YamlAst::Mapping(map) => {
-                let mut result = serde_yaml::Mapping::new();
+                let mut result = serde_yaml::Mapping::with_capacity(map.len());
                 for (key, value) in map {
                     let key_val = self.resolve_ast_with_context(key, context)?;
                     
@@ -708,7 +709,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 // Ref expects a string - unpack single-element arrays for compatibility
                 let unpacked = unpack_single_element_array(resolved_value);
                 if let Value::String(resource) = unpacked {
-                    let mut map = serde_yaml::Mapping::new();
+                    let mut map = serde_yaml::Mapping::with_capacity(1);
                     map.insert(Value::String("!Ref".to_string()), Value::String(resource));
                     Ok(Value::Mapping(map))
                 } else {
@@ -718,116 +719,116 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             CloudFormationTag::Sub(_) => {
                 // Sub expects a string or array [string, {substitutions}] - unpack single-element arrays
                 let unpacked = unpack_single_element_array(resolved_value);
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Sub".to_string()), unpacked);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::GetAtt(_) => {
                 // GetAtt expects [resource, attribute] or "resource.attribute" - unpack single-element arrays
                 let unpacked = unpack_single_element_array(resolved_value);
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!GetAtt".to_string()), unpacked);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Join(_) => {
                 // Join expects [delimiter, [values]]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Join".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Select(_) => {
                 // Select expects [index, list]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Select".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Split(_) => {
                 // Split expects [delimiter, string]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Split".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Base64(_) => {
                 // Base64 expects a string
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Base64".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::GetAZs(_) => {
                 // GetAZs expects a region string
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!GetAZs".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::ImportValue(_) => {
                 // ImportValue expects a string
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!ImportValue".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::FindInMap(_) => {
                 // FindInMap expects [MapName, TopLevelKey, SecondLevelKey]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!FindInMap".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Cidr(_) => {
                 // Cidr expects [ipBlock, count, cidrBits]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Cidr".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Length(_) => {
                 // Length expects a list
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Length".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::ToJsonString(_) => {
                 // ToJsonString expects any data structure
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!ToJsonString".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Transform(_) => {
                 // Transform expects a mapping with Name and Parameters
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Transform".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::ForEach(_) => {
                 // ForEach expects a mapping with specific structure
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!ForEach".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::If(_) => {
                 // If expects [condition, trueValue, falseValue]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!If".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Equals(_) => {
                 // Equals expects [value1, value2]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Equals".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::And(_) => {
                 // And expects [condition1, condition2, ...]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!And".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Or(_) => {
                 // Or expects [condition1, condition2, ...]
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Or".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
             CloudFormationTag::Not(_) => {
                 // Not expects a condition
-                let mut map = serde_yaml::Mapping::new();
+                let mut map = serde_yaml::Mapping::with_capacity(1);
                 map.insert(Value::String("!Not".to_string()), resolved_value);
                 Ok(Value::Mapping(map))
             },
@@ -844,7 +845,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     /// This approach works around serde_yaml 0.9's inability to serialize `Value::Tagged`.
     fn create_tagged_value(&self, tag: &str, value: Value) -> Result<Value> {
         // Create a mapping with the tag as key - this works for both YAML and JSON serialization
-        let mut map = serde_yaml::Mapping::new();
+        let mut map = serde_yaml::Mapping::with_capacity(1);
         map.insert(Value::String(format!("!{}", tag)), value);
         Ok(Value::Mapping(map))
     }
@@ -859,7 +860,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         }
         
         // Convert TagContext variables from serde_yaml::Value to serde_json::Value
-        let mut env_values: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut env_values: HashMap<String, serde_json::Value> = HashMap::with_capacity(context.variables.len());
         for (key, yaml_value) in &context.variables {
             let json_value = yaml_value_to_json_value(yaml_value)?;
             env_values.insert(key.clone(), json_value);
@@ -1034,7 +1035,7 @@ fn yaml_value_to_json_value(yaml_value: &Value) -> Result<serde_json::Value> {
         }
         Value::String(s) => Ok(serde_json::Value::String(s.clone())),
         Value::Sequence(seq) => {
-            let mut json_seq = Vec::new();
+            let mut json_seq = Vec::with_capacity(seq.len());
             for item in seq {
                 json_seq.push(yaml_value_to_json_value(item)?);
             }

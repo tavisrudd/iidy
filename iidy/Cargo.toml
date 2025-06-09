@@ -21,6 +21,10 @@ path = "src/main.rs"
 name = "iidy-pocs"
 path = "src/pocs/main.rs"
 
+[[bin]]
+name = "profile_resolve_ast"
+path = "src/bin/profile_resolve_ast.rs"
+
 [dependencies]
 atty = "0.2.14"
 
@@ -87,6 +91,9 @@ crossterm = "0.29"
 log = "0.4.27"
 env_logger = "0.11.8"
 
+[profile.release]
+debug = true
+
 [dev-dependencies]
 # Testing and mocking
 mockito = "1.2"
@@ -115,4 +122,8 @@ harness = false
 
 [[bench]]
 name = "tags_optimization_benchmark"
+harness = false
+
+[[bench]]
+name = "resolve_ast_optimization_benchmark"
 harness = false
