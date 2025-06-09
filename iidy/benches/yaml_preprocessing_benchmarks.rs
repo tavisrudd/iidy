@@ -4,8 +4,7 @@
 //! baselines and identify optimization opportunities.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use iidy::yaml::preprocess_yaml;
-use iidy::cli::YamlSpec;
+use iidy::yaml::preprocess_yaml_v11;
 // Removed complex tag resolver imports that aren't available
 use iidy::yaml::handlebars::interpolate_handlebars_string;
 use serde_yaml::Value;

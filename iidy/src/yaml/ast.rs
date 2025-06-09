@@ -13,8 +13,10 @@ pub enum YamlAst {
     Bool(bool),
     /// Numeric value (preserves original integer/float representation)
     Number(serde_yaml::Number),
-    /// String value
-    String(String),
+    /// Plain string value (no handlebars templates)
+    PlainString(String),
+    /// Templated string value (contains handlebars templates)
+    TemplatedString(String),
     /// YAML sequence (array)
     Sequence(Vec<YamlAst>),
     /// YAML mapping (object)
@@ -414,7 +416,7 @@ impl YamlAst {
             YamlAst::Null => Some(Value::Null),
             YamlAst::Bool(b) => Some(Value::Bool(*b)),
             YamlAst::Number(n) => Some(Value::Number(n.clone())),
-            YamlAst::String(s) => Some(Value::String(s.clone())),
+            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Some(Value::String(s.clone())),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::new();
                 for item in seq {

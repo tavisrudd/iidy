@@ -131,3 +131,11 @@ harness = false
 [[bench]]
 name = "resolve_ast_performance_focused"
 harness = false
+
+[[bench]]
+name = "plain_string_analysis"
+harness = false
+
+[[bench]]
+name = "realistic_string_processing"
+harness = false

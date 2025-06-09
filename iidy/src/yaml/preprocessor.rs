@@ -94,7 +94,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         // Look for $imports and $defs in the root mapping
         if let YamlAst::Mapping(pairs) = ast {
             for (key, value) in pairs {
-                if let YamlAst::String(key_str) = key {
+                if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
                     match key_str.as_str() {
                         "$defs" => {
                             self.process_defs(value, env_values)?;
@@ -114,7 +114,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     fn process_defs(&mut self, defs_ast: &YamlAst, env_values: &mut EnvValues) -> Result<()> {
         if let YamlAst::Mapping(pairs) = defs_ast {
             for (key, value) in pairs {
-                if let YamlAst::String(key_str) = key {
+                if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
                     // Check for collisions with existing imports
                     if env_values.contains_key(key_str) {
                         return Err(anyhow::anyhow!(
@@ -142,7 +142,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     ) -> Result<()> {
         if let YamlAst::Mapping(pairs) = imports_ast {
             for (key, value) in pairs {
-                if let (YamlAst::String(import_key), YamlAst::String(location)) = (key, value) {
+                if let (YamlAst::PlainString(import_key) | YamlAst::TemplatedString(import_key), 
+                         YamlAst::PlainString(location) | YamlAst::TemplatedString(location)) = (key, value) {
                     // Check for collisions
                     if env_values.contains_key(import_key) {
                         return Err(anyhow::anyhow!(
@@ -262,7 +263,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::Null => Ok(Value::Null),
             YamlAst::Bool(b) => Ok(Value::Bool(b)),
             YamlAst::Number(n) => Ok(Value::Number(n)),
-            YamlAst::String(s) => Ok(Value::String(s)),
+            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s)),
             YamlAst::Sequence(seq) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
@@ -406,8 +407,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     pub fn resolve_ast_with_context(&mut self, ast: YamlAst, context: &TagContext) -> Result<Value> {
         // Fast path for simple cases that don't need dynamic dispatch
         match &ast {
-            // Fast path: Plain strings without handlebars
-            YamlAst::String(s) if !s.contains("{{") => {
+            // Fast path: Plain strings (no handlebars processing needed)
+            YamlAst::PlainString(s) => {
                 return Ok(Value::String(s.clone()));
             }
             // Fast path: Simple values

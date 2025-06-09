@@ -23,7 +23,7 @@ fn bench_direct_vs_delegated(c: &mut Criterion) {
         .with_variable("service", Value::String("api-server".to_string()));
     
     // Plain string test case (biggest regression)
-    let plain_string = YamlAst::String("plain-text-no-interpolation".to_string());
+    let plain_string = YamlAst::PlainString("plain-text-no-interpolation".to_string());
     
     group.bench_function("plain_string_via_preprocessor", |b| {
         b.iter(|| {
@@ -41,8 +41,8 @@ fn bench_direct_vs_delegated(c: &mut Criterion) {
     let mut large_pairs = Vec::new();
     for i in 0..20 {
         large_pairs.push((
-            YamlAst::String(format!("key_{}", i)),
-            YamlAst::String(format!("{{service}}_value_{}", i))
+            YamlAst::PlainString(format!("key_{}", i)),
+            YamlAst::PlainString(format!("{{service}}_value_{}", i))
         ));
     }
     let large_mapping = YamlAst::Mapping(large_pairs);
@@ -61,7 +61,7 @@ fn bench_direct_vs_delegated(c: &mut Criterion) {
     
     // Large sequence test case
     let large_sequence = YamlAst::Sequence(
-        (0..50).map(|i| YamlAst::String(format!("{{service}}-item-{}", i))).collect()
+        (0..50).map(|i| YamlAst::PlainString(format!("{{service}}-item-{}", i))).collect()
     );
     
     group.bench_function("large_sequence_via_preprocessor", |b| {
@@ -88,9 +88,9 @@ fn bench_string_processing_optimizations(c: &mut Criterion) {
         .with_variable("service", Value::String("api-server".to_string()));
     
     // Test different string patterns
-    let plain_string = YamlAst::String("plain-text-no-interpolation".to_string());
-    let simple_handlebars = YamlAst::String("{{service}}".to_string());
-    let complex_handlebars = YamlAst::String("{{service}}-production-v1".to_string());
+    let plain_string = YamlAst::PlainString("plain-text-no-interpolation".to_string());
+    let simple_handlebars = YamlAst::PlainString("{{service}}".to_string());
+    let complex_handlebars = YamlAst::PlainString("{{service}}-production-v1".to_string());
     
     group.bench_function("plain_string", |b| {
         b.iter(|| {
@@ -123,17 +123,17 @@ fn bench_allocation_patterns(c: &mut Criterion) {
     
     // Test vector pre-allocation for sequences
     let small_sequence = YamlAst::Sequence(vec![
-        YamlAst::String("item1".to_string()),
-        YamlAst::String("item2".to_string()),
-        YamlAst::String("item3".to_string()),
+        YamlAst::PlainString("item1".to_string()),
+        YamlAst::PlainString("item2".to_string()),
+        YamlAst::PlainString("item3".to_string()),
     ]);
     
     let medium_sequence = YamlAst::Sequence(
-        (0..10).map(|i| YamlAst::String(format!("item_{}", i))).collect()
+        (0..10).map(|i| YamlAst::PlainString(format!("item_{}", i))).collect()
     );
     
     let large_sequence = YamlAst::Sequence(
-        (0..50).map(|i| YamlAst::String(format!("item_{}", i))).collect()
+        (0..50).map(|i| YamlAst::PlainString(format!("item_{}", i))).collect()
     );
     
     group.bench_function("small_sequence", |b| {
@@ -156,14 +156,14 @@ fn bench_allocation_patterns(c: &mut Criterion) {
     
     // Test mapping pre-allocation
     let small_mapping = YamlAst::Mapping(vec![
-        (YamlAst::String("key1".to_string()), YamlAst::String("value1".to_string())),
-        (YamlAst::String("key2".to_string()), YamlAst::String("value2".to_string())),
+        (YamlAst::PlainString("key1".to_string()), YamlAst::PlainString("value1".to_string())),
+        (YamlAst::PlainString("key2".to_string()), YamlAst::PlainString("value2".to_string())),
     ]);
     
     let large_mapping = YamlAst::Mapping(
         (0..20).map(|i| (
-            YamlAst::String(format!("key_{}", i)),
-            YamlAst::String(format!("value_{}", i))
+            YamlAst::PlainString(format!("key_{}", i)),
+            YamlAst::PlainString(format!("value_{}", i))
         )).collect()
     );
     

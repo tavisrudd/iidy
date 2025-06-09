@@ -55,7 +55,8 @@ fn small_hashmap<K, V>() -> HashMap<K, V> {
 fn is_simple_ast_value(ast: &YamlAst) -> bool {
     match ast {
         YamlAst::Null | YamlAst::Bool(_) | YamlAst::Number(_) => true,
-        YamlAst::String(s) => !s.contains("{{"), // No handlebars templates
+        YamlAst::PlainString(_) => true, // All plain strings are simple
+        YamlAst::TemplatedString(_) => false, // Templated strings are never simple
         _ => false,
     }
 }
@@ -72,7 +73,7 @@ fn is_simple_sequence(seq: &[YamlAst]) -> bool {
 fn is_simple_mapping(pairs: &[(YamlAst, YamlAst)]) -> bool {
     pairs.iter().all(|(key, value)| {
         match key {
-            YamlAst::String(s) if !s.starts_with('$') => is_simple_ast_value(value),
+            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) if !s.starts_with('$') => is_simple_ast_value(value),
             _ => false,
         }
     })
@@ -86,7 +87,7 @@ fn simple_ast_to_value(ast: &YamlAst) -> Value {
         YamlAst::Null => Value::Null,
         YamlAst::Bool(b) => Value::Bool(*b),
         YamlAst::Number(n) => Value::Number(n.clone()),
-        YamlAst::String(s) => Value::String(s.clone()),
+        YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Value::String(s.clone()),
         _ => unreachable!("simple_ast_to_value called on non-simple AST"),
     }
 }
@@ -780,7 +781,8 @@ fn escape_ast_to_value(ast: &YamlAst) -> Result<Value> {
         YamlAst::Null => Ok(Value::Null),
         YamlAst::Bool(b) => Ok(Value::Bool(*b)),
         YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-        YamlAst::String(s) => Ok(Value::String(s.clone())),
+        YamlAst::PlainString(s) => Ok(Value::String(s.clone())),
+        YamlAst::TemplatedString(s) => Ok(Value::String(s.clone())),
         YamlAst::Sequence(seq) => {
             let mut result = Vec::new();
             for item in seq {
@@ -862,7 +864,7 @@ impl TagResolver for StandardTagResolver {
             YamlAst::Null => Ok(Value::Null),
             YamlAst::Bool(b) => Ok(Value::Bool(*b)),
             YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::String(s) => {
+            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => {
                 // Process handlebars templates in strings
                 self.process_string_with_handlebars(s.clone(), context)
             },

@@ -34,8 +34,8 @@ fn test_debug_tag_resolver() -> Result<()> {
     // Test if tag - this will print debug output
     let if_tag = IfTag {
         test: Box::new(YamlAst::Bool(true)),
-        then_value: Box::new(YamlAst::String("then_result".to_string())),
-        else_value: Some(Box::new(YamlAst::String("else_result".to_string()))),
+        then_value: Box::new(YamlAst::PlainString("then_result".to_string())),
+        else_value: Some(Box::new(YamlAst::PlainString("else_result".to_string()))),
     };
     
     let result = resolver.resolve_if(&if_tag, &context)?;
@@ -52,8 +52,8 @@ fn test_tracing_tag_resolver() -> Result<()> {
     // Test if tag - this will print timing output
     let if_tag = IfTag {
         test: Box::new(YamlAst::Bool(false)),
-        then_value: Box::new(YamlAst::String("then_result".to_string())),
-        else_value: Some(Box::new(YamlAst::String("else_result".to_string()))),
+        then_value: Box::new(YamlAst::PlainString("then_result".to_string())),
+        else_value: Some(Box::new(YamlAst::PlainString("else_result".to_string()))),
     };
     
     let result = resolver.resolve_if(&if_tag, &context)?;
@@ -74,7 +74,7 @@ fn test_resolver_trait_consistency() -> Result<()> {
     
     let if_tag = IfTag {
         test: Box::new(YamlAst::Bool(true)),
-        then_value: Box::new(YamlAst::String("success".to_string())),
+        then_value: Box::new(YamlAst::PlainString("success".to_string())),
         else_value: None,
     };
     

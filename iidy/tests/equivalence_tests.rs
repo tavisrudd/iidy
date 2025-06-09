@@ -114,7 +114,7 @@ fn test_import_syntax(var_name: &str, _var_value: &JsonValue) -> Result<String> 
         YamlAst::Mapping(ref pairs) => {
             if pairs.len() == 1 {
                 let (key, value) = &pairs[0];
-                if matches!(key, YamlAst::String(s) if s == "result") {
+                if matches!(key, YamlAst::PlainString(s) | YamlAst::TemplatedString(s) if s == "result") {
                     if value.is_preprocessing_tag() {
                         // Parsing succeeded - return placeholder for now
                         return Ok(format!("PLACEHOLDER_FOR_{}", var_name));

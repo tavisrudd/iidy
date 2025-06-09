@@ -29,41 +29,41 @@ fn main() {
     
     // Create a realistic CloudFormation-style template for profiling
     let template = YamlAst::Mapping(vec![
-        (YamlAst::String("AWSTemplateFormatVersion".to_string()), YamlAst::String("2010-09-09".to_string())),
-        (YamlAst::String("Description".to_string()), YamlAst::String("{{service}} deployment for {{environment}}".to_string())),
-        (YamlAst::String("Resources".to_string()), YamlAst::Mapping(vec![
-            (YamlAst::String("S3Bucket".to_string()), YamlAst::Mapping(vec![
-                (YamlAst::String("Type".to_string()), YamlAst::String("AWS::S3::Bucket".to_string())),
-                (YamlAst::String("Properties".to_string()), YamlAst::Mapping(vec![
-                    (YamlAst::String("BucketName".to_string()), 
+        (YamlAst::PlainString("AWSTemplateFormatVersion".to_string()), YamlAst::PlainString("2010-09-09".to_string())),
+        (YamlAst::PlainString("Description".to_string()), YamlAst::TemplatedString("{{service}} deployment for {{environment}}".to_string())),
+        (YamlAst::PlainString("Resources".to_string()), YamlAst::Mapping(vec![
+            (YamlAst::PlainString("S3Bucket".to_string()), YamlAst::Mapping(vec![
+                (YamlAst::PlainString("Type".to_string()), YamlAst::PlainString("AWS::S3::Bucket".to_string())),
+                (YamlAst::PlainString("Properties".to_string()), YamlAst::Mapping(vec![
+                    (YamlAst::PlainString("BucketName".to_string()), 
                      YamlAst::CloudFormationTag(CloudFormationTag::Sub(
-                         Box::new(YamlAst::String("${AWS::StackName}-{{service}}-{{environment}}".to_string()))
+                         Box::new(YamlAst::TemplatedString("${AWS::StackName}-{{service}}-{{environment}}".to_string()))
                      ))),
-                    (YamlAst::String("Tags".to_string()), YamlAst::Sequence(vec![
+                    (YamlAst::PlainString("Tags".to_string()), YamlAst::Sequence(vec![
                         YamlAst::Mapping(vec![
-                            (YamlAst::String("Key".to_string()), YamlAst::String("Service".to_string())),
-                            (YamlAst::String("Value".to_string()), YamlAst::String("{{service}}".to_string())),
+                            (YamlAst::PlainString("Key".to_string()), YamlAst::PlainString("Service".to_string())),
+                            (YamlAst::PlainString("Value".to_string()), YamlAst::TemplatedString("{{service}}".to_string())),
                         ]),
                         YamlAst::Mapping(vec![
-                            (YamlAst::String("Key".to_string()), YamlAst::String("Environment".to_string())),
-                            (YamlAst::String("Value".to_string()), YamlAst::String("{{environment}}".to_string())),
+                            (YamlAst::PlainString("Key".to_string()), YamlAst::PlainString("Environment".to_string())),
+                            (YamlAst::PlainString("Value".to_string()), YamlAst::TemplatedString("{{environment}}".to_string())),
                         ]),
                     ])),
                 ])),
             ])),
-            (YamlAst::String("LambdaFunction".to_string()), YamlAst::Mapping(vec![
-                (YamlAst::String("Type".to_string()), YamlAst::String("AWS::Lambda::Function".to_string())),
-                (YamlAst::String("Properties".to_string()), YamlAst::Mapping(vec![
-                    (YamlAst::String("FunctionName".to_string()), 
+            (YamlAst::PlainString("LambdaFunction".to_string()), YamlAst::Mapping(vec![
+                (YamlAst::PlainString("Type".to_string()), YamlAst::PlainString("AWS::Lambda::Function".to_string())),
+                (YamlAst::PlainString("Properties".to_string()), YamlAst::Mapping(vec![
+                    (YamlAst::PlainString("FunctionName".to_string()), 
                      YamlAst::CloudFormationTag(CloudFormationTag::Sub(
-                         Box::new(YamlAst::String("{{service}}-{{environment}}-function".to_string()))
+                         Box::new(YamlAst::TemplatedString("{{service}}-{{environment}}-function".to_string()))
                      ))),
-                    (YamlAst::String("Runtime".to_string()), YamlAst::String("python3.9".to_string())),
-                    (YamlAst::String("Environment".to_string()), YamlAst::Mapping(vec![
-                        (YamlAst::String("Variables".to_string()), YamlAst::Mapping(vec![
-                            (YamlAst::String("SERVICE_NAME".to_string()), YamlAst::String("{{service}}".to_string())),
-                            (YamlAst::String("ENVIRONMENT".to_string()), YamlAst::String("{{environment}}".to_string())),
-                            (YamlAst::String("REGION".to_string()), YamlAst::String("{{region}}".to_string())),
+                    (YamlAst::PlainString("Runtime".to_string()), YamlAst::PlainString("python3.9".to_string())),
+                    (YamlAst::PlainString("Environment".to_string()), YamlAst::Mapping(vec![
+                        (YamlAst::PlainString("Variables".to_string()), YamlAst::Mapping(vec![
+                            (YamlAst::PlainString("SERVICE_NAME".to_string()), YamlAst::TemplatedString("{{service}}".to_string())),
+                            (YamlAst::PlainString("ENVIRONMENT".to_string()), YamlAst::TemplatedString("{{environment}}".to_string())),
+                            (YamlAst::PlainString("REGION".to_string()), YamlAst::TemplatedString("{{region}}".to_string())),
                         ])),
                     ])),
                 ])),
@@ -76,7 +76,7 @@ fn main() {
     // Test different AST node types to understand costs
     
     // 1. Plain string (no handlebars)
-    let plain_string = YamlAst::String("plain-text".to_string());
+    let plain_string = YamlAst::PlainString("plain-text".to_string());
     time_operation("Plain string (1000x)", || {
         for _ in 0..1000 {
             let _ = preprocessor.resolve_ast_with_context(plain_string.clone(), &context).unwrap();
@@ -84,7 +84,7 @@ fn main() {
     });
     
     // 2. String with handlebars
-    let handlebars_string = YamlAst::String("{{service}}-{{environment}}".to_string());
+    let handlebars_string = YamlAst::TemplatedString("{{service}}-{{environment}}".to_string());
     time_operation("Handlebars string (1000x)", || {
         for _ in 0..1000 {
             let _ = preprocessor.resolve_ast_with_context(handlebars_string.clone(), &context).unwrap();
@@ -93,8 +93,8 @@ fn main() {
     
     // 3. Small mapping
     let small_mapping = YamlAst::Mapping(vec![
-        (YamlAst::String("name".to_string()), YamlAst::String("{{service}}".to_string())),
-        (YamlAst::String("env".to_string()), YamlAst::String("{{environment}}".to_string())),
+        (YamlAst::PlainString("name".to_string()), YamlAst::TemplatedString("{{service}}".to_string())),
+        (YamlAst::PlainString("env".to_string()), YamlAst::TemplatedString("{{environment}}".to_string())),
     ]);
     time_operation("Small mapping (1000x)", || {
         for _ in 0..1000 {
@@ -104,7 +104,7 @@ fn main() {
     
     // 4. CloudFormation tag
     let cfn_tag = YamlAst::CloudFormationTag(CloudFormationTag::Sub(
-        Box::new(YamlAst::String("${AWS::StackName}-{{service}}".to_string()))
+        Box::new(YamlAst::TemplatedString("${AWS::StackName}-{{service}}".to_string()))
     ));
     time_operation("CloudFormation tag (1000x)", || {
         for _ in 0..1000 {
@@ -126,8 +126,8 @@ fn main() {
         let mut pairs = Vec::new();
         for i in 0..*size {
             pairs.push((
-                YamlAst::String(format!("key_{}", i)),
-                YamlAst::String(format!("{{service}}_value_{}", i))
+                YamlAst::PlainString(format!("key_{}", i)),
+                YamlAst::TemplatedString(format!("{{{{service}}}}_value_{}", i))
             ));
         }
         let mapping = YamlAst::Mapping(pairs);

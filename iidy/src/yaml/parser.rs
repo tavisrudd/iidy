@@ -201,7 +201,13 @@ pub fn convert_value_to_ast(value: Value, context: &ParseContext) -> Result<Yaml
         Value::Null => Ok(YamlAst::Null),
         Value::Bool(b) => Ok(YamlAst::Bool(b)),
         Value::Number(n) => Ok(YamlAst::Number(n)),
-        Value::String(s) => Ok(YamlAst::String(s)),
+        Value::String(s) => {
+            if s.contains("{{") {
+                Ok(YamlAst::TemplatedString(s))
+            } else {
+                Ok(YamlAst::PlainString(s))
+            }
+        },
         Value::Sequence(seq) => convert_sequence_to_ast(seq, context),
         Value::Mapping(map) => convert_mapping_to_ast(map, context),
         Value::Tagged(tagged) => parse_tagged_value(*tagged, context),
@@ -232,7 +238,7 @@ fn convert_mapping_to_ast(map: Mapping, context: &ParseContext) -> Result<YamlAs
     let mut ast_map = Vec::with_capacity(len); // Pre-allocate for better performance
     for (key, value) in map {
         let key_ast = convert_value_to_ast(key, context)?;
-        let value_context = if let YamlAst::String(key_str) = &key_ast {
+        let value_context = if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = &key_ast {
             context.with_path(key_str)
         } else {
             context.clone()

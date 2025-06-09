@@ -64,14 +64,14 @@ fn bench_map_resolution(c: &mut Criterion) {
     
     // Small list
     let small_items = YamlAst::Sequence(vec![
-        YamlAst::String("api".to_string()),
-        YamlAst::String("web".to_string()),
-        YamlAst::String("worker".to_string()),
+        YamlAst::PlainString("api".to_string()),
+        YamlAst::PlainString("web".to_string()),
+        YamlAst::PlainString("worker".to_string()),
     ]);
     
     let small_map_tag = MapTag {
         items: Box::new(small_items),
-        template: Box::new(YamlAst::String("service-{{item}}".to_string())),
+        template: Box::new(YamlAst::PlainString("service-{{item}}".to_string())),
         var: Some("item".to_string()),
         filter: None,
     };
@@ -83,11 +83,11 @@ fn bench_map_resolution(c: &mut Criterion) {
     });
     
     // Large list
-    let large_items = YamlAst::Sequence((0..100).map(|i| YamlAst::String(format!("item-{}", i))).collect());
+    let large_items = YamlAst::Sequence((0..100).map(|i| YamlAst::PlainString(format!("item-{}", i))).collect());
     
     let large_map_tag = MapTag {
         items: Box::new(large_items),
-        template: Box::new(YamlAst::String("processed-{{item}}".to_string())),
+        template: Box::new(YamlAst::PlainString("processed-{{item}}".to_string())),
         var: Some("item".to_string()),
         filter: None,
     };
@@ -111,12 +111,12 @@ fn bench_merge_resolution(c: &mut Criterion) {
     let simple_merge_tag = MergeTag {
         sources: vec![
             YamlAst::Mapping(vec![
-                (YamlAst::String("name".to_string()), YamlAst::String("app".to_string())),
-                (YamlAst::String("version".to_string()), YamlAst::String("1.0".to_string())),
+                (YamlAst::PlainString("name".to_string()), YamlAst::PlainString("app".to_string())),
+                (YamlAst::PlainString("version".to_string()), YamlAst::PlainString("1.0".to_string())),
             ]),
             YamlAst::Mapping(vec![
-                (YamlAst::String("env".to_string()), YamlAst::String("prod".to_string())),
-                (YamlAst::String("replicas".to_string()), YamlAst::Number(serde_yaml::Number::from(3))),
+                (YamlAst::PlainString("env".to_string()), YamlAst::PlainString("prod".to_string())),
+                (YamlAst::PlainString("replicas".to_string()), YamlAst::Number(serde_yaml::Number::from(3))),
             ]),
         ],
     };
@@ -130,8 +130,8 @@ fn bench_merge_resolution(c: &mut Criterion) {
     // Complex merge with many sources
     let complex_sources: Vec<YamlAst> = (0..20).map(|i| {
         YamlAst::Mapping(vec![
-            (YamlAst::String(format!("key{}", i)), YamlAst::String(format!("value{}", i))),
-            (YamlAst::String(format!("num{}", i)), YamlAst::Number(serde_yaml::Number::from(i))),
+            (YamlAst::PlainString(format!("key{}", i)), YamlAst::PlainString(format!("value{}", i))),
+            (YamlAst::PlainString(format!("num{}", i)), YamlAst::Number(serde_yaml::Number::from(i))),
         ])
     }).collect();
     
@@ -156,13 +156,13 @@ fn bench_string_operations(c: &mut Criterion) {
     
     // Join operation
     let join_tag = JoinTag {
-        delimiter: Box::new(YamlAst::String(",".to_string())),
+        delimiter: Box::new(YamlAst::PlainString(",".to_string())),
         array: Box::new(YamlAst::Sequence(vec![
-            YamlAst::String("item1".to_string()),
-            YamlAst::String("item2".to_string()),
-            YamlAst::String("item3".to_string()),
-            YamlAst::String("item4".to_string()),
-            YamlAst::String("item5".to_string()),
+            YamlAst::PlainString("item1".to_string()),
+            YamlAst::PlainString("item2".to_string()),
+            YamlAst::PlainString("item3".to_string()),
+            YamlAst::PlainString("item4".to_string()),
+            YamlAst::PlainString("item5".to_string()),
         ])),
     };
     
@@ -174,8 +174,8 @@ fn bench_string_operations(c: &mut Criterion) {
     
     // Split operation
     let split_tag = SplitTag {
-        delimiter: Box::new(YamlAst::String(",".to_string())),
-        string: Box::new(YamlAst::String("item1,item2,item3,item4,item5".to_string())),
+        delimiter: Box::new(YamlAst::PlainString(",".to_string())),
+        string: Box::new(YamlAst::PlainString("item1,item2,item3,item4,item5".to_string())),
     };
     
     group.bench_function("split", |b| {
@@ -226,7 +226,7 @@ fn bench_resolve_ast_with_context(c: &mut Criterion) {
     context = context.with_variable("service_name", Value::String("api-server".to_string()));
     
     // Simple string with handlebars
-    let simple_string_ast = YamlAst::String("{{service_name}}-{{environment}}".to_string());
+    let simple_string_ast = YamlAst::PlainString("{{service_name}}-{{environment}}".to_string());
     
     group.bench_function("simple_string_interpolation", |b| {
         b.iter(|| {
@@ -236,11 +236,11 @@ fn bench_resolve_ast_with_context(c: &mut Criterion) {
     
     // Complex mapping with nested handlebars
     let complex_mapping_ast = YamlAst::Mapping(vec![
-        (YamlAst::String("name".to_string()), YamlAst::String("{{service_name}}".to_string())),
-        (YamlAst::String("env".to_string()), YamlAst::String("{{environment}}".to_string())),
-        (YamlAst::String("config".to_string()), YamlAst::Mapping(vec![
-            (YamlAst::String("host".to_string()), YamlAst::String("{{service_name}}.{{environment}}.local".to_string())),
-            (YamlAst::String("port".to_string()), YamlAst::Number(serde_yaml::Number::from(8080))),
+        (YamlAst::PlainString("name".to_string()), YamlAst::PlainString("{{service_name}}".to_string())),
+        (YamlAst::PlainString("env".to_string()), YamlAst::PlainString("{{environment}}".to_string())),
+        (YamlAst::PlainString("config".to_string()), YamlAst::Mapping(vec![
+            (YamlAst::PlainString("host".to_string()), YamlAst::PlainString("{{service_name}}.{{environment}}.local".to_string())),
+            (YamlAst::PlainString("port".to_string()), YamlAst::Number(serde_yaml::Number::from(8080))),
         ])),
     ]);
     
@@ -252,9 +252,9 @@ fn bench_resolve_ast_with_context(c: &mut Criterion) {
     
     // Sequence with handlebars
     let sequence_ast = YamlAst::Sequence(vec![
-        YamlAst::String("{{service_name}}-worker-1".to_string()),
-        YamlAst::String("{{service_name}}-worker-2".to_string()),
-        YamlAst::String("{{service_name}}-worker-3".to_string()),
+        YamlAst::PlainString("{{service_name}}-worker-1".to_string()),
+        YamlAst::PlainString("{{service_name}}-worker-2".to_string()),
+        YamlAst::PlainString("{{service_name}}-worker-3".to_string()),
     ]);
     
     group.bench_function("sequence_interpolation", |b| {
@@ -265,7 +265,7 @@ fn bench_resolve_ast_with_context(c: &mut Criterion) {
     
     // CloudFormation tag with handlebars
     let cfn_tag_ast = YamlAst::CloudFormationTag(CloudFormationTag::Sub(
-        Box::new(YamlAst::String("${AWS::StackName}-{{service_name}}-{{environment}}".to_string()))
+        Box::new(YamlAst::PlainString("${AWS::StackName}-{{service_name}}-{{environment}}".to_string()))
     ));
     
     group.bench_function("cloudformation_tag_interpolation", |b| {
@@ -311,8 +311,8 @@ mod tests {
         
         // Test simple map
         let map_tag = MapTag {
-            items: Box::new(YamlAst::Sequence(vec![YamlAst::String("test".to_string())])),
-            template: Box::new(YamlAst::String("{{item}}".to_string())),
+            items: Box::new(YamlAst::Sequence(vec![YamlAst::PlainString("test".to_string())])),
+            template: Box::new(YamlAst::PlainString("{{item}}".to_string())),
             var: Some("item".to_string()),
             filter: None,
         };
