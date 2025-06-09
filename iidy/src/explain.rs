@@ -3,7 +3,7 @@
 //! This module provides the implementation for the `explain` command,
 //! which shows detailed information about error codes.
 
-use crate::yaml::error_ids::ErrorId;
+use crate::yaml::errors::ErrorId;
 
 /// Handle the explain command - show detailed explanations for error codes
 /// 

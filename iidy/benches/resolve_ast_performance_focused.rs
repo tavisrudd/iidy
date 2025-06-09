@@ -4,10 +4,10 @@
 //! and tests different optimization approaches.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::preprocessor::YamlPreprocessor;
-use iidy::yaml::tags::{TagContext, TagResolver, StandardTagResolver};
+use iidy::yaml::engine::YamlPreprocessor;
+use iidy::yaml::resolution::{TagContext, TagResolver, StandardTagResolver};
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::ast::*;
+use iidy::yaml::parsing::ast::*;
 use serde_yaml::Value;
 
 /// Test direct TagResolver usage vs preprocessor delegation

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use iidy::yaml::preprocess_yaml_v11;
-use iidy::yaml::preprocessor::YamlPreprocessor;
+use iidy::yaml::engine::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use serde_yaml::Value;
 

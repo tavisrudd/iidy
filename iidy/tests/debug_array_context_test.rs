@@ -1,6 +1,6 @@
 //! Debug test to understand array context path generation
 
-use iidy::yaml::parser::ParseContext;
+use iidy::yaml::parsing::ParseContext;
 
 #[test]
 fn debug_array_context_paths() {

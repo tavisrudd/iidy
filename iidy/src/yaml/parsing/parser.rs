@@ -33,7 +33,7 @@ const ITEMS_TEMPLATE_WITH_VAR_FILTER: &[&str] = &[VAR_FIELD, FILTER_FIELD];
 const GROUPBY_REQUIRED: &[&str] = &[ITEMS_FIELD, KEY_FIELD];
 const GROUPBY_OPTIONAL: &[&str] = &[VAR_FIELD, TEMPLATE_FIELD];
 
-use crate::yaml::ast::*;
+use crate::yaml::parsing::ast::*;
 use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
 
 /// Parsing context that tracks location and position for better error reporting
@@ -132,7 +132,7 @@ fn validate_exact_keys_static(
         .collect();
     
     if !missing.is_empty() {
-        use crate::yaml::error_wrapper::missing_required_field_error;
+        use crate::yaml::errors::missing_required_field_error;
         
         // Use ParseContext to find the position of the tag in its current context
         let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
@@ -157,7 +157,7 @@ fn validate_exact_keys_static(
         .collect();
     
     if !extra.is_empty() {
-        use crate::yaml::error_wrapper::tag_parsing_error;
+        use crate::yaml::errors::tag_parsing_error;
         
         // Use ParseContext to find the position of the tag in its current context
         let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
@@ -191,7 +191,7 @@ fn validate_exact_keys_static(
 pub fn parse_yaml_with_custom_tags_from_file(input: &str, file_path: &str) -> Result<YamlAst> {
     let context = ParseContext::new(file_path, input);
     let value: Value = serde_yaml::from_str(input)
-        .map_err(|e| crate::yaml::error_wrapper::yaml_syntax_error(e, file_path, input))?;
+        .map_err(|e| crate::yaml::errors::yaml_syntax_error(e, file_path, input))?;
     convert_value_to_ast(value, &context)
 }
 
@@ -279,7 +279,7 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
         _ => {
             // Check for unknown iidy preprocessing tags (likely typos) with context first
             if tag.starts_with("!$") {
-                use crate::yaml::error_wrapper::tag_parsing_error;
+                use crate::yaml::errors::tag_parsing_error;
                 
                 // Use ParseContext to find the position of the tag in its current context
                 let location = if let Some(position) = context.find_tag_position_in_context(&tag) {
@@ -298,7 +298,7 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
                 &tag
             };
             
-            if let Some(cfn_tag) = crate::yaml::ast::CloudFormationTag::from_tag_name(
+            if let Some(cfn_tag) = crate::yaml::parsing::ast::CloudFormationTag::from_tag_name(
                 tag_without_exclamation, 
                 convert_value_to_ast(value.clone(), context)?
             ) {

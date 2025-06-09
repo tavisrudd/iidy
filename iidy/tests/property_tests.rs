@@ -4,7 +4,7 @@
 //! preprocessing system across a wide range of inputs.
 
 use proptest::prelude::*;
-use iidy::yaml::parser::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
 use serde_yaml::Value;
 use std::collections::HashMap;
 

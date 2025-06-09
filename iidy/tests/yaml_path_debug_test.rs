@@ -1,6 +1,6 @@
 //! Debug test to see what YAML paths are being generated
 
-use iidy::yaml::parser::ParseContext;
+use iidy::yaml::parsing::ParseContext;
 
 #[test]
 fn test_yaml_path_generation() {

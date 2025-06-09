@@ -1,6 +1,6 @@
 //! Tests for ParseContext core API
 
-use iidy::yaml::parser::ParseContext;
+use iidy::yaml::parsing::ParseContext;
 use iidy::yaml::location::Position;
 
 #[test]

@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::yaml::error_ids::ErrorId;
+use crate::yaml::errors::ErrorId;
 
 /// Source location information for precise error reporting
 #[derive(Debug, Clone, PartialEq)]

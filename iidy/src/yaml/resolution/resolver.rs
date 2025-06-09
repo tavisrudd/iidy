@@ -37,7 +37,7 @@ use anyhow::{anyhow, Context, Result};
 use serde_yaml::Value;
 use std::collections::HashMap;
 
-use crate::yaml::ast::*;
+use crate::yaml::parsing::ast::*;
 
 /// Create a small HashMap with pre-allocated capacity for common cases
 #[inline(always)]
@@ -934,7 +934,7 @@ impl TagResolver for StandardTagResolver {
                     
                     // Create context with object key for path tracking
                     let value_context = if let Value::String(key_str) = &key_val {
-                        context.with_path_segment(key_str)
+                        context.with_path_segment(&key_str)
                     } else {
                         // For non-string keys, use the key's string representation
                         let key_str = match &key_val {
@@ -1035,12 +1035,12 @@ impl TagResolver for StandardTagResolver {
                     file_path.clone()
                 };
                 
-                use crate::yaml::error_wrapper::variable_not_found_error;
+                use crate::yaml::errors::variable_not_found_error;
                 return Err(variable_not_found_error(&format!("{}.{}", root_var, property_path), &location, &yaml_path, available_vars));
             }
         } else {
             // Root variable doesn't exist
-            use crate::yaml::error_wrapper::variable_not_found_error;
+            use crate::yaml::errors::variable_not_found_error;
             Err(variable_not_found_error(root_var, &file_path, &yaml_path, available_vars))
         }
     }
@@ -1622,7 +1622,7 @@ impl StandardTagResolver {
                         };
                         
                         let available_vars: Vec<String> = env_values.keys().cloned().collect();
-                        use crate::yaml::error_wrapper::variable_not_found_error;
+                        use crate::yaml::errors::variable_not_found_error;
                         return Err(variable_not_found_error(var_name, &location, &context.current_path(), available_vars));
                     }
                 }
@@ -1706,8 +1706,8 @@ impl StandardTagResolver {
     /// This method converts CloudFormation AST nodes to serde mapping structures that
     /// can be serialized by serde_yaml. The output uses mapping format (`'!Ref': value`)
     /// which is later post-processed to proper YAML tags (`!Ref value`) in the render pipeline.
-    fn create_cfn_expression(&self, cfn_tag: &crate::yaml::ast::CloudFormationTag, resolved_value: Value) -> Result<Value> {
-        use crate::yaml::ast::CloudFormationTag;
+    fn create_cfn_expression(&self, cfn_tag: &crate::yaml::parsing::ast::CloudFormationTag, resolved_value: Value) -> Result<Value> {
+        use crate::yaml::parsing::ast::CloudFormationTag;
         
         // Helper function to unpack single-element arrays (for array syntax support)
         let unpack_single_element_array = |value: Value| -> Value {

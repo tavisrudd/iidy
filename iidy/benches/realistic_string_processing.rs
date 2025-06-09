@@ -4,10 +4,10 @@
 //! that represent real-world YAML content.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::preprocessor::YamlPreprocessor;
-use iidy::yaml::tags::TagContext;
+use iidy::yaml::engine::YamlPreprocessor;
+use iidy::yaml::resolution::TagContext;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::ast::YamlAst;
+use iidy::yaml::parsing::ast::YamlAst;
 use serde_yaml::Value;
 
 fn bench_realistic_string_scenarios(c: &mut Criterion) {

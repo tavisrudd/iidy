@@ -97,7 +97,7 @@ The following files/directories are excluded from coverage calculation:
 || Tested/Total Lines:
 || src/lib.rs: 45/50 +90.00%
 || src/yaml/mod.rs: 234/267 +87.64%  
-|| src/yaml/tags.rs: 456/523 +87.19%
+|| src/yaml/resolution/resolver.rs: 456/523 +87.19%
 || Total: 2847/3156 +90.21%
 ```
 

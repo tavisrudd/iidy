@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
-use crate::yaml::{parser, ast::{YamlAst, PreprocessingTag}};
-use crate::yaml::tags::{TagContext, StackFrame, TagResolver, StandardTagResolver};
+use crate::yaml::{parsing::parser, parsing::ast::{YamlAst, PreprocessingTag}};
+use crate::yaml::resolution::{TagContext, StackFrame, TagResolver, StandardTagResolver};
 
 /// YAML preprocessor that handles the two-phase processing pipeline
 pub struct YamlPreprocessor<L: ImportLoader> {
@@ -521,7 +521,7 @@ pub async fn preprocess_yaml_v11(input: &str, base_location: &str) -> Result<Val
 
 /// Preprocess YAML with specific YAML specification mode
 pub async fn preprocess_yaml(input: &str, base_location: &str, yaml_spec: &crate::cli::YamlSpec) -> Result<Value> {
-    use crate::yaml::spec_detection::detect_yaml_spec;
+    use crate::yaml::detection::detect_yaml_spec;
     
     let loader = ProductionImportLoader::new();
     

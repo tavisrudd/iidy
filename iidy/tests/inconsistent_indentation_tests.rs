@@ -2,7 +2,7 @@
 //! These tests verify that our location finding system works correctly
 //! regardless of indentation inconsistencies in the YAML source.
 
-use iidy::yaml::parser::ParseContext;
+use iidy::yaml::parsing::ParseContext;
 
 #[test]
 fn test_mixed_tabs_and_spaces() {

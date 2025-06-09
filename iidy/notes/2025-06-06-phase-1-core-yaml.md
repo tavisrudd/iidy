@@ -109,9 +109,20 @@ From TypeScript analysis, supports multiple import types:
 ```
 src/yaml/
 ├── mod.rs              # Main preprocessing entry point
-├── ast.rs              # YAML AST types and Tag trait
-├── tags.rs             # Custom tag implementations
-├── parser.rs           # YAML parsing with custom schema
+├── parsing/
+│   ├── mod.rs          # Parsing module entry point
+│   ├── ast.rs          # YAML AST types and Tag trait
+│   └── parser.rs       # YAML parsing with custom schema
+├── resolution/
+│   ├── mod.rs          # Resolution module entry point
+│   └── resolver.rs     # Custom tag implementations
+├── errors/
+│   ├── mod.rs          # Error module entry point
+│   ├── ids.rs          # Error ID definitions
+│   ├── enhanced.rs     # Enhanced error reporting
+│   └── wrapper.rs      # Error wrapper functions
+├── detection.rs        # YAML spec detection
+├── engine.rs           # Main preprocessing engine
 ├── imports/
 │   ├── mod.rs          # Import resolution system
 │   └── loaders/        # Individual import type loaders

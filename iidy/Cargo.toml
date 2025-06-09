@@ -21,9 +21,6 @@ path = "src/main.rs"
 name = "iidy-pocs"
 path = "src/pocs/main.rs"
 
-[[bin]]
-name = "profile_resolve_ast"
-path = "src/bin/profile_resolve_ast.rs"
 
 [dependencies]
 atty = "0.2.14"

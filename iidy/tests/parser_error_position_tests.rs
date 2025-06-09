@@ -1,6 +1,6 @@
 //! Tests for error reporting with accurate line/column positions
 
-use iidy::yaml::parser::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
 
 #[test]
 fn test_unknown_tag_error_position() {

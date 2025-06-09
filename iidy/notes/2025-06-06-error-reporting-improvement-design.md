@@ -739,7 +739,7 @@ default = []
 enhanced-errors = []
 ```
 
-**2. Error Wrapper Module (`src/yaml/error_wrapper.rs`):**
+**2. Error Wrapper Module (`src/yaml/errors/wrapper.rs`):**
 - Provides wrapper functions that switch between basic and enhanced error reporting
 - `variable_not_found_error()` - switches based on feature flag
 - `type_mismatch_error()` - switches based on feature flag  
@@ -756,7 +756,7 @@ enhanced-errors = []
 - Supports multiple error codes: `iidy explain IY2001 IY4002`
 
 **5. Integration Points:**
-- Updated `src/yaml/tags.rs` to use error wrapper for variable not found errors
+- Updated `src/yaml/resolution/resolver.rs` to use error wrapper for variable not found errors
 - Maintains existing error format when feature disabled
 - Collects available variables for enhanced suggestions when enabled
 

@@ -149,10 +149,10 @@ Based on the upstream iidy documentation and implementation, the YAML preprocess
 
 #### Key Modules to Create
 - `src/yaml/mod.rs`: Main YAML preprocessing entry point
-- `src/yaml/tags.rs`: Custom tag implementations
-- `src/yaml/imports.rs`: Import resolution system
-- `src/yaml/handlebars.rs`: Template variable processing
-- `src/yaml/transforms.rs`: Data transformation operations
+- `src/yaml/resolution/resolver.rs`: Custom tag implementations
+- `src/yaml/imports/mod.rs`: Import resolution system
+- `src/yaml/handlebars/mod.rs`: Template variable processing
+- `src/yaml/engine.rs`: Data transformation operations
 
 This preprocessing system is essential for iidy's template composition and dynamic configuration capabilities.
 

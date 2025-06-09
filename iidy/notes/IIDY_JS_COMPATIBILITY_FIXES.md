@@ -31,19 +31,19 @@ Based on analysis of `/iidy-js-for-reference/src/preprocess/visitor.ts`, several
 
 ## Files That Need Updates
 
-### AST Changes (`src/yaml/ast.rs`)
+### AST Changes (`src/yaml/parsing/ast.rs`)
 - [x] ✅ COMPLETED: Updated SplitTag to use array format (delimiter, string fields)
 - [x] ✅ COMPLETED: Updated GroupByTag to use "items", "var", "key", add "template"
 - [ ] ❌ TODO: Complete LetTag changes for flat structure (still uses nested bindings)
 - [x] ✅ COMPLETED: All delegation tags use same format as MapTag (items, template, var, filter)
 
-### Parser Changes (`src/yaml/parser.rs`)
+### Parser Changes (`src/yaml/parsing/parser.rs`)
 - [ ] ❌ TODO: Fix `parse_split_tag()` to expect array format `[delimiter, string]` (currently object format)
 - [ ] ❌ TODO: Fix `parse_let_tag()` to expect flat object with "in" field
 - [x] ✅ COMPLETED: Fixed `parse_group_by_tag()` to use "items", "var", "template"
 - [x] ✅ COMPLETED: `parse_merge_map_tag()`, `parse_concat_map_tag()`, `parse_map_list_to_hash_tag()` all use !$map format
 
-### Tag Resolution (`src/yaml/tags.rs`)  
+### Tag Resolution (`src/yaml/resolution/resolver.rs`)  
 - [ ] ❌ TODO: Update `resolve_split_tag()` for new array format
 - [ ] ❌ TODO: Update `resolve_let_tag()` for new flat structure
 - [x] ✅ COMPLETED: Updated `resolve_group_by_tag()` for new field names and optional template

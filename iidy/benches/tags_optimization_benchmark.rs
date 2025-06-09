@@ -3,10 +3,10 @@
 //! Benchmarks StandardTagResolver methods directly to measure optimization impact
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::tags::{TagContext, StandardTagResolver, TagResolver};
-use iidy::yaml::preprocessor::YamlPreprocessor;
+use iidy::yaml::resolution::{TagContext, StandardTagResolver, TagResolver};
+use iidy::yaml::engine::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::ast::*;
+use iidy::yaml::parsing::ast::*;
 use serde_yaml::Value;
 use std::collections::HashMap;
 

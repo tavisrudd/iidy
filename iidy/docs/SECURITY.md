@@ -155,6 +155,6 @@ This helps developers understand why their import was rejected and how to fix it
 ## Implementation Notes
 
 - Security validation occurs in the `parse_import_type()` function in `src/yaml/imports/mod.rs`
-- Base path derivation happens in `TagContext::from_processing_env()` in `src/yaml/tags.rs`
+- Base path derivation happens in `TagContext::from_processing_env()` in `src/yaml/resolution/resolver.rs`
 - The security model is extensively tested with over 150 test cases covering various scenarios
 - The implementation follows the principle of "secure by default" - remote templates are restricted unless explicitly allowed

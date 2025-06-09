@@ -1,6 +1,6 @@
 //! Test to demonstrate the issue with finding the correct occurrence in error reporting
 
-use iidy::yaml::parser::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
 
 #[test]
 fn test_thirteenth_if_tag_error_position() {

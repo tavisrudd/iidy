@@ -4,10 +4,10 @@
 //! to understand the 30.9% regression.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::preprocessor::YamlPreprocessor;
-use iidy::yaml::tags::{TagContext, StandardTagResolver, TagResolver};
+use iidy::yaml::engine::YamlPreprocessor;
+use iidy::yaml::resolution::{TagContext, StandardTagResolver, TagResolver};
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::ast::YamlAst;
+use iidy::yaml::parsing::ast::YamlAst;
 use serde_yaml::Value;
 
 fn bench_string_processing_approaches(c: &mut Criterion) {

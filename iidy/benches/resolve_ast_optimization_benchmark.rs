@@ -4,10 +4,10 @@
 //! which is the core orchestration function in YAML preprocessing.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::preprocessor::YamlPreprocessor;
-use iidy::yaml::tags::TagContext;
+use iidy::yaml::engine::YamlPreprocessor;
+use iidy::yaml::resolution::TagContext;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::ast::*;
+use iidy::yaml::parsing::ast::*;
 use serde_yaml::Value;
 
 /// Benchmark core resolve_ast_with_context function performance

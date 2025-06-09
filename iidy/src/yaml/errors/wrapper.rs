@@ -1,4 +1,4 @@
-use crate::yaml::enhanced_errors::{EnhancedPreprocessingError, SourceLocation};
+use crate::yaml::errors::{EnhancedPreprocessingError, SourceLocation};
 
 
 /// Custom error type that implements the marker trait

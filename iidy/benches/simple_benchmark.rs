@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use tokio;
 use iidy::yaml::preprocess_yaml_v11;
 use iidy::yaml::handlebars::engine::interpolate_handlebars_string;
-use iidy::yaml::tags::{StandardTagResolver, TagResolver, TagContext};
-use iidy::yaml::ast::IncludeTag;
+use iidy::yaml::resolution::{StandardTagResolver, TagResolver, TagContext};
+use iidy::yaml::parsing::ast::IncludeTag;
 use serde_yaml::Value;
 use std::collections::HashMap;
 

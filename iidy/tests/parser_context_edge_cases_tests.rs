@@ -1,6 +1,6 @@
 //! Edge case tests for ParseContext core functionality
 
-use iidy::yaml::parser::ParseContext;
+use iidy::yaml::parsing::ParseContext;
 
 #[test]
 fn test_empty_string_source() {

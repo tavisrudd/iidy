@@ -2,7 +2,7 @@
 //!
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::parser::{ParseContext, convert_value_to_ast};
+use iidy::yaml::parsing::{ParseContext, convert_value_to_ast};
 use serde_yaml::Value;
 
 /// Benchmark convert_value_to_ast performance (our optimized function)

@@ -181,10 +181,10 @@ impl ErrorId {
     /// Get detailed explanation for CLI help
     pub fn detailed_explanation(&self) -> &'static str {
         match self {
-            ErrorId::InvalidYamlSyntax => include_str!("../docs/errors/IY1001.md"),
-            ErrorId::VariableNotFound => include_str!("../docs/errors/IY2001.md"),
-            ErrorId::TypeMismatchInOperation => include_str!("../docs/errors/IY5001.md"),
-            ErrorId::MissingRequiredTagField => include_str!("../docs/errors/IY4002.md"),
+            ErrorId::InvalidYamlSyntax => include_str!("../../docs/errors/IY1001.md"),
+            ErrorId::VariableNotFound => include_str!("../../docs/errors/IY2001.md"),
+            ErrorId::TypeMismatchInOperation => include_str!("../../docs/errors/IY5001.md"),
+            ErrorId::MissingRequiredTagField => include_str!("../../docs/errors/IY4002.md"),
             // For now, provide basic explanation for others
             _ => "Detailed explanation not yet available. See error message for context."
         }

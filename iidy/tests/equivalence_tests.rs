@@ -4,8 +4,8 @@
 //! for all scalar values. This is a critical invariant of the iidy preprocessing system.
 
 use anyhow::Result;
-use iidy::yaml::{parser::parse_yaml_with_custom_tags_from_file, handlebars::interpolate_handlebars_string};
-use iidy::yaml::ast::YamlAst;
+use iidy::yaml::{parsing::parse_yaml_with_custom_tags_from_file, handlebars::interpolate_handlebars_string};
+use iidy::yaml::parsing::ast::YamlAst;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 
