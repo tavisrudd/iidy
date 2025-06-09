@@ -5,7 +5,7 @@
 //! Tests go up to 3 levels deep to understand the behavior thoroughly.
 
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 use tempfile::NamedTempFile;
 use std::io::Write;
@@ -59,7 +59,7 @@ main_shared_check: "{{{{shared_var}}}}"
     println!("\nMain document:");
     println!("{}", main_yaml);
 
-    let result = preprocess_yaml_with_base_location(&main_yaml, "main.yaml").await?;
+    let result = preprocess_yaml_v11(&main_yaml, "main.yaml").await?;
     
     println!("\n=== RESULT ===");
     let result_yaml = serde_yaml::to_string(&result)?;
@@ -160,7 +160,7 @@ main_shared_check: "{{{{shared_var}}}}"
     println!("\nMain document imports: Level1");
     println!("Level1 document imports: Level2");
     
-    let result = preprocess_yaml_with_base_location(&main_yaml, "main.yaml").await?;
+    let result = preprocess_yaml_v11(&main_yaml, "main.yaml").await?;
     
     println!("\n=== RESULT ===");
     let result_yaml = serde_yaml::to_string(&result)?;
@@ -268,7 +268,7 @@ main_check: "{{{{main_var}}}}"
 main_shared_check: "{{{{shared_var}}}}"
 "#, level1_path);
 
-    let result = preprocess_yaml_with_base_location(&main_yaml, "main.yaml").await?;
+    let result = preprocess_yaml_v11(&main_yaml, "main.yaml").await?;
     
     println!("\n=== RESULT ===");
     let result_yaml = serde_yaml::to_string(&result)?;
@@ -348,7 +348,7 @@ imported_unique_access: !$ imported_data.data.unique
     println!("  Main: conflict_var = 'MAIN_VALUE'");
     println!("  Imported: conflict_var = 'IMPORTED_VALUE'");
     
-    let result = preprocess_yaml_with_base_location(&main_yaml, "main.yaml").await?;
+    let result = preprocess_yaml_v11(&main_yaml, "main.yaml").await?;
     
     println!("\n=== RESULT ===");
     let result_yaml = serde_yaml::to_string(&result)?;

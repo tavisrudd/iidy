@@ -4,7 +4,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use iidy::yaml::tags::{TagContext, StandardTagResolver, TagResolver};
-use iidy::yaml::{YamlPreprocessor};
+use iidy::yaml::preprocessor::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use iidy::yaml::ast::*;
 use serde_yaml::Value;
@@ -219,7 +219,7 @@ fn bench_context_operations(c: &mut Criterion) {
 fn bench_resolve_ast_with_context(c: &mut Criterion) {
     let mut group = c.benchmark_group("resolve_ast_with_context");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let mut context = TagContext::new();
     context = context.with_variable("environment", Value::String("production".to_string()));

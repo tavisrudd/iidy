@@ -4,7 +4,8 @@
 //! baselines and identify optimization opportunities.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml;
+use iidy::cli::YamlSpec;
 // Removed complex tag resolver imports that aren't available
 use iidy::yaml::handlebars::interpolate_handlebars_string;
 use serde_yaml::Value;
@@ -118,7 +119,7 @@ region: "us-west-2"
     
     group.bench_function("small_document", |b| {
         b.to_async(&rt).iter(|| async {
-            preprocess_yaml_with_base_location(
+            preprocess_yaml_v11(
                 black_box(small_yaml),
                 "small.yaml"
             ).await.unwrap()
@@ -152,7 +153,7 @@ services: !$map
   template: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
 "#, config_path);
             
-            preprocess_yaml_with_base_location(
+            preprocess_yaml_v11(
                 black_box(&medium_yaml),
                 "medium.yaml"
             ).await.unwrap()
@@ -254,7 +255,7 @@ Outputs:
     Value: "{{environment}}"
 "#;
             
-            preprocess_yaml_with_base_location(
+            preprocess_yaml_v11(
                 black_box(large_yaml),
                 "large.yaml"
             ).await.unwrap()
@@ -280,7 +281,7 @@ name: "{{app_name}}-{{environment}}"
     
     group.bench_function("small_document", |b| {
         b.to_async(&rt).iter(|| async {
-            preprocess_yaml_with_base_location(
+            preprocess_yaml_v11(
                 black_box(small_yaml),
                 "small.yaml"
             ).await.unwrap()
@@ -307,7 +308,7 @@ config: !$merge
     
     group.bench_function("medium_document", |b| {
         b.to_async(&rt).iter(|| async {
-            preprocess_yaml_with_base_location(
+            preprocess_yaml_v11(
                 black_box(medium_yaml),
                 "medium.yaml"
             ).await.unwrap()
@@ -331,7 +332,7 @@ $defs:
   
 result: !$ message
 "#;
-            preprocess_yaml_with_base_location(black_box(yaml), "include.yaml").await.unwrap()
+            preprocess_yaml_v11(black_box(yaml), "include.yaml").await.unwrap()
         })
     });
     
@@ -347,7 +348,7 @@ result: !$if
   then: "production_config"
   else: "development_config"
 "#;
-            preprocess_yaml_with_base_location(black_box(yaml), "conditional.yaml").await.unwrap()
+            preprocess_yaml_v11(black_box(yaml), "conditional.yaml").await.unwrap()
         })
     });
     
@@ -363,7 +364,7 @@ results: !$map
   items: !$ services
   template: "{{app_name}}-{{item}}-service"
 "#;
-            preprocess_yaml_with_base_location(black_box(yaml), "map.yaml").await.unwrap()
+            preprocess_yaml_v11(black_box(yaml), "map.yaml").await.unwrap()
         })
     });
     
@@ -387,7 +388,7 @@ results: !$concatMap
       environment: "{{env}}"
       type: "{{service}}"
 "#;
-            preprocess_yaml_with_base_location(black_box(yaml), "nested.yaml").await.unwrap()
+            preprocess_yaml_v11(black_box(yaml), "nested.yaml").await.unwrap()
         })
     });
     
@@ -449,7 +450,7 @@ large_mapping: !$fromPairs
             size,
             |b, _size| {
                 b.to_async(&rt).iter(|| async {
-                    preprocess_yaml_with_base_location(
+                    preprocess_yaml_v11(
                         black_box(&yaml_content),
                         "memory.yaml"
                     ).await.unwrap()

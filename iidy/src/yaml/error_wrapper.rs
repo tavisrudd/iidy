@@ -1,9 +1,5 @@
 use crate::yaml::enhanced_errors::{EnhancedPreprocessingError, SourceLocation};
 
-/// Marker trait for enhanced errors that should be displayed without prefix
-pub trait EnhancedError {
-    fn is_enhanced(&self) -> bool { true }
-}
 
 /// Custom error type that implements the marker trait
 #[derive(Debug)]
@@ -19,7 +15,6 @@ impl std::fmt::Display for EnhancedErrorWrapper {
 
 impl std::error::Error for EnhancedErrorWrapper {}
 
-impl EnhancedError for EnhancedErrorWrapper {}
 
 /// Wrapper for variable not found errors that switches between basic and enhanced error reporting
 #[allow(unused_variables)]
@@ -96,23 +91,6 @@ pub fn variable_not_found_error(
     }
 }
 
-/// Wrapper for type mismatch errors
-#[allow(unused_variables)]
-pub fn type_mismatch_error(
-    expected: &str,
-    found: &str,
-    file_path: &str,
-    yaml_path: &str,
-    context: &str,
-) -> anyhow::Error {
-    {
-        // Enhanced error format
-        let location = SourceLocation::new(file_path, 0, 0, yaml_path);
-        let error = EnhancedPreprocessingError::type_mismatch(expected, found, location, context);
-        let enhanced_display = format!("{}", error);
-        anyhow::Error::new(EnhancedErrorWrapper { message: enhanced_display })
-    }
-}
 
 /// Wrapper for missing required field errors - now uses tag_parsing_error for consistency
 #[allow(unused_variables)]

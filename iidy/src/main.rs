@@ -16,12 +16,14 @@ fn handle_command(cli: Cli) {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args)) {
                 eprintln!("error creating stack: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::UpdateStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args)) {
                 eprintln!("error updating stack: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::CreateOrUpdate(args) => {
@@ -31,12 +33,14 @@ fn handle_command(cli: Cli) {
                 &args,
             )) {
                 eprintln!("error creating or updating stack: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::EstimateCost(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args)) {
                 eprintln!("error estimating cost: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::DummySpacer => {}
@@ -47,12 +51,14 @@ fn handle_command(cli: Cli) {
                 &args,
             )) {
                 eprintln!("error creating change set: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::ExecChangeset(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args)) {
                 eprintln!("error executing change set: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::DummySpacer2 => {}
@@ -60,6 +66,7 @@ fn handle_command(cli: Cli) {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args)) {
                 eprintln!("error describing stack: {e:?}");
+                std::process::exit(1);
             }
         }
 
@@ -69,18 +76,21 @@ fn handle_command(cli: Cli) {
                 &args,
             )) {
                 eprintln!("error describing stack drift: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::WatchStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&normalized_opts, &args)) {
                 eprintln!("error watching stack: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::DeleteStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args)) {
                 eprintln!("error deleting stack: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::GetStackTemplate(args) => {
@@ -94,7 +104,10 @@ fn handle_command(cli: Cli) {
                     }
                     println!("{}", out.body);
                 }
-                Err(e) => eprintln!("error getting template: {e:?}"),
+                Err(e) => {
+                    eprintln!("error getting template: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::GetStackInstances(args) => {
@@ -103,11 +116,13 @@ fn handle_command(cli: Cli) {
                 &args,
             )) {
                 eprintln!("error getting stack instances: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::ListStacks(args) => {
             if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
                 eprintln!("error listing stacks: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::DummySpacer3 => {}
@@ -117,23 +132,16 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer5 => {}
         Commands::Render(args) => {
             if let Err(e) = rt.block_on(handle_render_command(&args)) {
-                // Check if this is an enhanced error by looking at the error chain
-                let is_enhanced = e.chain().any(|err| {
-                    err.downcast_ref::<iidy::yaml::error_wrapper::EnhancedErrorWrapper>().is_some()
-                });
-                
-                if is_enhanced {
-                    eprintln!(); // Add blank line before enhanced errors for better readability
-                    eprintln!("{}", e);
-                } else {
-                    eprintln!("error rendering template: {}", e);
-                }
+                eprintln!(); // Add blank line before errors for better readability
+                eprintln!("{}", e);
+                std::process::exit(1);
             }
         }
         Commands::GetImport(args) => println!("get-import {:?}", args),
         Commands::Demo(args) => {
             if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling)) {
                 eprintln!("demo failed: {e:?}");
+                std::process::exit(1);
             }
         }
         Commands::LintTemplate(args) => println!("lint-template {:?}", args),

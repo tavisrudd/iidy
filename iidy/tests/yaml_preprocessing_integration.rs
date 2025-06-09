@@ -4,7 +4,7 @@
 //! matching iidy-js behavior
 
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 use tempfile::NamedTempFile;
 use std::io::Write;
@@ -54,7 +54,7 @@ merged_config: !$merge
   - !$ config
 "#, config_path);
 
-    let result = preprocess_yaml_with_base_location(&yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await?;
 
     // Verify the result
     if let Value::Mapping(map) = result {
@@ -169,7 +169,7 @@ Outputs:
       Name: "{{app_name}}-{{environment}}-bucket-name"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "template.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "template.yaml").await?;
 
     if let Value::Mapping(template) = result {
         // Check template format version
@@ -272,7 +272,7 @@ all_endpoints: !$concatMap
       type: "external"
 "#, env_config_path);
 
-    let result = preprocess_yaml_with_base_location(&yaml_input, "complex.yaml").await?;
+    let result = preprocess_yaml_v11(&yaml_input, "complex.yaml").await?;
 
     if let Value::Mapping(map) = result {
         // Check basic import access (nested imports not fully implemented yet)
@@ -368,7 +368,7 @@ json_data: !$toJsonString
 parsed_json: !$parseJson '{"key": "value", "number": 456}'
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "strings.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "strings.yaml").await?;
 
     if let Value::Mapping(map) = result {
         // Check string case transformations

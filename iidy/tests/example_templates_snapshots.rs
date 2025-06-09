@@ -6,7 +6,7 @@
 //! review changes when template behavior is modified.
 
 use std::path::Path;
-use iidy::yaml::preprocess_yaml_with_spec;
+use iidy::yaml::preprocess_yaml;
 use iidy::cli::YamlSpec;
 use insta::assert_yaml_snapshot;
 
@@ -16,7 +16,7 @@ async fn render_template_file(template_path: &str) -> Result<serde_yaml::Value, 
     let content = std::fs::read_to_string(&full_path)
         .map_err(|e| format!("Failed to read {}: {}", full_path, e))?;
     
-    let result = preprocess_yaml_with_spec(&content, &full_path, &YamlSpec::Auto).await?;
+    let result = preprocess_yaml(&content, &full_path, &YamlSpec::Auto).await?;
     Ok(result)
 }
 
@@ -188,7 +188,7 @@ Resources:
       DisableApiTermination: off
 "#;
     
-    let result = preprocess_yaml_with_spec(yaml_content, "test.yaml", &YamlSpec::Auto).await
+    let result = preprocess_yaml(yaml_content, "test.yaml", &YamlSpec::Auto).await
         .expect("Failed to process YAML 1.1 content");
     
     assert_yaml_snapshot!("yaml_11_booleans", result);
@@ -220,7 +220,7 @@ Resources:
           Value: !Ref "{{environment}}"
 "#;
     
-    let result = preprocess_yaml_with_spec(yaml_content, "test.yaml", &YamlSpec::Auto).await
+    let result = preprocess_yaml(yaml_content, "test.yaml", &YamlSpec::Auto).await
         .expect("Failed to process template with handlebars in tags");
     
     assert_yaml_snapshot!("handlebars_in_tags", result);

@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use iidy::yaml::{parser::parse_yaml_with_custom_tags_from_file, handlebars::interpolate_handlebars_string};
+use iidy::yaml::ast::YamlAst;
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 
@@ -110,10 +111,10 @@ fn test_import_syntax(var_name: &str, _var_value: &JsonValue) -> Result<String> 
     // Currently we can only verify parsing succeeds
     // The AST should be a mapping with a key "result" that has a preprocessing tag value
     match ast {
-        iidy::yaml::YamlAst::Mapping(ref pairs) => {
+        YamlAst::Mapping(ref pairs) => {
             if pairs.len() == 1 {
                 let (key, value) = &pairs[0];
-                if matches!(key, iidy::yaml::YamlAst::String(s) if s == "result") {
+                if matches!(key, YamlAst::String(s) if s == "result") {
                     if value.is_preprocessing_tag() {
                         // Parsing succeeded - return placeholder for now
                         return Ok(format!("PLACEHOLDER_FOR_{}", var_name));
@@ -126,7 +127,7 @@ fn test_import_syntax(var_name: &str, _var_value: &JsonValue) -> Result<String> 
     }
     
     // TODO: Once AST resolution is implemented, this should be:
-    // let mut preprocessor = YamlPreprocessor::new();
+    // let mut preprocessor = YamlPreprocessor::new(, true);
     // let context = TagContext::new().with_variable(var_name, var_value.clone());
     // let result = preprocessor.resolve_ast_with_context(ast, &context)?;
     // extract_string_from_resolved_result(result)
@@ -347,7 +348,7 @@ mod future_resolution_tests {
             let _ast = parse_yaml_with_custom_tags_from_file(&yaml_with_import, "equivalence-full-test.yaml")?;
             
             // TODO: Once AST resolution is implemented:
-            // let mut preprocessor = YamlPreprocessor::new();
+            // let mut preprocessor = YamlPreprocessor::new(, true);
             // let context = TagContext::new()
             //     .with_variables(test_variables.clone());
             // let resolved = preprocessor.resolve_ast_with_context(ast, &context)?;

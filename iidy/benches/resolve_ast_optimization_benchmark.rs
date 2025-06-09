@@ -4,7 +4,8 @@
 //! which is the core orchestration function in YAML preprocessing.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use iidy::yaml::{YamlPreprocessor, TagContext};
+use iidy::yaml::preprocessor::YamlPreprocessor;
+use iidy::yaml::tags::TagContext;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use iidy::yaml::ast::*;
 use serde_yaml::Value;
@@ -13,7 +14,7 @@ use serde_yaml::Value;
 fn bench_resolve_ast_core_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("resolve_ast_core_patterns");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let mut context = TagContext::new();
     context = context.with_variable("environment", Value::String("production".to_string()));
@@ -95,7 +96,7 @@ fn bench_resolve_ast_core_patterns(c: &mut Criterion) {
 fn bench_path_tracking_overhead(c: &mut Criterion) {
     let mut group = c.benchmark_group("path_tracking_overhead");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let context = TagContext::new()
         .with_variable("service", Value::String("api".to_string()));
@@ -140,7 +141,7 @@ fn bench_path_tracking_overhead(c: &mut Criterion) {
 fn bench_string_interpolation_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("string_interpolation");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let context = TagContext::new()
         .with_variable("service", Value::String("api-server".to_string()))
@@ -181,7 +182,7 @@ fn bench_string_interpolation_patterns(c: &mut Criterion) {
 fn bench_cloudformation_processing(c: &mut Criterion) {
     let mut group = c.benchmark_group("cloudformation_processing");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let context = TagContext::new()
         .with_variable("param", Value::String("MyParameter".to_string()));
@@ -214,7 +215,7 @@ fn bench_cloudformation_processing(c: &mut Criterion) {
 fn bench_mixed_content_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("mixed_content");
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let context = TagContext::new()
         .with_variable("service", Value::String("api".to_string()))
@@ -265,7 +266,7 @@ mod tests {
     fn test_benchmark_setup() {
         // Verify benchmark setup works correctly
         let loader = ProductionImportLoader::new();
-        let mut preprocessor = YamlPreprocessor::new(loader);
+        let mut preprocessor = YamlPreprocessor::new(loader, true);
         let context = TagContext::new()
             .with_variable("test", Value::String("value".to_string()));
         

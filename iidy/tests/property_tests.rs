@@ -65,7 +65,7 @@ proptest! {
         prop_assert!(ast.is_ok(), "Failed to parse valid YAML: {}", yaml_str);
         
         // NOTE: Once AST resolution is implemented, add tests here to verify:
-        // - let mut preprocessor = YamlPreprocessor::new();
+        // - let mut preprocessor = YamlPreprocessor::new(, true);
         // - let result = preprocessor.resolve_ast(ast.unwrap());
         // - Type preservation and value correctness
     }

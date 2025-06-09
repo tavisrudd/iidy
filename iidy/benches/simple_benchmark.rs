@@ -5,7 +5,7 @@
 
 use std::time::{Duration, Instant};
 use tokio;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use iidy::yaml::handlebars::engine::interpolate_handlebars_string;
 use iidy::yaml::tags::{StandardTagResolver, TagResolver, TagContext};
 use iidy::yaml::ast::IncludeTag;
@@ -114,7 +114,7 @@ region: "us-west-2"
     
     SimpleBenchmark::new("Small Document", 100).run(|| {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(preprocess_yaml_with_base_location(small_yaml, "small.yaml")).unwrap();
+        rt.block_on(preprocess_yaml_v11(small_yaml, "small.yaml")).unwrap();
     });
     
     // Medium document with transformations
@@ -141,7 +141,7 @@ merged_config: !$merge
     
     SimpleBenchmark::new("Medium Document", 50).run(|| {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(preprocess_yaml_with_base_location(medium_yaml, "medium.yaml")).unwrap();
+        rt.block_on(preprocess_yaml_v11(medium_yaml, "medium.yaml")).unwrap();
     });
     
     // Large document with complex transformations
@@ -196,7 +196,7 @@ complex_config: !$merge
     // Large document test temporarily disabled due to YAML parsing issue
     // SimpleBenchmark::new("Large Document", 10).run(|| {
     //     let rt = tokio::runtime::Runtime::new().unwrap();
-    //     rt.block_on(preprocess_yaml_with_base_location(large_yaml, "large.yaml")).unwrap();
+    //     rt.block_on(preprocess_yaml_v11(large_yaml, "large.yaml")).unwrap();
     // });
 }
 
@@ -225,7 +225,7 @@ simple_map: !$map
         
         SimpleBenchmark::new(&format!("Size {} services", size), 10).run(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(preprocess_yaml_with_base_location(&yaml_content, "scaling.yaml")).unwrap();
+            rt.block_on(preprocess_yaml_v11(&yaml_content, "scaling.yaml")).unwrap();
         });
     }
 }
@@ -263,7 +263,7 @@ $defs:
 result: "{{name}}"
 "#;
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let processed = rt.block_on(preprocess_yaml_with_base_location(yaml, "test.yaml")).unwrap();
+        let processed = rt.block_on(preprocess_yaml_v11(yaml, "test.yaml")).unwrap();
         assert!(processed.is_mapping());
     }
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 
 /// Tests for enhanced error reporting with YAML path tracking
 /// These tests verify that error messages include precise file location and document path information
@@ -15,7 +15,7 @@ section1:
     bad_access: !$ nonexistent_var
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -47,7 +47,7 @@ section2:
     - bad_field: !$ another_nonexistent_var
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "array_test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "array_test.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -78,7 +78,7 @@ section3:
         invalid: !$ missing_variable
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "nested_test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "nested_test.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -111,7 +111,7 @@ service_configs:
     replicas: 1
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "complex_test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "complex_test.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -144,7 +144,7 @@ complete_config: !$merge
   - database: "test"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "showcase_example.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "showcase_example.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();
@@ -176,7 +176,7 @@ section2:
     - value: !$ allowed_var
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "valid_test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "valid_test.yaml").await;
     
     // This should succeed without errors
     assert!(result.is_ok());
@@ -203,7 +203,7 @@ test_section:
   error_here: !$ invalid_var
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "format_test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "format_test.yaml").await;
     
     assert!(result.is_err());
     let error = result.unwrap_err();

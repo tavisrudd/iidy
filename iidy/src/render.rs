@@ -9,7 +9,7 @@ use std::path::Path;
 use std::io::{self, Read};
 use serde_yaml::Value;
 
-use crate::{cli::RenderArgs, yaml::preprocess_yaml_with_spec};
+use crate::{cli::RenderArgs, yaml::preprocess_yaml};
 
 /// Handle the render command - process YAML template and output in specified format
 pub async fn handle_render_command(args: &RenderArgs) -> Result<()> {
@@ -26,7 +26,7 @@ pub async fn handle_render_command(args: &RenderArgs) -> Result<()> {
     };
     
     // Process the YAML with the new preprocessing system using specified YAML spec
-    let processed_value = preprocess_yaml_with_spec(&template_content, &base_location, &args.yaml_spec).await?;
+    let processed_value = preprocess_yaml(&template_content, &base_location, &args.yaml_spec).await?;
     
     // Apply query selector if provided
     let output_value = if let Some(query) = &args.query {

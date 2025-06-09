@@ -10,7 +10,7 @@
 //! for UserData, policies, and other content.
 
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 use tempfile::NamedTempFile;
 use std::io::Write;
@@ -55,7 +55,7 @@ Resources:
         /opt/aws/bin/cfn-init -v --stack ${AWS::StackName}
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = &result {
         // Check literal scalar with handlebars processing
@@ -142,7 +142,7 @@ policy_document: >
   }
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = &result {
         // Check folded scalar with handlebars processing
@@ -251,7 +251,7 @@ Resources:
             myapp:latest
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = &result {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
@@ -357,7 +357,7 @@ Resources:
     let temp_path = temp_file.path().to_str().unwrap();
 
     // Process the YAML
-    let result = preprocess_yaml_with_base_location(yaml_content, temp_path).await?;
+    let result = preprocess_yaml_v11(yaml_content, temp_path).await?;
     
     // Serialize back to YAML
     let output_yaml = serde_yaml::to_string(&result)?;
@@ -471,7 +471,7 @@ Resources:
             }
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = &result {
         if let Some(Value::Mapping(whitespace_tests)) = root.get(&Value::String("whitespace_tests".to_string())) {
@@ -559,7 +559,7 @@ Outputs:
 "#;
 
     // Process using the same preprocessing pipeline as the render command
-    let result = preprocess_yaml_with_base_location(yaml_content, "test-template.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_content, "test-template.yaml").await?;
     
     // Serialize back to YAML (same as render command output)
     let rendered_content = serde_yaml::to_string(&result)?;

@@ -4,7 +4,7 @@
 //! This ensures compatibility with iidy-js behavior where single-element arrays are unpacked.
 
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 
 #[tokio::test]
@@ -16,7 +16,7 @@ test_not_false_direct: !$not false
 test_not_false_array: !$not [false]
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         // Both syntaxes should produce identical results
@@ -53,7 +53,7 @@ test_escape_direct: !$escape "{{test_var}}"
 test_escape_array: !$escape ["{{test_var}}"]
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         // Both should escape handlebars processing (not process the template)
@@ -88,7 +88,7 @@ test_yaml_array: !$toYamlString
     number: 42
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_yaml_direct".to_string()));
@@ -130,7 +130,7 @@ test_json_array: !$toJsonString
     number: 42
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_json_direct".to_string()));
@@ -163,7 +163,7 @@ test_parse_direct: !$parseYaml "key: value\nnumber: 42"
 test_parse_array: !$parseYaml ["key: value\nnumber: 42"]
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
@@ -199,7 +199,7 @@ test_parse_direct: !$parseJson '{"key": "value", "number": 42}'
 test_parse_array: !$parseJson ['{"key": "value", "number": 42}']
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
@@ -242,7 +242,7 @@ test_getatt_direct: !GetAtt "MyResource.Property"
 test_getatt_array: !GetAtt ["MyResource.Property"]
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Convert to string to check tag preservation
     let output = serde_yaml::to_string(&result)?;
@@ -273,7 +273,7 @@ test_filter: !$map
   template: "service: {{item}}"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         if let Some(Value::Sequence(filtered)) = map.get(&Value::String("test_filter".to_string())) {
@@ -300,7 +300,7 @@ test_multi_element_array: !$not [true, false]
 test_nested_array: !$not [[true]]
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(map) = result {
         // Empty array should be treated as direct empty array (not unpacked)

@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
-use crate::{cli::YamlSpec, yaml::preprocess_yaml_with_spec};
+use crate::{cli::YamlSpec, yaml::preprocess_yaml};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -108,7 +108,7 @@ pub fn load_stack_args_str(
     let base_location = path.to_string_lossy();
     
     // Process the YAML with full preprocessing pipeline
-    let mut value = rt.block_on(preprocess_yaml_with_spec(content, &base_location, &yaml_spec))?;
+    let mut value = rt.block_on(preprocess_yaml(content, &base_location, &yaml_spec))?;
 
     if let (Some(env), Value::Mapping(map)) = (environment, &mut value) {
         for key in ["Profile", "AssumeRoleARN", "Region"] {

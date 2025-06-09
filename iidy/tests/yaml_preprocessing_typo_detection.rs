@@ -3,7 +3,7 @@
 //! Validates that unknown !$ tags are caught as errors to prevent typos
 
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use insta::assert_snapshot;
 
 #[tokio::test]
@@ -17,7 +17,7 @@ async fn test_unknown_iidy_tag_detection() {
 test_typo: !$typo "this should fail"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
     
     // Should fail with unknown tag error
     assert!(result.is_err());
@@ -33,13 +33,13 @@ async fn test_unknown_and_or_tags_detected() {
     }
     
     // Test !$and
-    let result_and = preprocess_yaml_with_base_location("test_and: !$and [true, false]", "test.yaml").await;
+    let result_and = preprocess_yaml_v11("test_and: !$and [true, false]", "test.yaml").await;
     assert!(result_and.is_err());
     let error_msg_and = result_and.unwrap_err().to_string();
     assert_snapshot!("unknown_and_tag_detected", error_msg_and);
     
     // Test !$or
-    let result_or = preprocess_yaml_with_base_location("test_or: !$or [true, false]", "test.yaml").await;
+    let result_or = preprocess_yaml_v11("test_or: !$or [true, false]", "test.yaml").await;
     assert!(result_or.is_err());
     let error_msg_or = result_or.unwrap_err().to_string();
     assert_snapshot!("unknown_or_tag_detected", error_msg_or);
@@ -65,7 +65,7 @@ async fn test_other_common_typos() {
     
     for (typo, snapshot_name) in test_cases {
         let yaml_input = format!("test: {} \"value\"", typo);
-        let result = preprocess_yaml_with_base_location(&yaml_input, "test.yaml").await;
+        let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await;
         
         assert!(result.is_err(), "Should fail for typo: {}", typo);
         let error_msg = result.unwrap_err().to_string();
@@ -83,7 +83,7 @@ test_getatt: !GetAtt "Resource.Property"
 test_base64: !Base64 "content"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Should succeed and preserve CloudFormation tags
     let output = serde_yaml::to_string(&result)?;
@@ -115,7 +115,7 @@ test_not: !$not false
 test_escape: !$escape "{{test_var}}"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Should succeed and process correctly
     if let serde_yaml::Value::Mapping(map) = result {
@@ -158,7 +158,7 @@ test_map: !$map
   invalid_field: "should_not_be_here"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
     
     // Should fail with unexpected field error
     assert!(result.is_err());
@@ -183,7 +183,7 @@ test_if: !$if
   # Missing required 'test' field
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
     
     // Should fail with missing required field error
     assert!(result.is_err());
@@ -207,7 +207,7 @@ test_map: !$map
   template: "{{item}}"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_old_source, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_old_source, "test.yaml").await;
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     // Now we get a simpler "missing required field" error instead of typo detection
@@ -222,7 +222,7 @@ test_map: !$map
   completely_invalid: "not allowed"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_invalid, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_invalid, "test.yaml").await;
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("unexpected field 'completely_invalid'"));
@@ -245,7 +245,7 @@ test_map: !$map
   transform: "{{item}}"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_old_transform, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_old_transform, "test.yaml").await;
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
     

@@ -1,6 +1,7 @@
 //! Profiling binary for resolve_ast_with_context performance analysis
 
-use iidy::yaml::{YamlPreprocessor, TagContext};
+use iidy::yaml::preprocessor::YamlPreprocessor;
+use iidy::yaml::tags::TagContext;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use iidy::yaml::ast::*;
 use serde_yaml::Value;
@@ -19,7 +20,7 @@ where
 
 fn main() {
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
     
     let context = TagContext::new()
         .with_variable("service", Value::String("api-server".to_string()))

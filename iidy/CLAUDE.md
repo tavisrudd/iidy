@@ -160,3 +160,6 @@ This preprocessing system is essential for iidy's template composition and dynam
 - Yaml !Tags can't be nested directly like !Foo !Bar. You must instead do
 !Foo
   - !Bar
+
+## File Cleanup
+- When I ask you to clean up temp or .bak files always read my instructions carefully and only remove the exact pattern I specifiy. If I say *.rs.bak, don't delete *.bak!

@@ -3,7 +3,7 @@
 //! This test suite captures the enhanced error outputs for various error 
 //! conditions using the error examples in example-templates/errors/
 
-use iidy::yaml::preprocess_yaml_with_spec;
+use iidy::yaml::preprocess_yaml;
 use iidy::cli::YamlSpec;
 use insta::assert_snapshot;
 
@@ -18,7 +18,7 @@ async fn capture_error_output(template_path: &str) -> String {
     let content = std::fs::read_to_string(&full_path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", full_path, e));
     
-    match preprocess_yaml_with_spec(&content, &full_path, &YamlSpec::Auto).await {
+    match preprocess_yaml(&content, &full_path, &YamlSpec::Auto).await {
         Ok(_) => panic!("Expected {} to fail but it succeeded", template_path),
         Err(e) => {
             // Convert error to string to capture the enhanced error display

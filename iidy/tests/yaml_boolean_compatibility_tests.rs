@@ -1,5 +1,6 @@
 use anyhow::Result;
-use iidy::yaml::{preprocess_yaml_with_base_location, YamlPreprocessor};
+use iidy::yaml::preprocess_yaml_v11;
+use iidy::yaml::preprocessor::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
 use serde_yaml::Value;
 
@@ -24,7 +25,7 @@ Resources:
       Description: "yes"       # Should remain string (quoted)
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = result {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
@@ -134,7 +135,7 @@ Resources:
       Description2: "{{enable_monitoring}}"  # handlebars result
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // For now, just document what we expect vs what we get
     println!("\nYAML 1.1 Boolean Compatibility Requirements:");
@@ -202,7 +203,7 @@ Resources:
         - "off"            # Should be string "off" (quoted)
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     println!("\nEdge cases for YAML 1.1 boolean compatibility:");
     
@@ -226,7 +227,7 @@ Resources:
 
     // Test YAML 1.2 mode (no boolean conversion)
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new_yaml_12_mode(loader);
+    let mut preprocessor = YamlPreprocessor::new(loader, false);
     let result_yaml_12 = preprocessor.process(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = result_yaml_12 {
@@ -254,7 +255,7 @@ Resources:
     
     // Test YAML 1.1 mode (with boolean conversion) 
     let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader); // Default is YAML 1.1 mode
+    let mut preprocessor = YamlPreprocessor::new(loader, true); // Default is YAML 1.1 mode
     let result_yaml_11 = preprocessor.process(yaml_input, "test.yaml").await?;
     
     if let Value::Mapping(root) = result_yaml_11 {

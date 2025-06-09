@@ -1,5 +1,5 @@
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_with_base_location;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 
 /// Tests for YAML anchors, aliases, and merge key operations
@@ -32,7 +32,7 @@ service2:
   config: *default_config
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Verify that anchors/aliases were resolved by the parser before preprocessing
     let service1 = result.get("service1").unwrap().as_mapping().unwrap();
@@ -73,7 +73,7 @@ prod_config:
   environment: "{{environment}}"
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
     
     // This should now fail with a proper error message about merge keys
     assert!(result.is_err());
@@ -120,7 +120,7 @@ service_config: !$merge
     port: 9090  # Override network port
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     let service_config = result.get("service_config").unwrap().as_mapping().unwrap();
     
@@ -163,7 +163,7 @@ service_configs: !$map
       else: 3000
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     let service_configs = result.get("service_configs").unwrap().as_sequence().unwrap();
     assert_eq!(service_configs.len(), 2);
@@ -224,7 +224,7 @@ staging_cache: !$merge
       - max_memory: "128mb"  # Override nested setting
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Verify production_db configuration
     let prod_db = result.get("production_db").unwrap().as_mapping().unwrap();
@@ -282,7 +282,7 @@ all_services: !$map
     env_vars: *common_env
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Verify service1 env vars
     let service1 = result.get("service1").unwrap().as_mapping().unwrap();
@@ -345,7 +345,7 @@ section2:
     config: *section2_config
 "#;
 
-    let result = preprocess_yaml_with_base_location(yaml_input, "test.yaml").await?;
+    let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
     
     // Verify section1 service uses section1_config
     let section1 = result.get("section1").unwrap().as_mapping().unwrap();
