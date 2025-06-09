@@ -383,33 +383,20 @@ fn parse_if_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 
 /// Parse !$map tag
 fn parse_map_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "template"], &["var", "filter"], "!$map", context)?;
-        
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
-        
-        // Optional filter
-        let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
-            Some(Box::new(convert_value_to_ast(filter_val.clone(), &context.with_path("filter"))?))  
-        } else {
-            None
-        };
-
-        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
-        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::Map(MapTag {
-            items,
-            template,
-            var: var_name,
-            filter,
-        })))
-    } else {
-        Err(anyhow!("Map tag must be a mapping"))
-    }
+    parse_items_template_tag(
+        value,
+        context,
+        "!$map",
+        true, // supports filter
+        |items, template, var, filter| {
+            PreprocessingTag::Map(MapTag {
+                items,
+                template,
+                var,
+                filter,
+            })
+        }
+    )
 }
 
 /// Parse !$merge tag
@@ -486,6 +473,7 @@ fn parse_eq_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
         if seq.len() != 2 {
             return Err(anyhow!("Eq tag must have exactly 2 elements"));
         }
+
         let left = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
         let right = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
 
@@ -500,54 +488,130 @@ fn parse_eq_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 
 /// Parse !$not tag
 fn parse_not_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$not [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let expression = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::Not(NotTag {
-        expression,
-    })))
+    parse_single_element_tag(value, context, |expression| {
+        PreprocessingTag::Not(NotTag { expression })
+    })
 }
 
 /// Parse !$split tag (expects [delimiter, string] format like iidy-js)
 fn parse_split_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Sequence(seq) = value {
-        if seq.len() != 2 {
-            return Err(anyhow!("Split tag must be a sequence with two elements: [delimiter, string]"));
-        }
-
-        let delimiter = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
-        let string = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::Split(
-            SplitTag { delimiter, string },
-        )))
-    } else {
-        Err(anyhow!("Split tag must be a sequence with format [delimiter, string]"))
-    }
+    let (delimiter, string) = parse_two_element_sequence(value, context, "Split", "[delimiter, string]")?;
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::Split(
+        SplitTag { delimiter, string },
+    )))
 }
 
 /// Parse !$join tag (expects [delimiter, array] format like iidy-js)
 fn parse_join_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
+    let (delimiter, array) = parse_two_element_sequence(value, context, "Join", "[delimiter, array]")?;
+    Ok(YamlAst::PreprocessingTag(PreprocessingTag::Join(JoinTag {
+        delimiter,
+        array,
+    })))
+}
+
+// ============================================================================
+// COMMON PARSING HELPERS
+// ============================================================================
+
+/// Extract a single element from an array syntax like !$tag [expression]
+/// Returns (extracted_value, updated_context)
+fn extract_single_array_element(value: Value, context: &ParseContext) -> (Value, ParseContext) {
+    match value {
+        Value::Sequence(mut seq) if seq.len() == 1 => {
+            (seq.pop().unwrap(), context.with_array_index(0))
+        },
+        other => (other, context.clone()),
+    }
+}
+
+/// Parse a two-element sequence like [delimiter, string] or [delimiter, array]
+/// Returns (first_element, second_element) as boxed AST nodes
+fn parse_two_element_sequence(
+    value: Value, 
+    context: &ParseContext, 
+    tag_name: &str,
+    description: &str
+) -> Result<(Box<YamlAst>, Box<YamlAst>)> {
     if let Value::Sequence(seq) = value {
         if seq.len() != 2 {
-            return Err(anyhow!("Join tag must be a sequence with two elements: [delimiter, array]"));
+            return Err(anyhow!("{} tag must be a sequence with two elements: {}", tag_name, description));
         }
 
-        let delimiter = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
-        let array = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
+        let first = Box::new(convert_value_to_ast(seq[0].clone(), &context.with_array_index(0))?);
+        let second = Box::new(convert_value_to_ast(seq[1].clone(), &context.with_array_index(1))?);
 
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::Join(JoinTag {
-            delimiter,
-            array,
-        })))
+        Ok((first, second))
     } else {
-        Err(anyhow!("Join tag must be a sequence with format [delimiter, array]"))
+        Err(anyhow!("{} tag must be a sequence with format {}", tag_name, description))
+    }
+}
+
+/// Parse a mapping-based tag with items/template pattern that supports var and filter
+fn parse_items_template_tag<F>(
+    value: Value,
+    context: &ParseContext,
+    tag_name: &str,
+    supports_filter: bool,
+    builder: F,
+) -> Result<YamlAst>
+where
+    F: FnOnce(Box<YamlAst>, Box<YamlAst>, Option<String>, Option<Box<YamlAst>>) -> PreprocessingTag,
+{
+    if let Value::Mapping(map) = value {
+        let optional_keys = if supports_filter {
+            &["var", "filter"][..]
+        } else {
+            &["var"][..]
+        };
+        
+        validate_exact_keys(&map, &["items", "template"], optional_keys, tag_name, context)?;
+        
+        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
+        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
+        let var_name = extract_optional_string_field(&map, "var");
+        
+        // Optional filter (only if supported)
+        let filter = if supports_filter {
+            extract_optional_field_as_ast(&map, "filter", context)?
+        } else {
+            None
+        };
+
+        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
+        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
+
+        Ok(YamlAst::PreprocessingTag(builder(items, template, var_name, filter)))
+    } else {
+        Err(anyhow!("{} tag must be a mapping", tag_name))
+    }
+}
+
+/// Parse a single-element tag that supports array syntax
+fn parse_single_element_tag<F>(
+    value: Value,
+    context: &ParseContext,
+    builder: F,
+) -> Result<YamlAst>
+where
+    F: FnOnce(Box<YamlAst>) -> PreprocessingTag,
+{
+    let (actual_value, value_context) = extract_single_array_element(value, context);
+    let expression = Box::new(convert_value_to_ast(actual_value, &value_context)?);
+    Ok(YamlAst::PreprocessingTag(builder(expression)))
+}
+
+
+/// Extract an optional field value from a mapping and convert to AST
+fn extract_optional_field_as_ast(
+    map: &Mapping,
+    field: &str,
+    context: &ParseContext,
+) -> Result<Option<Box<YamlAst>>> {
+    if let Some(value) = map.get(&Value::String(field.to_string())) {
+        Ok(Some(Box::new(convert_value_to_ast(value.clone(), &context.with_path(field))?)))
+    } else {
+        Ok(None)
     }
 }
 
@@ -568,110 +632,72 @@ fn extract_optional_string_field(map: &Mapping, field: &str) -> Option<String> {
 
 /// Parse !$concatMap tag
 fn parse_concat_map_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "template"], &["var", "filter"], "!$concatMap", context)?;
-        
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
-        
-        // Optional filter
-        let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
-            Some(Box::new(convert_value_to_ast(filter_val.clone(), &context.with_path("filter"))?))  
-        } else {
-            None
-        };
-
-        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
-        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::ConcatMap(ConcatMapTag {
-            items,
-            template,
-            var: var_name,
-            filter,
-        })))
-    } else {
-        Err(anyhow!("ConcatMap tag must be a mapping"))
-    }
+    parse_items_template_tag(
+        value,
+        context,
+        "!$concatMap",
+        true, // supports filter
+        |items, template, var, filter| {
+            PreprocessingTag::ConcatMap(ConcatMapTag {
+                items,
+                template,
+                var,
+                filter,
+            })
+        }
+    )
 }
 
 /// Parse !$mergeMap tag
 fn parse_merge_map_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "template"], &["var"], "!$mergeMap", context)?;
-        
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
-
-        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
-        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MergeMap(MergeMapTag {
-            items,
-            template,
-            var: var_name,
-        })))
-    } else {
-        Err(anyhow!("MergeMap tag must be a mapping"))
-    }
+    parse_items_template_tag(
+        value,
+        context,
+        "!$mergeMap",
+        false, // doesn't support filter
+        |items, template, var, _filter| {
+            PreprocessingTag::MergeMap(MergeMapTag {
+                items,
+                template,
+                var,
+            })
+        }
+    )
 }
 
 /// Parse !$mapListToHash tag
 fn parse_map_list_to_hash_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "template"], &["var", "filter"], "!$mapListToHash", context)?;
-        
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
-        
-        // Optional filter
-        let filter = if let Some(filter_val) = map.get(&Value::String("filter".to_string())) {
-            Some(Box::new(convert_value_to_ast(filter_val.clone(), &context.with_path("filter"))?))  
-        } else {
-            None
-        };
-
-        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
-        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapListToHash(MapListToHashTag {
-            items,
-            template,
-            var: var_name,
-            filter,
-        })))
-    } else {
-        Err(anyhow!("MapListToHash tag must be a mapping"))
-    }
+    parse_items_template_tag(
+        value,
+        context,
+        "!$mapListToHash",
+        true, // supports filter
+        |items, template, var, filter| {
+            PreprocessingTag::MapListToHash(MapListToHashTag {
+                items,
+                template,
+                var,
+                filter,
+            })
+        }
+    )
 }
 
 /// Parse !$mapValues tag
 fn parse_map_values_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    if let Value::Mapping(map) = value {
-        // Validate that we have exactly the required keys and optionally allowed keys
-        validate_exact_keys(&map, &["items", "template"], &["var"], "!$mapValues", context)?;
-        
-        let items_val = map.get(&Value::String("items".to_string())).unwrap(); // Safe due to validation
-        let template_val = map.get(&Value::String("template".to_string())).unwrap(); // Safe due to validation
-        let var_name = extract_optional_string_field(&map, "var");
-
-        let items = Box::new(convert_value_to_ast(items_val.clone(), &context.with_path("items"))?);
-        let template = Box::new(convert_value_to_ast(template_val.clone(), &context.with_path("template"))?);
-
-        Ok(YamlAst::PreprocessingTag(PreprocessingTag::MapValues(MapValuesTag {
-            items,
-            template,
-            var: var_name,
-        })))
-    } else {
-        Err(anyhow!("MapValues tag must be a mapping"))
-    }
+    parse_items_template_tag(
+        value,
+        context,
+        "!$mapValues",
+        false, // doesn't support filter
+        |items, template, var, _filter| {
+            PreprocessingTag::MapValues(MapValuesTag {
+                items,
+                template,
+                var,
+            })
+        }
+    )
 }
 
 /// Parse !$groupBy tag
@@ -707,96 +733,42 @@ fn parse_group_by_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 
 /// Parse !$fromPairs tag
 fn parse_from_pairs_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$fromPairs [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let source = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::FromPairs(FromPairsTag {
-        source,
-    })))
+    parse_single_element_tag(value, context, |source| {
+        PreprocessingTag::FromPairs(FromPairsTag { source })
+    })
 }
 
 /// Parse !$toYamlString tag
 fn parse_to_yaml_string_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$toYamlString [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let data = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToYamlString(ToYamlStringTag {
-        data,
-    })))
+    parse_single_element_tag(value, context, |data| {
+        PreprocessingTag::ToYamlString(ToYamlStringTag { data })
+    })
 }
 
 /// Parse !$parseYaml tag
 fn parse_parse_yaml_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$parseYaml [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let yaml_string = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseYaml(ParseYamlTag {
-        yaml_string,
-    })))
+    parse_single_element_tag(value, context, |yaml_string| {
+        PreprocessingTag::ParseYaml(ParseYamlTag { yaml_string })
+    })
 }
 
 /// Parse !$toJsonString tag
 fn parse_to_json_string_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$toJsonString [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let data = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ToJsonString(ToJsonStringTag {
-        data,
-    })))
+    parse_single_element_tag(value, context, |data| {
+        PreprocessingTag::ToJsonString(ToJsonStringTag { data })
+    })
 }
 
 /// Parse !$parseJson tag
 fn parse_parse_json_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$parseJson [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let json_string = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::ParseJson(ParseJsonTag {
-        json_string,
-    })))
+    parse_single_element_tag(value, context, |json_string| {
+        PreprocessingTag::ParseJson(ParseJsonTag { json_string })
+    })
 }
 
 /// Parse !$escape tag
 fn parse_escape_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
-    // Handle array syntax: !$escape [expression] should extract the expression
-    let (actual_value, value_context) = match value {
-        Value::Sequence(seq) if seq.len() == 1 => {
-            (seq.into_iter().next().unwrap(), context.with_array_index(0))
-        },
-        other => (other, context.clone()),
-    };
-    
-    let content = Box::new(convert_value_to_ast(actual_value, &value_context)?);
-    Ok(YamlAst::PreprocessingTag(PreprocessingTag::Escape(EscapeTag {
-        content,
-    })))
+    parse_single_element_tag(value, context, |content| {
+        PreprocessingTag::Escape(EscapeTag { content })
+    })
 }
