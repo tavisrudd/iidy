@@ -42,6 +42,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Regular expressions for YAML post-processing
 regex = "1.10"
 
+
 # YAML parsing
 serde = { version = "1", features = ["derive"] }
 # TODO: serde_yaml is deprecated - migrate to serde_yml for better tagged value support

@@ -21,11 +21,74 @@
 
 use anyhow::Result;
 use serde_yaml::Value;
+use std::collections::HashSet;
 
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::{parsing::parser, parsing::ast::{YamlAst, PreprocessingTag}};
 use crate::yaml::resolution::{TagContext, StackFrame, TagResolver, StandardTagResolver};
+use crate::yaml::resolution::resolver::VariableSource;
+
+/// Metadata for tracking variable sources during import processing
+#[derive(Debug, Clone)]
+struct VariableMetadata {
+    pub source: VariableSource,
+    pub defined_at: String,
+}
+
+/// Import stack for tracking currently processing documents to detect cycles
+#[derive(Debug, Clone)]
+struct ImportStack {
+    /// Set of document URIs currently being processed (for O(1) cycle detection)
+    current_imports: HashSet<String>,
+    /// Ordered chain of imports for error reporting (maintains import order)
+    import_chain: Vec<String>,
+}
+
+impl ImportStack {
+    /// Create a new empty import stack
+    fn new() -> Self {
+        Self {
+            current_imports: HashSet::new(),
+            import_chain: Vec::new(),
+        }
+    }
+    
+    /// Add a document to the import stack, returning an error if it would create a cycle
+    fn push_import(&mut self, location: String) -> Result<()> {
+        if self.current_imports.contains(&location) {
+            // Find where the cycle starts and build the cycle path
+            let cycle_start_index = self.import_chain.iter()
+                .position(|doc| doc == &location)
+                .unwrap_or(0);
+            
+            let cycle_path = self.import_chain[cycle_start_index..]
+                .iter()
+                .chain(std::iter::once(&location))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" → ");
+            
+            return Err(anyhow::anyhow!(
+                "Circular import detected: {}", cycle_path
+            ));
+        }
+        
+        self.current_imports.insert(location.clone());
+        self.import_chain.push(location);
+        Ok(())
+    }
+    
+    /// Remove a document from the import stack (when processing completes)
+    fn pop_import(&mut self, location: &str) {
+        self.current_imports.remove(location);
+        if let Some(pos) = self.import_chain.iter().rposition(|doc| doc == location) {
+            self.import_chain.remove(pos);
+        }
+    }
+    
+}
+
 
 /// YAML preprocessor that handles the two-phase processing pipeline
 pub struct YamlPreprocessor<L: ImportLoader> {
@@ -36,6 +99,10 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     preprocessing_tag_map: std::collections::HashMap<String, PreprocessingTag>,
     /// Static tag resolver for preprocessing tags (avoids trait object overhead)
     tag_resolver: StandardTagResolver,
+    /// Variable metadata for scope tracking
+    variable_metadata: std::collections::HashMap<String, VariableMetadata>,
+    /// Performance optimization: incremental counter instead of UUID generation
+    tag_counter: std::sync::atomic::AtomicUsize,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -46,6 +113,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             yaml_11_compatibility,
             preprocessing_tag_map: std::collections::HashMap::new(),
             tag_resolver: StandardTagResolver,
+            variable_metadata: std::collections::HashMap::new(),
+            tag_counter: std::sync::atomic::AtomicUsize::new(1),
         }
     }
 
@@ -54,22 +123,33 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         // Parse YAML with custom tag support
         let ast = parser::parse_yaml_with_custom_tags_from_file(input, base_location)?;
         
+        // Initialize import stack for cycle detection
+        let mut import_stack = ImportStack::new();
+        import_stack.push_import(base_location.to_string())?;
+        
         // Phase 1: Import loading and environment building
         let mut env_values = EnvValues::new();
         let mut import_records = Vec::new();
-        self.load_imports_and_defs(&ast, base_location, &mut env_values, &mut import_records).await?;
+        self.load_imports_and_defs(&ast, base_location, &mut env_values, &mut import_records, &mut import_stack).await?;
         
-        // Phase 2: Tag processing and final resolution
-        let mut context = TagContext::new()
-            .with_input_uri(base_location.to_string())
+        // Phase 2: Tag processing and final resolution with enhanced scope tracking
+        let mut context = TagContext::with_scope_tracking(base_location.to_string())
             .with_stack_frame(StackFrame {
                 location: Some(base_location.to_string()),
                 path: "<root>".to_string(),
             });
         
-        // Add all environment variables to context
+        // Add all environment variables to context with scope tracking
         for (key, value) in env_values {
-            context = context.with_variable(&key, value);
+            // Get metadata for this variable if available
+            let (source, defined_at) = if let Some(metadata) = self.variable_metadata.get(&key) {
+                (metadata.source.clone(), metadata.defined_at.clone())
+            } else {
+                // Fallback to default metadata
+                (VariableSource::LocalDefs, base_location.to_string())
+            };
+            
+            context.add_scoped_variable(&key, value, source, Some(defined_at));
         }
             
         let result = self.resolve_ast_with_context(ast, &context)?;
@@ -89,6 +169,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         base_location: &str,
         env_values: &mut EnvValues,
         import_records: &mut Vec<ImportRecord>,
+        import_stack: &mut ImportStack,
     ) -> Result<()> {
         // Look for $imports and $defs in the root mapping
         if let YamlAst::Mapping(pairs) = ast {
@@ -96,10 +177,10 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
                     match key_str.as_str() {
                         "$defs" => {
-                            self.process_defs(value, env_values)?;
+                            self.process_defs(value, env_values, base_location)?;
                         }
                         "$imports" => {
-                            self.process_imports(value, base_location, env_values, import_records).await?;
+                            self.process_imports(value, base_location, env_values, import_records, import_stack).await?;
                         }
                         _ => {}
                     }
@@ -110,7 +191,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Process $defs by copying values to environment (unprocessed)
-    fn process_defs(&mut self, defs_ast: &YamlAst, env_values: &mut EnvValues) -> Result<()> {
+    fn process_defs(&mut self, defs_ast: &YamlAst, env_values: &mut EnvValues, base_location: &str) -> Result<()> {
         if let YamlAst::Mapping(pairs) = defs_ast {
             for (key, value) in pairs {
                 if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
@@ -125,6 +206,12 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     // Convert AST to Value for storage (will be processed later in Phase 2)
                     let value_raw = self.ast_to_value_unprocessed(value.clone())?;
                     env_values.insert(key_str.clone(), value_raw);
+                    
+                    // Store variable metadata for scope tracking
+                    self.variable_metadata.insert(key_str.clone(), VariableMetadata {
+                        source: VariableSource::LocalDefs,
+                        defined_at: base_location.to_string(),
+                    });
                 }
             }
         }
@@ -138,6 +225,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         base_location: &str,
         env_values: &mut EnvValues,
         import_records: &mut Vec<ImportRecord>,
+        import_stack: &mut ImportStack,
     ) -> Result<()> {
         if let YamlAst::Mapping(pairs) = imports_ast {
             for (key, value) in pairs {
@@ -162,11 +250,18 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     let processed_doc = self.process_imported_document(
                         import_data.doc, 
                         &import_data.resolved_location,
-                        import_records
+                        import_records,
+                        import_stack
                     ).await?;
                     
                     // Add the fully processed document to environment
                     env_values.insert(import_key.clone(), processed_doc);
+                    
+                    // Store variable metadata for scope tracking
+                    self.variable_metadata.insert(import_key.clone(), VariableMetadata {
+                        source: VariableSource::ImportedDocument(import_key.clone()),
+                        defined_at: import_data.resolved_location.clone(),
+                    });
                     
                     // Record for metadata
                     import_records.push(ImportRecord {
@@ -209,42 +304,54 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         doc: Value,
         doc_location: &'a str,
         import_records: &'a mut Vec<ImportRecord>,
+        import_stack: &'a mut ImportStack,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value>> + 'a>> {
         Box::pin(async move {
-            // Check if this document has preprocessing directives that need processing
-            if let Value::Mapping(ref map) = doc {
-                // Check for preprocessing directives without string allocation
-                let has_imports = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$imports"));
-                let has_defs = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$defs"));
-                
-                if has_imports || has_defs {
-                    // This document needs recursive preprocessing - parse it back to AST and process
-                    let doc_yaml = serde_yaml::to_string(&doc)?;
-                    let doc_ast = parser::parse_yaml_with_custom_tags_from_file(&doc_yaml, doc_location)?;
-                    
-                    // Recursively process this document with its own environment
-                    let mut doc_env_values = EnvValues::new();
-                    self.load_imports_and_defs(&doc_ast, doc_location, &mut doc_env_values, import_records).await?;
-                    
-                    // Phase 2: Process the document with its own environment context
-                    let mut doc_context = TagContext::new()
-                        .with_input_uri(doc_location.to_string());
-                    
-                    // Add the document's environment variables to context
-                    for (key, value) in doc_env_values {
-                        doc_context = doc_context.with_variable(&key, value);
-                    }
-                    
-                    // Create a temporary mutable preprocessor for resolving this document
-                    // Inherit configuration from parent preprocessor
-                    let loader = ProductionImportLoader::new();
-                    let mut temp_preprocessor = YamlPreprocessor::new(loader, self.yaml_11_compatibility);
-                    return temp_preprocessor.resolve_ast_with_context(doc_ast, &doc_context);
-                }
-            }
+            // CYCLE DETECTION: Check if this document would create a cycle
+            import_stack.push_import(doc_location.to_string())?;
             
-            // Document has no preprocessing directives, return as-is
-            Ok(doc)
+            // Process the document, ensuring cleanup happens regardless of success/failure
+            let result = async {
+                // Check if this document has preprocessing directives that need processing
+                if let Value::Mapping(ref map) = doc {
+                    // Check for preprocessing directives without string allocation
+                    let has_imports = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$imports"));
+                    let has_defs = map.iter().any(|(k, _)| matches!(k, Value::String(s) if s == "$defs"));
+                    
+                    if has_imports || has_defs {
+                        // This document needs recursive preprocessing - parse it back to AST and process
+                        let doc_yaml = serde_yaml::to_string(&doc)?;
+                        let doc_ast = parser::parse_yaml_with_custom_tags_from_file(&doc_yaml, doc_location)?;
+                        
+                        // Recursively process this document with its own environment
+                        let mut doc_env_values = EnvValues::new();
+                        self.load_imports_and_defs(&doc_ast, doc_location, &mut doc_env_values, import_records, import_stack).await?;
+                        
+                        // Phase 2: Process the document with its own environment context
+                        let mut doc_context = TagContext::new()
+                            .with_input_uri(doc_location.to_string());
+                        
+                        // Add the document's environment variables to context
+                        for (key, value) in doc_env_values {
+                            doc_context = doc_context.with_variable(&key, value);
+                        }
+                        
+                        // Create a temporary mutable preprocessor for resolving this document
+                        // Inherit configuration from parent preprocessor
+                        let loader = ProductionImportLoader::new();
+                        let mut temp_preprocessor = YamlPreprocessor::new(loader, self.yaml_11_compatibility);
+                        return temp_preprocessor.resolve_ast_with_context(doc_ast, &doc_context);
+                    }
+                }
+                
+                // Document has no preprocessing directives, return as-is
+                Ok(doc)
+            }.await;
+            
+            // CLEANUP: Remove this document from the import stack
+            import_stack.pop_import(doc_location);
+            
+            result
         })
     }
 
@@ -281,14 +388,16 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             }
             YamlAst::PreprocessingTag(tag) => {
                 // Store preprocessing tags with unique identifiers to prevent collision
-                let tag_id = format!("__PREPROCESSING_TAG_{}__", uuid::Uuid::new_v4().simple());
+                let tag_id = format!("__PREPROCESSING_TAG_{}__", 
+                    self.tag_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
                 self.preprocessing_tag_map.insert(tag_id.clone(), tag.clone());
                 Ok(Value::String(tag_id))
             }
             YamlAst::CloudFormationTag(cfn_tag) => {
                 // Store CloudFormation tags as placeholders for later processing
                 // The inner value will be processed during Phase 2
-                let tag_id = format!("__CFN_TAG_{}__{}__", cfn_tag.tag_name(), uuid::Uuid::new_v4().simple());
+                let tag_id = format!("__CFN_TAG_{}__{}__", cfn_tag.tag_name(), 
+                    self.tag_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
                 // Note: We don't store CloudFormation tags in preprocessing_tag_map since they have different processing
                 // They will be handled directly in the resolve_ast_with_context method
                 Ok(Value::String(tag_id))
@@ -414,10 +523,21 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             YamlAst::PlainString(s) => {
                 return Ok(Value::String(s.clone()));
             }
+            // Fast path: Templated strings without handlebars syntax
+            YamlAst::TemplatedString(s) if !s.contains("{{") => {
+                return Ok(Value::String(s.clone()));
+            }
             // Fast path: Simple values
             YamlAst::Null => return Ok(Value::Null),
             YamlAst::Bool(b) => return Ok(Value::Bool(*b)),
             YamlAst::Number(n) => return Ok(Value::Number(n.clone())),
+            // Fast path: Empty sequences and mappings
+            YamlAst::Sequence(seq) if seq.is_empty() => {
+                return Ok(Value::Sequence(Vec::new()));
+            }
+            YamlAst::Mapping(pairs) if pairs.is_empty() => {
+                return Ok(Value::Mapping(serde_yaml::Mapping::new()));
+            }
             _ => {}
         }
         

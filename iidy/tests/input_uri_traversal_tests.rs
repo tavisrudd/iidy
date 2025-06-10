@@ -400,6 +400,18 @@ shadow_test: "{{shared_var}}"      # Should use imported's version
 "#,
         ).await?;
         
+        // Self-import test file (A -> A)
+        fs::write(
+            base_path.join("self_import.yaml"),
+            r#"
+$imports:
+  myself: ./self_import.yaml  # Self-import!
+
+data: "I import myself"
+reflection: "{{myself.data}}"
+"#,
+        ).await?;
+        
         Ok(())
     }
     
@@ -686,92 +698,108 @@ full_chain: "Simple={{simple.total_count}} Chain={{chained.from_b}}"
     println!("✅ Complex import pattern test passed: A -> {{B1 -> C, B2}}");
 }
 
-/// Test that documents current cycle detection limitations
+/// Test that cycle detection is working correctly
 /// 
-/// **CURRENT STATUS:** The import system does NOT implement cycle detection.
-/// Circular imports will cause stack overflow. This test documents the issue
-/// and verifies the test fixtures are set up correctly for future cycle detection.
+/// **CURRENT STATUS:** The import system now implements cycle detection.
+/// Circular imports are detected early and return clear error messages.
 #[tokio::test]
-async fn test_cycle_detection_status() {
+async fn test_cycle_detection_working() {
     let loader = UriTrackingImportLoader::new().await.unwrap();
     let base_path = loader.base_path();
     
-    // Verify cycle test files exist and are set up correctly
+    // Test direct cycle: A -> B -> A
     let cycle_a_path = base_path.join("cycle_a.yaml");
-    let cycle_b_path = base_path.join("cycle_b.yaml");
-    let _self_import_path = base_path.join("self_import.yaml");
+    let cycle_a_path_str = cycle_a_path.to_string_lossy();
     
-    assert!(cycle_a_path.exists(), "Cycle test fixture A should exist");
-    assert!(cycle_b_path.exists(), "Cycle test fixture B should exist");
+    let file_content = fs::read_to_string(&cycle_a_path).await.unwrap();
+    let mut preprocessor = YamlPreprocessor::new(loader, false);
+    let result = preprocessor.process(&file_content, &cycle_a_path_str).await;
     
-    // Read the files to verify they contain cycle references
-    let cycle_a_content = fs::read_to_string(&cycle_a_path).await.unwrap();
-    let cycle_b_content = fs::read_to_string(&cycle_b_path).await.unwrap();
+    // Should fail with cycle detection error
+    assert!(result.is_err(), "Cycle should be detected and processing should fail");
     
-    assert!(cycle_a_content.contains("./cycle_b.yaml"), "A should import B");
-    assert!(cycle_b_content.contains("./cycle_a.yaml"), "B should import A (creating cycle)");
+    let error = result.err().unwrap();
+    let error_message = error.to_string();
     
-    println!("⚠️  CYCLE DETECTION NOT IMPLEMENTED");
-    println!("   Current behavior: Stack overflow on circular imports");
-    println!("   Recommendation: Implement cycle detection with:");
-    println!("   1. Import path tracking during resolution");
-    println!("   2. Detection when a file imports something already in the stack");
-    println!("   3. Clear error messages identifying the cycle");
-    println!("   ");
-    println!("   Example cycles that need detection:");
-    println!("   - Self-import: A -> A");
-    println!("   - Direct cycle: A -> B -> A");
-    println!("   - Long cycle: A -> B -> C -> A");
-    println!("   - Mixed cycle: A -> {{B -> C -> B, D}} (B->C->B cycle)");
+    // Error message should mention circular import and show the cycle path
+    assert!(error_message.contains("Circular import detected"), 
+        "Error should mention circular import: {}", error_message);
     
-    // This test passes to document the current state
-    assert!(true, "Cycle detection limitations documented");
+    // Should show the cycle path A -> B -> A
+    assert!(error_message.contains("cycle_a.yaml") && error_message.contains("cycle_b.yaml"),
+        "Error should show the cycle path: {}", error_message);
+    
+    println!("✅ CYCLE DETECTION WORKING");
+    println!("   Direct cycle (A -> B -> A) detected successfully");
+    println!("   Error message: {}", error_message);
 }
 
-/// Design specification for future cycle detection implementation
-/// 
-/// This test documents how cycle detection should work when implemented.
+/// Test long cycle detection (A -> B -> C -> A)
 #[tokio::test]
-async fn test_future_cycle_detection_design() {
+async fn test_long_cycle_detection() {
     let loader = UriTrackingImportLoader::new().await.unwrap();
     let base_path = loader.base_path();
     
-    // Verify long cycle test files exist
-    let long_cycle_a = base_path.join("long_cycle_a.yaml");
-    let long_cycle_b = base_path.join("long_cycle_b.yaml");
-    let long_cycle_c = base_path.join("long_cycle_c.yaml");
+    // Test long cycle: A -> B -> C -> A
+    let long_cycle_a_path = base_path.join("long_cycle_a.yaml");
+    let long_cycle_a_path_str = long_cycle_a_path.to_string_lossy();
     
-    assert!(long_cycle_a.exists() && long_cycle_b.exists() && long_cycle_c.exists(),
-        "Long cycle test fixtures should exist");
+    let file_content = fs::read_to_string(&long_cycle_a_path).await.unwrap();
+    let mut preprocessor = YamlPreprocessor::new(loader, false);
+    let result = preprocessor.process(&file_content, &long_cycle_a_path_str).await;
     
-    println!("⚒️  CYCLE DETECTION DESIGN SPECIFICATION");
-    println!("");
-    println!("When implemented, cycle detection should:");
-    println!("");
-    println!("1. **Track Import Stack**: Maintain a stack of currently processing documents");
-    println!("   - Push document URI when starting import processing");
-    println!("   - Pop document URI when finishing import processing");
-    println!("   - Check for URI already in stack before importing");
-    println!("");
-    println!("2. **Detect Cycles Early**: Fail fast when cycle is detected");
-    println!("   - Before starting recursive import processing");
-    println!("   - Provide clear error message with cycle path");
-    println!("");
-    println!("3. **Error Messages**: Show the complete cycle path");
-    println!("   - 'Circular import detected: A -> B -> C -> A'");
-    println!("   - Include file paths in error for debugging");
-    println!("");
-    println!("4. **Integration with input_uri tracking**:");
-    println!("   - Use the same URI resolution for both features");
-    println!("   - Ensure error messages show full URIs");
-    println!("");
-    println!("5. **ImportedDocument AST nodes** could help by:");
-    println!("   - Storing import dependency metadata");
-    println!("   - Enabling post-processing cycle analysis");
-    println!("   - Supporting tooling for dependency visualization");
+    // Should fail with cycle detection error
+    assert!(result.is_err(), "Long cycle should be detected and processing should fail");
     
-    // Test passes as documentation
-    assert!(true, "Cycle detection design documented");
+    let error = result.err().unwrap();
+    let error_message = error.to_string();
+    
+    // Error message should mention circular import and show the cycle path
+    assert!(error_message.contains("Circular import detected"), 
+        "Error should mention circular import: {}", error_message);
+    
+    // Should show the cycle path with all three files
+    assert!(error_message.contains("long_cycle_a.yaml") && 
+           error_message.contains("long_cycle_b.yaml") && 
+           error_message.contains("long_cycle_c.yaml"),
+        "Error should show the complete cycle path: {}", error_message);
+    
+    println!("✅ LONG CYCLE DETECTION WORKING");
+    println!("   Long cycle (A -> B -> C -> A) detected successfully");
+    println!("   Error message: {}", error_message);
+}
+
+/// Test self-import cycle detection (A -> A)
+#[tokio::test]
+async fn test_self_import_cycle_detection() {
+    let loader = UriTrackingImportLoader::new().await.unwrap();
+    let base_path = loader.base_path();
+    
+    // Test self-import cycle: A -> A
+    let self_import_path = base_path.join("self_import.yaml");
+    let self_import_path_str = self_import_path.to_string_lossy();
+    
+    let file_content = fs::read_to_string(&self_import_path).await.unwrap();
+    let mut preprocessor = YamlPreprocessor::new(loader, false);
+    let result = preprocessor.process(&file_content, &self_import_path_str).await;
+    
+    // Should fail with cycle detection error
+    assert!(result.is_err(), "Self-import cycle should be detected and processing should fail");
+    
+    let error = result.err().unwrap();
+    let error_message = error.to_string();
+    
+    // Error message should mention circular import
+    assert!(error_message.contains("Circular import detected"), 
+        "Error should mention circular import: {}", error_message);
+    
+    // Should show self-import pattern
+    assert!(error_message.contains("self_import.yaml"),
+        "Error should reference the self-importing file: {}", error_message);
+    
+    println!("✅ SELF-IMPORT CYCLE DETECTION WORKING");
+    println!("   Self-import cycle (A -> A) detected successfully");
+    println!("   Error message: {}", error_message);
 }
 
 /// Test that demonstrates the simplest cycle case for future implementation

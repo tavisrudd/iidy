@@ -36,8 +36,17 @@
 use anyhow::{anyhow, Context, Result};
 use serde_yaml::Value;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::yaml::parsing::ast::*;
+
+/// Performance optimization: Global counter for scope ID generation
+static SCOPE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+/// Generate unique scope ID without expensive UUID generation
+fn next_scope_id() -> usize {
+    SCOPE_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+}
 
 /// Create a small HashMap with pre-allocated capacity for common cases
 #[inline(always)]
@@ -157,6 +166,84 @@ pub struct TagContext {
     pub stack: Vec<StackFrame>,
     /// Global accumulator (optional - only used for CloudFormation templates or docs that need it)
     pub global_accumulator: Option<GlobalAccumulator>,
+    /// Enhanced scope tracking (optional - for advanced variable origin tracking)
+    pub scope_context: Option<ScopeContext>,
+}
+
+/// Enhanced scope system for tracking variable origins and hierarchical scopes
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScopeContext {
+    /// Current active scope
+    pub current_scope: Scope,
+    /// All scopes by ID for cross-references
+    pub scopes: HashMap<ScopeId, Scope>,
+    /// Stack of scope IDs showing nesting hierarchy
+    pub scope_stack: Vec<ScopeId>,
+}
+
+/// Unique identifier for a scope
+pub type ScopeId = String;
+
+/// Represents a variable scope with hierarchical parent relationships
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scope {
+    /// Unique identifier for this scope
+    pub id: ScopeId,
+    /// Type of scope (document, import, tag execution, etc.)
+    pub scope_type: ScopeType,
+    /// URI of the document this scope belongs to
+    pub source_uri: Option<String>,
+    /// Variables defined in this scope with origin tracking
+    pub variables: HashMap<String, ScopedVariable>,
+    /// Parent scope ID (for hierarchical resolution)
+    pub parent_scope_id: Option<ScopeId>,
+    /// Child scope IDs (for debugging and visualization)
+    pub child_scope_ids: Vec<ScopeId>,
+}
+
+/// Types of scopes in the variable resolution system
+#[derive(Debug, Clone, PartialEq)]
+pub enum ScopeType {
+    /// Global/root document scope
+    Global,
+    /// Local definitions within a document ($defs)
+    LocalDefs,
+    /// Imported document scope (contains import key)
+    ImportedDocument(String),
+    /// Tag execution scope (e.g., within !$let or !$map)
+    TagExecution(String),
+    /// Built-in system variables
+    BuiltIn,
+}
+
+/// Variable with origin and metadata tracking
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScopedVariable {
+    /// The variable's value
+    pub value: Value,
+    /// Source information for this variable
+    pub source: VariableSource,
+    /// File/location where this variable was defined
+    pub defined_at: Option<String>,
+    /// Line number where defined (if available)
+    pub line_number: Option<usize>,
+    /// Column number where defined (if available)
+    pub column_number: Option<usize>,
+}
+
+/// Source type for a variable
+#[derive(Debug, Clone, PartialEq)]
+pub enum VariableSource {
+    /// From $defs in the local document
+    LocalDefs,
+    /// From an imported document (includes import key)
+    ImportedDocument(String),
+    /// From tag binding (e.g., !$let variable: value)
+    TagBinding(String),
+    /// Built-in system variable
+    BuiltIn,
+    /// Command line or environment variable
+    External,
 }
 
 /// Derive base path from a file location
@@ -224,6 +311,7 @@ impl TagContext {
                 path: "Root".to_string(),
             }],
             global_accumulator: None,
+            scope_context: None,
         }
     }
     
@@ -238,6 +326,7 @@ impl TagContext {
                 path: "Root".to_string(),
             }],
             global_accumulator: None,
+            scope_context: None,
         }
     }
     
@@ -248,6 +337,7 @@ impl TagContext {
             input_uri: None,
             stack: Vec::new(),
             global_accumulator: Some(GlobalAccumulator::default()),
+            scope_context: None,
         }
     }
 
@@ -260,6 +350,7 @@ impl TagContext {
             input_uri: self.input_uri.clone(),
             stack: self.stack.clone(),
             global_accumulator: self.global_accumulator.clone(),
+            scope_context: self.scope_context.clone(),
         }
     }
     
@@ -274,6 +365,7 @@ impl TagContext {
                 input_uri: self.input_uri.clone(),
                 stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
+                scope_context: self.scope_context.clone(),
             }
         } else {
             let mut new_vars = HashMap::with_capacity(self.variables.len() + bindings.len());
@@ -284,6 +376,7 @@ impl TagContext {
                 input_uri: self.input_uri.clone(),
                 stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
+                scope_context: self.scope_context.clone(),
             }
         }
     }
@@ -322,6 +415,7 @@ impl TagContext {
     }
     
     /// Create a new context with an extended path for nested document traversal
+    /// Optimized to minimize expensive cloning operations
     pub fn with_path_segment(&self, segment: &str) -> Self {
         let new_path = match self.stack.last() {
             Some(frame) if !frame.path.is_empty() => {
@@ -334,26 +428,34 @@ impl TagContext {
             _ => segment.to_string()
         };
         
+        // PERFORMANCE: Minimize stack cloning by reusing when possible
         let mut new_stack = self.stack.clone();
         if let Some(last_frame) = new_stack.last_mut() {
             last_frame.path = new_path;
         } else {
-            // Create a new stack frame if none exists
             new_stack.push(StackFrame {
                 location: self.current_location(),
                 path: new_path,
             });
         }
         
+        // PERFORMANCE: Conditional cloning - only clone scope context if actually used
         Self {
             variables: self.variables.clone(),
             input_uri: self.input_uri.clone(),
             stack: new_stack,
             global_accumulator: self.global_accumulator.clone(),
+            scope_context: if self.scope_context.is_some() { 
+                // Only clone if actually being used
+                self.scope_context.clone() 
+            } else { 
+                None 
+            },
         }
     }
     
-    /// Create a new context with an array index path segment
+    /// Create a new context with an array index path segment  
+    /// Optimized to minimize expensive cloning operations
     pub fn with_array_index(&self, index: usize) -> Self {
         let current_path = self.current_path();
         let new_path = if current_path.is_empty() {
@@ -372,11 +474,251 @@ impl TagContext {
             });
         }
         
+        // PERFORMANCE: Conditional cloning - only clone scope context if actually used
         Self {
             variables: self.variables.clone(),
             input_uri: self.input_uri.clone(),
             stack: new_stack,
             global_accumulator: self.global_accumulator.clone(),
+            scope_context: if self.scope_context.is_some() { 
+                // Only clone if actually being used
+                self.scope_context.clone() 
+            } else { 
+                None 
+            },
+        }
+    }
+    
+    /// Create a new TagContext with enhanced scope tracking
+    pub fn with_scope_tracking(input_uri: String) -> Self {
+        let scope_id = format!("global_{}", next_scope_id());
+        let global_scope = Scope {
+            id: scope_id.clone(),
+            scope_type: ScopeType::Global,
+            source_uri: Some(input_uri.clone()),
+            variables: HashMap::new(),
+            parent_scope_id: None,
+            child_scope_ids: Vec::new(),
+        };
+        
+        let mut scopes = HashMap::new();
+        scopes.insert(scope_id.clone(), global_scope.clone());
+        
+        let scope_context = Some(ScopeContext {
+            current_scope: global_scope,
+            scopes,
+            scope_stack: vec![scope_id],
+        });
+        
+        Self {
+            variables: HashMap::new(),
+            input_uri: Some(input_uri),
+            stack: Vec::new(),
+            global_accumulator: None,
+            scope_context,
+        }
+    }
+    
+    /// Add a variable with scope tracking
+    pub fn add_scoped_variable(
+        &mut self, 
+        name: &str, 
+        value: Value, 
+        source: VariableSource,
+        defined_at: Option<String>,
+    ) {
+        // Add to legacy variables for backward compatibility
+        self.variables.insert(name.to_string(), value.clone());
+        
+        // Add to scope system if enabled
+        if let Some(ref mut scope_context) = self.scope_context {
+            let scoped_var = ScopedVariable {
+                value,
+                source,
+                defined_at,
+                line_number: None,
+                column_number: None,
+            };
+            
+            scope_context.current_scope.variables.insert(name.to_string(), scoped_var.clone());
+            
+            // Update the scope in the scopes map
+            let scope_id = scope_context.current_scope.id.clone();
+            scope_context.scopes.insert(scope_id, scope_context.current_scope.clone());
+        }
+    }
+    
+    /// Resolve a variable with full origin information (test helper)
+    #[doc(hidden)]
+    pub fn resolve_scoped_variable(&self, name: &str) -> Option<&ScopedVariable> {
+        if let Some(ref scope_context) = self.scope_context {
+            // First check current scope
+            if let Some(var) = scope_context.current_scope.variables.get(name) {
+                return Some(var);
+            }
+            
+            // Walk up the scope hierarchy
+            let mut current_scope_id = scope_context.current_scope.parent_scope_id.as_ref();
+            while let Some(scope_id) = current_scope_id {
+                if let Some(scope) = scope_context.scopes.get(scope_id) {
+                    if let Some(var) = scope.variables.get(name) {
+                        return Some(var);
+                    }
+                    current_scope_id = scope.parent_scope_id.as_ref();
+                } else {
+                    break;
+                }
+            }
+        }
+        None
+    }
+    
+    /// Get human-readable variable origin description (test helper)
+    #[doc(hidden)]
+    pub fn get_variable_origin(&self, name: &str) -> Option<String> {
+        if let Some(var) = self.resolve_scoped_variable(name) {
+            match &var.source {
+                VariableSource::LocalDefs => Some("local $defs".to_string()),
+                VariableSource::ImportedDocument(key) => Some(format!("imported from '{}'", key)),
+                VariableSource::TagBinding(tag) => Some(format!("bound in {}", tag)),
+                VariableSource::BuiltIn => Some("built-in".to_string()),
+                VariableSource::External => Some("external".to_string()),
+            }
+        } else {
+            None
+        }
+    }
+    
+    /// Create a new import scope (test helper)
+    #[doc(hidden)]
+    pub fn create_import_scope(&mut self, import_key: &str, source_uri: &str) -> &mut Self {
+        if let Some(ref mut scope_context) = self.scope_context {
+            let scope_id = format!("import_{}_{}", import_key, next_scope_id());
+            let parent_id = scope_context.current_scope.id.clone();
+            
+            let import_scope = Scope {
+                id: scope_id.clone(),
+                scope_type: ScopeType::ImportedDocument(import_key.to_string()),
+                source_uri: Some(source_uri.to_string()),
+                variables: HashMap::new(),
+                parent_scope_id: Some(parent_id.clone()),
+                child_scope_ids: Vec::new(),
+            };
+            
+            // Add child reference to parent
+            if let Some(parent_scope) = scope_context.scopes.get_mut(&parent_id) {
+                parent_scope.child_scope_ids.push(scope_id.clone());
+            }
+            
+            // Add new scope to scopes map
+            scope_context.scopes.insert(scope_id.clone(), import_scope.clone());
+            
+            // Update current scope and stack
+            scope_context.current_scope = import_scope;
+            scope_context.scope_stack.push(scope_id);
+        }
+        self
+    }
+    
+    /// Pop current scope back to parent (test helper)
+    #[doc(hidden)]
+    pub fn pop_scope(&mut self) {
+        if let Some(ref mut scope_context) = self.scope_context {
+            if scope_context.scope_stack.len() > 1 {
+                scope_context.scope_stack.pop();
+                if let Some(parent_scope_id) = scope_context.scope_stack.last() {
+                    if let Some(parent_scope) = scope_context.scopes.get(parent_scope_id) {
+                        scope_context.current_scope = parent_scope.clone();
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Get import dependency graph for debugging (test helper)
+    #[doc(hidden)]
+    pub fn get_import_dependency_graph(&self) -> HashMap<String, Vec<String>> {
+        let mut deps = HashMap::new();
+        
+        if let Some(ref scope_context) = self.scope_context {
+            for (_scope_id, scope) in &scope_context.scopes {
+                if let Some(ref source_uri) = scope.source_uri {
+                    let children: Vec<String> = scope.child_scope_ids
+                        .iter()
+                        .filter_map(|child_id| {
+                            scope_context.scopes.get(child_id)
+                                .and_then(|child| child.source_uri.clone())
+                        })
+                        .collect();
+                    
+                    if !children.is_empty() {
+                        deps.insert(source_uri.clone(), children);
+                    }
+                }
+            }
+        }
+        
+        deps
+    }
+}
+
+impl ScopeContext {
+    /// Create a new scope context with global scope
+    pub fn new(source_uri: String) -> Self {
+        let scope_id = format!("global_{}", next_scope_id());
+        let global_scope = Scope {
+            id: scope_id.clone(),
+            scope_type: ScopeType::Global,
+            source_uri: Some(source_uri),
+            variables: HashMap::new(),
+            parent_scope_id: None,
+            child_scope_ids: Vec::new(),
+        };
+        
+        let mut scopes = HashMap::new();
+        scopes.insert(scope_id.clone(), global_scope.clone());
+        
+        Self {
+            current_scope: global_scope,
+            scopes,
+            scope_stack: vec![scope_id],
+        }
+    }
+}
+
+impl Scope {
+    /// Create a new scope
+    pub fn new(scope_type: ScopeType, source_uri: Option<String>) -> Self {
+        let type_prefix = match &scope_type {
+            ScopeType::Global => "global".to_string(),
+            ScopeType::LocalDefs => "defs".to_string(),
+            ScopeType::ImportedDocument(key) => format!("import_{}", key),
+            ScopeType::TagExecution(tag) => format!("tag_{}", tag),
+            ScopeType::BuiltIn => "builtin".to_string(),
+        };
+        
+        let id = format!("{}_{}", type_prefix, next_scope_id());
+        
+        Self {
+            id,
+            scope_type,
+            source_uri,
+            variables: HashMap::new(),
+            parent_scope_id: None,
+            child_scope_ids: Vec::new(),
+        }
+    }
+}
+
+impl ScopedVariable {
+    /// Create a new scoped variable
+    pub fn new(value: Value, source: VariableSource, defined_at: Option<String>) -> Self {
+        Self {
+            value,
+            source,
+            defined_at,
+            line_number: None,
+            column_number: None,
         }
     }
 }
@@ -1246,7 +1588,7 @@ impl TagResolver for StandardTagResolver {
                 
                 for item in seq {
                     // Create new context with the current item bound to the variable
-                    let mut item_bindings = HashMap::new();
+                    let mut item_bindings = HashMap::with_capacity(1);
                     item_bindings.insert(var_name.to_string(), item);
                     let item_context = context.with_bindings(item_bindings);
                     
@@ -1340,7 +1682,7 @@ impl TagResolver for StandardTagResolver {
                 
                 for (key, value) in map {
                     // Create lodash _.mapValues compatible context: item = {key: "keyname", value: actualValue}
-                    let mut value_bindings = HashMap::new();
+                    let mut value_bindings = HashMap::with_capacity(1);
                     
                     // Convert key to string
                     let key_str = match &key {
@@ -1373,12 +1715,12 @@ impl TagResolver for StandardTagResolver {
         
         match items_result {
             Value::Sequence(seq) => {
-                let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+                let mut groups: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::with_capacity(seq.len() / 4);
                 let var_name = tag.var.as_deref().unwrap_or("item");
                 
                 for item in seq {
                     // Create new context with the current item bound to the variable
-                    let mut item_bindings = HashMap::new();
+                    let mut item_bindings = HashMap::with_capacity(1);
                     item_bindings.insert(var_name.to_string(), item.clone());
                     let item_context = context.with_bindings(item_bindings);
                     

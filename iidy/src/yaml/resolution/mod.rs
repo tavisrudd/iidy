@@ -6,4 +6,7 @@
 pub mod resolver;
 
 // Re-export key types
-pub use resolver::{TagContext, StackFrame, TagResolver, StandardTagResolver, derive_base_path_from_location, GlobalAccumulator};
+pub use resolver::{
+    TagContext, StackFrame, TagResolver, StandardTagResolver, derive_base_path_from_location, GlobalAccumulator,
+    ScopeContext, Scope, ScopeType, ScopedVariable, VariableSource
+};
