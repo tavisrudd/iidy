@@ -17,6 +17,9 @@ pub fn create_handlebars_registry() -> Handlebars<'static> {
     // Set options to match iidy-js behavior
     handlebars.set_strict_mode(true);
     
+    // Disable HTML escaping to match iidy-js behavior - output raw content
+    handlebars.register_escape_fn(handlebars::no_escape);
+    
     // Register JSON helpers
     handlebars.register_helper("toJson", Box::new(to_json_helper));
     handlebars.register_helper("tojson", Box::new(to_json_helper)); // deprecated alias
@@ -37,6 +40,7 @@ pub fn create_handlebars_registry() -> Handlebars<'static> {
     handlebars.register_helper("toUpperCase", Box::new(to_upper_case_helper));
     handlebars.register_helper("titleize", Box::new(titleize_helper));
     handlebars.register_helper("camelCase", Box::new(camel_case_helper));
+    handlebars.register_helper("pascalCase", Box::new(pascal_case_helper));
     handlebars.register_helper("snakeCase", Box::new(snake_case_helper));
     handlebars.register_helper("kebabCase", Box::new(kebab_case_helper));
     handlebars.register_helper("capitalize", Box::new(capitalize_helper));

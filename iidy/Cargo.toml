@@ -71,6 +71,8 @@ base64 = "0.21"
 hex = "0.4"
 rand = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
+smallvec = "1.11"
+heck = "0.5"
 
 # Timing/NTP support
 ntp = "0.5"
