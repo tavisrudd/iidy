@@ -1,6 +1,6 @@
 ---
 source: tests/example_templates_snapshots.rs
-expression: output
+expression: formatted_output
 ---
 title: String and Array Concatenation Demo
 full_name: my-app-production
@@ -10,9 +10,9 @@ all_environments:
   - test
   - staging
   - production
-csv_items: "apple,banana,cherry"
+csv_items: apple,banana,cherry
 pipe_separated: first | second | third
-connection_string: "protocol://my-app.db.production.example.com"
+connection_string: protocol://my-app.db.production.example.com
 api_subdomain: api-my-app-production
 env_vars:
   - name: APP_NAME

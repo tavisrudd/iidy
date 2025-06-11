@@ -2030,6 +2030,7 @@ dependencies = [
  "crossterm 0.29.0",
  "env_logger",
  "handlebars",
+ "heck",
  "hex",
  "indicatif",
  "insta",
@@ -2046,6 +2047,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "smallvec",
  "tempfile",
  "terminal_size",
  "textwrap",
@@ -2056,6 +2058,7 @@ dependencies = [
  "tree-sitter-yaml",
  "url",
  "uuid",
+ "yaml-rust",
 ]
 
 [[package]]
@@ -2220,6 +2223,12 @@ dependencies = [
  "cfg-if",
  "windows-targets 0.52.6",
 ]
+
+[[package]]
+name = "linked-hash-map"
+version = "0.5.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 
 [[package]]
 name = "linux-raw-sys"
@@ -4377,6 +4386,15 @@ name = "xmlparser"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
+
+[[package]]
+name = "yaml-rust"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56c1936c4cc7a1c9ab21a1ebb602eb942ba868cbd44a99cb7cdc5892335e1c85"
+dependencies = [
+ "linked-hash-map",
+]
 
 [[package]]
 name = "yoke"

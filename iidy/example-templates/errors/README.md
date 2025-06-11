@@ -21,6 +21,11 @@ This directory contains focused examples of various error types to test and demo
 ### Unknown Tag Errors
 - `unknown-tag-typo.yaml` - Typo in iidy preprocessing tag (!$mapp instead of !$map)
 
+### CloudFormation Tag Validation Errors
+- `cloudformation-null-value.yaml` - CloudFormation tag with null value
+- `cloudformation-empty-arrays.yaml` - CloudFormation tags with empty arrays
+- `cloudformation-wrong-element-count.yaml` - CloudFormation tags with incorrect number of elements
+
 ## Testing Enhanced Errors
 
 Run with enhanced error reporting enabled:

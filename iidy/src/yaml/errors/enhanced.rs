@@ -84,6 +84,14 @@ pub enum EnhancedPreprocessingError {
         underlying_error: String,
         available_helpers: Vec<String>,
     },
+    
+    CloudFormationValidation {
+        error_id: ErrorId,
+        tag_name: String,
+        message: String,
+        location: SourceLocation,
+        help_text: String,
+    },
 }
 
 impl EnhancedPreprocessingError {
@@ -94,6 +102,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { error_id, .. } => *error_id,
             Self::ImportError { error_id, .. } => *error_id,
             Self::HandlebarsError { error_id, .. } => *error_id,
+            Self::CloudFormationValidation { error_id, .. } => *error_id,
         }
     }
     
@@ -104,6 +113,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { location, .. } => location,
             Self::ImportError { location, .. } => location,
             Self::HandlebarsError { location, .. } => location,
+            Self::CloudFormationValidation { location, .. } => location,
         }
     }
     
@@ -130,6 +140,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { .. } => "Missing field error",
             Self::ImportError { .. } => "Import error",
             Self::HandlebarsError { .. } => "Template error",
+            Self::CloudFormationValidation { .. } => "CloudFormation error",
         };
         
         let short_message = match self {
@@ -138,6 +149,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { missing_field, tag_name, .. } => format!("'{}' missing in {} tag", missing_field, tag_name),
             Self::ImportError { import_type, location_str, .. } => format!("{} import failed: {}", import_type, location_str),
             Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
+            Self::CloudFormationValidation { message, .. } => message.clone(),
         };
         
         output.push_str(&format!("{}{}{}: {} @ {}{}{} {}(errno: {}){}\n", 
@@ -153,6 +165,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { .. } => "required field missing",
             Self::ImportError { .. } => "import failed",
             Self::HandlebarsError { .. } => "template syntax error",
+            Self::CloudFormationValidation { .. } => "invalid CloudFormation intrinsic function",
         };
         
         output.push_str(&format!("{}  -> {}{}\n", light_blue, guidance, reset));
@@ -226,6 +239,18 @@ impl EnhancedPreprocessingError {
                     output.push_str(&format!("{}   {}{}\n", light_blue, type_help, reset));
                 }
             },
+            Self::CloudFormationValidation { help_text, .. } => {
+                // Show the specific guidance
+                output.push_str(&format!("{}   {}{}\n", light_blue, help_text, reset));
+                
+                // Show examples
+                let help_messages = self.help_messages();
+                for help in &help_messages[1..] { // Skip first message (help_text already shown)
+                    if help.starts_with("example:") {
+                        output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                    }
+                }
+            },
             _ => {
                 // For other error types, show first help message if available
                 let help_messages = self.help_messages();
@@ -248,6 +273,7 @@ impl EnhancedPreprocessingError {
             Self::MissingRequiredField { missing_field, .. } => format!("missing '{}'", missing_field),
             Self::ImportError { .. } => "import failed".to_string(),
             Self::HandlebarsError { .. } => "template error".to_string(),
+            Self::CloudFormationValidation { .. } => "invalid CloudFormation tag".to_string(),
         }
     }
     
@@ -255,6 +281,7 @@ impl EnhancedPreprocessingError {
         match self {
             Self::VariableNotFound { variable, .. } => variable.len() + 3, // "!$ " prefix
             Self::MissingRequiredField { tag_name, .. } => tag_name.len() + 2, // "!$" prefix
+            Self::CloudFormationValidation { .. } => 4, // Reasonable span for values like "null", "[]"
             _ => 8, // Default span length
         }
     }
@@ -293,6 +320,42 @@ impl EnhancedPreprocessingError {
             Self::HandlebarsError { available_helpers, .. } => {
                 if !available_helpers.is_empty() {
                     help.push(format!("available helpers: {}", available_helpers.join(", ")));
+                }
+            },
+            Self::CloudFormationValidation { help_text, tag_name, .. } => {
+                help.push(help_text.clone());
+                
+                // Add examples based on tag type
+                match tag_name.as_str() {
+                    "Ref" => {
+                        help.push("example: BucketName: !Ref MyBucket".to_string());
+                        help.push("example: Environment: !Ref EnvironmentParam".to_string());
+                    },
+                    "Sub" => {
+                        help.push("example: UserData: !Sub 'Hello ${AWS::StackName}'".to_string());
+                        help.push("example: Message: !Sub ['Hello ${name}', {name: MyValue}]".to_string());
+                    },
+                    "GetAtt" => {
+                        help.push("example: DnsName: !GetAtt LoadBalancer.DNSName".to_string());
+                        help.push("example: Value: !GetAtt [MyResource, Attribute]".to_string());
+                    },
+                    "Join" => {
+                        help.push("example: Name: !Join ['-', [!Ref 'AWS::StackName', 'suffix']]".to_string());
+                    },
+                    "Select" => {
+                        help.push("example: AZ: !Select [0, !GetAZs '']".to_string());
+                    },
+                    "Split" => {
+                        help.push("example: Parts: !Split [',', 'a,b,c']".to_string());
+                    },
+                    "FindInMap" => {
+                        help.push("example: AMI: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]".to_string());
+                    },
+                    "Base64" => {
+                        help.push("example: UserData: !Base64 'echo Hello'".to_string());
+                        help.push("example: Script: !Base64 !Sub 'echo ${Parameter}'".to_string());
+                    },
+                    _ => {}
                 }
             },
         }
@@ -357,6 +420,33 @@ impl EnhancedPreprocessingError {
             missing_field: missing_field.to_string(),
             location,
             required_fields,
+        }
+    }
+    
+    pub fn cloudformation_validation(
+        tag_name: &str,
+        message: &str,
+        location: SourceLocation,
+    ) -> Self {
+        // Generate tag-specific help text
+        let help_text = match tag_name {
+            "Ref" => "!Ref expects a string (resource or parameter name)",
+            "Sub" => "!Sub expects a string or [string, variables] array", 
+            "GetAtt" => "!GetAtt expects 'Resource.Attribute' or [Resource, Attribute]",
+            "Join" => "!Join expects [delimiter, array] with exactly 2 elements",
+            "Select" => "!Select expects [index, array] with exactly 2 elements",
+            "Split" => "!Split expects [delimiter, string] with exactly 2 elements", 
+            "FindInMap" => "!FindInMap expects [MapName, TopLevelKey, SecondLevelKey]",
+            "Base64" => "!Base64 expects a non-null string value",
+            _ => "check CloudFormation documentation for proper syntax",
+        };
+        
+        Self::CloudFormationValidation {
+            error_id: ErrorId::InvalidCloudFormationIntrinsic,
+            tag_name: tag_name.to_string(),
+            message: message.to_string(),
+            location,
+            help_text: help_text.to_string(),
         }
     }
 }

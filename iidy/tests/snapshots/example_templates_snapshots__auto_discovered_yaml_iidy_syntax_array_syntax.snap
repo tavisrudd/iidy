@@ -1,16 +1,20 @@
 ---
 source: tests/example_templates_snapshots.rs
-expression: output
+expression: formatted_output
 ---
 title: Array Syntax Compatibility Demo
 escape_tests:
-  direct_syntax: "{{test_data.message}}"
-  array_syntax: "{{test_data.message}}"
+  direct_syntax: '{{test_data.message}}'
+  array_syntax: '{{test_data.message}}'
 string_conversion:
-  yaml_direct: "key: value\nnumber: 42"
-  yaml_array: "key: value\nnumber: 42"
-  json_direct: "{\"key\":\"value\",\"number\":42}"
-  json_array: "{\"key\":\"value\",\"number\":42}"
+  yaml_direct: |-
+    key: value
+    number: 42
+  yaml_array: |-
+    key: value
+    number: 42
+  json_direct: '{"key":"value","number":42}'
+  json_array: '{"key":"value","number":42}'
 parsing_tests:
   parse_yaml_direct:
     key: parsed_value
@@ -31,25 +35,18 @@ boolean_logic:
     - service-api
     - service-web
 cloudformation_tags:
-  ref_direct:
-    "!Ref": MyBucket
-  ref_array:
-    "!Ref": MyBucket
-  sub_direct:
-    "!Sub": "arn:aws:s3:::${BucketName}/*"
-  sub_array:
-    "!Sub": "arn:aws:s3:::${BucketName}/*"
-  getatt_direct:
-    "!GetAtt": MyInstance.PublicDnsName
-  getatt_array:
-    "!GetAtt": MyInstance.PublicDnsName
+  ref_direct: !Ref MyBucket
+  ref_array: !Ref MyBucket
+  sub_direct: !Sub arn:aws:s3:::${BucketName}/*
+  sub_array: !Sub arn:aws:s3:::${BucketName}/*
+  getatt_direct: !GetAtt MyInstance.PublicDnsName
+  getatt_array: !GetAtt MyInstance.PublicDnsName
 nested_example:
   Resources:
     MyBucket:
-      Type: "AWS::S3::Bucket"
+      Type: AWS::S3::Bucket
       Properties:
-        BucketName:
-          "!Sub": "${AWS::StackName}-bucket"
+        BucketName: !Sub ${AWS::StackName}-bucket
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
         Tags:
@@ -68,13 +65,13 @@ edge_cases:
 transformation_example:
   - name: api-primary
     type: primary
-    config: "{\"database_host\":\"db.example.com\",\"database_port\":5432,\"features\":[\"feature1\",\"feature2\"]}"
+    config: '{"database_host":"db.example.com","database_port":5432,"features":["feature1","feature2"]}'
   - name: api-backup
     type: backup
-    escaped_template: "{{item}}-template"
+    escaped_template: '{{item}}-template'
   - name: web-primary
     type: primary
-    config: "{\"database_host\":\"db.example.com\",\"database_port\":5432,\"features\":[\"feature1\",\"feature2\"]}"
+    config: '{"database_host":"db.example.com","database_port":5432,"features":["feature1","feature2"]}'
   - name: web-backup
     type: backup
-    escaped_template: "{{item}}-template"
+    escaped_template: '{{item}}-template'

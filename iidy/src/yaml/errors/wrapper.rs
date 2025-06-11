@@ -1,5 +1,15 @@
 use crate::yaml::errors::{EnhancedPreprocessingError, SourceLocation};
 
+// TODO: ERROR SAFETY AUDIT - This module contains multiple panic potential scenarios that need fixing:
+// 1. Array index out of bounds: lines[line_num - 1] without bounds checking
+// 2. String slicing panics: line_content[pos + offset..] without length validation
+// 3. Character index access: line.chars().nth() with potentially invalid indices
+// 4. Arithmetic overflow: position calculations on very large files
+// 5. File path parsing: parts[1] access without bounds checking
+// 6. Display generation failures: error.display_with_context() could panic during error generation
+// All error constructors should use safe operations and graceful degradation to ensure
+// they never panic during error generation, as that would mask the original error.
+
 
 /// Custom error type that implements the marker trait
 #[derive(Debug)]
@@ -30,7 +40,7 @@ pub fn variable_not_found_error(
         let (actual_file_path, provided_line_number) = if file_path.contains(':') {
             let parts: Vec<&str> = file_path.split(':').collect();
             if parts.len() >= 2 {
-                if let Ok(line_num) = parts[1].parse::<usize>() {
+                if let Ok(line_num) = parts[1].parse::<usize>() {  // TODO: PANIC POTENTIAL - parts[1] access without bounds check
                     (parts[0], Some(line_num))
                 } else {
                     (file_path, None)
@@ -49,7 +59,7 @@ pub fn variable_not_found_error(
             // If we already have a line number from the caller, use it and find the column
             if let Some(line_num) = provided_line_number {
                 let column_num = if line_num > 0 && line_num <= lines.len() {
-                    let line_content = &lines[line_num - 1];
+                    let line_content = &lines[line_num - 1];  // TODO: PANIC POTENTIAL - line_num could be 0 causing underflow
                     if let Some(col) = line_content.find(&format!("{{{{{}}}}}", variable)) {
                         col + 2 // +2 to point after "{{"
                     } else if let Some(col) = line_content.find(&format!("!$ {}", variable)) {
@@ -86,7 +96,7 @@ pub fn variable_not_found_error(
         let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
         let error = EnhancedPreprocessingError::variable_not_found(variable, location, available_vars);
         
-        let enhanced_display = error.display_with_context(source_lines.as_deref());
+        let enhanced_display = error.display_with_context(source_lines.as_deref());  // TODO: PANIC POTENTIAL - display generation could panic during error creation
         anyhow::Error::new(EnhancedErrorWrapper { message: enhanced_display })
     }
 }
@@ -234,7 +244,7 @@ pub fn tag_parsing_error(
         let (actual_file_path, line_number) = if file_path.contains(':') {
             let parts: Vec<&str> = file_path.split(':').collect();
             if parts.len() >= 2 {
-                if let Ok(line_num) = parts[1].parse::<usize>() {
+                if let Ok(line_num) = parts[1].parse::<usize>() {  // TODO: PANIC POTENTIAL - parts[1] access without bounds check
                     (parts[0], Some(line_num))
                 } else {
                     (file_path, None)
@@ -265,13 +275,13 @@ pub fn tag_parsing_error(
                 
                 // Show line before for context (if available)
                 if line_num > 1 && line_num - 2 < lines.len() {
-                    let prev_line = lines[line_num - 2];
+                    let prev_line = lines[line_num - 2];  // TODO: PANIC POTENTIAL - line_num could be < 2 causing underflow
                     context.push_str(&format!("{}{:4}{} | {}{}{}\n", grey, line_num - 1, reset, blue_grey, prev_line, reset));
                 }
                 
                 // Show the problematic line - make line number red
                 if line_num > 0 && line_num - 1 < lines.len() {
-                    let error_line = lines[line_num - 1];
+                    let error_line = lines[line_num - 1];  // TODO: PANIC POTENTIAL - line_num could be 0 causing underflow
                     context.push_str(&format!("{}{:4}{} | {}\n", red, line_num, reset, error_line));
                     
                     // Try to find the error column by looking for the problematic text
@@ -290,7 +300,7 @@ pub fn tag_parsing_error(
                     } else if message.contains("not a valid iidy tag") {
                         // Generic unknown tag highlighting - find any !$ tag
                         if let Some(col) = error_line.find("!$") {
-                            let tag_end = error_line[col..].find(' ').unwrap_or(error_line.len() - col);
+                            let tag_end = error_line[col..].find(' ').unwrap_or(error_line.len() - col);  // TODO: PANIC POTENTIAL - if col > error_line.len()
                             let spaces = " ".repeat(col);
                             let carets = "^".repeat(tag_end.min(10));
                             context.push_str(&format!("     | {}{}{}{}\n", spaces, red, carets, reset));
@@ -327,6 +337,7 @@ pub fn tag_parsing_error(
             "!$if" => format!("\n{}   example:\n   !$if\n     test: !$eq [\"prod\", \"{{{{env}}}}\"]\n     then: \"production\"\n     else: \"development\"{}\n", light_blue, reset),
             "!$let" => format!("\n{}   example:\n   !$let\n     bindings:\n       x: 42\n     expression: \"{{{{x}}}}\"{}\n", light_blue, reset),
             "!$concatMap" => format!("\n{}   example:\n   !$concatMap\n     items: [1, 2, 3]\n     template: [\"{{{{item}}}}-a\", \"{{{{item}}}}-b\"]{}\n", light_blue, reset),
+            "!$mapListToHash" => format!("\n{}   example:\n   !$mapListToHash\n     items: [{{\"key\": \"a\", \"value\": 1}}, {{\"key\": \"b\", \"value\": 2}}]\n     keyPath: key\n     valuePath: value{}\n", light_blue, reset),
             // Only show examples for known iidy tags that commonly have errors
             _ if tag_name.starts_with("!$") => format!("\n{}   example:\n   {}\n     <proper syntax required>{}\n", light_blue, tag_name, reset),
             _ => String::new(),
@@ -337,5 +348,408 @@ pub fn tag_parsing_error(
         
         anyhow::Error::new(EnhancedErrorWrapper { message: final_display })
     }
+}
+
+/// Wrapper for variable not found errors with PathTracker support
+pub fn variable_not_found_error_with_path_tracker(
+    variable: &str,
+    file_path: &str,
+    path: &crate::yaml::resolution::resolver_split_args::PathTracker,
+    available_vars: Vec<String>,
+) -> anyhow::Error {
+    let yaml_path = path.current_path();
+    variable_not_found_error(variable, file_path, &yaml_path, available_vars)
+}
+
+/// Wrapper for type mismatch errors
+pub fn type_mismatch_error_with_path_tracker(
+    expected_type: &str,
+    found_type: &str,
+    context_description: &str,
+    file_path: &str,
+    path: &crate::yaml::resolution::resolver_split_args::PathTracker,
+) -> anyhow::Error {
+    let yaml_path = path.current_path();
+    type_mismatch_error_impl(expected_type, found_type, context_description, file_path, &yaml_path)
+}
+
+/// Internal implementation for type mismatch errors
+fn type_mismatch_error_impl(
+    expected_type: &str,
+    found_type: &str,
+    context_description: &str,
+    file_path: &str,
+    yaml_path: &str,
+) -> anyhow::Error {
+    // Parse line number from file_path if present (e.g., "file.yaml:6")
+    let (actual_file_path, provided_line_number) = if file_path.contains(':') {
+        let parts: Vec<&str> = file_path.split(':').collect();
+        if parts.len() >= 2 {
+            if let Ok(line_num) = parts[1].parse::<usize>() {  // TODO: PANIC POTENTIAL - parts[1] access without bounds check
+                (parts[0], Some(line_num))
+            } else {
+                (file_path, None)
+            }
+        } else {
+            (file_path, None)
+        }
+    } else {
+        (file_path, None)
+    };
+    
+    // Try to read the source file for context and find the line
+    let (source_lines, line_number, column_number) = if let Ok(content) = std::fs::read_to_string(actual_file_path) {
+        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        
+        // If we already have a line number from the caller, use it
+        if let Some(line_num) = provided_line_number {
+            // Try to find the column by looking for the tag that caused the error
+            let column_num = if line_num > 0 && line_num <= lines.len() {
+                let line_content = &lines[line_num - 1];  // TODO: PANIC POTENTIAL - line_num could be 0 causing underflow
+                
+                // Look for common iidy tag patterns based on context description
+                if context_description.contains("!$split delimiter field") {
+                    // Point to the first argument (delimiter) in !$split [delimiter, string]
+                    if let Some(bracket_pos) = line_content.find('[') {
+                        // Skip whitespace after bracket to point to actual argument
+                        let after_bracket = &line_content[bracket_pos + 1..];  // TODO: PANIC POTENTIAL - if bracket_pos + 1 > line_content.len()
+                        let whitespace_count = after_bracket.chars().take_while(|c| c.is_whitespace()).count();
+                        bracket_pos + 1 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                    } else {
+                        line_content.find("!$split").map(|col| col + 8).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$split string field") {
+                    // Point to the second argument (string) in !$split [delimiter, string]
+                    if let Some(comma_pos) = line_content.find(',') {
+                        // Find the start of the second argument after the comma
+                        let after_comma = &line_content[comma_pos + 1..];  // TODO: PANIC POTENTIAL - if comma_pos + 1 > line_content.len()
+                        let whitespace_count = after_comma.chars().take_while(|c| c.is_whitespace()).count();
+                        comma_pos + 1 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                    } else {
+                        line_content.find("!$split").map(|col| col + 8).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$join delimiter argument") {
+                    // Point to the first argument (delimiter) in !$join [delimiter, array]
+                    if let Some(bracket_pos) = line_content.find('[') {
+                        bracket_pos + 1 // Point to start of first argument
+                    } else {
+                        line_content.find("!$join").map(|col| col + 7).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$join sequence argument") {
+                    // Point to the second argument (array) in !$join [delimiter, array]
+                    if let Some(bracket_pos) = line_content.find('[') {
+                        // Find the comma that separates arguments (not inside quoted strings)
+                        let after_bracket = &line_content[bracket_pos + 1..];  // TODO: PANIC POTENTIAL - if bracket_pos + 1 > line_content.len()
+                        let mut in_quotes = false;
+                        let mut quote_char = '"';
+                        let mut separator_pos = None;
+                        
+                        for (i, ch) in after_bracket.char_indices() {
+                            match ch {
+                                '"' | '\'' if !in_quotes => {
+                                    in_quotes = true;
+                                    quote_char = ch;
+                                }
+                                c if in_quotes && c == quote_char => {
+                                    in_quotes = false;
+                                }
+                                ',' if !in_quotes => {
+                                    separator_pos = Some(bracket_pos + 1 + i);
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        
+                        if let Some(comma_pos) = separator_pos {
+                            // Find the start of the second argument after the separator comma
+                            let after_comma = &line_content[comma_pos + 1..];  // TODO: PANIC POTENTIAL - if comma_pos + 1 > line_content.len()
+                            let whitespace_count = after_comma.chars().take_while(|c| c.is_whitespace()).count();
+                            comma_pos + 1 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                        } else {
+                            line_content.find("!$join").map(|col| col + 7).unwrap_or(0)
+                        }
+                    } else {
+                        line_content.find("!$join").map(|col| col + 7).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$groupBy items field") {
+                    // Point to the items field value, not the tag
+                    if let Some(items_pos) = line_content.find("items:") {
+                        let after_items = &line_content[items_pos + 6..];  // TODO: PANIC POTENTIAL - if items_pos + 6 > line_content.len() // Skip "items:"
+                        let whitespace_count = after_items.chars().take_while(|c| c.is_whitespace()).count();
+                        items_pos + 6 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                    } else {
+                        line_content.find("!$groupBy").map(|col| col + 9).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$mapListToHash items field") {
+                    // Point to the items field value, not the tag
+                    if let Some(items_pos) = line_content.find("items:") {
+                        let after_items = &line_content[items_pos + 6..];  // TODO: PANIC POTENTIAL - if items_pos + 6 > line_content.len() // Skip "items:"
+                        let whitespace_count = after_items.chars().take_while(|c| c.is_whitespace()).count();
+                        items_pos + 6 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                    } else {
+                        line_content.find("!$mapListToHash").map(|col| col + 15).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$fromPairs source field") {
+                    // Point to the source field value, not the tag
+                    if let Some(source_pos) = line_content.find("source:") {
+                        let after_source = &line_content[source_pos + 7..];  // TODO: PANIC POTENTIAL - if source_pos + 7 > line_content.len() // Skip "source:"
+                        let whitespace_count = after_source.chars().take_while(|c| c.is_whitespace()).count();
+                        source_pos + 7 + whitespace_count + 1 // TODO: PANIC POTENTIAL - potential usize overflow on large files
+                    } else {
+                        line_content.find("!$fromPairs").map(|col| col + 12).unwrap_or(0)
+                    }
+                } else if context_description.contains("!$fromPairs source item") {
+                    // Point to the problematic item in the source array
+                    line_content.find("!$fromPairs").map(|col| col + 12).unwrap_or(0)
+                } else if context_description.contains("!$map items field") {
+                    line_content.find("!$map").map(|col| col + 6).unwrap_or(0) // +6 to point after "!$map "
+                } else if context_description.contains("!$merge") {
+                    line_content.find("!$merge").map(|col| col + 8).unwrap_or(0) // +8 to point after "!$merge "
+                } else {
+                    // Generic fallback - look for any !$ tag
+                    line_content.find("!$").map(|col| col + 2).unwrap_or(0)
+                }
+            } else {
+                0
+            };
+            (Some(lines), line_num, column_num)
+        } else {
+            // Search for the tag that likely caused the error, ignoring comments
+            let (line_num, column_num) = lines.iter().enumerate().find_map(|(idx, line)| {
+                let trimmed_line = line.trim_start();
+                
+                // Skip comment lines (lines that start with #)
+                if trimmed_line.starts_with('#') {
+                    return None;
+                }
+                
+                if context_description.contains("!$split") && line.contains("!$split") {
+                    let line_num = idx + 1;
+                    let column_num = if context_description.contains("delimiter field") {
+                        line.find('[').map(|bracket_pos| {
+                            let after_bracket = &line[bracket_pos + 1..];
+                            let whitespace_count = after_bracket.chars().take_while(|c| c.is_whitespace()).count();
+                            bracket_pos + 1 + whitespace_count + 1
+                        }).unwrap_or_else(|| line.find("!$split").map(|col| col + 8).unwrap_or(0))
+                    } else if context_description.contains("string field") {
+                        line.find(',').map(|comma_pos| {
+                            let after_comma = &line[comma_pos + 1..];
+                            let whitespace_count = after_comma.chars().take_while(|c| c.is_whitespace()).count();
+                            comma_pos + 1 + whitespace_count + 1
+                        }).unwrap_or_else(|| line.find("!$split").map(|col| col + 8).unwrap_or(0))
+                    } else {
+                        line.find("!$split").map(|col| col + 8).unwrap_or(0)
+                    };
+                    Some((line_num, column_num))
+                } else if context_description.contains("!$join") && line.contains("!$join") {
+                    let line_num = idx + 1;
+                    let column_num = if context_description.contains("delimiter argument") {
+                        line.find('[').map(|col| col + 1).unwrap_or_else(|| line.find("!$join").map(|col| col + 7).unwrap_or(0))
+                    } else if context_description.contains("sequence argument") {
+                        // Find the comma that separates arguments (not inside quoted strings)
+                        if let Some(bracket_pos) = line.find('[') {
+                            let after_bracket = &line[bracket_pos + 1..];
+                            let mut in_quotes = false;
+                            let mut quote_char = '"';
+                            let mut separator_pos = None;
+                            
+                            for (i, ch) in after_bracket.char_indices() {
+                                match ch {
+                                    '"' | '\'' if !in_quotes => {
+                                        in_quotes = true;
+                                        quote_char = ch;
+                                    }
+                                    c if in_quotes && c == quote_char => {
+                                        in_quotes = false;
+                                    }
+                                    ',' if !in_quotes => {
+                                        separator_pos = Some(bracket_pos + 1 + i);
+                                        break;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            
+                            if let Some(comma_pos) = separator_pos {
+                                let after_comma = &line[comma_pos + 1..];
+                                let whitespace_count = after_comma.chars().take_while(|c| c.is_whitespace()).count();
+                                comma_pos + 1 + whitespace_count + 1
+                            } else {
+                                line.find("!$join").map(|col| col + 7).unwrap_or(0)
+                            }
+                        } else {
+                            line.find("!$join").map(|col| col + 7).unwrap_or(0)
+                        }
+                    } else {
+                        line.find("!$join").map(|col| col + 7).unwrap_or(0)
+                    };
+                    Some((line_num, column_num))
+                } else if context_description.contains("!$groupBy") && line.contains("!$groupBy") {
+                    if context_description.contains("items field") {
+                        // Look for the items field on subsequent lines
+                        for (next_idx, next_line) in lines.iter().enumerate().skip(idx + 1) {
+                            if let Some(items_pos) = next_line.find("items:") {
+                                let after_items = &next_line[items_pos + 6..];
+                                let whitespace_count = after_items.chars().take_while(|c| c.is_whitespace()).count();
+                                return Some((next_idx + 1, items_pos + 6 + whitespace_count + 1));
+                            }
+                            // Stop looking if we hit another tag or the end of the current structure
+                            if next_line.trim_start().starts_with('!') || next_line.trim().is_empty() {
+                                break;
+                            }
+                        }
+                        // Fallback to tag location
+                        Some((idx + 1, line.find("!$groupBy").map(|col| col + 9).unwrap_or(0)))
+                    } else {
+                        Some((idx + 1, line.find("!$groupBy").map(|col| col + 9).unwrap_or(0)))
+                    }
+                } else if context_description.contains("!$mapListToHash") && line.contains("!$mapListToHash") {
+                    if context_description.contains("items field") {
+                        // Look for the items field on subsequent lines
+                        for (next_idx, next_line) in lines.iter().enumerate().skip(idx + 1) {
+                            if let Some(items_pos) = next_line.find("items:") {
+                                let after_items = &next_line[items_pos + 6..];
+                                let whitespace_count = after_items.chars().take_while(|c| c.is_whitespace()).count();
+                                return Some((next_idx + 1, items_pos + 6 + whitespace_count + 1));
+                            }
+                            // Stop looking if we hit another tag or the end of the current structure
+                            if next_line.trim_start().starts_with('!') || next_line.trim().is_empty() {
+                                break;
+                            }
+                        }
+                        // Fallback to tag location
+                        Some((idx + 1, line.find("!$mapListToHash").map(|col| col + 15).unwrap_or(0)))
+                    } else {
+                        Some((idx + 1, line.find("!$mapListToHash").map(|col| col + 15).unwrap_or(0)))
+                    }
+                } else if context_description.contains("!$fromPairs") && line.contains("!$fromPairs") {
+                    if context_description.contains("source field") {
+                        // Look for the source field on subsequent lines
+                        for (next_idx, next_line) in lines.iter().enumerate().skip(idx + 1) {
+                            if let Some(source_pos) = next_line.find("source:") {
+                                let after_source = &next_line[source_pos + 7..];
+                                let whitespace_count = after_source.chars().take_while(|c| c.is_whitespace()).count();
+                                return Some((next_idx + 1, source_pos + 7 + whitespace_count + 1));
+                            }
+                            // Stop looking if we hit another tag or the end of the current structure
+                            if next_line.trim_start().starts_with('!') || next_line.trim().is_empty() {
+                                break;
+                            }
+                        }
+                        // Fallback to tag location
+                        Some((idx + 1, line.find("!$fromPairs").map(|col| col + 12).unwrap_or(0)))
+                    } else {
+                        Some((idx + 1, line.find("!$fromPairs").map(|col| col + 12).unwrap_or(0)))
+                    }
+                } else if context_description.contains("!$map") && line.contains("!$map") {
+                    Some((idx + 1, line.find("!$map").map(|col| col + 6).unwrap_or(0)))
+                } else if context_description.contains("!$merge") && line.contains("!$merge") {
+                    Some((idx + 1, line.find("!$merge").map(|col| col + 8).unwrap_or(0)))
+                } else {
+                    None
+                }
+            }).unwrap_or((0, 0));
+            
+            (Some(lines), line_num, column_num)
+        }
+    } else {
+        (None, 0, 0)
+    };
+    
+    let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
+    let error = EnhancedPreprocessingError::type_mismatch(
+        expected_type,
+        found_type,
+        location,
+        context_description
+    );
+    
+    let enhanced_display = error.display_with_context(source_lines.as_deref());  // TODO: PANIC POTENTIAL - display generation could panic during error creation
+    anyhow::Error::new(EnhancedErrorWrapper { message: enhanced_display })
+}
+
+/// Enhanced CloudFormation validation error
+pub fn cloudformation_validation_error_with_path_tracker(
+    tag_name: &str,
+    message: &str,
+    file_path: &str,
+    path: &crate::yaml::resolution::resolver_split_args::PathTracker,
+) -> anyhow::Error {
+    let yaml_path = path.current_path();
+    cloudformation_validation_error_impl(tag_name, message, file_path, &yaml_path)
+}
+
+/// Internal implementation for CloudFormation validation errors
+fn cloudformation_validation_error_impl(
+    tag_name: &str,
+    message: &str,
+    file_path: &str,
+    yaml_path: &str,
+) -> anyhow::Error {
+    // Parse line number from file_path if present (e.g., "file.yaml:6")
+    let (actual_file_path, provided_line_number) = if file_path.contains(':') {
+        let parts: Vec<&str> = file_path.split(':').collect();
+        if parts.len() >= 2 {
+            if let Ok(line_num) = parts[1].parse::<usize>() {  // TODO: PANIC POTENTIAL - parts[1] access without bounds check
+                (parts[0], Some(line_num))
+            } else {
+                (file_path, None)
+            }
+        } else {
+            (file_path, None)
+        }
+    } else {
+        (file_path, None)
+    };
+    
+    // Try to read the source file for context and find the line
+    let (source_lines, line_number, column_number) = if let Ok(content) = std::fs::read_to_string(actual_file_path) {
+        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        
+        // Always search for the actual CloudFormation tag location, ignoring provided line number
+        // because it's often inaccurate for CloudFormation tags
+        let mut found_line = 0;
+        let mut found_col = 1;
+        
+        for (idx, line) in lines.iter().enumerate() {
+            // Look for CloudFormation tag, but exclude comments
+            let trimmed_line = line.trim_start();
+            if !trimmed_line.starts_with('#') {
+                if let Some(tag_col) = line.find(&format!("!{}", tag_name)) {
+                    // Make sure this is a real CloudFormation tag (followed by space or [)
+                    let tag_end = tag_col + tag_name.len() + 1; // +1 for "!"
+                    if tag_end < line.len() {
+                        let next_char = line.chars().nth(tag_end);  // TODO: PANIC POTENTIAL - chars().nth() with byte vs char index mismatch
+                        if matches!(next_char, Some(' ') | Some('[') | Some('\t')) {
+                            found_line = idx + 1;
+                            
+                            // Find the value after the tag
+                            let after_tag = &line[tag_end..];  // TODO: PANIC POTENTIAL - if tag_end > line.len()
+                            let value_start = after_tag.chars().take_while(|c| c.is_whitespace()).count();
+                            found_col = tag_end + value_start + 1; // +1 for 1-based indexing
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if found_line > 0 {
+            (Some(lines), found_line, found_col)
+        } else {
+            // Fallback to provided line number if tag not found
+            let fallback_line = provided_line_number.unwrap_or(1);
+            (Some(lines), fallback_line, 1)
+        }
+    } else {
+        (None, 1, 1)
+    };
+    
+    let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
+    let error = EnhancedPreprocessingError::cloudformation_validation(tag_name, message, location);
+    
+    let enhanced_display = error.display_with_context(source_lines.as_deref());  // TODO: PANIC POTENTIAL - display generation could panic during error creation
+    anyhow::Error::new(EnhancedErrorWrapper { message: enhanced_display })
 }
 

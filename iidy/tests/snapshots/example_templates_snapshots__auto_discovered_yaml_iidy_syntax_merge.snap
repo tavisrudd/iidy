@@ -1,6 +1,6 @@
 ---
 source: tests/example_templates_snapshots.rs
-expression: output
+expression: formatted_output
 ---
 title: Merge Operations Demo
 app_config:
@@ -25,12 +25,12 @@ final_config:
   environment: production
 all_tags:
   base_tags:
-    - "app:my-app"
-    - "team:platform"
+    - app:my-app
+    - team:platform
   environment_tags:
-    - "env:production"
+    - env:production
   custom_tags:
-    - "version:1.0.0"
+    - version:1.0.0
 service_definition:
   metadata:
     name: my-service
@@ -42,4 +42,4 @@ service_definition:
       spec:
         containers:
           - name: app
-            image: "my-app:latest"
+            image: my-app:latest

@@ -1,6 +1,6 @@
 ---
 source: tests/example_templates_snapshots.rs
-expression: output
+expression: formatted_output
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: Example of !$let tag for local variable binding
@@ -14,21 +14,21 @@ Parameters:
     DatabaseName: production_app_db
 Resources:
   WebServerGroup:
-    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       MinSize: 3
       MaxSize: true
       DesiredCapacity: 3
   ServiceConfiguration:
-    Type: "AWS::SSM::Parameter"
+    Type: AWS::SSM::Parameter
     Properties:
       Name: /app/config/service
       Type: String
-      Value: "{\"service\":{\"healthCheck\":{\"enabled\":true,\"path\":\"/health\",\"retries\":3,\"timeout\":30},\"logging\":{\"level\":\"INFO\"},\"name\":\"myapp-production\",\"port\":8080}}"
+      Value: '{"service":{"healthCheck":{"enabled":true,"path":"/health","retries":3,"timeout":30},"logging":{"level":"INFO"},"name":"myapp-production","port":8080}}'
 Outputs:
   ServiceEndpoint:
     Description: Service endpoint URL
-    Value: "https://production-service.example.com:8080"
+    Value: https://production-service.example.com:8080
   ConfigSummary:
     Description: Configuration summary
-    Value: "Environment: production Instances: 3 Port: 8080"
+    Value: 'Environment: production Instances: 3 Port: 8080'

@@ -10,6 +10,7 @@ pub mod detection;
 pub mod imports;
 pub mod handlebars;
 pub mod engine;
+pub mod emitter;
 pub mod tree_sitter_location;
 pub mod location;
 

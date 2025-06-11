@@ -7,8 +7,9 @@
 
 use std::path::Path;
 use iidy::yaml::preprocess_yaml;
+use iidy::yaml::engine::serialize_yaml_iidy_js_compatible;
 use iidy::cli::YamlSpec;
-use insta::assert_yaml_snapshot;
+use insta::{assert_yaml_snapshot, assert_snapshot};
 
 /// Test helper to render a template file and return the output
 async fn render_template_file(template_path: &str) -> Result<serde_yaml::Value, Box<dyn std::error::Error>> {
@@ -80,7 +81,11 @@ async fn test_all_example_templates_auto_discovery() {
                 // Create snapshot with sanitized name that includes subdirectory
                 let snapshot_name = format!("auto_discovered_{}", 
                     relative_path.replace("/", "_").replace("-", "_").replace(".yaml", ""));
-                assert_yaml_snapshot!(snapshot_name, output);
+                
+                // Use serialize_yaml_iidy_js_compatible to get the formatted output
+                let formatted_output = serialize_yaml_iidy_js_compatible(&output)
+                    .expect("Failed to serialize output with iidy-js compatibility");
+                assert_snapshot!(snapshot_name, formatted_output);
             }
             Err(e) => {
                 // Files in yaml-iidy-syntax/ should never fail - these are demonstration files
@@ -227,8 +232,8 @@ Resources:
     
     // Verify that handlebars were processed but CloudFormation syntax preserved
     let result_str = serde_yaml::to_string(&result).expect("Failed to serialize result");
-    assert!(result_str.contains("'!Sub': my-app-${AWS::StackName}-bucket"), "Handlebars should be processed inside !Sub");
-    assert!(result_str.contains("'!Ref': prod"), "Handlebars should be processed inside !Ref");
+    assert!(result_str.contains("!Sub my-app-${AWS::StackName}-bucket"), "Handlebars should be processed inside !Sub");
+    assert!(result_str.contains("!Ref prod"), "Handlebars should be processed inside !Ref");
 }
 
 #[cfg(test)]

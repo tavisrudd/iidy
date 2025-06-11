@@ -22,12 +22,15 @@
 use anyhow::Result;
 use serde_yaml::Value;
 use std::collections::HashSet;
+use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::{parsing::parser, parsing::ast::{YamlAst, PreprocessingTag}};
-use crate::yaml::resolution::{TagContext, StackFrame, TagResolver, StandardTagResolver};
+use crate::yaml::resolution::{TagContext, StackFrame};
 use crate::yaml::resolution::resolver::VariableSource;
+
+use super::resolution::resolve_ast_split_args;
 
 /// Metadata for tracking variable sources during import processing
 #[derive(Debug, Clone)]
@@ -97,8 +100,6 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     yaml_11_compatibility: bool,
     /// Map of preprocessing tag unique identifiers to their actual tags
     preprocessing_tag_map: std::collections::HashMap<String, PreprocessingTag>,
-    /// Static tag resolver for preprocessing tags (avoids trait object overhead)
-    tag_resolver: StandardTagResolver,
     /// Variable metadata for scope tracking
     variable_metadata: std::collections::HashMap<String, VariableMetadata>,
     /// Performance optimization: incremental counter instead of UUID generation
@@ -112,7 +113,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             import_loader,
             yaml_11_compatibility,
             preprocessing_tag_map: std::collections::HashMap::new(),
-            tag_resolver: StandardTagResolver,
             variable_metadata: std::collections::HashMap::new(),
             tag_counter: std::sync::atomic::AtomicUsize::new(1),
         }
@@ -204,6 +204,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     }
                     
                     // Convert AST to Value for storage (will be processed later in Phase 2)
+                    // TODO double check that we should really be doing this
                     let value_raw = self.ast_to_value_unprocessed(value.clone())?;
                     env_values.insert(key_str.clone(), value_raw);
                     
@@ -233,6 +234,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                          YamlAst::PlainString(location) | YamlAst::TemplatedString(location)) = (key, value) {
                     // Check for collisions
                     if env_values.contains_key(import_key) {
+                        // TODO use enhanced error reporting here
                         return Err(anyhow::anyhow!(
                             "\"{}\" in $imports collides with the same name in $defs",
                             import_key
@@ -285,8 +287,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             // Convert env_values from serde_yaml::Value to serde_json::Value for handlebars
             let mut json_env = std::collections::HashMap::with_capacity(env_values.len());
             for (key, yaml_value) in env_values {
-                // Use the method from our tag resolver
-                let json_value = self.tag_resolver.yaml_value_to_json_value(yaml_value)?;
+                // Use the yaml_to_json_value function from split_args module
+                let json_value = crate::yaml::resolution::resolver_split_args::yaml_to_json_value(yaml_value)?;
                 json_env.insert(key.clone(), json_value);
             }
             
@@ -515,34 +517,10 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     }
 
     /// Phase 2: Resolve AST with complete environment context
-    /// Optimized with fast paths for common cases to avoid unnecessary overhead
     pub fn resolve_ast_with_context(&mut self, ast: YamlAst, context: &TagContext) -> Result<Value> {
-        // Fast path for simple cases that don't need dynamic dispatch
-        match &ast {
-            // Fast path: Plain strings (no handlebars processing needed)
-            YamlAst::PlainString(s) => {
-                return Ok(Value::String(s.clone()));
-            }
-            // Fast path: Templated strings without handlebars syntax
-            YamlAst::TemplatedString(s) if !s.contains("{{") => {
-                return Ok(Value::String(s.clone()));
-            }
-            // Fast path: Simple values
-            YamlAst::Null => return Ok(Value::Null),
-            YamlAst::Bool(b) => return Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => return Ok(Value::Number(n.clone())),
-            // Fast path: Empty sequences and mappings
-            YamlAst::Sequence(seq) if seq.is_empty() => {
-                return Ok(Value::Sequence(Vec::new()));
-            }
-            YamlAst::Mapping(pairs) if pairs.is_empty() => {
-                return Ok(Value::Mapping(serde_yaml::Mapping::new()));
-            }
-            _ => {}
-        }
-        
-        // For complex cases, delegate to the static resolver (no trait object overhead)
-        self.tag_resolver.resolve_ast(&ast, context)
+        // let mut path_tracker = PathTracker::new();
+        // self.split_args_resolver.resolve_ast(&ast, context, &mut path_tracker)
+        resolve_ast_split_args(&ast, context)
     }
 }
 
@@ -554,6 +532,106 @@ where
         Self::new(L::default(), true) // Default to YAML 1.1 compatibility for CloudFormation
     }
 }
+
+/// Preprocess YAML with YAML 1.1 compatibility mode for CloudFormation templates
+pub async fn preprocess_yaml_v11(input: &str, base_location: &str) -> Result<Value> {
+    let loader = ProductionImportLoader::new();
+    let mut preprocessor = YamlPreprocessor::new(loader, true);
+    preprocessor.process(input, base_location).await
+}
+
+/// Preprocess YAML with specific YAML specification mode
+pub async fn preprocess_yaml(input: &str, base_location: &str, yaml_spec: &crate::cli::YamlSpec) -> Result<Value> {
+    use crate::yaml::detection::detect_yaml_spec;
+    
+    let loader = ProductionImportLoader::new();
+    
+    let yaml_11_compatibility = match yaml_spec {
+        crate::cli::YamlSpec::V11 => true,
+        crate::cli::YamlSpec::V12 => false,
+        crate::cli::YamlSpec::Auto => {
+            let detection = detect_yaml_spec(input);
+            detection.should_use_yaml_11_compatibility()
+        }
+    };
+    
+    let mut preprocessor = YamlPreprocessor::new(loader, yaml_11_compatibility);
+    preprocessor.process(input, base_location).await
+}
+
+
+/// Convert serde_yaml::Value to yaml_rust::Yaml for better formatting control
+fn convert_serde_value_to_yaml_rust(value: &Value) -> Yaml {
+    match value {
+        Value::Null => Yaml::Null,
+        Value::Bool(b) => Yaml::Boolean(*b),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Yaml::Integer(i)
+            } else if let Some(u) = n.as_u64() {
+                // Handle u64 values that might not fit in i64
+                if u <= i64::MAX as u64 {
+                    Yaml::Integer(u as i64)
+                } else {
+                    // Convert large unsigned integers to string representation
+                    Yaml::String(u.to_string())
+                }
+            } else if let Some(f) = n.as_f64() {
+                Yaml::Real(f.to_string())
+            } else {
+                // Fallback for any other number types
+                Yaml::String(n.to_string())
+            }
+        }
+        Value::String(s) => Yaml::String(s.clone()),
+        Value::Sequence(seq) => {
+            Yaml::Array(seq.iter().map(convert_serde_value_to_yaml_rust).collect())
+        }
+        Value::Mapping(map) => {
+            let mut h = Hash::new();
+            for (k, v) in map {
+                h.insert(convert_serde_value_to_yaml_rust(k), convert_serde_value_to_yaml_rust(v));
+            }
+            Yaml::Hash(h)
+        }
+        Value::Tagged(tagged) => {
+            // Handle tagged values by converting them to a mapping representation
+            // This preserves YAML tags like !Ref, !Sub, etc.
+            let mut h = Hash::new();
+            let tag_str = tagged.tag.to_string();
+            let tag_key = if tag_str.starts_with('!') {
+                Yaml::String(tag_str) // Already has !, don't add another
+            } else {
+                Yaml::String(format!("!{}", tag_str)) // Add ! prefix
+            };
+            let tag_value = convert_serde_value_to_yaml_rust(&tagged.value);
+            h.insert(tag_key, tag_value);
+            Yaml::Hash(h)
+        }
+    }
+}
+
+
+/// Serialize YAML in a way that's compatible with iidy-js output formatting
+/// 
+/// This function mimics the behavior of iidy-js's dump function which uses js-yaml
+/// with specific options and post-processing to ensure consistent output formatting.
+/// Uses yaml-rust for proper block-style indentation.
+pub fn serialize_yaml_iidy_js_compatible(value: &Value) -> Result<String> {
+    use crate::yaml::emitter::IidyYamlEmitter;
+    
+    // Convert serde_yaml::Value to yaml_rust::Yaml for better formatting control
+    let yaml_value = convert_serde_value_to_yaml_rust(value);
+    
+    // Use our custom emitter for better string handling
+    let mut yaml_output = String::new();
+    {
+        let mut emitter = IidyYamlEmitter::new(&mut yaml_output);
+        emitter.dump(&yaml_value).map_err(|e| anyhow::anyhow!("YAML emission failed: {}", e))?;
+    }
+    Ok(yaml_output)
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -633,30 +711,33 @@ database:
 
     // Note: Many more tests would follow here - I'm truncating for brevity
     // In the actual implementation, all the tests from mod.rs should be moved here
-}
-
-/// Preprocess YAML with YAML 1.1 compatibility mode for CloudFormation templates
-pub async fn preprocess_yaml_v11(input: &str, base_location: &str) -> Result<Value> {
-    let loader = ProductionImportLoader::new();
-    let mut preprocessor = YamlPreprocessor::new(loader, true);
-    preprocessor.process(input, base_location).await
-}
-
-/// Preprocess YAML with specific YAML specification mode
-pub async fn preprocess_yaml(input: &str, base_location: &str, yaml_spec: &crate::cli::YamlSpec) -> Result<Value> {
-    use crate::yaml::detection::detect_yaml_spec;
     
-    let loader = ProductionImportLoader::new();
-    
-    let yaml_11_compatibility = match yaml_spec {
-        crate::cli::YamlSpec::V11 => true,
-        crate::cli::YamlSpec::V12 => false,
-        crate::cli::YamlSpec::Auto => {
-            let detection = detect_yaml_spec(input);
-            detection.should_use_yaml_11_compatibility()
+    #[test]
+    fn test_yaml_quote_handling() {
+        use serde_yaml::Mapping;
+        
+        // Test strings with different quote types and formatting
+        let test_cases = vec![
+            ("simple", "simple string"),
+            ("with_double", "string with \"double quotes\""),
+            ("with_single", "string with 'single quotes'"),
+            ("with_both", "string with both \"double\" and 'single' quotes"),
+            ("multiline", "This is a\nmultiline string\nwith several lines"),
+            ("multiline_with_quotes", "Line 1 with \"quotes\"\nLine 2 with 'apostrophes'\nLine 3 normal"),
+            ("with_newlines_and_spaces", "  Leading spaces\n\tTab character\nTrailing spaces  \n"),
+            ("yaml_special", "key: value\n- item1\n- item2"),
+        ];
+        
+        for (key, test_str) in test_cases {
+            let mut map = Mapping::new();
+            map.insert(Value::String(key.to_string()), Value::String(test_str.to_string()));
+            let value = Value::Mapping(map);
+            
+            let output = serialize_yaml_iidy_js_compatible(&value).unwrap();
+            println!("Key: {}, Input: {:?}", key, test_str);
+            println!("Output:\n{}", output);
+            println!("---");
         }
-    };
-    
-    let mut preprocessor = YamlPreprocessor::new(loader, yaml_11_compatibility);
-    preprocessor.process(input, base_location).await
+    }
+
 }

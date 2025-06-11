@@ -101,26 +101,6 @@ fn simple_ast_to_value(ast: &YamlAst) -> Value {
     }
 }
 
-
-/// Enhanced error types for preprocessing with stack frame context
-#[derive(thiserror::Error, Debug)]
-pub enum PreprocessError {
-    #[error("Could not find '{key}' at {path}")]
-    VariableNotFound { key: String, path: String },
-    
-    #[error("Include path '{path}' not found\n  at {location}")]
-    IncludeNotFound { path: String, location: String },
-    
-    #[error("Invalid template parameter '{param}' in {context}\n  at {location}")]
-    ParameterValidation { param: String, context: String, location: String },
-    
-    #[error("Import error: {message}\n  importing {import_location}\n  from {base_location}")]
-    ImportError { message: String, import_location: String, base_location: String },
-    
-    #[error("Tag resolution error: {message}\n  at {path}\n  in {location}")]
-    TagResolutionError { message: String, path: String, location: String },
-}
-
 /// Helper trait for adding stack frame context to errors
 pub trait WithStackContext<T> {
     fn with_stack_context(self, context: &TagContext, operation: &str) -> Result<T>;
