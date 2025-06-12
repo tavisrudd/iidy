@@ -243,8 +243,8 @@ mod tests {
         reporter.show_completion(120);
     }
     
-    #[test]
-    fn show_operation_summary_with_derived_tokens() {
+    #[tokio::test]
+    async fn show_operation_summary_with_derived_tokens() {
         use crate::cfn::CfnContext;
         use aws_sdk_cloudformation::Client;
         
