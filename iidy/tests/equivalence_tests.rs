@@ -1,383 +1,235 @@
-//! Tests to verify equivalence between handlebars {{var}} and import !$ var syntax
+//! Tests to verify equivalence between handlebars {{var}} and include !$ var syntax
 //! 
 //! These tests ensure that `{{variable}}` and `!$ variable` produce identical results
 //! for all scalar values. This is a critical invariant of the iidy preprocessing system.
 
 use anyhow::Result;
-use iidy::yaml::{parsing::parse_yaml_with_custom_tags_from_file, handlebars::interpolate_handlebars_string};
-use iidy::yaml::parsing::ast::YamlAst;
-use serde_json::{json, Value as JsonValue};
+use iidy::yaml::preprocess_yaml_v11;
+use serde_yaml::Value;
 use std::collections::HashMap;
 
-/// Test data representing all scalar types that should work equivalently
-/// in both handlebars templates and import syntax
-#[derive(Debug, Clone)]
-struct ScalarTestCase {
-    name: &'static str,
-    value: JsonValue,
-    expected_string: &'static str,
-}
-
-impl ScalarTestCase {
-    fn test_cases() -> Vec<Self> {
-        vec![
-            // String values
-            ScalarTestCase {
-                name: "simple_string",
-                value: json!("hello"),
-                expected_string: "hello",
-            },
-            ScalarTestCase {
-                name: "empty_string", 
-                value: json!(""),
-                expected_string: "",
-            },
-            ScalarTestCase {
-                name: "string_with_spaces",
-                value: json!("hello world"),
-                expected_string: "hello world",
-            },
-            ScalarTestCase {
-                name: "string_with_special_chars",
-                value: json!("hello-world_test.example"),
-                expected_string: "hello-world_test.example",
-            },
-            
-            // Numeric values
-            ScalarTestCase {
-                name: "integer_zero",
-                value: json!(0),
-                expected_string: "0",
-            },
-            ScalarTestCase {
-                name: "positive_integer",
-                value: json!(42),
-                expected_string: "42",
-            },
-            ScalarTestCase {
-                name: "negative_integer",
-                value: json!(-123),
-                expected_string: "-123",
-            },
-            ScalarTestCase {
-                name: "float_value",
-                value: json!(3.14),
-                expected_string: "3.14",
-            },
-            ScalarTestCase {
-                name: "negative_float",
-                value: json!(-2.5),
-                expected_string: "-2.5",
-            },
-            
-            // Boolean values
-            ScalarTestCase {
-                name: "boolean_true",
-                value: json!(true),
-                expected_string: "true",
-            },
-            ScalarTestCase {
-                name: "boolean_false",
-                value: json!(false),
-                expected_string: "false",
-            },
-            
-            // Null value
-            ScalarTestCase {
-                name: "null_value",
-                value: json!(null),
-                expected_string: "", // handlebars typically renders null as empty string
-            },
-        ]
+fn format_yaml_value(var_value: &Value) -> String {
+    match var_value {
+        Value::String(s) if s.ends_with("\n") => format!("|\n    {}", s.replace("\n", "\n    ")),
+        Value::String(s) if s.contains("\n") => format!("|-\n    {}", s.replace("\n", "\n    ")),
+        Value::String(s) => format!("\"{}\"", s.replace("\"", "\\\"")),
+        _ => serde_yaml::to_string(var_value).unwrap().trim().to_string(),
     }
 }
 
-/// Test handlebars interpolation for a given variable
-fn test_handlebars_interpolation(var_name: &str, var_value: &JsonValue) -> Result<String> {
-    let template = format!("{{{{{}}}}}", var_name);
-    let mut variables = HashMap::new();
-    variables.insert(var_name.to_string(), var_value.clone());
+/// Test handlebars interpolation 
+async fn test_handlebars_interpolation(var_name: &str, var_value: &Value) -> Result<Value> {
+    // For handlebars, we always use string interpolation
+    let yaml_value_str = format_yaml_value(var_value);
     
-    interpolate_handlebars_string(&template, &variables, "equivalence_test")
+    let yaml_content = format!(
+        r#"
+$defs:
+  {}: {}
+result: '{{{{{}}}}}'
+"#, 
+        var_name, 
+        yaml_value_str,
+        var_name
+    );
+    
+    let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
+    
+    if let Value::Mapping(map) = processed {
+        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+            Ok(result_value.clone())
+        } else {
+            Err(anyhow::anyhow!("Expected 'result' key in processed YAML"))
+        }
+    } else {
+        Err(anyhow::anyhow!("Expected mapping from processed YAML"))
+    }
 }
 
-/// Test import tag syntax for a given variable (once AST resolution is implemented)
-fn test_import_syntax(var_name: &str, _var_value: &JsonValue) -> Result<String> {
-    // For now, we can only test that the AST parses correctly
-    // Once AST resolution is implemented, this should return the actual resolved value
-    let yaml_content = format!("result: !$ {}", var_name);
-    let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "equivalence-test.yaml")?;
+/// Test handlebars with parseYaml for non-string values
+async fn test_handlebars_with_parse_yaml(var_name: &str, var_value: &Value) -> Result<Value> {
+    let yaml_value_str = format_yaml_value(var_value);    
+    let yaml_content = format!(
+        r#"
+$defs:
+  {}: {}
+result: !$parseYaml '{{{{{}}}}}'
+"#, 
+        var_name, 
+        yaml_value_str,
+        var_name
+    );
     
-    // Currently we can only verify parsing succeeds
-    // The AST should be a mapping with a key "result" that has a preprocessing tag value
-    match ast {
-        YamlAst::Mapping(ref pairs) => {
-            if pairs.len() == 1 {
-                let (key, value) = &pairs[0];
-                if matches!(key, YamlAst::PlainString(s) | YamlAst::TemplatedString(s) if s == "result") {
-                    if value.is_preprocessing_tag() {
-                        // Parsing succeeded - return placeholder for now
-                        return Ok(format!("PLACEHOLDER_FOR_{}", var_name));
-                    }
-                }
+    let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
+    
+    if let Value::Mapping(map) = processed {
+        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+            Ok(result_value.clone())
+        } else {
+            Err(anyhow::anyhow!("Expected 'result' key in processed YAML"))
+        }
+    } else {
+        Err(anyhow::anyhow!("Expected mapping from processed YAML"))
+    }
+}
+
+/// Test include tag syntax using process_yaml
+async fn test_include_syntax(var_name: &str, var_value: &Value) -> Result<Value> {
+    // Create YAML with embedded variable definition and include usage
+    let yaml_value_str = format_yaml_value(var_value);    
+    let yaml_content = format!(
+        r#"
+$defs:
+  {}: {}
+result: !$ {}
+"#, 
+        var_name, 
+        yaml_value_str,
+        var_name
+    );
+    eprint!("{}", yaml_content);
+    let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
+    
+    // Extract the "result" field from the processed YAML
+    if let Value::Mapping(map) = processed {
+        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+            //Ok(result_value.clone())
+            Ok(result_value.clone())
+        } else {
+            Err(anyhow::anyhow!("Expected 'result' key in processed YAML"))
+        }
+    } else {
+        Err(anyhow::anyhow!("Expected mapping from processed YAML"))
+    }
+}
+
+async fn run_test_cases(cases: Vec<(&str, Value)>) -> Result<()> {
+    for (var_name, var_value) in cases {
+        let include_result = test_include_syntax(var_name, &var_value).await?;
+        
+        match &var_value {
+            Value::String(_) => {
+                let handlebars_result = test_handlebars_interpolation(var_name, &var_value).await?;
+                assert_eq!(handlebars_result, include_result,
+                           "String case '{}' handlebars_result != include_result", var_name);
             }
-            Err(anyhow::anyhow!("Mapping structure unexpected: {:?}", ast))
-        },
-        _ => Err(anyhow::anyhow!("Expected mapping, got: {:?}", ast))
+            _ => {
+                let handlebars_parsed = test_handlebars_with_parse_yaml(var_name, &var_value).await?;
+                assert_eq!(handlebars_parsed, include_result,
+                           "Non-string case '{}' handlebars_result != include_result", var_name);
+            }
+        }
+        assert_eq!(include_result, var_value, "'{}' include_result != original_value", var_name);
     }
     
-    // TODO: Once AST resolution is implemented, this should be:
-    // let mut preprocessor = YamlPreprocessor::new(, true);
-    // let context = TagContext::new().with_variable(var_name, var_value.clone());
-    // let result = preprocessor.resolve_ast_with_context(ast, &context)?;
-    // extract_string_from_resolved_result(result)
+    Ok(())
 }
 
 #[cfg(test)]
 mod scalar_equivalence_tests {
     use super::*;
-
-    /// Test that handlebars interpolation works correctly for all scalar types
-    #[test]
-    fn test_handlebars_scalar_interpolation() -> Result<()> {
-        for test_case in ScalarTestCase::test_cases() {
-            let result = test_handlebars_interpolation("test_var", &test_case.value)?;
-            
-            // For most cases, we expect the string representation
-            // Special handling for null which renders as empty string in handlebars
-            let expected = if test_case.value.is_null() {
-                ""
-            } else {
-                test_case.expected_string
-            };
-            
-            assert_eq!(
-                result, expected,
-                "Handlebars interpolation failed for test case '{}' with value {:?}",
-                test_case.name, test_case.value
-            );
-        }
-        Ok(())
-    }
-
-    /// Test that import syntax parses correctly for all variable names
-    /// NOTE: This only tests parsing until AST resolution is implemented
-    #[test]
-    fn test_import_syntax_parsing() -> Result<()> {
-        for test_case in ScalarTestCase::test_cases() {
-            let var_name = format!("test_{}", test_case.name);
-            
-            // Test that the import syntax parses without errors
-            let result = test_import_syntax(&var_name, &test_case.value);
-            
-            assert!(
-                result.is_ok(),
-                "Import syntax parsing failed for test case '{}': {:?}",
-                test_case.name, result.unwrap_err()
-            );
-        }
-        Ok(())
-    }
-
-    /// Test specific equivalence cases that should work identically
-    /// NOTE: This test will be fully functional once AST resolution is implemented
-    #[test]
-    #[ignore = "Requires AST resolution implementation"]
-    fn test_handlebars_vs_import_equivalence() -> Result<()> {
-        for test_case in ScalarTestCase::test_cases() {
-            let var_name = format!("test_{}", test_case.name);
-            
-            // Test handlebars interpolation
-            let handlebars_result = test_handlebars_interpolation(&var_name, &test_case.value)?;
-            
-            // Test import syntax (this will work once AST resolution is implemented)
-            let import_result = test_import_syntax(&var_name, &test_case.value)?;
-            
-            assert_eq!(
-                handlebars_result, import_result,
-                "Equivalence test failed for '{}': handlebars='{}' vs import='{}'",
-                test_case.name, handlebars_result, import_result
-            );
-        }
-        Ok(())
-    }
-
-    /// Test that complex scalar values work consistently
-    #[test]
-    fn test_complex_scalar_cases() -> Result<()> {
-        let complex_cases = vec![
-            ("url", json!("https://api.example.com/v1/users")),
-            ("version", json!("1.2.3-beta.4")),
-            ("large_number", json!(9223372036854775807i64)),
-            ("small_float", json!(0.000001)),
-            ("scientific_notation", json!(1.23e10)),
-            ("unicode_string", json!("Hello 世界 🌍")),
-            ("json_like_string", json!(r#"{"key": "value"}"#)),
+    #[tokio::test]
+    async fn test_complex_scalar_cases() -> Result<()> {
+        let cases = vec![
+            ("simple_string", Value::String("hello".to_string())),
+            ("empty_string", Value::String("".to_string())),
+            ("string_with_spaces", Value::String("hello world".to_string())),
+            ("string_with_special_chars", Value::String("hello-world_test.example".to_string())),
+            ("integer_zero", Value::Number(0.into())),
+            ("positive_integer", Value::Number(42.into())),
+            ("negative_integer", Value::Number((-123).into())),
+            ("float_value", Value::Number(serde_yaml::Number::from(3.14))),
+            ("negative_float", Value::Number(serde_yaml::Number::from(-2.5))),
+            ("boolean_true", Value::Bool(true)),
+            ("boolean_false", Value::Bool(false)),
+            ("null_value", Value::Null),            
+            ("url", Value::String("https://api.example.com/v1/users".to_string())),
+            ("version", Value::String("1.2.3-beta.4".to_string())),
+            ("large_number", Value::Number(9223372036854775807i64.into())),
+            ("small_float", Value::Number(serde_yaml::Number::from(0.000001))),
+            ("scientific_notation", Value::Number(serde_yaml::Number::from(1.23e10))),
+            ("unicode_string", Value::String("Hello 世界 🌍".to_string())),
+            ("json_like_string", Value::String(r#"{"key": "value"}"#.to_string())),
         ];
-
-        for (var_name, var_value) in complex_cases {
-            // Test handlebars interpolation
-            let handlebars_result = test_handlebars_interpolation(var_name, &var_value)?;
-            
-            // Verify we get a reasonable string representation
-            assert!(!handlebars_result.is_empty() || var_value.is_null());
-            
-            // Test import syntax parsing
-            let import_result = test_import_syntax(var_name, &var_value);
-            assert!(import_result.is_ok(), "Import parsing failed for {}: {:?}", var_name, import_result);
-        }
-        
-        Ok(())
+        run_test_cases(cases).await
     }
 
-    /// Test edge cases that might cause differences between the two approaches
-    #[test]
-    fn test_edge_cases() -> Result<()> {
+    #[tokio::test]
+    async fn test_edge_cases() -> Result<()> {
         let edge_cases = vec![
-            // Strings that look like other types
-            ("string_that_looks_like_number", json!("123")),
-            ("string_that_looks_like_bool", json!("true")),
-            ("string_that_looks_like_null", json!("null")),
+            // Strings that look like other types - these reveal bugs in string preservation
+            ("string_that_looks_like_number", Value::String("123".to_string())),
+            ("string_that_looks_like_null", Value::String("null".to_string())),
+            ("string_that_looks_like_bool", Value::String("true".to_string())),
             
-            // Values with special formatting
-            ("zero_padded_number", json!("007")), // Should stay as string
-            ("hex_like_string", json!("0xFF")),
+            // Values with special formatting that should remain strings
+            ("zero_padded_number", Value::String("007".to_string())),
+            ("hex_like_string", Value::String("0xFF".to_string())),
             
             // Empty/whitespace handling
-            ("whitespace_only", json!("   ")),
-            ("newline_string", json!("line1\nline2")),
-            ("tab_string", json!("col1\tcol2")),
+            ("whitespace_only", Value::String("   ".to_string())),
+            ("newline_string", Value::String("line1\nline2".to_string())),
+            ("tab_string", Value::String("col1\tcol2".to_string())),
         ];
-
-        for (var_name, var_value) in edge_cases {
-            // Test handlebars - should preserve string values exactly
-            let handlebars_result = test_handlebars_interpolation(var_name, &var_value)?;
-            
-            if var_value.is_string() {
-                // For string inputs, handlebars should preserve the exact value
-                assert_eq!(handlebars_result, var_value.as_str().unwrap());
-            }
-            
-            // Test import syntax parsing
-            let import_result = test_import_syntax(var_name, &var_value);
-            assert!(import_result.is_ok(), "Import parsing failed for {}: {:?}", var_name, import_result);
-        }
-        
-        Ok(())
-    }
-
-    /// Property-based test for equivalence across many random values
-    #[test]
-    fn test_equivalence_property_based() -> Result<()> {
-        // Test a set of predefined scalar values instead of using proptest directly
-        // to avoid the compilation issue with proptest error types
-        let test_values = vec![
-            json!("simple"),
-            json!("test with spaces"),
-            json!("special-chars_123"),
-            json!(42),
-            json!(3.14159),
-            json!(-123),
-            json!(0),
-            json!(true),
-            json!(false),
-            json!(null),
-            json!(""),
-            json!("  whitespace  "),
-            json!("unicode 🚀 test"),
-        ];
-        
-        // Test each value
-        for (i, test_value) in test_values.iter().enumerate() {
-            let var_name = format!("prop_test_var_{}", i);
-            
-            // Test handlebars interpolation doesn't panic
-            let handlebars_result = test_handlebars_interpolation(&var_name, test_value);
-            
-            // Should either succeed or fail gracefully
-            match handlebars_result {
-                Ok(result) => {
-                    // Successful interpolation should produce some result
-                    // (empty string is valid for null values)
-                    if !test_value.is_null() {
-                        assert!(!result.is_empty() || test_value.as_str().map_or(false, |s| s.is_empty()));
-                    }
-                },
-                Err(_) => {
-                    // Some values might legitimately fail (e.g., special characters, malformed input)
-                    // This is acceptable as long as it doesn't panic
-                }
-            }
-            
-            // Test import syntax parsing doesn't panic
-            let import_result = test_import_syntax(&var_name, test_value);
-            // Import parsing should generally succeed for well-formed variable names
-            assert!(import_result.is_ok(), "Import parsing should not fail for valid variable name");
-        }
-        
-        Ok(())
+        run_test_cases(edge_cases).await
     }
 }
 
-/// Tests for the future AST resolution system
+/// Tests for advanced resolution scenarios
 #[cfg(test)]
-mod future_resolution_tests {
+mod inside_string_join_tests {
     use super::*;
 
-    /// This test documents the expected behavior once AST resolution is implemented
-    #[test]
-    #[ignore = "Requires full AST resolution implementation"]
-    fn test_full_equivalence_workflow() -> Result<()> {
-        // This test shows what the complete equivalence test should look like
-        // once we have full AST resolution capability
-        
+    #[tokio::test]
+    async fn test_single_value() -> Result<()> {
         let test_variables = HashMap::from([
-            ("environment".to_string(), json!("production")),
-            ("app_name".to_string(), json!("my-app")),
-            ("port".to_string(), json!(3000)),
-            ("enabled".to_string(), json!(true)),
+            ("environment".to_string(), Value::String("production".to_string())),
+            ("app_name".to_string(), Value::String("my-app".to_string())),
+            ("port".to_string(), Value::Number(3000.into())),
+            ("enabled".to_string(), Value::Bool(true)),
         ]);
         
         for (var_name, var_value) in &test_variables {
-            // Test 1: Handlebars interpolation in a string context
-            let handlebars_template = format!("Value is: {{{{{}}}}}", var_name);
-            let _handlebars_result = interpolate_handlebars_string(&handlebars_template, &test_variables, "test")?;
+            let handlebars_yaml = format!(
+                r#"
+$defs:
+  {}: {}
+result: 'Value is: {{{{{}}}}}'
+"#, 
+                var_name, 
+                serde_yaml::to_string(var_value)?,
+                var_name
+            );
+            let handlebars_processed = preprocess_yaml_v11(&handlebars_yaml, "test.yaml").await?;
             
-            // Test 2: Import syntax in YAML context
-            let yaml_with_import = format!("result: !$ {}", var_name);
-            let _ast = parse_yaml_with_custom_tags_from_file(&yaml_with_import, "equivalence-full-test.yaml")?;
+            let include_yaml = format!(
+                r#"
+$defs:
+  {}: {}
+result: !$join ['', ['Value is: ', !$ {}]]
+"#, 
+                var_name, 
+                serde_yaml::to_string(var_value)?,
+                var_name
+            );
+            let include_processed = preprocess_yaml_v11(&include_yaml, "test.yaml").await?;
             
-            // TODO: Once AST resolution is implemented:
-            // let mut preprocessor = YamlPreprocessor::new(, true);
-            // let context = TagContext::new()
-            //     .with_variables(test_variables.clone());
-            // let resolved = preprocessor.resolve_ast_with_context(ast, &context)?;
-            // let import_value = extract_value_from_resolved_yaml(resolved, "result")?;
-            
-            // Test 3: Verify they produce equivalent results
-            // let expected_in_string = format!("Value is: {}", var_value);
-            // assert_eq!(handlebars_result, expected_in_string);
-            // assert_eq!(import_value.to_string(), var_value.to_string());
-            
-            println!("Future test case: {} = {}", var_name, var_value);
+                assert_eq!(
+                handlebars_processed, include_processed,
+                "Full workflow equivalence failed for variable '{}'", var_name
+            );
         }
         
         Ok(())
     }
 
-    /// Test equivalence in complex YAML structures
-    #[test]
-    #[ignore = "Requires full AST resolution implementation"] 
-    fn test_equivalence_in_yaml_structures() -> Result<()> {
-        // Test that both syntaxes work equivalently in realistic YAML contexts
+    #[tokio::test]
+    async fn test_multiple_values() -> Result<()> {
         
-        let _variables = HashMap::from([
-            ("environment".to_string(), json!("staging")),
-            ("app_name".to_string(), json!("web-service")),
-        ]);
-        
-        // YAML using handlebars syntax
-        let _yaml_handlebars = r#"
+        let yaml_handlebars = r#"
+$defs:
+  environment: "staging"
+  app_name: "web-service"
 stack_name: "{{app_name}}-{{environment}}"
 database:
   host: "{{app_name}}-db.{{environment}}.local"
@@ -387,33 +239,34 @@ tags:
   Application: "{{app_name}}"
 "#;
         
-        // YAML using import syntax
-        let _yaml_imports = r#"
-stack_name: !$join
-  array: [!$ app_name, !$ environment]
-  delimiter: "-"
+        let yaml_includes = r#"
+$defs:
+  environment: "staging"
+  app_name: "web-service"
+stack_name: !$join ["-", [!$ app_name, !$ environment]]
 database:
-  host: !$join
-    array: [!$ app_name, "-db.", !$ environment, ".local"]
-    delimiter: ""
-  name: !$join
-    array: [!$ app_name, !$ environment]
-    delimiter: "_"
+  host: !$join ["", [!$ app_name, "-db.", !$ environment, ".local"]]
+  name: !$join ["_", [!$ app_name, !$ environment]]
 tags:
   Environment: !$ environment
   Application: !$ app_name
 "#;
         
-        // TODO: Once AST resolution is implemented, verify both produce:
-        // stack_name: "web-service-staging"
-        // database:
-        //   host: "web-service-db.staging.local"
-        //   name: "web-service_staging"
-        // tags:
-        //   Environment: "staging"
-        //   Application: "web-service"
+        let handlebars_result = preprocess_yaml_v11(yaml_handlebars, "handlebars.yaml").await?;
+        let includes_result = preprocess_yaml_v11(yaml_includes, "includes.yaml").await?;
         
-        println!("Future equivalence test between handlebars and import syntax");
+        assert_eq!(
+            handlebars_result, includes_result,
+            "Complex YAML structure equivalence test failed"
+        );
+        
+        if let Value::Mapping(map) = &handlebars_result {
+            assert_eq!(
+                map.get(&Value::String("stack_name".to_string())),
+                Some(&Value::String("web-service-staging".to_string()))
+            );
+        }
+        
         Ok(())
     }
 }

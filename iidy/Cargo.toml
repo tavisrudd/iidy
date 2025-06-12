@@ -121,15 +121,3 @@ harness = false
 [[bench]]
 name = "parsing_optimization_benchmark"
 harness = false
-
-[[bench]]
-name = "tags_optimization_benchmark"
-harness = false
-
-[[bench]]
-name = "resolve_ast_optimization_benchmark"
-harness = false
-
-[[bench]]
-name = "resolver_head_to_head_benchmark"
-harness = false

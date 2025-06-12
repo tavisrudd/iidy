@@ -7,9 +7,6 @@ use std::time::{Duration, Instant};
 use tokio;
 use iidy::yaml::preprocess_yaml_v11;
 use iidy::yaml::handlebars::engine::interpolate_handlebars_string;
-use iidy::yaml::resolution::{StandardTagResolver, TagResolver, TagContext};
-use iidy::yaml::parsing::ast::IncludeTag;
-use serde_yaml::Value;
 use std::collections::HashMap;
 
 /// Simple benchmark runner
@@ -75,28 +72,6 @@ fn benchmark_handlebars() {
             "benchmark"
         ).unwrap();
     });
-}
-
-fn benchmark_tag_resolvers() {
-    println!("\n=== Tag Resolver Performance ===");
-    
-    let context = TagContext::new()
-        .with_variable("config", Value::String("test-value".to_string()));
-    
-    let include_tag = IncludeTag {
-        path: "config".to_string(),
-        query: None,
-    };
-    
-    // Standard resolver
-    SimpleBenchmark::new("Standard Resolver", 50000).run(|| {
-        let resolver = StandardTagResolver;
-        resolver.resolve_include(&include_tag, &context).unwrap();
-    });
-    
-    // Note: Debug and Tracing resolvers omitted from benchmarks 
-    // to avoid excessive console output. They add 7-16x overhead
-    // and are intended for development/debugging use only.
 }
 
 fn benchmark_preprocessing_pipeline() {
@@ -235,7 +210,6 @@ fn main() {
     println!("==========================================");
     
     benchmark_handlebars();
-    benchmark_tag_resolvers();
     benchmark_preprocessing_pipeline();
     benchmark_memory_scaling();
     

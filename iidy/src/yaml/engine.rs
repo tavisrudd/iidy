@@ -436,18 +436,15 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 if self.should_preserve_as_string(&s, path) {
                     Value::String(s)
                 } else {
+                    // variants of true/false are already handled by serde_yaml
                     match s.as_str() {
                         // YAML 1.1 true values
-                        "yes" | "Yes" | "YES" | "true" | "True" | "TRUE" | "on" | "On" | "ON" => {
+                        "yes" | "Yes" | "YES" | "on" | "On" | "ON" => {
                             Value::Bool(true)
                         }
                         // YAML 1.1 false values  
-                        "no" | "No" | "NO" | "false" | "False" | "FALSE" | "off" | "Off" | "OFF" => {
+                        "no" | "No" | "NO" | "off" | "Off" | "OFF" => {
                             Value::Bool(false)
-                        }
-                        // YAML 1.1 null values (~ is already handled by serde_yaml)
-                        "null" | "Null" | "NULL" => {
-                            Value::Null
                         }
                         // Keep all other strings as strings
                         _ => Value::String(s)
