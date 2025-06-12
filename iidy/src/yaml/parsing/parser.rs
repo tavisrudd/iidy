@@ -171,14 +171,14 @@ fn validate_exact_keys_static(
             .chain(optional_keys.iter().map(|s| format!("{} (optional)", s)))
             .collect();
         
-        let suggestion = if extra.len() == 1 {
+        let message = if extra.len() == 1 {
             format!("unexpected field '{}'. Valid fields are: {}", extra[0], all_keys.join(", "))
         } else {
             let extra_list = extra.join(", ");
             format!("unexpected fields: {}. Valid fields are: {}", extra_list, all_keys.join(", "))
         };
         
-        return Err(tag_parsing_error(tag_name, &suggestion, &location, None));
+        return Err(tag_parsing_error(tag_name, &message, &location, None));
     }
     
     Ok(())
