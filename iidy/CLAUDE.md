@@ -1,20 +1,27 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Development Commands
-- Use the standard cargo stuff. Do not use rustc directly.
+- Use the standard cargo stuff. 
+- Do not use `rustc` directly. Use cargo.
 - Use our local @tmp/ dir instead of the system level /tmp
-- Never `git checkout HEAD -- <file>` or `git restore` without making a backup of the uncommitted changes and asking for confirmation.
+- Never `git checkout HEAD -- <file>` or `git restore` without making
+  a backup of the uncommitted changes and asking for confirmation.
+
+## Coding Standards
+- use meaningful variable and fn names and omit useless comments. If a
+  fn's purpose is clear there is no need for comment above it unless
+  we are documenting it for the public api.
+- comment the non-obvious
 
 ## Testing
 - run `cargo check --lib --tests --bins --benches` for a fast sanity check
 - **All tests**: `cargo nextest r --color=never --hide-progress-bar`
 - **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
 - Run tests: `cargo test --test example_templates_snapshots`
-- Review snapshots: `cargo insta review` (requires `cargo install cargo-insta`)
-- Accept changes: `cargo insta accept`
-- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure
+- Accept snapshot changes, if valid: `cargo insta accept`, but only if the change is value and not a regression.
+- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure.
+- Do not reward hack by commenting out tests or fudging to make them
+  pass. Our goal is working software not tests that pretend to pass.
 
 ## Proof of Concepts (POCs)
 - **POCs binary**: `cargo run --bin iidy-pocs <demo-name>`
