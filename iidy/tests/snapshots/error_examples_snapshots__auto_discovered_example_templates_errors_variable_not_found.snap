@@ -1,6 +1,6 @@
 ---
 source: tests/error_examples_snapshots.rs
-expression: error_output
+expression: "format!(\"{}\", e)"
 ---
 Variable error: 'app_name' not found @ example-templates/errors/variable-not-found.yaml:6:15 (errno: IY2001)
   -> variable not defined in current scope

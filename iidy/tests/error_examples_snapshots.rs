@@ -2,75 +2,54 @@
 //! 
 //! This test suite captures the enhanced error outputs for various error 
 //! conditions using the error examples in example-templates/errors/
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use iidy::yaml::preprocess_yaml;
 use iidy::cli::YamlSpec;
 use insta::assert_snapshot;
 
-/// Test helper to render an error template file and capture the error output
-async fn capture_error_output(template_path: &str) -> String {
+#[tokio::test]
+async fn test_all_example_errors_auto_discovery() {
     // Force NO_COLOR to avoid ANSI codes in snapshots
     unsafe {
         std::env::set_var("NO_COLOR", "1");
     }
+    fn discover_templates(dir: &Path) -> Vec<(PathBuf, String)> {
+        let mut templates = Vec::new();
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let name = entry.file_name().to_string_lossy().to_string();
+                
+                if path.is_file() && 
+                   path.extension().map_or(false, |ext| ext == "yaml") &&
+                   !name.starts_with(".") {
+                    templates.push((path, name));
+                } else if path.is_dir() {
+                    // Recursively discover in subdirectories
+                    templates.extend(discover_templates(&path));
+                }
+            }
+        }
+        templates
+    }
     
-    let full_path = format!("example-templates/errors/{}", template_path);
-    let content = std::fs::read_to_string(&full_path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {}", full_path, e));
-    
-    match preprocess_yaml(&content, &full_path, &YamlSpec::Auto).await {
-        Ok(_) => panic!("Expected {} to fail but it succeeded", template_path),
-        Err(e) => {
-            // Convert error to string to capture the enhanced error display
-            format!("{}", e)
+    let example_dir = Path::new("example-templates/errors/");
+    let discovered_templates = discover_templates(example_dir);
+    for (path, _filename) in discovered_templates {
+        let content = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
+        let snapshot_name = format!(
+            "auto_discovered_{}", 
+            path.to_str().unwrap().replace("/", "_").replace("-", "_").replace(".yaml", ""));
+
+            match preprocess_yaml(&content, &path.to_str().unwrap(), &YamlSpec::Auto).await {
+                Ok(_) => panic!("Expected {} to fail but it succeeded", path.to_str().unwrap()),
+                Err(e) => {
+                    // Convert error to string to capture the enhanced error display
+                    assert_snapshot!(snapshot_name, format!("{}", e))
+            }
         }
     }
-}
-
-#[tokio::test]
-async fn test_yaml_syntax_malformed_mapping_error() {
-    let error_output = capture_error_output("yaml-syntax-malformed-mapping.yaml").await;
-    assert_snapshot!("yaml_syntax_malformed_mapping_error", error_output);
-}
-
-#[tokio::test]
-async fn test_yaml_syntax_unexpected_end_error() {
-    let error_output = capture_error_output("yaml-syntax-unexpected-end.yaml").await;
-    assert_snapshot!("yaml_syntax_unexpected_end_error", error_output);
-}
-
-#[tokio::test]
-async fn test_tag_map_uses_source_error() {
-    let error_output = capture_error_output("tag-map-uses-source.yaml").await;
-    assert_snapshot!("tag_map_uses_source_error", error_output);
-}
-
-#[tokio::test]
-async fn test_tag_map_uses_transform_error() {
-    let error_output = capture_error_output("tag-map-uses-transform.yaml").await;
-    assert_snapshot!("tag_map_uses_transform_error", error_output);
-}
-
-#[tokio::test]
-async fn test_tag_missing_required_field_error() {
-    let error_output = capture_error_output("tag-missing-required-field.yaml").await;
-    assert_snapshot!("tag_missing_required_field_error", error_output);
-}
-
-#[tokio::test]
-async fn test_unknown_tag_typo_error() {
-    let error_output = capture_error_output("unknown-tag-typo.yaml").await;
-    assert_snapshot!("unknown_tag_typo_error", error_output);
-}
-
-#[tokio::test]
-async fn test_variable_not_found_error() {
-    let error_output = capture_error_output("variable-not-found.yaml").await;
-    assert_snapshot!("variable_not_found_error", error_output);
-}
-
-#[tokio::test]
-async fn test_variable_include_not_found_error() {
-    let error_output = capture_error_output("variable-include-not-found.yaml").await;
-    assert_snapshot!("variable_include_not_found_error", error_output);
 }
