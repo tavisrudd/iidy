@@ -335,11 +335,18 @@ pub fn tag_parsing_error(
         let example_display = match tag_name {
             "!$map" => format!("\n{}   example:\n   !$map\n     items: [1, 2, 3]\n     template: \"{{{{item}}}}\"{}\n", light_blue, reset),
             "!$if" => format!("\n{}   example:\n   !$if\n     test: !$eq [\"prod\", \"{{{{env}}}}\"]\n     then: \"production\"\n     else: \"development\"{}\n", light_blue, reset),
-            "!$let" => format!("\n{}   example:\n   !$let\n     bindings:\n       x: 42\n     expression: \"{{{{x}}}}\"{}\n", light_blue, reset),
+            "!$let" => format!("\n{}   example:\n   !$let\n     var1: value1\n     var2: value2\n     in: \"{{{{var1}}}}-{{{{var2}}}}\"{}\n", light_blue, reset),
+            "!$merge" => format!("\n{}   example:\n   !$merge\n     - {{key1: value1}}\n     - {{key2: value2}}\n     - {{key3: value3}}{}\n", light_blue, reset),
+            "!$concat" => format!("\n{}   example:\n   !$concat\n     - [item1, item2]\n     - [item3, item4]\n     - [item5]{}\n", light_blue, reset),
+            "!$" | "!$include" => format!("\n{}   example:\n   !$ variable_name{}\n", light_blue, reset),
+            "!$eq" => format!("\n{}   example:\n   !$eq [\"{{{{env}}}}\", \"production\"]{}\n", light_blue, reset),
+            "!$split" => format!("\n{}   example:\n   !$split [\",\", \"a,b,c\"]{}\n", light_blue, reset),
+            "!$join" => format!("\n{}   example:\n   !$join [\",\", [\"a\", \"b\", \"c\"]]{}\n", light_blue, reset),
+            "!$groupBy" => format!("\n{}   example:\n   !$groupBy\n     items: [{{name: \"a\", type: \"x\"}}, {{name: \"b\", type: \"x\"}}]\n     key: type\n     var: group\n     template: \"{{{{group.key}}}}: {{{{#each group.items}}}}{{{{name}}}}{{{{/each}}}}\"{}\n", light_blue, reset),
             "!$concatMap" => format!("\n{}   example:\n   !$concatMap\n     items: [1, 2, 3]\n     template: [\"{{{{item}}}}-a\", \"{{{{item}}}}-b\"]{}\n", light_blue, reset),
             "!$mapListToHash" => format!("\n{}   example:\n   !$mapListToHash\n     items: [{{\"key\": \"a\", \"value\": 1}}, {{\"key\": \"b\", \"value\": 2}}]\n     keyPath: key\n     valuePath: value{}\n", light_blue, reset),
             // Only show examples for known iidy tags that commonly have errors
-            _ if tag_name.starts_with("!$") => format!("\n{}   example:\n   {}\n     <proper syntax required>{}\n", light_blue, tag_name, reset),
+            _ if tag_name.starts_with("!$") => format!("\n{}   example:\n   {}\n     <check documentation for proper syntax>{}\n", light_blue, tag_name, reset),
             _ => String::new(),
         };
         

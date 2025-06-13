@@ -1,6 +1,0 @@
----
-source: tests/error_examples_snapshots.rs
-assertion_line: 51
-expression: "format!(\"{}\", e)"
----
-Merge tag must be a sequence

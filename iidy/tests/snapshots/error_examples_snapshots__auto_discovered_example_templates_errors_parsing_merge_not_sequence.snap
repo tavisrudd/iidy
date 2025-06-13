@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a sequence of objects to merge @ example-templates/errors/parsing-merge-not-sequence.yaml:2:7 (errno: IY4002)
+  -> use format: [object1, object2, ...]
+
+   1 | # !$merge with string instead of sequence  
+   2 | test: !$merge "invalid"
+
+   example:
+   !$merge
+     - {key1: value1}
+     - {key2: value2}
+     - {key3: value3}
+   For more info, run: iidy explain IY4002

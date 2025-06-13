@@ -1,0 +1,13 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a sequence with format [delimiter, string] @ example-templates/errors/parsing-split-not-sequence.yaml:2:7 (errno: IY4002)
+  -> use format: [delimiter, string]
+
+   1 | # !$split with string instead of sequence
+   2 | test: !$split "invalid"
+
+   example:
+   !$split [",", "a,b,c"]
+   For more info, run: iidy explain IY4002

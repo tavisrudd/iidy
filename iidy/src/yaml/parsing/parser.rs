@@ -35,6 +35,7 @@ const GROUPBY_OPTIONAL: &[&str] = &[VAR_FIELD, TEMPLATE_FIELD];
 
 use crate::yaml::parsing::ast::*;
 use crate::yaml::location::{LocationFinder, Position, TreeSitterLocationFinder, ManualLocationFinder};
+use crate::yaml::errors::{tag_parsing_error, missing_required_field_error};
 
 /// Parsing context that tracks location and position for better error reporting
 #[derive(Debug, Clone)]
@@ -54,6 +55,15 @@ impl ParseContext {
             file_location: file_location.into().into(),
             source: source.into().into(),
             yaml_path: String::new(),
+        }
+    }
+    
+    /// Get location string for a specific tag, with line:column if available
+    pub fn location_for_tag(&self, tag_name: &str) -> String {
+        if let Some(position) = self.find_tag_position_in_context(tag_name) {
+            format!("{}:{}:{}", self.file_location, position.line, position.column)
+        } else {
+            self.location_string()
         }
     }
     
@@ -132,14 +142,8 @@ fn validate_exact_keys_static(
         .collect();
     
     if !missing.is_empty() {
-        use crate::yaml::errors::missing_required_field_error;
-        
         // Use ParseContext to find the position of the tag in its current context
-        let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
-            format!("{}:{}:{}", context.file_location, position.line, position.column)
-        } else {
-            context.location_string()
-        };
+        let location = context.location_for_tag(tag_name);
         
         return Err(missing_required_field_error(
             tag_name,
@@ -157,14 +161,8 @@ fn validate_exact_keys_static(
         .collect();
     
     if !extra.is_empty() {
-        use crate::yaml::errors::tag_parsing_error;
-        
         // Use ParseContext to find the position of the tag in its current context
-        let location = if let Some(position) = context.find_tag_position_in_context(tag_name) {
-            format!("{}:{}:{}", context.file_location, position.line, position.column)
-        } else {
-            context.location_string()
-        };
+        let location = context.location_for_tag(tag_name);
         
         let all_keys: Vec<String> = required_keys.iter()
             .map(|s| s.to_string())
@@ -255,7 +253,7 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
     let value = tagged.value;
 
     match tag.as_str() {
-        "!$" | "!$include" => parse_include_tag(value, context),
+        "!$" | "!$include" => parse_include_tag(value, context, &tag),
         "!$if" => parse_if_tag(value, context),
         "!$map" => parse_map_tag(value, context),
         "!$merge" => parse_merge_tag(value, context),
@@ -279,14 +277,8 @@ fn parse_tagged_value(tagged: serde_yaml::value::TaggedValue, context: &ParseCon
         _ => {
             // Check for unknown iidy preprocessing tags (likely typos) with context first
             if tag.starts_with("!$") {
-                use crate::yaml::errors::tag_parsing_error;
-                
                 // Use ParseContext to find the position of the tag in its current context
-                let location = if let Some(position) = context.find_tag_position_in_context(&tag) {
-                    format!("{}:{}:{}", context.file_location, position.line, position.column)
-                } else {
-                    context.location_string()
-                };
+                let location = context.location_for_tag(&tag);
                 
                 return Err(tag_parsing_error("unknown tag", &format!("'{}' is not a valid iidy tag", tag), &location, Some("check tag spelling or see documentation for valid tags")));
             }
@@ -344,7 +336,7 @@ fn check_for_preprocessing_keys(_map: &Mapping) -> Result<Option<PreprocessingTa
 }
 
 /// Parse !$ or !$include tag
-fn parse_include_tag(value: Value, _context: &ParseContext) -> Result<YamlAst> {
+fn parse_include_tag(value: Value, context: &ParseContext, tag_name: &str) -> Result<YamlAst> {
     match value {
         Value::String(path) => Ok(YamlAst::PreprocessingTag(PreprocessingTag::Include(
             IncludeTag {
@@ -359,7 +351,16 @@ fn parse_include_tag(value: Value, _context: &ParseContext) -> Result<YamlAst> {
                 IncludeTag { path, query },
             )))
         }
-        _ => Err(anyhow!("Invalid include tag format")),
+        _ => {
+            let location = context.location_for_tag(tag_name);
+            
+            Err(tag_parsing_error(
+                tag_name,
+                "invalid format - must be string variable name",
+                &location,
+                Some("use string variable name")
+            ))
+        }
     }
 }
 
@@ -387,7 +388,16 @@ fn parse_if_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
             else_value,
         })))
     } else {
-        Err(anyhow!("!$if requires a mapping with keys 'test', 'then', and optionally 'else'"))
+        {
+            let location = context.location_for_tag("!$if");
+            
+            Err(tag_parsing_error(
+                "!$if",
+                "must be a mapping with required 'test' and 'then' fields",
+                &location,
+                Some("use format: {test: condition, then: value, else: alternative}")
+            ))
+        }
     }
 }
 
@@ -423,7 +433,16 @@ fn parse_merge_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
                 MergeTag { sources },
             )))
         }
-        _ => Err(anyhow!("Merge tag must be a sequence")),
+        _ => {
+            let location = context.location_for_tag("!$merge");
+            
+            Err(tag_parsing_error(
+                "!$merge",
+                "must be a sequence of objects to merge",
+                &location,
+                Some("use format: [object1, object2, ...]")
+            ))
+        }
     }
 }
 
@@ -441,7 +460,16 @@ fn parse_concat_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
                 ConcatTag { sources },
             )))
         }
-        _ => Err(anyhow!("Concat tag must be a sequence")),
+        _ => {
+            let location = context.location_for_tag("!$concat");
+            
+            Err(tag_parsing_error(
+                "!$concat",
+                "must be a sequence of arrays to concatenate",
+                &location,
+                Some("use format: [array1, array2, ...]")
+            ))
+        }
     }
 }
 
@@ -451,7 +479,14 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
         // Check that we have the required "in" key (iidy-js flat format)
         let in_key = string_value(IN_FIELD);
         if !map.contains_key(&in_key) {
-            return Err(anyhow!("!$let tag must have an 'in' field"));
+            let location = context.location_for_tag("!$let");
+            
+            return Err(tag_parsing_error(
+                "!$let",
+                "missing required 'in' field",
+                &location,
+                Some("add 'in' field containing the expression to evaluate")
+            ));
         }
         
         let expression_val = map.get(&in_key).unwrap().clone(); // Safe due to check above
@@ -476,7 +511,16 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
             expression,
         })))
     } else {
-        Err(anyhow!("Let tag must be a mapping"))
+        {
+            let location = context.location_for_tag("!$let");
+            
+            Err(tag_parsing_error(
+                "!$let",
+                "must be a mapping with variable bindings and 'in' field",
+                &location,
+                Some("use format: {var1: value1, var2: value2, in: expression}")
+            ))
+        }
     }
 }
 
@@ -484,7 +528,14 @@ fn parse_let_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
 fn parse_eq_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
     if let Value::Sequence(mut seq) = value {
         if seq.len() != 2 {
-            return Err(anyhow!("Eq tag must have exactly 2 elements"));
+            let location = context.location_for_tag("!$eq");
+            
+            return Err(tag_parsing_error(
+                "!$eq",
+                "must have exactly 2 elements to compare",
+                &location,
+                Some("use format: [value1, value2]")
+            ));
         }
 
         // Extract without cloning
@@ -499,7 +550,16 @@ fn parse_eq_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
             right,
         })))
     } else {
-        Err(anyhow!("Eq tag must be a sequence of 2 elements"))
+        {
+            let location = context.location_for_tag("!$eq");
+            
+            Err(tag_parsing_error(
+                "!$eq",
+                "must be a sequence with exactly 2 elements",
+                &location,
+                Some("use format: [value1, value2]")
+            ))
+        }
     }
 }
 
@@ -552,7 +612,14 @@ fn parse_two_element_sequence(
 ) -> Result<(Box<YamlAst>, Box<YamlAst>)> {
     if let Value::Sequence(mut seq) = value {
         if seq.len() != 2 {
-            return Err(anyhow!("{} tag must be a sequence with two elements: {}", tag_name, description));
+            let location = context.location_for_tag(&format!("!${}", tag_name.to_lowercase()));
+            
+            return Err(tag_parsing_error(
+                &format!("!${}", tag_name.to_lowercase()),
+                &format!("must be a sequence with two elements: {}", description),
+                &location,
+                Some(&format!("use format: {}", description))
+            ));
         }
 
         // Extract elements without cloning by taking ownership
@@ -569,7 +636,16 @@ fn parse_two_element_sequence(
 
         Ok((first, second))
     } else {
-        Err(anyhow!("{} tag must be a sequence with format {}", tag_name, description))
+        {
+            let location = context.location_for_tag(&format!("!${}", tag_name.to_lowercase()));
+            
+            Err(tag_parsing_error(
+                &format!("!${}", tag_name.to_lowercase()),
+                &format!("must be a sequence with format {}", description),
+                &location,
+                Some(&format!("use format: {}", description))
+            ))
+        }
     }
 }
 
@@ -609,7 +685,16 @@ where
 
         Ok(YamlAst::PreprocessingTag(builder(items, template, var_name, filter)))
     } else {
-        Err(anyhow!("{} tag must be a mapping", tag_name))
+        {
+            let location = context.location_for_tag(tag_name);
+            
+            Err(tag_parsing_error(
+                tag_name,
+                "must be a mapping with required fields",
+                &location,
+                Some("check tag documentation for required field structure")
+            ))
+        }
     }
 }
 
@@ -655,7 +740,11 @@ fn extract_string_field(map: &Mapping, field: &str) -> Result<String> {
     map.get(&string_value(field))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| anyhow!("Missing or invalid '{}' field", field))
+        .ok_or_else(|| {
+            // Note: This is a generic helper function, so we use basic anyhow! 
+            // The calling code should handle context-specific error formatting
+            anyhow!("Missing or invalid '{}' field", field)
+        })
 }
 
 /// Helper to extract an optional string field from a mapping
@@ -762,7 +851,16 @@ fn parse_group_by_tag(value: Value, context: &ParseContext) -> Result<YamlAst> {
             template,
         })))
     } else {
-        Err(anyhow!("GroupBy tag must be a mapping"))
+        {
+            let location = context.location_for_tag("!$groupBy");
+            
+            Err(tag_parsing_error(
+                "!$groupBy",
+                "must be a mapping with 'items' and 'key' fields",
+                &location,
+                Some("use format: {items: array, key: grouping_key, var: item_name, template: result_template}")
+            ))
+        }
     }
 }
 

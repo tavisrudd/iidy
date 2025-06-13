@@ -1,0 +1,13 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a sequence with format [delimiter, array] @ example-templates/errors/parsing-join-not-sequence.yaml:2:7 (errno: IY4002)
+  -> use format: [delimiter, array]
+
+   1 | # !$join with string instead of sequence
+   2 | test: !$join "invalid"
+
+   example:
+   !$join [",", ["a", "b", "c"]]
+   For more info, run: iidy explain IY4002
