@@ -1,0 +1,17 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: missing required 'in' field @ example-templates/errors/parsing-let-missing-in-field.yaml:2:7 (errno: IY4002)
+  -> add 'in' field containing the expression to evaluate
+
+   1 | # !$let without required 'in' field
+   2 | test: !$let
+   3 |   var1: "value1"
+
+   example:
+   !$let
+     var1: value1
+     var2: value2
+     in: "{{var1}}-{{var2}}"
+   For more info, run: iidy explain IY4002

@@ -555,16 +555,9 @@ fn test_tagcontext_input_uri_propagation() {
     let with_var = context.with_variable("test", serde_yaml::Value::String("value".to_string()));
     assert_eq!(with_var.input_uri.as_ref().unwrap(), test_uri);
     
-    let with_path = with_var.with_path_segment("resources");
-    assert_eq!(with_path.input_uri.as_ref().unwrap(), test_uri);
-    
-    let with_index = with_path.with_array_index(0);
-    assert_eq!(with_index.input_uri.as_ref().unwrap(), test_uri);
-    
-    // All should maintain the same input_uri
-    assert_eq!(with_var.input_uri.as_ref().unwrap(), test_uri);
-    assert_eq!(with_path.input_uri.as_ref().unwrap(), test_uri);
-    assert_eq!(with_index.input_uri.as_ref().unwrap(), test_uri);
+    // Variable additions should maintain the same input_uri
+    let with_var2 = with_var.with_variable("test2", serde_yaml::Value::String("value2".to_string()));
+    assert_eq!(with_var2.input_uri.as_ref().unwrap(), test_uri);
 }
 
 /// Test demonstrating the need for explicit ImportedDocument AST nodes

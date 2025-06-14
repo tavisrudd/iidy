@@ -1,0 +1,15 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Type error: expected string, found object @ example-templates/errors/join-wrong-array-item-type.yaml:2:18 (errno: IY5001)
+  -> data type mismatch
+
+   1 | # !$join with array containing non-string-convertible items
+   2 | test_join: !$join [",", ["hello", {key: value}, "world"]]
+     |                  ^^^^^^^^ expected string
+
+   expected string, found object
+   try using !$toJsonString or !$toYamlString to serialize the object
+
+   For more info: iidy explain IY5001

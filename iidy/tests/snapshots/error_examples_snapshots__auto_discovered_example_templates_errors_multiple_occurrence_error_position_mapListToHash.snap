@@ -1,0 +1,17 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: 'items' missing in !$mapListToHash tag @ example-templates/errors/multiple-occurrence-error-position-mapListToHash.yaml:174:11 (errno: IY4002)
+  -> add 'items' field to !$mapListToHash tag
+
+ 173 |       Value: !$toJsonString
+ 174 |         - !$mapListToHash
+ 175 |             source: !$map
+
+   example:
+   !$mapListToHash
+     items: [{"key": "a", "value": 1}, {"key": "b", "value": 2}]
+     keyPath: key
+     valuePath: value
+   For more info, run: iidy explain IY4002

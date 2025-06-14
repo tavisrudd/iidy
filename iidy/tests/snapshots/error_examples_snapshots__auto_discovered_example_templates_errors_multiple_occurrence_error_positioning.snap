@@ -1,0 +1,17 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: 'test' missing in !$if tag @ example-templates/errors/multiple-occurrence-error-positioning.yaml:26:16 (errno: IY4002)
+  -> add 'test' field to !$if tag
+
+  25 |   Condition12: !$if { test: false, then: "valid12", else: "fail12" }
+  26 |   Condition13: !$if { then: "error_here", else: "missing_test_field" }  # ← ERROR: Missing 'test' field
+  27 |   Condition14: !$if { test: true, then: "valid14", else: "fail14" }
+
+   example:
+   !$if
+     test: !$eq ["prod", "{{env}}"]
+     then: "production"
+     else: "development"
+   For more info, run: iidy explain IY4002

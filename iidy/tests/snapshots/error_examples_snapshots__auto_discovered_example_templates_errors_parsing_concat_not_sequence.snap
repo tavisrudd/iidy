@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a sequence of arrays to concatenate @ example-templates/errors/parsing-concat-not-sequence.yaml:2:7 (errno: IY4002)
+  -> use format: [array1, array2, ...]
+
+   1 | # !$concat with string instead of sequence
+   2 | test: !$concat "invalid"
+
+   example:
+   !$concat
+     - [item1, item2]
+     - [item3, item4]
+     - [item5]
+   For more info, run: iidy explain IY4002

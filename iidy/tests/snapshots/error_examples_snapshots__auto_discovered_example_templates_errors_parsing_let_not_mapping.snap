@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a mapping with variable bindings and 'in' field @ example-templates/errors/parsing-let-not-mapping.yaml:2:7 (errno: IY4002)
+  -> use format: {var1: value1, var2: value2, in: expression}
+
+   1 | # !$let with string instead of mapping
+   2 | test: !$let "invalid"
+
+   example:
+   !$let
+     var1: value1
+     var2: value2
+     in: "{{var1}}-{{var2}}"
+   For more info, run: iidy explain IY4002

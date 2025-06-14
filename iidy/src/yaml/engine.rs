@@ -27,7 +27,7 @@ use yaml_rust::{Yaml, yaml::Hash};
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::{parsing::parser, parsing::ast::{YamlAst, PreprocessingTag}};
-use crate::yaml::resolution::{TagContext, StackFrame, VariableSource};
+use crate::yaml::resolution::{TagContext, VariableSource};
 
 use super::resolution::resolve_ast_split_args;
 
@@ -132,11 +132,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         self.load_imports_and_defs(&ast, base_location, &mut env_values, &mut import_records, &mut import_stack).await?;
         
         // Phase 2: Tag processing and final resolution with enhanced scope tracking
-        let mut context = TagContext::with_scope_tracking(base_location.to_string())
-            .with_stack_frame(StackFrame {
-                location: Some(base_location.to_string()),
-                path: "<root>".to_string(),
-            });
+        let mut context = TagContext::with_scope_tracking(base_location.to_string());
         
         // Add all environment variables to context with scope tracking
         for (key, value) in env_values {

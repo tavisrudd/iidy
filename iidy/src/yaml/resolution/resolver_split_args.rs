@@ -6,7 +6,7 @@
 //! ## Architecture
 //!
 //! ### Problem with Current Approach
-//! - `TagContext.with_path_segment()` clones entire context for path changes
+//! - PathTracker efficiently tracks document location during resolution
 //! - Most context fields (variables, input_uri, scope_context) are static during traversal
 //! - Only the path changes frequently as we navigate the AST
 //!
@@ -29,7 +29,6 @@ use smallvec::SmallVec;
 
 use crate::yaml::parsing::ast::*;
 use crate::yaml::resolution::context::TagContext;
-use crate::yaml::resolution::resolver::WithStackContext;
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
@@ -438,7 +437,7 @@ impl SplitArgsResolver {
                     let file_path = if let Some(input_uri) = &context.input_uri {
                         input_uri.clone()
                     } else {
-                        context.current_location().unwrap_or_else(|| "unknown location".to_string())
+                        context.input_uri.as_deref().unwrap_or("unknown location").to_string().to_string()
                     };
                     
                     let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
@@ -468,12 +467,12 @@ impl SplitArgsResolver {
                 let file_path = if let Some(input_uri) = &context.input_uri {
                     input_uri.clone()
                 } else {
-                    context.current_location().unwrap_or_else(|| "unknown location".to_string())
+                    context.input_uri.as_deref().unwrap_or("unknown location").to_string()
                 };
                 
                 Err(anyhow!("Failed to process handlebars template in {}: {}", file_path, s))
                     .with_context(|| format!("Handlebars processing failed: {}", e))
-                    .with_stack_context(context, &format!("processing template at path /{}", path_tracker.segments().join("/")))
+                    .with_context(|| format!("processing template at path /{}", path_tracker.segments().join("/")))
             }
         }
     }
@@ -594,7 +593,7 @@ impl TagResolver for SplitArgsResolver {
                         let location_info = if let Some(input_uri) = &context.input_uri {
                             format!("in file '{}'", input_uri)
                         } else {
-                            context.current_location()
+                            context.input_uri.as_deref()
                                 .map(|loc| format!("in '{}'", loc))
                                 .unwrap_or_else(|| "in unknown location".to_string())
                         };
@@ -790,8 +789,8 @@ impl TagResolver for SplitArgsResolver {
         let file_path = if let Some(input_uri) = &context.input_uri {
             input_uri.clone()
         } else {
-            context.current_location()
-                .unwrap_or_else(|| "unknown location".to_string())
+            context.input_uri.as_deref()
+                .unwrap_or("unknown location").to_string()
         };
         
         // Get available variables
@@ -1656,7 +1655,7 @@ impl TagResolver for SplitArgsResolver {
         let json_value = yaml_to_json_value(&data_result)?;
         let json_string = serde_json::to_string(&json_value)
             .map_err(|e| anyhow!("Failed to serialize to JSON: {}", e))
-            .with_stack_context(context, "resolving !$toJsonString tag")?;
+            .with_context(|| "resolving !$toJsonString tag")?;
         
         Ok(Value::String(json_string))
     }
@@ -1672,7 +1671,7 @@ impl TagResolver for SplitArgsResolver {
         
         let yaml_string = serde_yaml::to_string(&data_result)
             .map_err(|e| anyhow!("Failed to serialize to YAML: {}", e))
-            .with_stack_context(context, "resolving !$toYamlString tag")?;
+            .with_context(|| "resolving !$toYamlString tag")?;
         
         // Strip trailing newline to match expected format
         let trimmed_yaml = yaml_string.trim_end_matches('\n');
@@ -1693,7 +1692,7 @@ impl TagResolver for SplitArgsResolver {
             Value::String(json_str) => {
                 let json_value: serde_json::Value = serde_json::from_str(&json_str)
                     .map_err(|e| anyhow!("Failed to parse JSON: {}", e))
-                    .with_stack_context(context, "resolving !$parseJson tag")?;
+                    .with_context(|| "resolving !$parseJson tag")?;
                 
                 // Convert back to serde_yaml::Value
                 json_to_yaml_value(&json_value)
@@ -1707,7 +1706,7 @@ impl TagResolver for SplitArgsResolver {
                     Value::Mapping(_) => "mapping",
                     _ => "unknown type"
                 }))
-                .with_stack_context(context, "resolving !$parseJson tag"),
+                .with_context(|| "resolving !$parseJson tag"),
         }
     }
     
@@ -1724,7 +1723,7 @@ impl TagResolver for SplitArgsResolver {
             Value::String(yaml_str) => {
                 let yaml_value: Value = serde_yaml::from_str(&yaml_str)
                     .map_err(|e| anyhow!("Failed to parse YAML: {}", e))
-                    .with_stack_context(context, "resolving !$parseYaml tag")?;
+                    .with_context(|| "resolving !$parseYaml tag")?;
                 
                 Ok(yaml_value)
             }
@@ -1737,7 +1736,7 @@ impl TagResolver for SplitArgsResolver {
                     Value::Mapping(_) => "mapping",
                     _ => "unknown type"
                 }))
-                .with_stack_context(context, "resolving !$parseYaml tag"),
+                .with_context(|| "resolving !$parseYaml tag"),
         }
     }
     
@@ -1861,7 +1860,7 @@ impl TagResolver for SplitArgsResolver {
                 // !Sub: Can be a string or a 2-element array [string, variables]
                 match resolved_value {
                     Value::Null => Err(anyhow!("!Sub cannot have null value"))
-                        .with_stack_context(context, &format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
                     Value::String(_) => Ok(()), // Valid string for substitution
                     Value::Sequence(seq) if seq.len() == 2 => {
                         // First element should be string, second should be mapping
@@ -1876,7 +1875,7 @@ impl TagResolver for SplitArgsResolver {
                                     Value::Sequence(_) => "array",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
                             (_, _) => Err(anyhow!("!Sub array form expects [string, object], found [{}, {}]",
                                 match &seq[0] {
                                     Value::String(_) => "string",
@@ -1891,11 +1890,11 @@ impl TagResolver for SplitArgsResolver {
                                     Value::String(_) => "string",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
                         }
                     },
                     Value::Sequence(seq) => Err(anyhow!("!Sub with array expects exactly 2 elements [string, variables], found {} elements", seq.len()))
-                        .with_stack_context(context, &format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
                     _ => Err(anyhow!("!Sub expects a string or 2-element array, found {}", 
                         match resolved_value {
                             Value::Bool(_) => "boolean",
@@ -1903,7 +1902,7 @@ impl TagResolver for SplitArgsResolver {
                             Value::Mapping(_) => "object",
                             _ => "other type"
                         }))
-                        .with_stack_context(context, &format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Sub at path /{}", path_tracker.segments().join("/"))),
                 }
             },
             
@@ -1911,10 +1910,10 @@ impl TagResolver for SplitArgsResolver {
                 // !GetAtt: Must be string "Resource.Attribute" or 2-element array ["Resource", "Attribute"]
                 match resolved_value {
                     Value::Null => Err(anyhow!("!GetAtt cannot have null value"))
-                        .with_stack_context(context, &format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
                     Value::String(s) if s.contains('.') => Ok(()), // Valid dot notation
                     Value::String(_) => Err(anyhow!("!GetAtt string format requires dot notation: 'ResourceName.AttributeName'"))
-                        .with_stack_context(context, &format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
                     Value::Sequence(seq) if seq.len() == 2 => {
                         // Both elements should be strings
                         match (&seq[0], &seq[1]) {
@@ -1930,11 +1929,11 @@ impl TagResolver for SplitArgsResolver {
                                     Value::Null => "null",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
                         }
                     },
                     Value::Sequence(seq) => Err(anyhow!("!GetAtt expects exactly 2 elements [resource, attribute], found {} elements", seq.len()))
-                        .with_stack_context(context, &format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
                     _ => Err(anyhow!("!GetAtt expects a string or 2-element array, found {}", 
                         match resolved_value {
                             Value::Bool(_) => "boolean",
@@ -1942,7 +1941,7 @@ impl TagResolver for SplitArgsResolver {
                             Value::Mapping(_) => "object",
                             _ => "other type"
                         }))
-                        .with_stack_context(context, &format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !GetAtt at path /{}", path_tracker.segments().join("/"))),
                 }
             },
             
@@ -2031,7 +2030,7 @@ impl TagResolver for SplitArgsResolver {
                 // !Select: Must be 2-element array [index, list]
                 match resolved_value {
                     Value::Null => Err(anyhow!("!Select cannot have null value"))
-                        .with_stack_context(context, &format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
                     Value::Sequence(seq) if seq.len() == 2 => {
                         // First element should be number, second should be array
                         match (&seq[0], &seq[1]) {
@@ -2045,7 +2044,7 @@ impl TagResolver for SplitArgsResolver {
                                     Value::Mapping(_) => "object",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
                             (_, _) => Err(anyhow!("!Select expects [number, array], found [{}, {}]",
                                 match &seq[0] {
                                     Value::Number(_) => "number",
@@ -2056,11 +2055,11 @@ impl TagResolver for SplitArgsResolver {
                                     Value::Sequence(_) => "array",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
                         }
                     },
                     Value::Sequence(seq) => Err(anyhow!("!Select expects exactly 2 elements [index, array], found {} elements", seq.len()))
-                        .with_stack_context(context, &format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
                     _ => Err(anyhow!("!Select expects a 2-element array, found {}", 
                         match resolved_value {
                             Value::String(_) => "string",
@@ -2069,7 +2068,7 @@ impl TagResolver for SplitArgsResolver {
                             Value::Mapping(_) => "object",
                             _ => "other type"
                         }))
-                        .with_stack_context(context, &format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Select at path /{}", path_tracker.segments().join("/"))),
                 }
             },
             
@@ -2077,7 +2076,7 @@ impl TagResolver for SplitArgsResolver {
                 // !Split: Must be 2-element array [delimiter, string]
                 match resolved_value {
                     Value::Null => Err(anyhow!("!Split cannot have null value"))
-                        .with_stack_context(context, &format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
                     Value::Sequence(seq) if seq.len() == 2 => {
                         // Both elements should be strings
                         match (&seq[0], &seq[1]) {
@@ -2091,11 +2090,11 @@ impl TagResolver for SplitArgsResolver {
                                     Value::String(_) => "string",
                                     _ => "other"
                                 }))
-                                .with_stack_context(context, &format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
+                                .with_context(|| format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
                         }
                     },
                     Value::Sequence(seq) => Err(anyhow!("!Split expects exactly 2 elements [delimiter, string], found {} elements", seq.len()))
-                        .with_stack_context(context, &format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
                     _ => Err(anyhow!("!Split expects a 2-element array, found {}", 
                         match resolved_value {
                             Value::String(_) => "string",
@@ -2104,7 +2103,7 @@ impl TagResolver for SplitArgsResolver {
                             Value::Mapping(_) => "object",
                             _ => "other type"
                         }))
-                        .with_stack_context(context, &format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !Split at path /{}", path_tracker.segments().join("/"))),
                 }
             },
             
@@ -2112,10 +2111,10 @@ impl TagResolver for SplitArgsResolver {
                 // !FindInMap: Must be 3-element array [map_name, key1, key2]
                 match resolved_value {
                     Value::Null => Err(anyhow!("!FindInMap cannot have null value"))
-                        .with_stack_context(context, &format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
                     Value::Sequence(seq) if seq.len() == 3 => Ok(()), // Valid 3-element array
                     Value::Sequence(seq) => Err(anyhow!("!FindInMap expects exactly 3 elements [map_name, key1, key2], found {} elements", seq.len()))
-                        .with_stack_context(context, &format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
                     _ => Err(anyhow!("!FindInMap expects a 3-element array, found {}", 
                         match resolved_value {
                             Value::String(_) => "string",
@@ -2124,7 +2123,7 @@ impl TagResolver for SplitArgsResolver {
                             Value::Mapping(_) => "object",
                             _ => "other type"
                         }))
-                        .with_stack_context(context, &format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
+                        .with_context(|| format!("validating !FindInMap at path /{}", path_tracker.segments().join("/"))),
                 }
             },
             

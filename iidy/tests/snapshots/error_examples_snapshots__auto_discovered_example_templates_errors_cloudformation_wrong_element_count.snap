@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+CloudFormation error: !Join expects a 2-element array, found string @ example-templates/errors/cloudformation-wrong-element-count.yaml:17:25 (errno: IY7001)
+  -> invalid CloudFormation intrinsic function
+
+  16 |       # Invalid !Join - only has one element instead of [delimiter, array]
+  17 |       BucketName: !Join ["-"]
+     |                         ^^^^ invalid CloudFormation tag
+  18 |         
+
+   !Join expects [delimiter, array] with exactly 2 elements
+   example: Name: !Join ['-', [!Ref 'AWS::StackName', 'suffix']]
+
+   For more info: iidy explain IY7001

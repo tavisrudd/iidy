@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: 'template' missing in !$map tag @ example-templates/errors/tag-missing-required-field.yaml:5:9 (errno: IY4002)
+  -> add 'template' field to !$map tag
+
+   4 | 
+   5 | result: !$map
+   6 |   items: !$ data
+
+   example:
+   !$map
+     items: [1, 2, 3]
+     template: "{{item}}"
+   For more info, run: iidy explain IY4002

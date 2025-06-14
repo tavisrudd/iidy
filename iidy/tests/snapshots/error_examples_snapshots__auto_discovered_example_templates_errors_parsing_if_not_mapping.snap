@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a mapping with required 'test' and 'then' fields @ example-templates/errors/parsing-if-not-mapping.yaml:2:7 (errno: IY4002)
+  -> use format: {test: condition, then: value, else: alternative}
+
+   1 | # !$if with string instead of mapping
+   2 | test: !$if "invalid"
+
+   example:
+   !$if
+     test: !$eq ["prod", "{{env}}"]
+     then: "production"
+     else: "development"
+   For more info, run: iidy explain IY4002

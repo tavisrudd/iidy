@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+CloudFormation error: !Base64 cannot have null value @ example-templates/errors/cloudformation-null-value.yaml:11:25 (errno: IY7001)
+  -> invalid CloudFormation intrinsic function
+
+  10 |     Properties:
+  11 |       UserData: !Base64 null  # Invalid - cannot have null value
+     |                         ^^^^ invalid CloudFormation tag
+
+   !Base64 expects a non-null string value
+   example: UserData: !Base64 'echo Hello'
+   example: Script: !Base64 !Sub 'echo ${Parameter}'
+
+   For more info: iidy explain IY7001

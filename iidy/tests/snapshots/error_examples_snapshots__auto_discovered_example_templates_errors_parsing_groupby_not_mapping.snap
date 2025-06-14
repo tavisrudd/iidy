@@ -1,0 +1,17 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a mapping with 'items' and 'key' fields @ example-templates/errors/parsing-groupby-not-mapping.yaml:2:7 (errno: IY4002)
+  -> use format: {items: array, key: grouping_key, var: item_name, template: result_template}
+
+   1 | # !$groupBy with string instead of mapping
+   2 | test: !$groupBy "invalid"
+
+   example:
+   !$groupBy
+     items: [{name: "a", type: "x"}, {name: "b", type: "x"}]
+     key: type
+     var: group
+     template: "{{group.key}}: {{#each group.items}}{{name}}{{/each}}"
+   For more info, run: iidy explain IY4002

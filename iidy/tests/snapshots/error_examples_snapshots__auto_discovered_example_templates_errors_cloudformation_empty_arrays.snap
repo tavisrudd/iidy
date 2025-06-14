@@ -1,0 +1,17 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+CloudFormation error: !Ref expects a string (resource or parameter name), found array @ example-templates/errors/cloudformation-empty-arrays.yaml:11:24 (errno: IY7001)
+  -> invalid CloudFormation intrinsic function
+
+  10 |     Properties:
+  11 |       BucketName: !Ref []  # Invalid - empty array
+     |                        ^^^^ invalid CloudFormation tag
+  12 |       
+
+   !Ref expects a string (resource or parameter name)
+   example: BucketName: !Ref MyBucket
+   example: Environment: !Ref EnvironmentParam
+
+   For more info: iidy explain IY7001

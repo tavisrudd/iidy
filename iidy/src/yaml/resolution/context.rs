@@ -25,21 +25,10 @@ pub struct TagContext {
     pub variables: HashMap<String, Value>,
     /// URI of the input document being processed (for error reporting and relative imports)
     pub input_uri: Option<String>,
-    /// Stack frames for error reporting
-    pub stack: Vec<StackFrame>,
     /// Global accumulator (optional - only used for CloudFormation templates or docs that need it)
     pub global_accumulator: Option<GlobalAccumulator>,
     /// Enhanced scope tracking (optional - for advanced variable origin tracking)
     pub scope_context: Option<ScopeContext>,
-}
-
-/// Stack frame for error reporting and debugging (matches iidy-js StackFrame)
-#[derive(Debug, Clone)]
-pub struct StackFrame {
-    /// Location of the operation (file path or description) - optional like iidy-js
-    pub location: Option<String>,
-    /// Path within the document (e.g., "config.database.host")
-    pub path: String,
 }
 
 /// Global accumulator for document-wide state (optional, not all docs need this)
@@ -184,10 +173,6 @@ impl TagContext {
         Self {
             variables: HashMap::new(),
             input_uri: Some(location.to_string()),
-            stack: vec![StackFrame {
-                location: Some(location.to_string()),
-                path: "Root".to_string(),
-            }],
             global_accumulator: None,
             scope_context: None,
         }
@@ -199,10 +184,6 @@ impl TagContext {
         Self {
             variables,
             input_uri: Some(location.to_string()),
-            stack: vec![StackFrame {
-                location: Some(location.to_string()),
-                path: "Root".to_string(),
-            }],
             global_accumulator: None,
             scope_context: None,
         }
@@ -213,7 +194,6 @@ impl TagContext {
         Self {
             variables: HashMap::new(),
             input_uri: None,
-            stack: Vec::new(),
             global_accumulator: Some(GlobalAccumulator::default()),
             scope_context: None,
         }
@@ -226,7 +206,6 @@ impl TagContext {
         Self {
             variables: new_vars,
             input_uri: self.input_uri.clone(),
-            stack: self.stack.clone(),
             global_accumulator: self.global_accumulator.clone(),
             scope_context: self.scope_context.clone(),
         }
@@ -241,7 +220,6 @@ impl TagContext {
             Self {
                 variables: new_vars,
                 input_uri: self.input_uri.clone(),
-                stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
                 scope_context: self.scope_context.clone(),
             }
@@ -252,7 +230,6 @@ impl TagContext {
             Self {
                 variables: new_vars,
                 input_uri: self.input_uri.clone(),
-                stack: self.stack.clone(),
                 global_accumulator: self.global_accumulator.clone(),
                 scope_context: self.scope_context.clone(),
             }
@@ -276,96 +253,6 @@ impl TagContext {
         self
     }
     
-    /// Add a stack frame for error reporting
-    pub fn with_stack_frame(mut self, frame: StackFrame) -> Self {
-        self.stack.push(frame);
-        self
-    }
-    
-    /// Get current location from stack
-    pub fn current_location(&self) -> Option<String> {
-        self.stack.last().and_then(|f| f.location.clone())
-    }
-    
-    /// Get current path from stack
-    pub fn current_path(&self) -> String {
-        self.stack.last().map(|f| f.path.clone()).unwrap_or_default()
-    }
-    
-    /// Create a new context with an extended path for nested document traversal
-    /// Optimized to minimize expensive cloning operations
-    pub fn with_path_segment(&self, segment: &str) -> Self {
-        let new_path = match self.stack.last() {
-            Some(frame) if !frame.path.is_empty() => {
-                let mut path = String::with_capacity(frame.path.len() + 1 + segment.len());
-                path.push_str(&frame.path);
-                path.push('.');
-                path.push_str(segment);
-                path
-            }
-            _ => segment.to_string()
-        };
-        
-        // PERFORMANCE: Minimize stack cloning by reusing when possible
-        let mut new_stack = self.stack.clone();
-        if let Some(last_frame) = new_stack.last_mut() {
-            last_frame.path = new_path;
-        } else {
-            new_stack.push(StackFrame {
-                location: self.current_location(),
-                path: new_path,
-            });
-        }
-        
-        // PERFORMANCE: Conditional cloning - only clone scope context if actually used
-        Self {
-            variables: self.variables.clone(),
-            input_uri: self.input_uri.clone(),
-            stack: new_stack,
-            global_accumulator: self.global_accumulator.clone(),
-            scope_context: if self.scope_context.is_some() { 
-                // Only clone if actually being used
-                self.scope_context.clone() 
-            } else { 
-                None 
-            },
-        }
-    }
-    
-    /// Create a new context with an array index path segment  
-    /// Optimized to minimize expensive cloning operations
-    pub fn with_array_index(&self, index: usize) -> Self {
-        let current_path = self.current_path();
-        let new_path = if current_path.is_empty() {
-            format!("[{}]", index)
-        } else {
-            format!("{}[{}]", current_path, index)
-        };
-        
-        let mut new_stack = self.stack.clone();
-        if let Some(last_frame) = new_stack.last_mut() {
-            last_frame.path = new_path;
-        } else {
-            new_stack.push(StackFrame {
-                location: self.current_location(),
-                path: new_path,
-            });
-        }
-        
-        // PERFORMANCE: Conditional cloning - only clone scope context if actually used
-        Self {
-            variables: self.variables.clone(),
-            input_uri: self.input_uri.clone(),
-            stack: new_stack,
-            global_accumulator: self.global_accumulator.clone(),
-            scope_context: if self.scope_context.is_some() { 
-                // Only clone if actually being used
-                self.scope_context.clone() 
-            } else { 
-                None 
-            },
-        }
-    }
     
     /// Create a new TagContext with enhanced scope tracking
     pub fn with_scope_tracking(input_uri: String) -> Self {
@@ -391,7 +278,6 @@ impl TagContext {
         Self {
             variables: HashMap::new(),
             input_uri: Some(input_uri),
-            stack: Vec::new(),
             global_accumulator: None,
             scope_context,
         }
@@ -556,7 +442,37 @@ impl ScopedVariable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::yaml::resolution::resolver::derive_base_path_from_location;
+    /// Derive base path from location for testing
+    fn derive_base_path_from_location(location: &str) -> Option<std::path::PathBuf> {
+        use std::path::Path;
+        
+        if location.is_empty() {
+            return None;
+        }
+        
+        // Try to parse as URL first (S3, HTTP, HTTPS)
+        if let Ok(url) = url::Url::parse(location) {
+            let mut url_path = url.path();
+            
+            // Remove the filename to get the directory
+            if let Some(last_slash) = url_path.rfind('/') {
+                url_path = &url_path[..last_slash + 1];
+            } else {
+                // No path component, just the root
+                url_path = "/";
+            }
+            
+            // Reconstruct the URL with just the directory path
+            let mut base_url = url.clone();
+            base_url.set_path(url_path);
+            
+            return Some(Path::new(base_url.as_str()).to_path_buf());
+        }
+        
+        // Handle local file paths
+        let path = Path::new(location);
+        path.parent().map(|p| p.to_path_buf())
+    }
 
     #[test]
     fn test_tagcontext_input_uri_storage_local_file_paths() {
@@ -786,22 +702,8 @@ mod tests {
         
         assert_eq!(context.get_variable("test_var"), Some(&Value::String("test_value".to_string())));
         assert_eq!(context.get_variable("config"), Some(&Value::String("production".to_string())));
-        assert_eq!(context.current_location(), Some("test.yaml".to_string()));
     }
     
-    #[test] 
-    fn test_tagcontext_stack_operations() {
-        // Test that stack frames work correctly
-        let context = TagContext::from_file_location("test.yaml")
-            .with_stack_frame(StackFrame {
-                location: Some("imported.yaml".to_string()), 
-                path: "Root.config.database".to_string(),
-            });
-        
-        assert_eq!(context.stack.len(), 2);
-        assert_eq!(context.current_location(), Some("imported.yaml".to_string()));
-        assert_eq!(context.current_path(), "Root.config.database");
-    }
     
     #[test]
     fn test_derive_base_path_from_location_comprehensive_edge_cases() {

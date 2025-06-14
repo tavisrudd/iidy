@@ -1,0 +1,15 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Type error: expected 2-element sequence or object, found string @ example-templates/errors/maplisttohash-wrong-template-result.yaml:2:35 (errno: IY5001)
+  -> data type mismatch
+
+   1 | # !$mapListToHash with template that produces wrong result type
+   2 | test_maplisttohash: !$mapListToHash
+     |                                   ^ expected 2-element sequence or object
+   3 |   items: [1, 2, 3]
+
+   expected 2-element sequence or object, found string
+
+   For more info: iidy explain IY5001

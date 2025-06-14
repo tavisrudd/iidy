@@ -1,0 +1,11 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Syntax error: unexpected end of file @ example-templates/errors/yaml-syntax-unexpected-end.yaml:7:15 (errno: IY1001)
+  -> missing closing quote or bracket
+
+   6 |       BucketName: "test-bucket
+   7 |       Tags: []
+
+   For more info, run: iidy explain IY1001
