@@ -27,8 +27,7 @@ use yaml_rust::{Yaml, yaml::Hash};
 use crate::yaml::imports::{ImportLoader, ImportRecord, EnvValues};
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::{parsing::parser, parsing::ast::{YamlAst, PreprocessingTag}};
-use crate::yaml::resolution::{TagContext, StackFrame};
-use crate::yaml::resolution::resolver::VariableSource;
+use crate::yaml::resolution::{TagContext, StackFrame, VariableSource};
 
 use super::resolution::resolve_ast_split_args;
 

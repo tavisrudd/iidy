@@ -24,10 +24,12 @@
 use std::collections::HashMap;
 use anyhow::{anyhow, Context, Result};
 use serde_yaml::Value;
+use serde_yaml::value::{Tag, TaggedValue};
 use smallvec::SmallVec;
 
 use crate::yaml::parsing::ast::*;
-use crate::yaml::resolution::resolver::{TagContext, WithStackContext};
+use crate::yaml::resolution::context::TagContext;
+use crate::yaml::resolution::resolver::WithStackContext;
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
@@ -133,6 +135,73 @@ impl PathTracker {
         self.segments.clear();
     }
     
+}
+pub trait TagResolver {
+    /// Resolve an AST node to a value
+    fn resolve_ast(&self, ast: &YamlAst, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+
+    fn resolve_template_string(&self, template: &str, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_mapping(
+        &self,
+        pairs: &[(YamlAst, YamlAst)],
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value>;
+    
+    fn resolve_sequence(
+        &self,
+        items: &[YamlAst],
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value>;
+    
+    // Core tag resolution methods with split args
+    fn resolve_preprocessing_tag(
+        &self,
+        tag: &PreprocessingTag,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value>;
+    fn resolve_cloudformation_tag(
+        &self,
+        cfn_tag: &CloudFormationTag,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value>;
+    fn validate_cloudformation_tag(
+        &self,
+        cfn_tag: &CloudFormationTag,
+        resolved_value: &Value,
+        context: &TagContext,
+        path_tracker: &PathTracker,
+    ) -> Result<()>;
+    
+    fn resolve_include(&self, tag: &IncludeTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_if(&self, tag: &IfTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_map(&self, tag: &MapTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_merge(&self, tag: &MergeTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_concat(&self, tag: &ConcatTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_let(&self, tag: &LetTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_eq(&self, tag: &EqTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_not(&self, tag: &NotTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_split(&self, tag: &SplitTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_join(&self, tag: &JoinTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+
+    // Advanced transformation tags
+    fn resolve_concat_map(&self, tag: &ConcatMapTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_merge_map(&self, tag: &MergeMapTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_map_list_to_hash(&self, tag: &MapListToHashTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_map_values(&self, tag: &MapValuesTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_group_by(&self, tag: &GroupByTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_from_pairs(&self, tag: &FromPairsTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+
+    // String processing tags
+    fn resolve_to_yaml_string(&self, tag: &ToYamlStringTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_parse_yaml(&self, tag: &ParseYamlTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_to_json_string(&self, tag: &ToJsonStringTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_parse_json(&self, tag: &ParseJsonTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+    fn resolve_escape(&self, tag: &EscapeTag, context: &TagContext, path_tracker: &mut PathTracker) -> Result<Value>;
+
 }
 
 /// Split-args tag resolver that separates static context from dynamic path tracking
@@ -327,183 +396,6 @@ impl SplitArgsResolver {
         
         Ok(current_value.clone())
     }
-    /// Resolve an AST node with split arguments for better performance
-    pub fn resolve_ast(
-        &self,
-        ast: &YamlAst,
-        context: &TagContext,
-        path_tracker: &mut PathTracker,
-    ) -> Result<Value> {
-        match ast {
-            // Scalars - direct conversion
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s) => Ok(Value::String(s.clone())),
-            
-            // Templated strings - need variable resolution
-            YamlAst::TemplatedString(template) => {
-                self.resolve_template_string(template, context, path_tracker)
-            }
-            
-            // Composite types
-            YamlAst::Mapping(pairs) => self.resolve_mapping(pairs, context, path_tracker),
-            YamlAst::Sequence(items) => self.resolve_sequence(items, context, path_tracker),
-            
-            // Preprocessing tags
-            YamlAst::PreprocessingTag(tag) => self.resolve_preprocessing_tag(tag, context, path_tracker),
-            
-            // CloudFormation tags
-            YamlAst::CloudFormationTag(cfn_tag) => {
-                self.resolve_cloudformation_tag(cfn_tag, context, path_tracker)
-            }
-            
-            // Unknown tags
-            YamlAst::UnknownYamlTag(unknown) => {
-                // Convert unknown tags to strings for now
-                Ok(Value::String(format!("!{} {}", unknown.tag, "unknown")))
-            }
-            
-            // Imported documents
-            YamlAst::ImportedDocument(doc) => {
-                // Process the imported document content
-                self.resolve_ast(&doc.content, context, path_tracker)
-            }
-        }
-    }
-    
-    /// Resolve a mapping with efficient path tracking
-    fn resolve_mapping(
-        &self,
-        pairs: &[(YamlAst, YamlAst)],
-        context: &TagContext,
-        path_tracker: &mut PathTracker,
-    ) -> Result<Value> {
-        let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
-        
-        if is_simple_mapping(pairs) {
-            // Fast path: simple key-value pairs with no processing needed
-            for (key, value) in pairs {
-                let key_val = simple_ast_to_value(key);
-                let value_val = simple_ast_to_value(value);
-                result.insert(key_val, value_val);
-            }
-        } else {
-            // Complex path: need full processing with path tracking
-            for (key_ast, value_ast) in pairs {
-                // Resolve key
-                let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
-                
-                // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
-                if let Value::String(key_str) = &key_value {
-                    if key_str == "<<" {
-                        let location_info = if let Some(input_uri) = &context.input_uri {
-                            format!("in file '{}'", input_uri)
-                        } else {
-                            context.current_location()
-                                .map(|loc| format!("in '{}'", loc))
-                                .unwrap_or_else(|| "in unknown location".to_string())
-                        };
-                        let yaml_path = format!("/{}", path_tracker.segments.join("/"));
-                        let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
-                            format!(" at path '{}'", yaml_path)
-                        } else {
-                            String::new()
-                        };
-                        return Err(anyhow!(
-                            "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
-                            Consider using iidy's !$merge tag instead:\n\
-                              combined_config: !$merge\n\
-                                - *base_config\n\
-                                - additional_key: additional_value",
-                            location_info, path_info
-                        ));
-                    }
-                }
-                
-                // Handle special preprocessing keys (only for string keys)
-                let is_preprocessing_key = match &key_value {
-                    Value::String(s) => s.starts_with('$'),
-                    _ => false,
-                };
-                
-                if is_preprocessing_key {
-                    let key_str = key_value.as_str().unwrap(); // Safe because we checked above
-                    match key_str {
-                        "$defs" => {
-                            // TODO: Process local definitions
-                            continue; // Don't include $defs in output
-                        }
-                        "$imports" => {
-                            // TODO: Process imports
-                            continue; // Don't include $imports in output
-                        }
-                        _ => {
-                            // Unknown preprocessing directive - ignore
-                            continue;
-                        }
-                    }
-                }
-                
-                // Create path segment for tracking (convert key to string representation)
-                let path_segment = match &key_value {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    Value::Bool(b) => b.to_string(),
-                    _ => format!("{:?}", key_value),
-                };
-                
-                // Resolve value with path tracking
-                path_tracker.push(&path_segment);
-                let resolved_value = self.resolve_ast(value_ast, context, path_tracker)?;
-                path_tracker.pop();
-                
-                // Add to result (use original key value, not just string)
-                result.insert(key_value, resolved_value);
-            }
-        }
-        
-        Ok(Value::Mapping(result))
-    }
-    
-    /// Resolve a sequence with efficient path tracking
-    fn resolve_sequence(
-        &self,
-        items: &[YamlAst],
-        context: &TagContext,
-        path_tracker: &mut PathTracker,
-    ) -> Result<Value> {
-        let mut result = Vec::with_capacity(items.len());
-        
-        if is_simple_sequence(items) {
-            // Fast path: convert simple values directly without path tracking
-            for item in items {
-                result.push(simple_ast_to_value(item));
-            }
-        } else {
-            // Complex path: need full processing with path tracking
-            for (index, item) in items.iter().enumerate() {
-                path_tracker.push(&format!("[{}]", index));
-                let resolved_item = self.resolve_ast(item, context, path_tracker)?;
-                path_tracker.pop();
-                
-                result.push(resolved_item);
-            }
-        }
-        
-        Ok(Value::Sequence(result))
-    }
-    
-    /// Resolve a templated string with handlebars processing
-    fn resolve_template_string(
-        &self,
-        template: &str,
-        context: &TagContext,
-        path_tracker: &mut PathTracker,
-    ) -> Result<Value> {
-        self.process_string_with_handlebars(template.to_string(), context, path_tracker)
-    }
-    
     /// Process handlebars templates in strings
     fn process_string_with_handlebars(&self, s: String, context: &TagContext, path_tracker: &PathTracker) -> Result<Value> {
         
@@ -585,7 +477,216 @@ impl SplitArgsResolver {
             }
         }
     }
+    /// Convert AST to Value without any preprocessing (for escape tag)
+    fn ast_to_value_without_preprocessing(&self, ast: &YamlAst) -> Result<Value> {
+        match ast {
+            YamlAst::Null => Ok(Value::Null),
+            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
+            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s.clone())),
+            YamlAst::Sequence(seq) => {
+                let mut result = Vec::with_capacity(seq.len());
+                for item in seq {
+                    result.push(self.ast_to_value_without_preprocessing(item)?);
+                }
+                Ok(Value::Sequence(result))
+            }
+            YamlAst::Mapping(pairs) => {
+                let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
+                for (key, value) in pairs {
+                    let key_val = self.ast_to_value_without_preprocessing(key)?;
+                    let value_val = self.ast_to_value_without_preprocessing(value)?;
+                    result.insert(key_val, value_val);
+                }
+                Ok(Value::Mapping(result))
+            }
+            YamlAst::PreprocessingTag(_) => {
+                // Escaped preprocessing tags should be converted to strings
+                Ok(Value::String(format!("!${}", "escaped_tag")))
+            }
+            YamlAst::CloudFormationTag(cfn_tag) => {
+                // Escaped CloudFormation tags should preserve their structure
+                let mut result = serde_yaml::Mapping::with_capacity(1);
+                let tag_name = format!("!{}", cfn_tag.tag_name());
+                let inner_val = self.ast_to_value_without_preprocessing(cfn_tag.inner_value())?;
+                result.insert(Value::String(tag_name), inner_val);
+                Ok(Value::Mapping(result))
+            }
+            YamlAst::UnknownYamlTag(unknown) => {
+                self.ast_to_value_without_preprocessing(&unknown.value)
+            }
+            YamlAst::ImportedDocument(doc) => {
+                self.ast_to_value_without_preprocessing(&doc.content)
+            }
+        }
+    }
+}
+
+impl TagResolver for SplitArgsResolver {
+    /// Resolve an AST node with split arguments for better performance
+    fn resolve_ast(
+        &self,
+        ast: &YamlAst,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        match ast {
+            // Scalars - direct conversion
+            YamlAst::Null => Ok(Value::Null),
+            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
+            YamlAst::PlainString(s) => Ok(Value::String(s.clone())),
+            
+            // Templated strings - need variable resolution
+            YamlAst::TemplatedString(template) => {
+                self.resolve_template_string(template, context, path_tracker)
+            }
+            
+            // Composite types
+            YamlAst::Mapping(pairs) => self.resolve_mapping(pairs, context, path_tracker),
+            YamlAst::Sequence(items) => self.resolve_sequence(items, context, path_tracker),
+            
+            YamlAst::PreprocessingTag(tag) => self.resolve_preprocessing_tag(tag, context, path_tracker),
+            
+            YamlAst::CloudFormationTag(cfn_tag) => {
+                self.resolve_cloudformation_tag(cfn_tag, context, path_tracker)
+            }
+            
+            YamlAst::UnknownYamlTag(tag) => {
+                // Convert unknown tags to strings for now
+                let resolved_value = self.resolve_ast(&tag.value, context, path_tracker)?;
+                let tagged_value = TaggedValue { tag: Tag::new(&tag.tag), value: resolved_value };
+                Ok(Value::Tagged(Box::new(tagged_value)))
+            }
+            
+            YamlAst::ImportedDocument(doc) => {
+                // Process the imported document content
+                self.resolve_ast(&doc.content, context, path_tracker)
+            }
+        }
+    }
     
+    /// Resolve a mapping with efficient path tracking
+    fn resolve_mapping(
+        &self,
+        pairs: &[(YamlAst, YamlAst)],
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
+        
+        if is_simple_mapping(pairs) {
+            // Fast path: simple key-value pairs with no processing needed
+            for (key, value) in pairs {
+                let key_val = simple_ast_to_value(key);
+                let value_val = simple_ast_to_value(value);
+                result.insert(key_val, value_val);
+            }
+        } else {
+            // Complex path: need full processing with path tracking
+            for (key_ast, value_ast) in pairs {
+                // Resolve key
+                let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
+                
+                // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
+                if let Value::String(key_str) = &key_value {
+                    if key_str == "<<" {
+                        let location_info = if let Some(input_uri) = &context.input_uri {
+                            format!("in file '{}'", input_uri)
+                        } else {
+                            context.current_location()
+                                .map(|loc| format!("in '{}'", loc))
+                                .unwrap_or_else(|| "in unknown location".to_string())
+                        };
+                        let yaml_path = format!("/{}", path_tracker.segments.join("/"));
+                        let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
+                            format!(" at path '{}'", yaml_path)
+                        } else {
+                            String::new()
+                        };
+                        return Err(anyhow!(
+                            "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
+                            Consider using iidy's !$merge tag instead:\n\
+                              combined_config: !$merge\n\
+                                - *base_config\n\
+                                - additional_key: additional_value",
+                            location_info, path_info
+                        ));
+                    }
+                }
+                
+                // Handle special preprocessing keys (only for string keys)
+                let is_preprocessing_key = match &key_value {
+                    Value::String(s) => s.starts_with('$'),
+                    _ => false,
+                };
+                
+                if is_preprocessing_key {
+                    let key_str = key_value.as_str().unwrap(); // Safe because we checked above
+                    if matches!(key_str, "$imports" | "$defs" | "$envValues") {
+                        continue;
+                    }
+                }
+                
+                // Create path segment for tracking (convert key to string representation)
+                let path_segment = match &key_value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    _ => format!("{:?}", key_value),
+                };
+                
+                // Resolve value with path tracking
+                path_tracker.push(&path_segment);
+                let resolved_value = self.resolve_ast(value_ast, context, path_tracker)?;
+                path_tracker.pop();
+                
+                // Add to result (use original key value, not just string)
+                result.insert(key_value, resolved_value);
+            }
+        }
+        
+        Ok(Value::Mapping(result))
+    }
+    
+    /// Resolve a sequence with efficient path tracking
+    fn resolve_sequence(
+        &self,
+        items: &[YamlAst],
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        let mut result = Vec::with_capacity(items.len());
+        
+        if is_simple_sequence(items) {
+            // Fast path: convert simple values directly without path tracking
+            for item in items {
+                result.push(simple_ast_to_value(item));
+            }
+        } else {
+            // Complex path: need full processing with path tracking
+            for (index, item) in items.iter().enumerate() {
+                path_tracker.push(&format!("[{}]", index));
+                let resolved_item = self.resolve_ast(item, context, path_tracker)?;
+                path_tracker.pop();
+                
+                result.push(resolved_item);
+            }
+        }
+        
+        Ok(Value::Sequence(result))
+    }
+    
+    /// Resolve a templated string with handlebars processing
+    fn resolve_template_string(
+        &self,
+        template: &str,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        self.process_string_with_handlebars(template.to_string(), context, path_tracker)
+    }
+        
     /// Resolve a preprocessing tag
     fn resolve_preprocessing_tag(
         &self,
@@ -1676,51 +1777,7 @@ impl SplitArgsResolver {
             }
         }
     }
-    
-    /// Convert AST to Value without any preprocessing (for escape tag)
-    fn ast_to_value_without_preprocessing(&self, ast: &YamlAst) -> Result<Value> {
-        match ast {
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s.clone())),
-            YamlAst::Sequence(seq) => {
-                let mut result = Vec::with_capacity(seq.len());
-                for item in seq {
-                    result.push(self.ast_to_value_without_preprocessing(item)?);
-                }
-                Ok(Value::Sequence(result))
-            }
-            YamlAst::Mapping(pairs) => {
-                let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
-                for (key, value) in pairs {
-                    let key_val = self.ast_to_value_without_preprocessing(key)?;
-                    let value_val = self.ast_to_value_without_preprocessing(value)?;
-                    result.insert(key_val, value_val);
-                }
-                Ok(Value::Mapping(result))
-            }
-            YamlAst::PreprocessingTag(_) => {
-                // Escaped preprocessing tags should be converted to strings
-                Ok(Value::String(format!("!${}", "escaped_tag")))
-            }
-            YamlAst::CloudFormationTag(cfn_tag) => {
-                // Escaped CloudFormation tags should preserve their structure
-                let mut result = serde_yaml::Mapping::with_capacity(1);
-                let tag_name = format!("!{}", cfn_tag.tag_name());
-                let inner_val = self.ast_to_value_without_preprocessing(cfn_tag.inner_value())?;
-                result.insert(Value::String(tag_name), inner_val);
-                Ok(Value::Mapping(result))
-            }
-            YamlAst::UnknownYamlTag(unknown) => {
-                self.ast_to_value_without_preprocessing(&unknown.value)
-            }
-            YamlAst::ImportedDocument(doc) => {
-                self.ast_to_value_without_preprocessing(&doc.content)
-            }
-        }
-    }
-    
+        
     /// Resolve a CloudFormation tag
     fn resolve_cloudformation_tag(
         &self,
@@ -1743,7 +1800,6 @@ impl SplitArgsResolver {
         self.validate_cloudformation_tag(cfn_tag, &final_value, context, path_tracker)?;
         
         // Create a proper CloudFormation tagged value
-        use serde_yaml::value::{Tag, TaggedValue};
         let tag = Tag::new(cfn_tag.tag_name());
         let tagged_value = TaggedValue { tag, value: final_value };
         Ok(Value::Tagged(Box::new(tagged_value)))

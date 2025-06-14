@@ -9,7 +9,7 @@ use tokio::fs;
 
 use iidy::yaml::engine::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
-use iidy::yaml::resolution::resolver::{TagContext, VariableSource};
+use iidy::yaml::resolution::{TagContext, VariableSource};
 
 #[tokio::test]
 async fn test_variable_origin_access_in_context() -> Result<()> {

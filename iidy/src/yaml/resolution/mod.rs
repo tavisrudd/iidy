@@ -6,14 +6,19 @@
 //! Includes both StandardTagResolver and SplitArgsResolver
 //! (28% faster, available for performance-critical applications).
 
+pub mod context;
 pub mod resolver;
 pub mod resolver_split_args;
 
 // Re-export key types
+pub use context::{
+    TagContext, StackFrame, VariableSource,
+};
+
 pub use resolver::{
-    TagContext, StackFrame, TagResolver, StandardTagResolver, 
+    StandardTagResolver, 
 };
 
 pub use resolver_split_args::{
-    SplitArgsResolver,  resolve_ast_split_args,
+    SplitArgsResolver,  TagResolver, resolve_ast_split_args,
 };
