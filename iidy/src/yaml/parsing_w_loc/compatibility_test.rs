@@ -34,12 +34,12 @@
 use std::fs;
 use std::path::Path;
 use anyhow::Result;
-use url::Url;
 
 use crate::yaml::parsing::parser as original_parser;
 use crate::yaml::parsing::ast as original_ast;
-use super::{parse_yaml_ast, YamlAst};
+use super::parse_yaml_ast;
 use super::convert::to_original_ast;
+use url::Url;
 
 /// Test compatibility across all example YAML files
 #[test]
@@ -220,25 +220,20 @@ fn test_compatibility_with_all_examples() -> Result<()> {
 fn test_single_file_compatibility(file_path: &Path) -> Result<()> {
     let content = fs::read_to_string(file_path)?;
     
-    // Convert to absolute path for URI creation
+    // Use the shared comparison logic but with the actual file URI
     let absolute_path = file_path.canonicalize()
         .map_err(|e| anyhow::anyhow!("Failed to canonicalize path {}: {}", file_path.display(), e))?;
     
-    let file_uri = Url::from_file_path(&absolute_path)
+    let file_uri = url::Url::from_file_path(&absolute_path)
         .map_err(|_| anyhow::anyhow!("Failed to create URI from path: {}", absolute_path.display()))?;
     
-    // 1. Parse with new tree-sitter implementation
     let tree_sitter_ast = parse_yaml_ast(&content, file_uri.clone())
         .map_err(|e| anyhow::anyhow!("Tree-sitter parsing failed: {}", e.message))?;
     
-    // 2. Parse with original implementation
     let original_ast = original_parser::parse_yaml_with_custom_tags_from_file(&content, file_uri.as_str())
         .map_err(|e| anyhow::anyhow!("Original parsing failed: {}", e))?;
     
-    // 3. Convert tree-sitter AST to original format
     let converted_ast = to_original_ast(&tree_sitter_ast);
-    
-    // 4. Compare the converted AST with the original AST
     compare_asts(&converted_ast, &original_ast, file_path)?;
     
     Ok(())

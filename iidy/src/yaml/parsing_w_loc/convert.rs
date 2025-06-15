@@ -301,6 +301,7 @@ fn convert_preprocessing_tag(tag: &with_location::PreprocessingTag) -> original:
 /// and then converts the result to the original AST format. This can be used as a drop-in
 /// replacement for the original parser when you want the benefits of tree-sitter parsing
 /// but need the result in the original AST format.
+#[allow(dead_code)]
 pub fn parse_and_convert_to_original(source: &str, uri: Url) -> ParseResult<original::YamlAst> {
     let with_location_ast = parse_yaml_ast(source, uri)?;
     Ok(to_original_ast(&with_location_ast))

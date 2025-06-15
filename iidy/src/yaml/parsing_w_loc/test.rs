@@ -1,11 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::yaml::parsing_w_loc::{parse_yaml_ast, YamlAst, CloudFormationTag, PreprocessingTag, UnknownTag};
-    use url::Url;
-
-    fn test_uri() -> Url {
-        Url::parse("file:///test.yaml").unwrap()
-    }
+    use crate::yaml::parsing_w_loc::test_utils::test_uri;
 
     #[test]
     fn test_parse_simple_scalar() {
@@ -136,11 +132,11 @@ key3: true
         let result = parse_yaml_ast(yaml, test_uri()).unwrap();
         
         match result {
-            YamlAst::UnknownYamlTag(tag, _) => {
-                assert_eq!(tag.tag, "!$");
-                assert!(matches!(tag.value.as_ref(), YamlAst::PlainString(s, _) if s == "path/to/file.yaml"));
+            YamlAst::PreprocessingTag(PreprocessingTag::Include(include_tag), _) => {
+                assert_eq!(include_tag.path, "path/to/file.yaml");
+                assert_eq!(include_tag.query, None);
             }
-            _ => panic!("Expected UnknownYamlTag for !$, got {:?}", result),
+            _ => panic!("Expected PreprocessingTag::Include for !$, got {:?}", result),
         }
     }
 

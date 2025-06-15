@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 33bf5c20d88a7be46f87fce8b335ce07ce1f794dac046ee052bb9374761717d3 # shrinks to yaml_doc = "a: !$not false"
+cc cefd379deebb37e2186f2ea5517424f150eb44e38f8f273f43bbdcacebdb64db # shrinks to yaml_doc = "A: \"\n\""
+cc ac9f8422c1905295b06b9f541f372f8e9566226b0ffd79e915e3651cfb96f2c3 # shrinks to tag_expr = "!GetAtt \"\".Property"
