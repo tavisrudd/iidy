@@ -4,6 +4,7 @@
 //! imports, and template composition for CloudFormation and other YAML documents.
 
 pub mod parsing;
+pub mod parsing_w_loc;
 pub mod resolution;
 pub mod errors;
 pub mod detection;

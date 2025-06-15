@@ -1,0 +1,291 @@
+#[cfg(test)]
+mod tests {
+    use crate::yaml::parsing_w_loc::{parse_yaml_ast, YamlAst, CloudFormationTag, PreprocessingTag, UnknownTag};
+    use url::Url;
+
+    fn test_uri() -> Url {
+        Url::parse("file:///test.yaml").unwrap()
+    }
+
+    #[test]
+    fn test_parse_simple_scalar() {
+        let yaml = "hello world";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::PlainString(s, _) => assert_eq!(s, "hello world"),
+            _ => panic!("Expected PlainString, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_templated_string() {
+        let yaml = "hello {{ name }}";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::TemplatedString(s, _) => assert_eq!(s, "hello {{ name }}"),
+            _ => panic!("Expected TemplatedString, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_boolean() {
+        let yaml = "true";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Bool(b, _) => assert!(b),
+            _ => panic!("Expected Bool, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_number() {
+        let yaml = "42";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Number(n, _) => assert_eq!(n.as_i64(), Some(42)),
+            _ => panic!("Expected Number, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_null() {
+        let yaml = "null";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Null(_) => {},
+            _ => panic!("Expected Null, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_sequence() {
+        let yaml = r#"
+- item1
+- item2
+- 42
+"#;
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Sequence(items, _) => {
+                assert_eq!(items.len(), 3);
+                assert!(matches!(items[0], YamlAst::PlainString(ref s, _) if s == "item1"));
+                assert!(matches!(items[1], YamlAst::PlainString(ref s, _) if s == "item2"));
+                assert!(matches!(items[2], YamlAst::Number(ref n, _) if n.as_i64() == Some(42)));
+            }
+            _ => panic!("Expected Sequence, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_mapping() {
+        let yaml = r#"
+key1: value1
+key2: 42
+key3: true
+"#;
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Mapping(pairs, _) => {
+                assert_eq!(pairs.len(), 3);
+                
+                // Check pairs directly
+                let (key1, val1) = &pairs[0];
+                let (key2, val2) = &pairs[1];
+                let (key3, val3) = &pairs[2];
+                
+                assert!(matches!(key1, YamlAst::PlainString(s, _) if s == "key1"));
+                assert!(matches!(val1, YamlAst::PlainString(s, _) if s == "value1"));
+                
+                assert!(matches!(key2, YamlAst::PlainString(s, _) if s == "key2"));
+                assert!(matches!(val2, YamlAst::Number(n, _) if n.as_i64() == Some(42)));
+                
+                assert!(matches!(key3, YamlAst::PlainString(s, _) if s == "key3"));
+                assert!(matches!(val3, YamlAst::Bool(true, _)));
+            }
+            _ => panic!("Expected Mapping, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_preprocessing_tag() {
+        let yaml = "!$let\n  foo: bar\n  in: result";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::PreprocessingTag(PreprocessingTag::Let(_), _) => {
+                // Success - parsed as preprocessing tag
+            }
+            YamlAst::UnknownYamlTag(tag, _) => {
+                // Expected for now since we don't fully implement preprocessing tag parsing
+                assert_eq!(tag.tag, "!$let");
+            }
+            _ => panic!("Expected PreprocessingTag or UnknownTag, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_preprocessing_include_tag() {
+        let yaml = "!$ path/to/file.yaml";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::UnknownYamlTag(tag, _) => {
+                assert_eq!(tag.tag, "!$");
+                assert!(matches!(tag.value.as_ref(), YamlAst::PlainString(s, _) if s == "path/to/file.yaml"));
+            }
+            _ => panic!("Expected UnknownYamlTag for !$, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_preprocessing_if_tag() {
+        let yaml = "!$if condition";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::UnknownYamlTag(tag, _) => {
+                assert_eq!(tag.tag, "!$if");
+                assert!(matches!(tag.value.as_ref(), YamlAst::PlainString(s, _) if s == "condition"));
+            }
+            _ => panic!("Expected UnknownYamlTag for !$if, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_cloudformation_tag() {
+        let yaml = "!Ref MyResource";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::CloudFormationTag(CloudFormationTag::Ref(content), _) => {
+                assert!(matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "MyResource"));
+            }
+            _ => panic!("Expected CloudFormationTag::Ref, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_cloudformation_getatt_tag() {
+        let yaml = "!GetAtt Resource.Property";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::CloudFormationTag(CloudFormationTag::GetAtt(content), _) => {
+                assert!(matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "Resource.Property"));
+            }
+            _ => panic!("Expected CloudFormationTag::GetAtt, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_cloudformation_sub_tag() {
+        let yaml = "!Sub \"Hello ${Name}\"";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::CloudFormationTag(CloudFormationTag::Sub(content), _) => {
+                assert!(matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "Hello ${Name}"));
+            }
+            _ => panic!("Expected CloudFormationTag::Sub, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_unknown_tag() {
+        let yaml = "!CustomTag value";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::UnknownYamlTag(UnknownTag { tag, value }, _) => {
+                assert_eq!(tag, "!CustomTag");
+                assert!(matches!(value.as_ref(), YamlAst::PlainString(s, _) if s == "value"));
+            }
+            _ => panic!("Expected UnknownYamlTag, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_structure() {
+        let yaml = r#"
+Resources:
+  MyBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-bucket"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+"#;
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Mapping(pairs, _) => {
+                // Check that we have a "Resources" key
+                let has_resources = pairs.iter().any(|(key, _)| {
+                    matches!(key, YamlAst::PlainString(s, _) if s == "Resources")
+                });
+                assert!(has_resources);
+            }
+            _ => panic!("Expected top-level Mapping, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_meta_information() {
+        let yaml = "hello";
+        let uri = test_uri();
+        let result = parse_yaml_ast(yaml, uri.clone()).unwrap();
+        
+        let meta = result.meta();
+        assert_eq!(meta.input_uri, uri);
+        assert_eq!(meta.start.line, 0);
+        assert_eq!(meta.start.character, 0);
+        assert_eq!(meta.end.line, 0);
+        assert_eq!(meta.end.character, 5);
+    }
+
+    #[test]
+    fn test_syntax_error() {
+        let yaml = "key: [\n  unclosed";
+        let result = parse_yaml_ast(yaml, test_uri());
+        
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.location.is_some());
+    }
+
+    #[test]
+    fn test_empty_mapping_value() {
+        let yaml = "key:";
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::Mapping(pairs, _) => {
+                assert_eq!(pairs.len(), 1);
+                let (key, value) = &pairs[0];
+                assert!(matches!(key, YamlAst::PlainString(s, _) if s == "key"));
+                assert!(matches!(value, YamlAst::Null(_)));
+            }
+            _ => panic!("Expected Mapping, got {:?}", result),
+        }
+    }
+
+    #[test]
+    fn test_quoted_strings() {
+        let yaml = r#""quoted string""#;
+        let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+        
+        match result {
+            YamlAst::PlainString(s, _) => assert_eq!(s, "quoted string"),
+            _ => panic!("Expected PlainString, got {:?}", result),
+        }
+    }
+
+}
