@@ -6,6 +6,8 @@
 use crate::yaml::parsing::ast as original;
 use super::ast as with_location;
 use super::parser::parse_yaml_ast;
+use super::error::ParseDiagnostics;
+use super::parse_yaml_ast_with_diagnostics;
 use url::Url;
 
 /// Convert from location-aware YamlAst to original YamlAst
@@ -320,6 +322,33 @@ pub fn parse_and_convert_to_original(source: &str, uri_str: &str) -> anyhow::Res
         .map_err(|e| anyhow::anyhow!("{}", e.message))?;
     
     Ok(to_original_ast(&with_location_ast))
+}
+
+/// New diagnostic API for convert module
+pub fn parse_and_convert_to_original_with_diagnostics(source: &str, uri_str: &str) -> Result<ParseDiagnostics, anyhow::Error> {
+    let uri = create_uri_from_string(uri_str)?;
+    let diagnostics = parse_yaml_ast_with_diagnostics(source, uri);
+    Ok(diagnostics)
+}
+
+/// Validate YAML without conversion (useful for linting)
+pub fn validate_yaml_only(source: &str, uri_str: &str) -> Result<ParseDiagnostics, anyhow::Error> {
+    parse_and_convert_to_original_with_diagnostics(source, uri_str)
+}
+
+fn create_uri_from_string(uri_str: &str) -> anyhow::Result<Url> {
+    match Url::parse(uri_str) {
+        Ok(uri) => Ok(uri),
+        Err(_) => {
+            match Url::from_file_path(uri_str) {
+                Ok(uri) => Ok(uri),
+                Err(_) => {
+                    Url::parse(&format!("file://{}", uri_str))
+                        .map_err(|e| anyhow::anyhow!("Cannot create URI from '{}': {}", uri_str, e))
+                }
+            }
+        }
+    }
 }
 
 

@@ -11,7 +11,7 @@ use super::ast::{
     GroupByTag, FromPairsTag, ToYamlStringTag, ParseYamlTag, ToJsonStringTag, 
     ParseJsonTag, EscapeTag
 };
-use super::error::{ParseError, ParseResult};
+use super::error::{ParseError, ParseResult, ParseDiagnostics, ParseWarning, error_codes};
 use crate::yaml::errors::{tag_parsing_error, missing_required_field_error, yaml_syntax_error};
 
 pub struct YamlParser {
@@ -27,24 +27,545 @@ impl YamlParser {
         Ok(Self { parser })
     }
 
-    pub fn parse(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
-        // Check if the source contains anchors or aliases
+    /// New API for collecting all errors without stopping on first error
+    pub fn validate_with_diagnostics(&mut self, source: &str, uri: Url) -> ParseDiagnostics {
+        let mut diagnostics = ParseDiagnostics::new();
+
+        // Check for anchor/alias fallback scenario
         if source.contains("&") && !source.contains("&amp;") || source.contains("*") && !source.contains("**/") {
-            // Fallback to serde_yaml for anchor/alias resolution
+            // For now, fallback to serde_yaml and convert any error
+            match self.parse_with_serde_yaml_fallback(source, uri.clone()) {
+                Ok(_) => {
+                    // Could add warning about using fallback parser
+                    diagnostics.add_warning(ParseWarning::with_location(
+                        "Using fallback parser for anchor/alias resolution",
+                        uri, Position::new(0, 0), Position::new(0, 0)
+                    ));
+                }
+                Err(e) => {
+                    diagnostics.add_error(e);
+                    return diagnostics;
+                }
+            }
+            return diagnostics;
+        }
+
+        // Parse with tree-sitter
+        let tree = match self.parser.parse(source, None) {
+            Some(tree) => tree,
+            None => {
+                diagnostics.add_error(ParseError::new("Failed to parse YAML source")
+                    .with_code(error_codes::SYNTAX_ERROR));
+                return diagnostics;
+            }
+        };
+
+        // Collect ALL syntax errors (not just first)
+        self.collect_all_syntax_errors(&tree, source, &uri, &mut diagnostics);
+
+        // If no fatal syntax errors, proceed with semantic validation
+        if !self.has_fatal_syntax_errors(&diagnostics) {
+            self.validate_semantics_with_diagnostics(&tree, source, &uri, &mut diagnostics);
+        }
+
+        diagnostics
+    }
+
+    /// Backward compatibility - existing behavior unchanged
+    pub fn parse(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
+        // For backward compatibility, use the original logic that only checks syntax errors
+        // This maintains the exact same behavior as before the diagnostic API was added
+        self.parse_internal(source, uri)
+    }
+
+    /// Internal method that does actual AST building (current parse logic)
+    fn parse_internal(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
+        // Current parse() implementation goes here
+        // This maintains exact current behavior for backward compatibility
+
+        if source.contains("&") && !source.contains("&amp;") || source.contains("*") && !source.contains("**/") {
             return self.parse_with_serde_yaml_fallback(source, uri);
         }
-        
+
         let tree = self.parser.parse(source, None)
             .ok_or_else(|| ParseError::new("Failed to parse YAML source"))?;
-        
+
         let root = tree.root_node();
-        
-        // Check for syntax errors
+
         if root.has_error() {
             return Err(self.find_syntax_error(&tree, source, &uri));
         }
-        
+
         self.build_ast(root, source.as_bytes(), &uri)
+    }
+
+    /// Collect ALL syntax errors from tree-sitter parse tree
+    fn collect_all_syntax_errors(&self, tree: &Tree, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let root = tree.root_node();
+        self.traverse_for_syntax_errors(root, source, uri, diagnostics);
+    }
+
+    /// Recursively traverse tree and collect all error/missing nodes
+    fn traverse_for_syntax_errors(&self, node: tree_sitter::Node, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        // Check current node for errors
+        if node.is_error() || node.kind() == "ERROR" {
+            let meta = node_meta(&node, uri);
+            let message = self.analyze_syntax_error(&node, source);
+            let error = self.create_syntax_error(&message, &meta, source)
+                .with_code(error_codes::SYNTAX_ERROR);
+            diagnostics.add_error(error);
+        }
+
+        if node.is_missing() {
+            let meta = node_meta(&node, uri);
+            let message = format!("Missing {} element", node.kind());
+            let error = self.create_syntax_error(&message, &meta, source)
+                .with_code(error_codes::SYNTAX_ERROR);
+            diagnostics.add_error(error);
+        }
+
+        // Recursively check all children
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i) {
+                self.traverse_for_syntax_errors(child, source, uri, diagnostics);
+            }
+        }
+    }
+
+    /// Create syntax error (extracted from current syntax_error method)
+    fn create_syntax_error(&self, message: &str, meta: &SrcMeta, source: &str) -> ParseError {
+        // Extract current syntax_error logic but return ParseError instead of using it
+        let file_path = self.format_file_path_only(meta);
+
+        if let Err(serde_error) = serde_yaml::from_str::<serde_yaml::Value>(source) {
+            let anyhow_error = yaml_syntax_error(serde_error, &file_path, source);
+            ParseError {
+                message: anyhow_error.to_string(),
+                location: Some(super::error::ParseLocation {
+                    uri: meta.input_uri.clone(),
+                    start: meta.start,
+                    end: meta.end,
+                }),
+                code: None,
+            }
+        } else {
+            ParseError {
+                message: format!("Syntax error: {} @ {}", message, self.format_file_location(meta)),
+                location: Some(super::error::ParseLocation {
+                    uri: meta.input_uri.clone(),
+                    start: meta.start,
+                    end: meta.end,
+                }),
+                code: None,
+            }
+        }
+    }
+
+    /// Determine if syntax errors are fatal (prevent semantic analysis)
+    fn has_fatal_syntax_errors(&self, diagnostics: &ParseDiagnostics) -> bool {
+        // For now, any syntax error is fatal for semantic analysis
+        // Later we can be more sophisticated about which errors allow continuation
+        diagnostics.has_errors()
+    }
+
+    /// Validate semantics by traversing tree-sitter nodes without building full AST
+    fn validate_semantics_with_diagnostics(&self, tree: &Tree, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let root = tree.root_node();
+        self.validate_node_semantics(root, source.as_bytes(), uri, diagnostics);
+    }
+
+    /// Validate individual nodes for semantic correctness
+    fn validate_node_semantics(&self, node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let _meta = node_meta(&node, uri);
+
+        match node.kind() {
+            "tag" => {
+                // Only validate tag nodes that are not being handled by their parent flow/block nodes
+                // This prevents duplicate validation
+                if let Some(parent) = node.parent() {
+                    if parent.kind() == "flow_node" || parent.kind() == "block_node" {
+                        // Let the parent handle this tag node
+                        return;
+                    }
+                }
+                // Validate tagged nodes without building full AST
+                self.validate_tagged_node_semantics(node, src, uri, diagnostics);
+            }
+            "flow_node" | "block_node" => {
+                // Check for tagged flow/block nodes by looking for tag children
+                // First check if there's a tag child using field name
+                if let Some(tag_child) = node.child_by_field_name("tag") {
+                    self.validate_tagged_node_semantics(tag_child, src, uri, diagnostics);
+                } else {
+                    // Also check direct children for tag nodes (tree-sitter sometimes doesn't use field names)
+                    for i in 0..node.child_count() {
+                        if let Some(child) = node.child(i) {
+                            if child.kind() == "tag" {
+                                self.validate_tagged_node_semantics(child, src, uri, diagnostics);
+                                break; // Only validate the first tag found
+                            }
+                        }
+                    }
+                }
+                
+                // Continue recursive validation for non-tag children
+                for i in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(i) {
+                        if child.kind() != "tag" {
+                            self.validate_node_semantics(child, src, uri, diagnostics);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Recursively validate children
+                for i in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(i) {
+                        self.validate_node_semantics(child, src, uri, diagnostics);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Validate tagged nodes for known tags and required fields
+    fn validate_tagged_node_semantics(&self, node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&node, uri);
+
+        // Extract tag text
+        let tag_text = match node.utf8_text(src) {
+            Ok(text) => text,
+            Err(_) => {
+                diagnostics.add_error(
+                    ParseError::with_location("Invalid UTF-8 in tag", uri.clone(), meta.start, meta.end)
+                        .with_code(error_codes::SYNTAX_ERROR)
+                );
+                return;
+            }
+        };
+
+        let tag_name = tag_text.split_whitespace().next().unwrap_or(tag_text);
+
+        // Validate known tags
+        if tag_name.starts_with("!$") {
+            self.validate_preprocessing_tag_semantics(tag_name, node, src, uri, diagnostics);
+        } else if self.is_known_cloudformation_tag(tag_name) {
+            self.validate_cloudformation_tag_semantics(tag_name, node, src, uri, diagnostics);
+        } else if !tag_name.starts_with("!") {
+            // Not a tag at all
+            return;
+        } else {
+            // Unknown tag
+            diagnostics.add_error(
+                ParseError::with_location(
+                    format!("Unknown tag '{}'", tag_name),
+                    uri.clone(), meta.start, meta.end
+                ).with_code(error_codes::UNKNOWN_TAG)
+            );
+        }
+    }
+
+    /// Check if this is a known CloudFormation tag
+    fn is_known_cloudformation_tag(&self, tag_name: &str) -> bool {
+        matches!(tag_name,
+            "!Ref" | "!GetAtt" | "!Sub" | "!Join" | "!Split" |
+            "!Select" | "!FindInMap" | "!ImportValue" | "!Condition" |
+            "!And" | "!Or" | "!Not" | "!Equals" | "!If" |
+            "!Base64" | "!GetAZs" | "!Cidr"
+        )
+    }
+
+    /// Validate CloudFormation tags without building AST
+    fn validate_cloudformation_tag_semantics(&self, _tag_name: &str, _node: tree_sitter::Node, _src: &[u8], _uri: &Url, _diagnostics: &mut ParseDiagnostics) {
+        // For now, just assume CloudFormation tags are valid
+        // Could add specific validation for each tag type later
+    }
+
+    /// Validate preprocessing tags without building AST
+    fn validate_preprocessing_tag_semantics(&self, tag_name: &str, tag_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&tag_node, uri);
+
+        // The content node is typically the next sibling of the tag node within the flow_node/block_node
+        // Find the parent flow_node or block_node and get its children
+        let parent_node = if let Some(parent) = tag_node.parent() {
+            parent
+        } else {
+            diagnostics.add_error(
+                ParseError::with_location(
+                    format!("Tag '{}' missing parent context", tag_name),
+                    uri.clone(), meta.start, meta.end
+                ).with_code(error_codes::SYNTAX_ERROR)
+            );
+            return;
+        };
+
+        // Find the content node (the node after the tag in the parent's children)
+        let mut content_node = None;
+        let mut found_tag = false;
+        for i in 0..parent_node.child_count() {
+            if let Some(child) = parent_node.child(i) {
+                if found_tag && child.is_named() {
+                    content_node = Some(child);
+                    break;
+                }
+                if child.id() == tag_node.id() {
+                    found_tag = true;
+                }
+            }
+        }
+
+        let content_node = match content_node {
+            Some(node) => node,
+            None => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        format!("Tag '{}' missing content", tag_name),
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::MISSING_FIELD)
+                );
+                return;
+            }
+        };
+
+        match tag_name {
+            "!$include" => self.validate_include_tag_semantics(content_node, src, uri, diagnostics),
+            "!$let" => self.validate_let_tag_semantics(content_node, src, uri, diagnostics),
+            "!$map" => self.validate_map_tag_semantics(content_node, src, uri, diagnostics),
+            "!$if" => self.validate_if_tag_semantics(content_node, src, uri, diagnostics),
+            "!$eq" | "!$split" => self.validate_binary_tag_semantics(tag_name, content_node, src, uri, diagnostics),
+            "!$join" => self.validate_join_tag_semantics(content_node, src, uri, diagnostics),
+            "!$merge" | "!$concat" => self.validate_variadic_tag_semantics(tag_name, content_node, src, uri, diagnostics),
+            _ => {
+                // Unknown preprocessing tag
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        format!("Unknown preprocessing tag '{}'", tag_name),
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::UNKNOWN_TAG)
+                );
+            }
+        }
+    }
+
+    /// Validate !$include tag structure
+    fn validate_include_tag_semantics(&self, content_node: tree_sitter::Node, _src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" => {
+                // Valid: !$include "path/to/file"
+                // Could add additional validation for file path format
+            }
+            "flow_mapping" | "block_mapping" => {
+                // Valid: !$include {path: "file", query: "selector"}
+                self.validate_mapping_fields(content_node, _src, uri, &["path"], &["query"], "!$include", diagnostics);
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        "!$include expects string path or mapping with path field",
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate !$let tag structure
+    fn validate_let_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                self.validate_mapping_fields(content_node, src, uri, &["in"], &[], "!$let", diagnostics);
+                // Additional validation: other fields should be variable bindings
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        "!$let expects mapping with variable bindings and 'in' field",
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate !$map tag structure
+    fn validate_map_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                self.validate_mapping_fields(content_node, src, uri, &["items", "template", "var"], &["filter"], "!$map", diagnostics);
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        "!$map expects mapping with items, template, and var fields",
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate !$if tag structure
+    fn validate_if_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                self.validate_mapping_fields(content_node, src, uri, &["test", "then"], &["else"], "!$if", diagnostics);
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        "!$if expects mapping with test, then, and optional else fields",
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate binary operation tags like !$eq, !$split
+    fn validate_binary_tag_semantics(&self, tag_name: &str, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                // Each binary tag has different required fields
+                let (required_fields, optional_fields) = match tag_name {
+                    "!$eq" => (vec!["left", "right"], vec![]),
+                    "!$split" => (vec!["delimiter", "string"], vec![]),
+                    _ => (vec![], vec![])
+                };
+                self.validate_mapping_fields(content_node, src, uri, &required_fields, &optional_fields, tag_name, diagnostics);
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        format!("{} expects mapping with required fields", tag_name),
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate !$join tag structure (supports both mapping and sequence forms)
+    fn validate_join_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                // Mapping form: !$join {delimiter: "-", array: [...]}
+                self.validate_mapping_fields(content_node, src, uri, &["delimiter", "array"], &[], "!$join", diagnostics);
+            }
+            "flow_sequence" | "block_sequence" => {
+                // Sequence form: !$join [delimiter, array]
+                // Should have exactly 2 elements
+                let child_count = content_node.named_child_count();
+                if child_count != 2 {
+                    diagnostics.add_error(
+                        ParseError::with_location(
+                            format!("!$join sequence form expects exactly 2 elements (delimiter, array), found {}", child_count),
+                            uri.clone(), meta.start, meta.end
+                        ).with_code(error_codes::INVALID_FORMAT)
+                    );
+                }
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        "!$join expects mapping with delimiter and array fields or sequence with [delimiter, array]",
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate variadic operation tags like !$merge, !$concat
+    fn validate_variadic_tag_semantics(&self, tag_name: &str, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+        let meta = node_meta(&content_node, uri);
+
+        match content_node.kind() {
+            "flow_mapping" | "block_mapping" => {
+                self.validate_mapping_fields(content_node, src, uri, &["sources"], &[], tag_name, diagnostics);
+            }
+            "flow_sequence" | "block_sequence" => {
+                // Also valid: !$merge [source1, source2, ...]
+                // No specific validation needed for sequence form
+            }
+            _ => {
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        format!("{} expects mapping with sources field or sequence of sources", tag_name),
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::INVALID_TYPE)
+                );
+            }
+        }
+    }
+
+    /// Validate mapping has required fields
+    fn validate_mapping_fields(&self, mapping_node: tree_sitter::Node, src: &[u8], uri: &Url,
+                               required_fields: &[&str], optional_fields: &[&str],
+                               tag_name: &str, diagnostics: &mut ParseDiagnostics) {
+        let mut found_fields = std::collections::HashSet::new();
+
+        // Walk through mapping pairs
+        let mut cursor = mapping_node.walk();
+        for child in mapping_node.named_children(&mut cursor) {
+            if child.kind() == "flow_pair" || child.kind() == "block_mapping_pair" {
+                if let Some(key_node) = child.child_by_field_name("key") {
+                    if let Ok(key_text) = key_node.utf8_text(src) {
+                        // Extract key (remove quotes if present)
+                        let key = if key_text.starts_with('"') && key_text.ends_with('"') && key_text.len() >= 2 {
+                            &key_text[1..key_text.len()-1]
+                        } else if key_text.starts_with('\'') && key_text.ends_with('\'') && key_text.len() >= 2 {
+                            &key_text[1..key_text.len()-1]
+                        } else {
+                            key_text
+                        };
+                        found_fields.insert(key);
+                    }
+                }
+            }
+        }
+
+        // Check for missing required fields
+        for &required_field in required_fields {
+            if !found_fields.contains(required_field) {
+                let meta = node_meta(&mapping_node, uri);
+                diagnostics.add_error(
+                    ParseError::with_location(
+                        format!("Missing required '{}' field in {} tag", required_field, tag_name),
+                        uri.clone(), meta.start, meta.end
+                    ).with_code(error_codes::MISSING_FIELD)
+                );
+            }
+        }
+
+        // Check for unexpected fields (warnings)
+        let all_valid_fields: std::collections::HashSet<_> = required_fields.iter()
+            .chain(optional_fields.iter())
+            .cloned()
+            .collect();
+
+        for found_field in &found_fields {
+            if !all_valid_fields.contains(found_field) {
+                let meta = node_meta(&mapping_node, uri);
+                diagnostics.add_warning(
+                    ParseWarning::with_location(
+                        format!("Unexpected field '{}' in {} tag", found_field, tag_name),
+                        uri.clone(), meta.start, meta.end
+                    )
+                );
+            }
+        }
     }
 
     fn parse_with_serde_yaml_fallback(&self, source: &str, uri: Url) -> ParseResult<YamlAst> {
@@ -1347,6 +1868,7 @@ impl YamlParser {
                 start: meta.start,
                 end: meta.end,
             }),
+            code: None,
         }
     }
     
@@ -1361,6 +1883,7 @@ impl YamlParser {
                 start: meta.start,
                 end: meta.end,
             }),
+            code: None,
         }
     }
     
@@ -1379,6 +1902,7 @@ impl YamlParser {
                     start: meta.start,
                     end: meta.end,
                 }),
+                code: None,
             }
         } else {
             // Fallback to simple error format
@@ -1390,6 +1914,7 @@ impl YamlParser {
                     start: meta.start,
                     end: meta.end,
                 }),
+                code: None,
             }
         }
     }
