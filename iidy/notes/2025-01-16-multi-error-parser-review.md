@@ -232,12 +232,18 @@ fn node_meta(&self, node: &Node, uri: &Url) -> SrcMeta { }
 - Clean separation of concerns without breaking functionality
 - Used step-by-step approach with `cargo check` verification
 
+**Test Organization Improvement** ✅ *(Not comprehensive coverage)*
+- Consolidated test files from 5 to 4 by merging `test_utils.rs` into `test.rs`
+- Removed unused helper functions (`compare_parsers`, `parse_and_convert`)
+- Maintained all 19 basic unit tests and specialized test suites
+- Improved test organization while preserving existing coverage
+
 ## Next Steps
 
 Remaining tasks for full production readiness:
 
-5. **Add comprehensive test coverage** - Especially for error scenarios
-6. **Remove dead code** - Or document why it's kept  
+5. **Add comprehensive test coverage** - Especially for error scenarios *(NOT STARTED)*
+6. **Remove dead code** - Or document why it's kept *(IN PROGRESS)*
 7. **Add benchmarks** - Measure multi-error overhead
 
 ## Conclusion

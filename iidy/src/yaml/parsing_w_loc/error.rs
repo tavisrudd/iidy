@@ -52,7 +52,9 @@ pub struct ParseDiagnostics {
     pub parse_successful: bool,
 }
 
+/// Parse mode for future extensibility - not currently used but planned for LSP integration
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParseMode {
     StrictValidation, // Current behavior - stop on first error
     CollectAll,       // Collect all errors without AST building

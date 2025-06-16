@@ -27,6 +27,7 @@ pub struct SrcMeta {
 }
 
 impl SrcMeta {
+    #[allow(dead_code)]
     pub fn new(uri: Url, start: Position, end: Position) -> Self {
         Self {
             input_uri: uri,
@@ -60,6 +61,7 @@ pub enum YamlAst {
     /// Unknown YAML tag (for tags we don't recognize)
     UnknownYamlTag(UnknownTag, SrcMeta),
     /// Imported document node (represents a document loaded from an external source)
+    #[allow(dead_code)]
     ImportedDocument(ImportedDocumentNode, SrcMeta),
 }
 
@@ -197,7 +199,7 @@ impl CloudFormationTag {
         }
     }
 
-    /// Get the tag name for this CloudFormation function
+    #[allow(dead_code)]
     pub fn tag_name(&self) -> &'static str {
         match self {
             CloudFormationTag::Ref(_) => "Ref",
@@ -223,7 +225,7 @@ impl CloudFormationTag {
         }
     }
 
-    /// Get the inner YamlAst value that needs preprocessing
+    #[allow(dead_code)]
     pub fn inner_value(&self) -> &YamlAst {
         match self {
             CloudFormationTag::Ref(v) => v,
@@ -491,7 +493,7 @@ pub struct EscapeTag {
 }
 
 impl YamlAst {
-    /// Get the source metadata for this AST node
+    #[allow(dead_code)]
     pub fn meta(&self) -> &SrcMeta {
         match self {
             YamlAst::Null(m)
@@ -508,12 +510,14 @@ impl YamlAst {
         }
     }
 
-    /// Check if this AST node represents a preprocessing tag
+    #[allow(dead_code)]
     pub fn is_preprocessing_tag(&self) -> bool {
         matches!(self, YamlAst::PreprocessingTag(_, _))
     }
 
     /// Convert to a standard YAML Value if possible (no preprocessing tags)
+    /// Used internally and future API for value extraction
+    #[allow(dead_code)]
     pub fn to_value(&self) -> Option<Value> {
         match self {
             YamlAst::Null(_) => Some(Value::Null),
