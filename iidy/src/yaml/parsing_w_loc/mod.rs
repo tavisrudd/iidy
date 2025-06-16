@@ -1,9 +1,9 @@
 // Essential parsing functionality
-pub use parser::parse_yaml_ast;
 pub use error::{ParseError, ParseResult};
+pub use parser::parse_yaml_ast;
 
 // New diagnostic API
-pub use error::{ParseDiagnostics, ParseWarning, ParseMode, error_codes};
+pub use error::{ParseDiagnostics, ParseMode, ParseWarning, error_codes};
 pub use parser::YamlParser;
 
 // AST types - need to match original parser API
@@ -26,17 +26,17 @@ pub fn parse_yaml_ast_with_diagnostics(source: &str, uri: url::Url) -> ParseDiag
 
 // Private modules - implementation details
 mod ast;
-mod parser;
-mod error;
 mod convert;
+mod error;
+mod parser;
 
-#[cfg(test)]
-mod test_utils;
-#[cfg(test)]
-mod test;
 #[cfg(test)]
 mod compatibility_test;
 #[cfg(test)]
+mod diagnostic_tests;
+#[cfg(test)]
 mod proptest;
 #[cfg(test)]
-mod diagnostic_tests;
+mod test;
+#[cfg(test)]
+mod test_utils;

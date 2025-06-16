@@ -100,13 +100,13 @@ pub fn load_stack_args_str(
 ) -> Result<StackArgs> {
     // Create a tokio runtime for async preprocessing
     let rt = tokio::runtime::Runtime::new()?;
-    
+
     // Use YAML v1.1 spec for CloudFormation compatibility
     let yaml_spec = YamlSpec::V11;
-    
+
     // Get base location from path for relative imports
     let base_location = path.to_string_lossy();
-    
+
     // Process the YAML with full preprocessing pipeline
     let mut value = rt.block_on(preprocess_yaml(content, &base_location, &yaml_spec))?;
 
@@ -167,10 +167,13 @@ Template: template.yaml
 Region: us-west-2
 "#;
         let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod"));
-        
+
         // Should succeed even with custom tags (currently they get converted to null)
-        assert!(result.is_ok(), "Stack args with custom tags should parse successfully");
-        
+        assert!(
+            result.is_ok(),
+            "Stack args with custom tags should parse successfully"
+        );
+
         let stack_args = result.unwrap();
         // Currently custom tags become null since AST resolution isn't implemented yet
         // But parsing should succeed

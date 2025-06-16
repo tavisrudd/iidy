@@ -8,9 +8,9 @@ use proptest::strategy::BoxedStrategy;
 use std::collections::HashSet;
 use url::Url;
 
-use crate::yaml::parsing::parser as original_parser;
-use super::{parse_yaml_ast, convert::to_original_ast};
 use super::compatibility_test::{asts_equal, compare_asts};
+use super::{convert::to_original_ast, parse_yaml_ast};
+use crate::yaml::parsing::parser as original_parser;
 
 /// Tag type selection for configuration
 #[derive(Debug, Clone, Copy)]
@@ -30,12 +30,18 @@ pub enum ConfigPreset {
 
 /// Common CloudFormation tags
 fn common_cf_tags() -> HashSet<String> {
-    ["Ref", "Sub", "GetAtt"].iter().map(|s| s.to_string()).collect()
+    ["Ref", "Sub", "GetAtt"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Common preprocessing tags  
 fn common_prep_tags() -> HashSet<String> {
-    ["$", "$include", "$not", "$parseYaml", "$parseJson"].iter().map(|s| s.to_string()).collect()
+    ["$", "$include", "$not", "$parseYaml", "$parseJson"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 /// Configuration for which tags should appear in generated YAML documents
@@ -70,7 +76,7 @@ impl TagConfig {
             TagTypes::Preprocessing => (HashSet::new(), common_prep_tags()),
             TagTypes::All => (common_cf_tags(), common_prep_tags()),
         };
-        
+
         Self {
             cloudformation_tags: cf_tags,
             preprocessing_tags: prep_tags,
@@ -123,30 +129,45 @@ pub fn preprocessing_tag_value_strategy() -> impl Strategy<Value = String> {
 /// Generate a value that could be a scalar or a tag
 pub fn yaml_value_strategy(config: TagConfig) -> BoxedStrategy<String> {
     let scalar_weight = ((1.0 - config.tag_probability) * 100.0) as u32;
-    let cf_weight = if config.cloudformation_tags.is_empty() { 0 } else { (config.tag_probability * 50.0) as u32 };
-    let prep_weight = if config.preprocessing_tags.is_empty() { 0 } else { (config.tag_probability * 50.0) as u32 };
-    
+    let cf_weight = if config.cloudformation_tags.is_empty() {
+        0
+    } else {
+        (config.tag_probability * 50.0) as u32
+    };
+    let prep_weight = if config.preprocessing_tags.is_empty() {
+        0
+    } else {
+        (config.tag_probability * 50.0) as u32
+    };
+
     // Ensure we always have meaningful weights
     let scalar_weight = scalar_weight.max(10);
     let cf_weight = if cf_weight > 0 { cf_weight.max(5) } else { 0 };
-    let prep_weight = if prep_weight > 0 { prep_weight.max(5) } else { 0 };
-    
+    let prep_weight = if prep_weight > 0 {
+        prep_weight.max(5)
+    } else {
+        0
+    };
+
     if cf_weight > 0 && prep_weight > 0 {
         prop_oneof![
             scalar_weight => simple_scalar_strategy(),
             cf_weight => cloudformation_tag_value_strategy(),
             prep_weight => preprocessing_tag_value_strategy(),
-        ].boxed()
+        ]
+        .boxed()
     } else if cf_weight > 0 {
         prop_oneof![
             scalar_weight => simple_scalar_strategy(),
             cf_weight => cloudformation_tag_value_strategy(),
-        ].boxed()
+        ]
+        .boxed()
     } else if prep_weight > 0 {
         prop_oneof![
             scalar_weight => simple_scalar_strategy(),
             prep_weight => preprocessing_tag_value_strategy(),
-        ].boxed()
+        ]
+        .boxed()
     } else {
         simple_scalar_strategy().boxed()
     }
@@ -158,12 +179,13 @@ pub fn yaml_document_strategy(config: TagConfig) -> impl Strategy<Value = String
     prop::collection::vec(
         (
             "[a-zA-Z][a-zA-Z0-9_]{1,5}", // key - simplified
-            yaml_value_strategy(config.clone())
+            yaml_value_strategy(config.clone()),
         ),
-        1..=max_items
+        1..=max_items,
     )
     .prop_map(|entries| {
-        entries.into_iter()
+        entries
+            .into_iter()
             .map(|(key, value)| format!("{}: {}", key, value))
             .collect::<Vec<_>>()
             .join("\n")
@@ -171,30 +193,41 @@ pub fn yaml_document_strategy(config: TagConfig) -> impl Strategy<Value = String
 }
 
 /// Helper function to test compatibility for generated YAML documents
-fn test_generated_yaml_compatibility(yaml_doc: String, test_name: &str) -> Result<(), TestCaseError> {
+fn test_generated_yaml_compatibility(
+    yaml_doc: String,
+    test_name: &str,
+) -> Result<(), TestCaseError> {
     // Skip empty documents
     if yaml_doc.trim().is_empty() {
         return Ok(());
     }
-    
+
     let test_uri = Url::parse("file:///proptest_generated.yaml").unwrap();
-    
+
     // Try to parse with both parsers
     let tree_sitter_result = parse_yaml_ast(&yaml_doc, test_uri.clone());
-    let original_result = original_parser::parse_yaml_with_custom_tags_from_file(&yaml_doc, test_uri.as_str());
-    
+    let original_result =
+        original_parser::parse_yaml_with_custom_tags_from_file(&yaml_doc, test_uri.as_str());
+
     match (tree_sitter_result, original_result) {
         (Ok(tree_sitter_ast), Ok(original_ast)) => {
             // Both parsed successfully - compare results
             let converted_ast = to_original_ast(&tree_sitter_ast);
-            
+
             if !asts_equal(&converted_ast, &original_ast) {
                 // Create a temporary file path for error reporting
                 let temp_path = std::path::Path::new("proptest_generated.yaml");
-                
+
                 // This will fail the test with detailed output
-                compare_asts(&converted_ast, &original_ast, temp_path)
-                    .map_err(|e| TestCaseError::Fail(format!("{} AST mismatch in generated YAML:\n{}\n\nError: {}", test_name, yaml_doc, e).into()))?;
+                compare_asts(&converted_ast, &original_ast, temp_path).map_err(|e| {
+                    TestCaseError::Fail(
+                        format!(
+                            "{} AST mismatch in generated YAML:\n{}\n\nError: {}",
+                            test_name, yaml_doc, e
+                        )
+                        .into(),
+                    )
+                })?;
             }
         }
         (Err(_tree_sitter_err), Err(_original_err)) => {
@@ -202,14 +235,17 @@ fn test_generated_yaml_compatibility(yaml_doc: String, test_name: &str) -> Resul
         }
         (Ok(_), Err(original_err)) => {
             // Tree-sitter succeeded but original failed - could be acceptable
-            println!("{}: Tree-sitter parsed successfully but original parser failed: {}", test_name, original_err);
+            println!(
+                "{}: Tree-sitter parsed successfully but original parser failed: {}",
+                test_name, original_err
+            );
         }
         (Err(tree_sitter_err), Ok(_)) => {
             // Original succeeded but tree-sitter failed - this is a problem
             return Err(TestCaseError::Fail(format!("{}: Tree-sitter failed to parse YAML that original parser handled:\n{}\n\nTree-sitter error: {}", test_name, yaml_doc, tree_sitter_err.message).into()));
         }
     }
-    
+
     Ok(())
 }
 
@@ -263,14 +299,13 @@ mod tests {
     fn test_simple_scalar_generation() {
         let strategy = simple_scalar_strategy();
         let mut runner = proptest::test_runner::TestRunner::default();
-        
+
         for _ in 0..3 {
             let value = strategy.new_tree(&mut runner).unwrap();
             let scalar = value.current();
             assert!(!scalar.is_empty());
         }
     }
-
 
     /// Test specific minimal cases that we know should work
     #[test]
@@ -279,7 +314,7 @@ mod tests {
             // Basic scalar
             "key: value",
             // Basic number
-            "key: 42", 
+            "key: 42",
             // Basic boolean
             "key: true",
             // Basic sequence
@@ -294,23 +329,28 @@ mod tests {
 
         for yaml_doc in test_cases {
             let test_uri = Url::parse("file:///manual_test.yaml").unwrap();
-            
+
             let tree_sitter_result = parse_yaml_ast(yaml_doc, test_uri.clone());
-            let original_result = original_parser::parse_yaml_with_custom_tags_from_file(yaml_doc, test_uri.as_str());
-            
+            let original_result =
+                original_parser::parse_yaml_with_custom_tags_from_file(yaml_doc, test_uri.as_str());
+
             match (tree_sitter_result, original_result) {
                 (Ok(tree_sitter_ast), Ok(original_ast)) => {
                     let converted_ast = to_original_ast(&tree_sitter_ast);
                     if !asts_equal(&converted_ast, &original_ast) {
-                        panic!("Manual test case failed for: {}\nConverted: {:#?}\nOriginal: {:#?}", 
-                               yaml_doc, converted_ast, original_ast);
+                        panic!(
+                            "Manual test case failed for: {}\nConverted: {:#?}\nOriginal: {:#?}",
+                            yaml_doc, converted_ast, original_ast
+                        );
                     }
                 }
                 (tree_sitter_result, original_result) => {
-                    panic!("Parser inconsistency for manual test: {}\nTree-sitter: {:?}\nOriginal: {:?}", 
-                           yaml_doc, 
-                           tree_sitter_result.map(|_| "Success").map_err(|e| e.message),
-                           original_result.map(|_| "Success"));
+                    panic!(
+                        "Parser inconsistency for manual test: {}\nTree-sitter: {:?}\nOriginal: {:?}",
+                        yaml_doc,
+                        tree_sitter_result.map(|_| "Success").map_err(|e| e.message),
+                        original_result.map(|_| "Success")
+                    );
                 }
             }
         }

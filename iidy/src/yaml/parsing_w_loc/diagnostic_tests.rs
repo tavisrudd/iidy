@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod diagnostic_tests {
     use url::Url;
-    
+
     // Import the diagnostic API functions
     use crate::yaml::parsing_w_loc::{
-        YamlParser, parse_yaml_ast_with_diagnostics, 
-        parse_and_convert_to_original_with_diagnostics, validate_yaml_only,
-        error_codes
+        YamlParser, error_codes, parse_and_convert_to_original_with_diagnostics,
+        parse_yaml_ast_with_diagnostics, validate_yaml_only,
     };
 
     fn test_uri() -> Url {
@@ -56,9 +55,19 @@ test2: !$unknownTag2 value
         assert!(!diagnostics.parse_successful);
 
         // Check that both errors are collected
-        assert!(diagnostics.errors.iter().any(|e| e.message.contains("unknownTag1")));
-        assert!(diagnostics.errors.iter().any(|e| e.message.contains("unknownTag2")));
-        
+        assert!(
+            diagnostics
+                .errors
+                .iter()
+                .any(|e| e.message.contains("unknownTag1"))
+        );
+        assert!(
+            diagnostics
+                .errors
+                .iter()
+                .any(|e| e.message.contains("unknownTag2"))
+        );
+
         // Verify error codes are set
         assert!(diagnostics.errors.iter().all(|e| e.code.is_some()));
     }
@@ -78,15 +87,20 @@ test2: !$let
 
         assert!(diagnostics.has_errors());
         // Should collect both missing 'in' field errors
-        let missing_in_errors: Vec<_> = diagnostics.errors.iter()
+        let missing_in_errors: Vec<_> = diagnostics
+            .errors
+            .iter()
             .filter(|e| e.message.contains("Missing required 'in' field"))
             .collect();
         assert_eq!(missing_in_errors.len(), 2);
-        
+
         // Verify error codes
-        assert!(missing_in_errors.iter().all(|e| 
-            e.code.as_ref().map(|c| c == error_codes::MISSING_FIELD).unwrap_or(false)
-        ));
+        assert!(missing_in_errors.iter().all(|e| {
+            e.code
+                .as_ref()
+                .map(|c| c == error_codes::MISSING_FIELD)
+                .unwrap_or(false)
+        }));
     }
 
     #[test]
@@ -104,10 +118,17 @@ Resources:
         assert!(diagnostics.has_errors());
         // Should collect syntax errors
         assert!(diagnostics.error_count() > 0);
-        
+
         // All errors should have syntax error codes or be related to syntax
-        let syntax_errors: Vec<_> = diagnostics.errors.iter()
-            .filter(|e| e.code.as_ref().map(|c| c == error_codes::SYNTAX_ERROR).unwrap_or(false))
+        let syntax_errors: Vec<_> = diagnostics
+            .errors
+            .iter()
+            .filter(|e| {
+                e.code
+                    .as_ref()
+                    .map(|c| c == error_codes::SYNTAX_ERROR)
+                    .unwrap_or(false)
+            })
             .collect();
         assert!(!syntax_errors.is_empty());
     }
@@ -124,10 +145,15 @@ test: !$let
 
         // Should parse successfully (has 'in' field)
         assert!(!diagnostics.has_errors());
-        
+
         // But should have warnings for unexpected field
         assert!(!diagnostics.warnings.is_empty());
-        assert!(diagnostics.warnings.iter().any(|w| w.message.contains("unexpected_field")));
+        assert!(
+            diagnostics
+                .warnings
+                .iter()
+                .any(|w| w.message.contains("unexpected_field"))
+        );
     }
 
     #[test]
@@ -138,11 +164,11 @@ test1: !$unknownTag1 value
 test2: !$unknownTag2 value
 "#;
         let result = parser.parse(source, test_uri());
-        
+
         // Should return error (backward compatibility)
         assert!(result.is_err());
         let error = result.unwrap_err();
-        
+
         // Should be one of the unknown tag errors
         assert!(error.message.contains("unknownTag"));
     }
@@ -153,10 +179,10 @@ test2: !$unknownTag2 value
 test1: !$unknownTag1 value
 test2: !$unknownTag2 value  
 "#;
-        
+
         let result = parse_and_convert_to_original_with_diagnostics(source, "file:///test.yaml");
         assert!(result.is_ok());
-        
+
         let diagnostics = result.unwrap();
         assert!(diagnostics.has_errors());
         assert_eq!(diagnostics.error_count(), 2);
@@ -169,13 +195,18 @@ test: !$let
   var1: value1
   # Missing 'in' field
 "#;
-        
+
         let result = validate_yaml_only(source, "file:///test.yaml");
         assert!(result.is_ok());
-        
+
         let diagnostics = result.unwrap();
         assert!(diagnostics.has_errors());
-        assert!(diagnostics.errors.iter().any(|e| e.message.contains("Missing required 'in' field")));
+        assert!(
+            diagnostics
+                .errors
+                .iter()
+                .any(|e| e.message.contains("Missing required 'in' field"))
+        );
     }
 
     #[test]
@@ -187,11 +218,11 @@ test: !$unknownTag value
 
         assert!(diagnostics.has_errors());
         let error = &diagnostics.errors[0];
-        
+
         // Should have location information
         assert!(error.location.is_some());
         let location = error.location.as_ref().unwrap();
-        
+
         // Should have valid position (line 2, since we have newline at start)
         assert!(location.start.line >= 1);
         assert!(location.start.character < 100); // Basic sanity check instead of >= 0
@@ -234,6 +265,10 @@ invalid_test: !$let
         // Should have one error for the invalid !$let tag
         assert!(diagnostics.has_errors());
         assert_eq!(diagnostics.error_count(), 1);
-        assert!(diagnostics.errors[0].message.contains("Missing required 'in' field"));
+        assert!(
+            diagnostics.errors[0]
+                .message
+                .contains("Missing required 'in' field")
+        );
     }
 }

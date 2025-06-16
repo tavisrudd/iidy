@@ -1,9 +1,9 @@
-use clap::{Parser, Subcommand};
 use anyhow::Result;
-use iidy::color::ColorContext;
-use iidy::terminal::Theme;
+use clap::{Parser, Subcommand};
 use iidy::cli::ColorChoice;
-use iidy::pocs::{theme_demo, spinner_demo, ratatui_demo};
+use iidy::color::ColorContext;
+use iidy::pocs::{ratatui_demo, spinner_demo, theme_demo};
+use iidy::terminal::Theme;
 
 #[derive(Parser)]
 #[command(
@@ -29,7 +29,7 @@ enum Commands {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     // Initialize color context for demos
     ColorContext::init_global(ColorChoice::Auto, Theme::Auto);
 

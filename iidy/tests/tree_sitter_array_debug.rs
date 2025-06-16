@@ -6,11 +6,11 @@ use iidy::yaml::tree_sitter_location::*;
 fn debug_array_path_parsing() {
     let path = ["ListOperations[2]", "operation"];
     let (clean_path, indices) = parse_path_with_indices(&path);
-    
+
     println!("Original path: {:?}", path);
     println!("Clean path: {:?}", clean_path);
     println!("Array indices: {:?}", indices);
-    
+
     // This should be:
     // Clean path: ["ListOperations", "operation"]
     // Array indices: [2]
@@ -34,12 +34,12 @@ ListOperations:
     let mut parser = create_yaml_parser().unwrap();
     let tree = parse_yaml_source(&mut parser, yaml_source).unwrap();
     let root = tree.root_node();
-    
+
     // Find ListOperations
     if let Some(list_node) = find_yaml_node_by_path(&root, &["ListOperations"], yaml_source) {
         println!("Found ListOperations: kind={}", list_node.kind());
         print_node_detailed(&list_node, yaml_source, 0, 4);
-        
+
         // Navigate to the block_sequence
         let mut cursor = list_node.walk();
         for child in list_node.named_children(&mut cursor) {
@@ -49,9 +49,11 @@ ListOperations:
                     if inner_child.kind() == "block_sequence" {
                         println!("\nFound block_sequence:");
                         print_node_detailed(&inner_child, yaml_source, 0, 3);
-                        
+
                         // Try to find the third element (index 2)
-                        if let Some(third_element) = find_array_element(&inner_child, 2, yaml_source) {
+                        if let Some(third_element) =
+                            find_array_element(&inner_child, 2, yaml_source)
+                        {
                             println!("\nFound third element: kind={}", third_element.kind());
                             print_node_detailed(&third_element, yaml_source, 0, 3);
                         } else {
@@ -76,9 +78,9 @@ fn print_node_detailed(node: &tree_sitter::Node, source: &str, depth: usize, max
     } else {
         text.replace('\n', "\\n")
     };
-    
+
     println!("{}Kind: {} | Text: {:?}", indent, node.kind(), text_preview);
-    
+
     if depth < max_depth {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

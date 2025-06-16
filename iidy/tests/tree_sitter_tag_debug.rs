@@ -12,7 +12,7 @@ fn debug_yaml_tag_structure() {
     let mut parser = create_yaml_parser().unwrap();
     let tree = parse_yaml_source(&mut parser, yaml_source).unwrap();
     let root = tree.root_node();
-    
+
     println!("YAML with tag:");
     print_node_deep(&root, yaml_source, 0, 10);
 }
@@ -24,7 +24,7 @@ fn debug_simple_tag() {
     let mut parser = create_yaml_parser().unwrap();
     let tree = parse_yaml_source(&mut parser, yaml_source).unwrap();
     let root = tree.root_node();
-    
+
     println!("Simple tag YAML:");
     print_node_deep(&root, yaml_source, 0, 10);
 }
@@ -37,10 +37,16 @@ fn print_node_deep(node: &tree_sitter::Node, source: &str, depth: usize, max_dep
     } else {
         text.replace('\n', "\\n")
     };
-    
-    println!("{}Kind: {} | Pos: {}:{} | Text: {:?}", 
-             indent, node.kind(), node.start_position().row + 1, node.start_position().column + 1, text_preview);
-    
+
+    println!(
+        "{}Kind: {} | Pos: {}:{} | Text: {:?}",
+        indent,
+        node.kind(),
+        node.start_position().row + 1,
+        node.start_position().column + 1,
+        text_preview
+    );
+
     if depth < max_depth {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

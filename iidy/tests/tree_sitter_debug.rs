@@ -18,10 +18,13 @@ Resources:
     let mut parser = create_yaml_parser().unwrap();
     let tree = parse_yaml_source(&mut parser, yaml_source).unwrap();
     let root = tree.root_node();
-    
+
     println!("Root node kind: {}", root.kind());
-    println!("Root node text: {}", &yaml_source[root.start_byte()..root.end_byte()]);
-    
+    println!(
+        "Root node text: {}",
+        &yaml_source[root.start_byte()..root.end_byte()]
+    );
+
     // Print all children
     print_node(&root, yaml_source, 0);
 }
@@ -44,9 +47,9 @@ ListOperations:
     let mut parser = create_yaml_parser().unwrap();
     let tree = parse_yaml_source(&mut parser, yaml_source).unwrap();
     let root = tree.root_node();
-    
+
     println!("Array YAML Root node kind: {}", root.kind());
-    
+
     // Print all children
     print_node(&root, yaml_source, 0);
 }
@@ -59,10 +62,11 @@ fn print_node(node: &tree_sitter::Node, source: &str, depth: usize) {
     } else {
         text.to_string()
     };
-    
+
     println!("{}Kind: {} | Text: {:?}", indent, node.kind(), text_preview);
-    
-    if depth < 6 { // Limit depth to avoid too much output
+
+    if depth < 6 {
+        // Limit depth to avoid too much output
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             print_node(&child, source, depth + 1);

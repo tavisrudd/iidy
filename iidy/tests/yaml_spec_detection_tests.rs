@@ -1,7 +1,7 @@
-use iidy::yaml::{detect_yaml_spec, YamlSpecDetection};
+use iidy::yaml::{YamlSpecDetection, detect_yaml_spec};
 
 /// Tests for YAML specification auto-detection functionality
-/// 
+///
 /// Validates detection of:
 /// - Explicit %YAML directives (%YAML 1.1, %YAML 1.2)
 /// - CloudFormation template patterns

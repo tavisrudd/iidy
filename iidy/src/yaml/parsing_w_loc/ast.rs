@@ -1,9 +1,9 @@
 //! AST definitions for YAML preprocessing with location tracking
-//! 
+//!
 //! Defines the abstract syntax tree for YAML documents with custom preprocessing tags
 //! and precise source location information for error reporting.
 
-use serde_yaml::{Value, Number};
+use serde_yaml::{Number, Value};
 use url::Url;
 
 // We'll define a simple Position type instead of using lsp_types for now
@@ -66,11 +66,11 @@ pub enum YamlAst {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnknownTag {
     pub tag: String,
-    pub value: Box<YamlAst>
+    pub value: Box<YamlAst>,
 }
 
 /// Represents an imported document within the AST
-/// 
+///
 /// This node type allows tracking of imported documents during traversal,
 /// maintaining the source URI and providing context for error reporting
 /// and debugging during the import resolution process.
@@ -79,7 +79,7 @@ pub struct ImportedDocumentNode {
     /// The source URI from which this document was imported
     pub source_uri: String,
     /// The key/alias under which this document was imported (from $imports)
-    pub import_key: String, 
+    pub import_key: String,
     /// The resolved AST content of the imported document
     pub content: Box<YamlAst>,
     /// Metadata about the import operation
@@ -97,7 +97,7 @@ pub struct ImportMetadata {
 }
 
 /// CloudFormation intrinsic function tags that can contain YamlAst for preprocessing
-/// 
+///
 /// These represent CloudFormation functions parsed from YAML that may still contain
 /// preprocessing directives (handlebars templates, variable references, etc.)
 /// that need to be resolved before converting to final CloudFormation expressions.
@@ -153,28 +153,50 @@ impl CloudFormationTag {
         match tag {
             "Ref" | "!Ref" | "!Fn::Ref" => Some(CloudFormationTag::Ref(Box::new(value))),
             "Sub" | "!Sub" | "!Fn::Sub" => Some(CloudFormationTag::Sub(Box::new(value))),
-            "GetAtt" | "!GetAtt" | "!Fn::GetAtt" => Some(CloudFormationTag::GetAtt(Box::new(value))),
+            "GetAtt" | "!GetAtt" | "!Fn::GetAtt" => {
+                Some(CloudFormationTag::GetAtt(Box::new(value)))
+            }
             "Join" | "!Join" | "!Fn::Join" => Some(CloudFormationTag::Join(Box::new(value))),
-            "Select" | "!Select" | "!Fn::Select" => Some(CloudFormationTag::Select(Box::new(value))),
+            "Select" | "!Select" | "!Fn::Select" => {
+                Some(CloudFormationTag::Select(Box::new(value)))
+            }
             "Split" | "!Split" | "!Fn::Split" => Some(CloudFormationTag::Split(Box::new(value))),
-            "Base64" | "!Base64" | "!Fn::Base64" => Some(CloudFormationTag::Base64(Box::new(value))),
-            "GetAZs" | "!GetAZs" | "!Fn::GetAZs" => Some(CloudFormationTag::GetAZs(Box::new(value))),
-            "ImportValue" | "!ImportValue" | "!Fn::ImportValue" => Some(CloudFormationTag::ImportValue(Box::new(value))),
-            "FindInMap" | "!FindInMap" | "!Fn::FindInMap" => Some(CloudFormationTag::FindInMap(Box::new(value))),
+            "Base64" | "!Base64" | "!Fn::Base64" => {
+                Some(CloudFormationTag::Base64(Box::new(value)))
+            }
+            "GetAZs" | "!GetAZs" | "!Fn::GetAZs" => {
+                Some(CloudFormationTag::GetAZs(Box::new(value)))
+            }
+            "ImportValue" | "!ImportValue" | "!Fn::ImportValue" => {
+                Some(CloudFormationTag::ImportValue(Box::new(value)))
+            }
+            "FindInMap" | "!FindInMap" | "!Fn::FindInMap" => {
+                Some(CloudFormationTag::FindInMap(Box::new(value)))
+            }
             "Cidr" | "!Cidr" | "!Fn::Cidr" => Some(CloudFormationTag::Cidr(Box::new(value))),
-            "Length" | "!Length" | "!Fn::Length" => Some(CloudFormationTag::Length(Box::new(value))),
-            "ToJsonString" | "!ToJsonString" | "!Fn::ToJsonString" => Some(CloudFormationTag::ToJsonString(Box::new(value))),
-            "Transform" | "!Transform" | "!Fn::Transform" => Some(CloudFormationTag::Transform(Box::new(value))),
-            "ForEach" | "!ForEach" | "!Fn::ForEach" => Some(CloudFormationTag::ForEach(Box::new(value))),
+            "Length" | "!Length" | "!Fn::Length" => {
+                Some(CloudFormationTag::Length(Box::new(value)))
+            }
+            "ToJsonString" | "!ToJsonString" | "!Fn::ToJsonString" => {
+                Some(CloudFormationTag::ToJsonString(Box::new(value)))
+            }
+            "Transform" | "!Transform" | "!Fn::Transform" => {
+                Some(CloudFormationTag::Transform(Box::new(value)))
+            }
+            "ForEach" | "!ForEach" | "!Fn::ForEach" => {
+                Some(CloudFormationTag::ForEach(Box::new(value)))
+            }
             "If" | "!If" | "!Fn::If" => Some(CloudFormationTag::If(Box::new(value))),
-            "Equals" | "!Equals" | "!Fn::Equals" => Some(CloudFormationTag::Equals(Box::new(value))),
+            "Equals" | "!Equals" | "!Fn::Equals" => {
+                Some(CloudFormationTag::Equals(Box::new(value)))
+            }
             "And" | "!And" | "!Fn::And" => Some(CloudFormationTag::And(Box::new(value))),
             "Or" | "!Or" | "!Fn::Or" => Some(CloudFormationTag::Or(Box::new(value))),
             "Not" | "!Not" | "!Fn::Not" => Some(CloudFormationTag::Not(Box::new(value))),
             _ => None,
         }
     }
-    
+
     /// Get the tag name for this CloudFormation function
     pub fn tag_name(&self) -> &'static str {
         match self {
@@ -200,7 +222,7 @@ impl CloudFormationTag {
             CloudFormationTag::Not(_) => "Not",
         }
     }
-    
+
     /// Get the inner YamlAst value that needs preprocessing
     pub fn inner_value(&self) -> &YamlAst {
         match self {
@@ -275,7 +297,6 @@ pub enum PreprocessingTag {
     Escape(EscapeTag),
 }
 
-
 /// Include tag for importing external content
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncludeTag {
@@ -284,7 +305,6 @@ pub struct IncludeTag {
     /// Optional query/selector for partial inclusion
     pub query: Option<String>,
 }
-
 
 /// Conditional tag for if/then/else logic
 #[derive(Debug, Clone, PartialEq)]
@@ -296,7 +316,6 @@ pub struct IfTag {
     /// Optional value to use if condition is false
     pub else_value: Option<Box<YamlAst>>,
 }
-
 
 /// Map transformation tag (matches iidy-js field names)
 #[derive(Debug, Clone, PartialEq)]
@@ -333,7 +352,6 @@ pub struct LetTag {
     /// Expression to evaluate with bound variables (the "in" field)
     pub expression: Box<YamlAst>,
 }
-
 
 /// Equality comparison tag
 #[derive(Debug, Clone, PartialEq)]
@@ -476,11 +494,17 @@ impl YamlAst {
     /// Get the source metadata for this AST node
     pub fn meta(&self) -> &SrcMeta {
         match self {
-            YamlAst::Null(m) | YamlAst::Bool(_, m) | YamlAst::Number(_, m) |
-            YamlAst::PlainString(_, m) | YamlAst::TemplatedString(_, m) |
-            YamlAst::Sequence(_, m) | YamlAst::Mapping(_, m) |
-            YamlAst::PreprocessingTag(_, m) | YamlAst::CloudFormationTag(_, m) |
-            YamlAst::UnknownYamlTag(_, m) | YamlAst::ImportedDocument(_, m) => m,
+            YamlAst::Null(m)
+            | YamlAst::Bool(_, m)
+            | YamlAst::Number(_, m)
+            | YamlAst::PlainString(_, m)
+            | YamlAst::TemplatedString(_, m)
+            | YamlAst::Sequence(_, m)
+            | YamlAst::Mapping(_, m)
+            | YamlAst::PreprocessingTag(_, m)
+            | YamlAst::CloudFormationTag(_, m)
+            | YamlAst::UnknownYamlTag(_, m)
+            | YamlAst::ImportedDocument(_, m) => m,
         }
     }
 
@@ -489,14 +513,15 @@ impl YamlAst {
         matches!(self, YamlAst::PreprocessingTag(_, _))
     }
 
-
     /// Convert to a standard YAML Value if possible (no preprocessing tags)
     pub fn to_value(&self) -> Option<Value> {
         match self {
             YamlAst::Null(_) => Some(Value::Null),
             YamlAst::Bool(b, _) => Some(Value::Bool(*b)),
             YamlAst::Number(n, _) => Some(Value::Number(n.clone())),
-            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Some(Value::String(s.clone())),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => {
+                Some(Value::String(s.clone()))
+            }
             YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::new();
                 for item in seq {

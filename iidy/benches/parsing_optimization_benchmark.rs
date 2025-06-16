@@ -1,14 +1,14 @@
 //! Targeted benchmark for serde_yaml::Value -> YamlAst parsing
 //!
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use iidy::yaml::parsing::{ParseContext, convert_value_to_ast};
 use serde_yaml::Value;
 
 /// Benchmark convert_value_to_ast performance (our optimized function)
 fn bench_plain_yaml(c: &mut Criterion) {
     let mut group = c.benchmark_group("plain_yaml");
-    
+
     // Simple YAML without preprocessing tags
     let simple_yaml = r#"
 name: "test-app"
@@ -18,17 +18,18 @@ config:
   timeout: 30
   replicas: 3
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let simple_value: Value = serde_yaml::from_str(simple_yaml).unwrap();
     let simple_context = ParseContext::new("simple.yaml", simple_yaml);
-    
+
     group.bench_function("simple_yaml_map", |b| {
         b.iter(|| {
-            convert_value_to_ast(black_box(simple_value.clone()), black_box(&simple_context)).unwrap()
+            convert_value_to_ast(black_box(simple_value.clone()), black_box(&simple_context))
+                .unwrap()
         })
     });
-    
+
     // YAML with basic CloudFormation tags
     let cfn_yaml = r#"
 AWSTemplateFormatVersion: "2010-09-09"
@@ -53,24 +54,24 @@ Resources:
         - - !Ref AWS::StackName
           - "role"
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let cfn_value: Value = serde_yaml::from_str(cfn_yaml).unwrap();
     let cfn_context = ParseContext::new("cfn.yaml", cfn_yaml);
-    
+
     group.bench_function("cloudformation_yaml", |b| {
         b.iter(|| {
             convert_value_to_ast(black_box(cfn_value.clone()), black_box(&cfn_context)).unwrap()
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark preprocessing tag AST conversion performance
 fn bench_preprocessing_tags(c: &mut Criterion) {
     let mut group = c.benchmark_group("preprocessing_tags_ast");
-    
+
     // Simple preprocessing tags
     let simple_preprocessing = r#"
 name: "test-app"
@@ -89,18 +90,19 @@ merged: !$merge
   - environment: "test"
     replicas: 3
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let simple_value: Value = serde_yaml::from_str(simple_preprocessing).unwrap();
     let simple_context = ParseContext::new("preprocessing.yaml", simple_preprocessing);
-    
+
     group.bench_function("simple_preprocessing", |b| {
         b.iter(|| {
-            convert_value_to_ast(black_box(simple_value.clone()), black_box(&simple_context)).unwrap()
+            convert_value_to_ast(black_box(simple_value.clone()), black_box(&simple_context))
+                .unwrap()
         })
     });
-    
-    // Complex nested preprocessing tags 
+
+    // Complex nested preprocessing tags
     let complex_preprocessing = r#"
 app_config: !$let
   app_name: "complex-app"
@@ -132,24 +134,28 @@ app_config: !$let
                       memory: "1Gi"
                       cpu: "500m"
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let complex_value: Value = serde_yaml::from_str(complex_preprocessing).unwrap();
     let complex_context = ParseContext::new("complex.yaml", complex_preprocessing);
-    
+
     group.bench_function("complex_preprocessing", |b| {
         b.iter(|| {
-            convert_value_to_ast(black_box(complex_value.clone()), black_box(&complex_context)).unwrap()
+            convert_value_to_ast(
+                black_box(complex_value.clone()),
+                black_box(&complex_context),
+            )
+            .unwrap()
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark array syntax AST conversion (common source of cloning)
 fn bench_array_syntax(c: &mut Criterion) {
     let mut group = c.benchmark_group("array_syntax_ast");
-    
+
     let array_syntax = r#"
 results:
   not_value: !$not [false]
@@ -159,24 +165,24 @@ results:
   split_result: !$split [",", "a,b,c,d,e"]
   joined_result: !$join ["-", ["one", "two", "three", "four"]]
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let array_value: Value = serde_yaml::from_str(array_syntax).unwrap();
     let array_context = ParseContext::new("array.yaml", array_syntax);
-    
+
     group.bench_function("array_syntax_parsing", |b| {
         b.iter(|| {
             convert_value_to_ast(black_box(array_value.clone()), black_box(&array_context)).unwrap()
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark mapping-heavy AST conversion (lots of key-value extraction)
 fn bench_mapping_heavy(c: &mut Criterion) {
     let mut group = c.benchmark_group("mapping_heavy_ast");
-    
+
     let mapping_heavy = r#"
 config_a: !$map
   items: ["item1", "item2", "item3", "item4", "item5"]
@@ -219,24 +225,28 @@ config_d: !$mapListToHash
   template: ["{{item[0]}}", "processed-{{item[1]}}"]
   var: "item"
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let mapping_value: Value = serde_yaml::from_str(mapping_heavy).unwrap();
     let mapping_context = ParseContext::new("mapping.yaml", mapping_heavy);
-    
+
     group.bench_function("mapping_heavy_parsing", |b| {
         b.iter(|| {
-            convert_value_to_ast(black_box(mapping_value.clone()), black_box(&mapping_context)).unwrap()
+            convert_value_to_ast(
+                black_box(mapping_value.clone()),
+                black_box(&mapping_context),
+            )
+            .unwrap()
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark deeply nested structures AST conversion (context.with_path usage)
 fn bench_deep_nesting(c: &mut Criterion) {
     let mut group = c.benchmark_group("deep_nesting_ast");
-    
+
     let deep_nesting = r#"
 level1: !$let
   var1: "value1"
@@ -260,24 +270,24 @@ level1: !$let
                 - ["{{var4}}"]
                 - !$split ["-", "{{var1}}-{{var2}}"]
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let deep_value: Value = serde_yaml::from_str(deep_nesting).unwrap();
     let deep_context = ParseContext::new("deep.yaml", deep_nesting);
-    
+
     group.bench_function("deep_nesting", |b| {
         b.iter(|| {
             convert_value_to_ast(black_box(deep_value.clone()), black_box(&deep_context)).unwrap()
         })
     });
-    
+
     group.finish();
 }
 
 /// Benchmark scenarios that heavily exercise cloning AST conversion
 fn bench_clone_heavy_patterns(c: &mut Criterion) {
     let mut group = c.benchmark_group("clone_heavy_ast");
-    
+
     let clone_heavy = r#"
 # Many sequential access to same mapping keys
 sequence_processing: !$map
@@ -317,17 +327,17 @@ field_extraction: !$map
         - ":"
         - ["{{item.name}}", "{{item.config.port}}"]
 "#;
-    
+
     // Pre-parse YAML and create context (excluded from benchmark)
     let clone_value: Value = serde_yaml::from_str(clone_heavy).unwrap();
     let clone_context = ParseContext::new("clone.yaml", clone_heavy);
-    
+
     group.bench_function("clone_heavy_patterns", |b| {
         b.iter(|| {
             convert_value_to_ast(black_box(clone_value.clone()), black_box(&clone_context)).unwrap()
         })
     });
-    
+
     group.finish();
 }
 
@@ -345,7 +355,7 @@ criterion_main!(benches);
 
 #[cfg(test)]
 mod tests {
-    
+
     #[test]
     fn test_convert_value_to_ast_operations() {
         // Verify AST conversion operations work correctly
@@ -358,7 +368,7 @@ config:
         let context = ParseContext::new("test.yaml", simple_yaml);
         let result = convert_value_to_ast(value, &context);
         assert!(result.is_ok());
-        
+
         let preprocessing_yaml = r#"
 result: !$map
   items: ["a", "b"]

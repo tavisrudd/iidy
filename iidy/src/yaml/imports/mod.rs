@@ -1,5 +1,5 @@
 //! Import system for YAML preprocessing
-//! 
+//!
 //! This module implements the `$imports` functionality that allows importing
 //! data from various sources including files, environment variables, AWS services,
 //! and more.
@@ -109,13 +109,11 @@
 
 pub mod loaders;
 
-
-use std::collections::HashMap;
 use anyhow::{Result, anyhow};
-use serde_yaml::Value;
 use async_trait::async_trait;
-use sha2::{Sha256, Digest};
-
+use serde_yaml::Value;
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// Types of imports supported by the system
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,18 +139,26 @@ impl ImportType {
 
     /// Check if this import type requires network access
     pub fn requires_network(&self) -> bool {
-        matches!(self, ImportType::Http | ImportType::S3 | ImportType::Cfn | ImportType::Ssm | ImportType::SsmPath)
+        matches!(
+            self,
+            ImportType::Http
+                | ImportType::S3
+                | ImportType::Cfn
+                | ImportType::Ssm
+                | ImportType::SsmPath
+        )
     }
 
     /// Check if this import type is local-only (security restriction)
     /// Remote templates cannot use these import types for security reasons
     pub fn is_local_only(&self) -> bool {
-        matches!(self, 
+        matches!(
+            self,
             ImportType::File |           // Local filesystem access
             ImportType::Env |            // Local environment variables
             ImportType::Git |            // Local git repository access
             ImportType::Filehash |       // Typically hashes local files 
-            ImportType::FilehashBase64   // Typically hashes local files
+            ImportType::FilehashBase64 // Typically hashes local files
         )
     }
 }
@@ -185,24 +191,24 @@ pub trait ImportLoader: Send + Sync {
 }
 
 /// Parse the import type from a location string with security validation
-/// 
+///
 /// This function implements the core security model for imports:
-/// 
+///
 /// 1. **Local templates** (no URL scheme) can import from any source
 /// 2. **Remote templates** (S3, HTTP, HTTPS) cannot use local-only import types:
 ///    - `file:`, `env:`, `git:`, `filehash:`, `filehash-base64:`
 /// 3. **Relative imports** from remote templates inherit the remote type
 /// 4. **Local path indicators** (`./`, `../`, `/`) are blocked from remote templates
-/// 
+///
 /// # Arguments
 /// * `location` - The import location (e.g., "file:data.yaml", "s3://bucket/file.yaml")
 /// * `base_location` - The location of the template making the import
-/// 
+///
 /// # Returns
 /// The validated `ImportType` or an error if security restrictions are violated
-/// 
+///
 /// # Security Examples
-/// 
+///
 /// - ✅ Local template can import anything: `parse_import_type("file:local.yaml", "config.yaml")` → `Ok(ImportType::File)`
 /// - ❌ Remote template cannot import local files: `parse_import_type("file:local.yaml", "s3://bucket/config.yaml")` → `Err("not allowed from remote template")`
 /// - ✅ Remote template can import other remote sources: `parse_import_type("s3://other/data.yaml", "https://example.com/config.yaml")` → `Ok(ImportType::S3)`
@@ -210,7 +216,8 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
     // Parse explicit type from location (e.g., "s3:", "env:", etc.)
     let has_explicit_type = location.contains(':');
     let import_type_str = if has_explicit_type {
-        location.to_lowercase()
+        location
+            .to_lowercase()
             .split(':')
             .next()
             .unwrap()
@@ -231,16 +238,19 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
         "ssm-path" => ImportType::SsmPath,
         "s3" => ImportType::S3,
         "http" => ImportType::Http,
-        _ => return Err(anyhow!("Unknown import type '{}' in {}", location, base_location)),
+        _ => {
+            return Err(anyhow!(
+                "Unknown import type '{}' in {}",
+                location,
+                base_location
+            ));
+        }
     };
 
     // Parse base location type for security validation
     let base_import_type = if base_location.contains(':') {
         let base_location_lower = base_location.to_lowercase();
-        let base_type_str = base_location_lower
-            .split(':')
-            .next()
-            .unwrap();
+        let base_type_str = base_location_lower.split(':').next().unwrap();
         match base_type_str {
             "s3" => Some(ImportType::S3),
             "http" | "https" => Some(ImportType::Http),
@@ -256,10 +266,14 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
             if !has_explicit_type {
                 // For implicit imports (no prefix), inherit the base type
                 // unless the location looks explicitly local (starts with ./ or /)
-                if location.starts_with("./") || location.starts_with("../") || location.starts_with("/") {
+                if location.starts_with("./")
+                    || location.starts_with("../")
+                    || location.starts_with("/")
+                {
                     return Err(anyhow!(
                         "Import type '{}' in '{}' not allowed from remote template",
-                        location, base_location
+                        location,
+                        base_location
                     ));
                 }
                 // Inherit the base type for relative paths without explicit local indicators
@@ -267,7 +281,8 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
             } else if import_type.is_local_only() {
                 return Err(anyhow!(
                     "Import type '{}' in '{}' not allowed from remote template",
-                    location, base_location
+                    location,
+                    base_location
                 ));
             }
         }
@@ -294,57 +309,69 @@ mod tests {
     fn test_security_restrictions_from_s3_template() {
         // Test that S3 templates cannot use local-only import types
         let base_location = "s3://bucket/config.yaml";
-        
+
         // These should be rejected
         let forbidden_imports = vec![
             "file:local.yaml",
             "env:HOME",
-            "git:branch", 
+            "git:branch",
             "filehash:local.txt",
             "filehash-base64:local.txt",
-            "./local.yaml",  // Local path indicators
+            "./local.yaml", // Local path indicators
             "../local.yaml",
             "/absolute/local.yaml",
         ];
-        
+
         for import in forbidden_imports {
             let result = parse_import_type(import, base_location);
-            assert!(result.is_err(), "Expected error for import '{}' from S3 template", import);
+            assert!(
+                result.is_err(),
+                "Expected error for import '{}' from S3 template",
+                import
+            );
             let error_msg = result.unwrap_err().to_string();
-            assert!(error_msg.contains("not allowed from remote template"), 
-                   "Expected security error message for '{}', got: {}", import, error_msg);
+            assert!(
+                error_msg.contains("not allowed from remote template"),
+                "Expected security error message for '{}', got: {}",
+                import,
+                error_msg
+            );
         }
     }
-    
+
     #[test]
     fn test_security_restrictions_from_https_template() {
         // Test that HTTPS templates cannot use local-only import types
         let base_location = "https://example.com/config.yaml";
-        
+
         // These should be rejected
         let forbidden_imports = vec![
             "file:local.yaml",
             "env:PATH",
-            "git:sha", 
+            "git:sha",
             "filehash:local.txt",
             "filehash-base64:local.txt",
             "./local.yaml",
-            "../local.yaml", 
+            "../local.yaml",
             "/absolute/local.yaml",
         ];
-        
+
         for import in forbidden_imports {
             let result = parse_import_type(import, base_location);
-            assert!(result.is_err(), "Expected error for import '{}' from HTTPS template", import);
+            assert!(
+                result.is_err(),
+                "Expected error for import '{}' from HTTPS template",
+                import
+            );
         }
     }
-    
+
     #[test]
     fn test_allowed_imports_from_remote_templates() {
         // Test that remote templates CAN use these import types
         let s3_base = "s3://bucket/config.yaml";
         let https_base = "https://example.com/config.yaml";
-        
+
         let allowed_imports = vec![
             ("s3:bucket/other.yaml", ImportType::S3),
             ("http:https://other.com/data.yaml", ImportType::Http),
@@ -353,42 +380,64 @@ mod tests {
             ("ssm-path:/path/to/params/", ImportType::SsmPath),
             ("random:dashed-name", ImportType::Random),
         ];
-        
+
         for base_location in [s3_base, https_base] {
             for (import, expected_type) in &allowed_imports {
                 let result = parse_import_type(import, base_location);
-                assert!(result.is_ok(), "Expected success for import '{}' from remote template '{}'", import, base_location);
+                assert!(
+                    result.is_ok(),
+                    "Expected success for import '{}' from remote template '{}'",
+                    import,
+                    base_location
+                );
                 assert_eq!(result.unwrap(), *expected_type);
             }
         }
     }
-    
+
     #[test]
     fn test_relative_imports_inherit_remote_type() {
         // Test that relative imports from remote templates inherit the remote type
         let test_cases = vec![
-            ("s3://bucket/folder/config.yaml", "other.yaml", ImportType::S3),
-            ("https://example.com/configs/app.yaml", "database.yaml", ImportType::Http),
-            ("http://example.com/templates/base.yaml", "shared.yaml", ImportType::Http),
+            (
+                "s3://bucket/folder/config.yaml",
+                "other.yaml",
+                ImportType::S3,
+            ),
+            (
+                "https://example.com/configs/app.yaml",
+                "database.yaml",
+                ImportType::Http,
+            ),
+            (
+                "http://example.com/templates/base.yaml",
+                "shared.yaml",
+                ImportType::Http,
+            ),
         ];
-        
+
         for (base_location, relative_import, expected_type) in test_cases {
             let result = parse_import_type(&relative_import, &base_location);
-            assert!(result.is_ok(), "Expected success for relative import '{}' from '{}'", relative_import, base_location);
+            assert!(
+                result.is_ok(),
+                "Expected success for relative import '{}' from '{}'",
+                relative_import,
+                base_location
+            );
             assert_eq!(result.unwrap(), expected_type);
         }
     }
-    
+
     #[test]
     fn test_local_templates_can_use_any_import_type() {
         // Test that local templates can use any import type (no security restrictions)
         let local_bases = vec![
             "config.yaml",
-            "./config.yaml", 
+            "./config.yaml",
             "/absolute/path/config.yaml",
             "configs/app.yaml",
         ];
-        
+
         let all_import_types = vec![
             ("file:other.yaml", ImportType::File),
             ("env:HOME", ImportType::Env),
@@ -401,16 +450,21 @@ mod tests {
             ("ssm:/param", ImportType::Ssm),
             ("random:name", ImportType::Random),
         ];
-        
+
         for base_location in local_bases {
             for (import, expected_type) in &all_import_types {
                 let result = parse_import_type(import, &base_location);
-                assert!(result.is_ok(), "Expected success for import '{}' from local template '{}'", import, base_location);
+                assert!(
+                    result.is_ok(),
+                    "Expected success for import '{}' from local template '{}'",
+                    import,
+                    base_location
+                );
                 assert_eq!(result.unwrap(), *expected_type);
             }
         }
     }
-    
+
     #[test]
     fn test_is_local_only_classification() {
         // Test the classification of import types
@@ -421,7 +475,7 @@ mod tests {
             ImportType::Filehash,
             ImportType::FilehashBase64,
         ];
-        
+
         let remote_allowed_types = vec![
             ImportType::S3,
             ImportType::Http,
@@ -430,14 +484,21 @@ mod tests {
             ImportType::SsmPath,
             ImportType::Random,
         ];
-        
+
         for import_type in local_only_types {
-            assert!(import_type.is_local_only(), "{:?} should be local-only", import_type);
+            assert!(
+                import_type.is_local_only(),
+                "{:?} should be local-only",
+                import_type
+            );
         }
-        
+
         for import_type in remote_allowed_types {
-            assert!(!import_type.is_local_only(), "{:?} should be allowed from remote", import_type);
+            assert!(
+                !import_type.is_local_only(),
+                "{:?} should be allowed from remote",
+                import_type
+            );
         }
     }
 }
-

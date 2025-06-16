@@ -1,11 +1,11 @@
 use anyhow::Result;
-use iidy::yaml::preprocess_yaml_v11;
 use iidy::yaml::engine::YamlPreprocessor;
 use iidy::yaml::imports::loaders::ProductionImportLoader;
+use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 
 /// Tests for YAML 1.1 vs 1.2 boolean compatibility
-/// 
+///
 /// CloudFormation uses YAML 1.1 which auto-converts strings like "yes", "no", "on", "off" to booleans.
 /// However, serde_yaml follows YAML 1.2 which treats these as strings.
 /// We need to implement YAML 1.1 boolean compatibility for CloudFormation templates.
@@ -26,20 +26,24 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = result {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(resource)) = resources.get(&Value::String("MyResource".to_string())) {
-                if let Some(Value::Mapping(properties)) = resource.get(&Value::String("Properties".to_string())) {
-                    
+            if let Some(Value::Mapping(resource)) =
+                resources.get(&Value::String("MyResource".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    resource.get(&Value::String("Properties".to_string()))
+                {
                     // Check current behavior - with YAML 1.2, these should be strings
                     let monitoring = properties.get(&Value::String("Monitoring".to_string()));
                     let ebs_optimized = properties.get(&Value::String("EbsOptimized".to_string()));
-                    let detailed_monitoring = properties.get(&Value::String("DetailedMonitoring".to_string()));
+                    let detailed_monitoring =
+                        properties.get(&Value::String("DetailedMonitoring".to_string()));
                     let public_ip = properties.get(&Value::String("PublicIp".to_string()));
                     let backup = properties.get(&Value::String("Backup".to_string()));
                     let description = properties.get(&Value::String("Description".to_string()));
-                    
+
                     // Print actual values for investigation
                     println!("Current YAML 1.2 behavior:");
                     println!("  Monitoring: {:?}", monitoring);
@@ -48,38 +52,44 @@ Resources:
                     println!("  PublicIp: {:?}", public_ip);
                     println!("  Backup: {:?}", backup);
                     println!("  Description: {:?}", description);
-                    
+
                     // Document current behavior (YAML 1.2)
                     // In YAML 1.2, only true/false/null are special - other values remain strings
-                    
+
                     // These should be strings in YAML 1.2 but booleans in YAML 1.1
                     match monitoring {
                         Some(Value::String(s)) if s == "yes" => {
-                            println!("❌ YAML 1.1 incompatibility: 'yes' is a string, should be boolean true");
+                            println!(
+                                "❌ YAML 1.1 incompatibility: 'yes' is a string, should be boolean true"
+                            );
                         }
                         Some(Value::Bool(true)) => {
                             println!("✅ YAML 1.1 compatible: 'yes' converted to boolean true");
                         }
                         _ => println!("⚠️  Unexpected value for 'yes': {:?}", monitoring),
                     }
-                    
+
                     match ebs_optimized {
                         Some(Value::String(s)) if s == "no" => {
-                            println!("❌ YAML 1.1 incompatibility: 'no' is a string, should be boolean false");
+                            println!(
+                                "❌ YAML 1.1 incompatibility: 'no' is a string, should be boolean false"
+                            );
                         }
                         Some(Value::Bool(false)) => {
                             println!("✅ YAML 1.1 compatible: 'no' converted to boolean false");
                         }
                         _ => println!("⚠️  Unexpected value for 'no': {:?}", ebs_optimized),
                     }
-                    
+
                     // IMPORTANT: Check that quoted strings remain strings
                     match description {
                         Some(Value::String(s)) if s == "yes" => {
                             println!("✅ Quoted string preserved: '\"yes\"' remained as string");
                         }
                         Some(Value::Bool(true)) => {
-                            println!("❌ Quoted string incorrectly converted: '\"yes\"' became boolean - this breaks YAML 1.1 spec!");
+                            println!(
+                                "❌ Quoted string incorrectly converted: '\"yes\"' became boolean - this breaks YAML 1.1 spec!"
+                            );
                         }
                         _ => println!("⚠️  Unexpected value for quoted 'yes': {:?}", description),
                     }
@@ -87,7 +97,7 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -136,7 +146,7 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // For now, just document what we expect vs what we get
     println!("\nYAML 1.1 Boolean Compatibility Requirements:");
     println!("CloudFormation expects YAML 1.1 behavior where:");
@@ -145,22 +155,26 @@ Resources:
     println!("  - null/Null/NULL/~ → null");
     println!("  - Quoted strings should remain strings");
     println!("  - Handlebars results should follow same rules");
-    
+
     if let Value::Mapping(root) = result {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(resource)) = resources.get(&Value::String("TestBooleans".to_string())) {
-                if let Some(Value::Mapping(properties)) = resource.get(&Value::String("Properties".to_string())) {
-                    
+            if let Some(Value::Mapping(resource)) =
+                resources.get(&Value::String("TestBooleans".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    resource.get(&Value::String("Properties".to_string()))
+                {
                     // Check a few key examples
                     let monitoring1 = properties.get(&Value::String("Monitoring1".to_string()));
-                    let ebs_optimized1 = properties.get(&Value::String("EbsOptimized1".to_string()));
+                    let ebs_optimized1 =
+                        properties.get(&Value::String("EbsOptimized1".to_string()));
                     let backup1 = properties.get(&Value::String("BackupPolicy1".to_string()));
                     let description1 = properties.get(&Value::String("Description1".to_string()));
                     let description2 = properties.get(&Value::String("Description2".to_string()));
-                    
+
                     println!("\nActual current behavior:");
                     println!("  Monitoring1 (yes): {:?}", monitoring1);
-                    println!("  EbsOptimized1 (no): {:?}", ebs_optimized1); 
+                    println!("  EbsOptimized1 (no): {:?}", ebs_optimized1);
                     println!("  BackupPolicy1 (null): {:?}", backup1);
                     println!("  Description1 (\"yes\"): {:?}", description1);
                     println!("  Description2 (handlebars 'yes'): {:?}", description2);
@@ -168,7 +182,7 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -204,12 +218,12 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     println!("\nEdge cases for YAML 1.1 boolean compatibility:");
-    
+
     // For now, just verify it parses and document behavior
     assert!(result.is_mapping());
-    
+
     Ok(())
 }
 
@@ -229,21 +243,24 @@ Resources:
     let loader = ProductionImportLoader::new();
     let mut preprocessor = YamlPreprocessor::new(loader, false);
     let result_yaml_12 = preprocessor.process(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = result_yaml_12 {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(resource)) = resources.get(&Value::String("MyResource".to_string())) {
-                if let Some(Value::Mapping(properties)) = resource.get(&Value::String("Properties".to_string())) {
-                    
+            if let Some(Value::Mapping(resource)) =
+                resources.get(&Value::String("MyResource".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    resource.get(&Value::String("Properties".to_string()))
+                {
                     let monitoring = properties.get(&Value::String("Monitoring".to_string()));
                     let ebs_optimized = properties.get(&Value::String("EbsOptimized".to_string()));
                     let description = properties.get(&Value::String("Description".to_string()));
-                    
+
                     println!("YAML 1.2 mode behavior:");
                     println!("  Monitoring: {:?}", monitoring);
                     println!("  EbsOptimized: {:?}", ebs_optimized);
                     println!("  Description: {:?}", description);
-                    
+
                     // In YAML 1.2 mode, all should remain as strings
                     assert_eq!(monitoring, Some(&Value::String("yes".to_string())));
                     assert_eq!(ebs_optimized, Some(&Value::String("no".to_string())));
@@ -252,26 +269,29 @@ Resources:
             }
         }
     }
-    
-    // Test YAML 1.1 mode (with boolean conversion) 
+
+    // Test YAML 1.1 mode (with boolean conversion)
     let loader = ProductionImportLoader::new();
     let mut preprocessor = YamlPreprocessor::new(loader, true); // Default is YAML 1.1 mode
     let result_yaml_11 = preprocessor.process(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = result_yaml_11 {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(resource)) = resources.get(&Value::String("MyResource".to_string())) {
-                if let Some(Value::Mapping(properties)) = resource.get(&Value::String("Properties".to_string())) {
-                    
+            if let Some(Value::Mapping(resource)) =
+                resources.get(&Value::String("MyResource".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    resource.get(&Value::String("Properties".to_string()))
+                {
                     let monitoring = properties.get(&Value::String("Monitoring".to_string()));
                     let ebs_optimized = properties.get(&Value::String("EbsOptimized".to_string()));
                     let description = properties.get(&Value::String("Description".to_string()));
-                    
+
                     println!("YAML 1.1 mode behavior:");
                     println!("  Monitoring: {:?}", monitoring);
-                    println!("  EbsOptimized: {:?}", ebs_optimized);  
+                    println!("  EbsOptimized: {:?}", ebs_optimized);
                     println!("  Description: {:?}", description);
-                    
+
                     // In YAML 1.1 mode, unquoted booleans convert but quoted remain strings
                     assert_eq!(monitoring, Some(&Value::Bool(true)));
                     assert_eq!(ebs_optimized, Some(&Value::Bool(false)));
@@ -282,7 +302,9 @@ Resources:
                             println!("✅ Description field preserved as string");
                         }
                         Some(Value::Bool(true)) => {
-                            println!("⚠️  Description was converted to boolean - this may be acceptable depending on heuristics");
+                            println!(
+                                "⚠️  Description was converted to boolean - this may be acceptable depending on heuristics"
+                            );
                         }
                         _ => panic!("Unexpected description value: {:?}", description),
                     }
@@ -290,6 +312,6 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }

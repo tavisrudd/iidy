@@ -1,12 +1,12 @@
 //! YAML specification and document type detection
-//! 
+//!
 //! This module provides functionality to detect which YAML specification version
 //! should be used for parsing a document, based on content analysis and heuristics.
 //! It also includes document type predicates for specific formats like CloudFormation
 //! and Kubernetes manifests.
 
 /// Detect YAML specification version from document content
-/// 
+///
 /// Checks for:
 /// 1. Explicit %YAML directives (%YAML 1.1 or %YAML 1.2)
 /// 2. CloudFormation-specific top-level keys (AWSTemplateFormatVersion, Resources, etc.)
@@ -24,17 +24,17 @@ pub fn detect_yaml_spec(input: &str) -> YamlSpecDetection {
             }
         }
     }
-    
+
     // Check for CloudFormation indicators
     if is_cloudformation_template(input) {
         return YamlSpecDetection::CloudFormation;
     }
-    
-    // Check for Kubernetes indicators  
+
+    // Check for Kubernetes indicators
     if is_kubernetes_manifest(input) {
         return YamlSpecDetection::Kubernetes;
     }
-    
+
     // Default to YAML 1.2 if no specific indicators found
     YamlSpecDetection::Unknown
 }
@@ -60,9 +60,9 @@ impl YamlSpecDetection {
         match self {
             YamlSpecDetection::ExplicitV11 => true,
             YamlSpecDetection::ExplicitV12 => false,
-            YamlSpecDetection::CloudFormation => true,  // CloudFormation uses YAML 1.1
-            YamlSpecDetection::Kubernetes => false,     // Kubernetes uses YAML 1.2
-            YamlSpecDetection::Unknown => false,        // Default to YAML 1.2 strict mode
+            YamlSpecDetection::CloudFormation => true, // CloudFormation uses YAML 1.1
+            YamlSpecDetection::Kubernetes => false,    // Kubernetes uses YAML 1.2
+            YamlSpecDetection::Unknown => false,       // Default to YAML 1.2 strict mode
         }
     }
 }
@@ -80,16 +80,17 @@ pub fn is_cloudformation_template(input: &str) -> bool {
         "Mappings:",
         "Metadata:",
     ];
-    
+
     // Look for CloudFormation indicators in the first 50 lines
     let lines: Vec<&str> = input.lines().take(50).collect();
     let content = lines.join("\n");
-    
+
     // Count how many CloudFormation indicators we find
-    let cfn_count = cfn_indicators.iter()
+    let cfn_count = cfn_indicators
+        .iter()
         .filter(|&indicator| content.contains(indicator))
         .count();
-    
+
     // If we find 2+ CloudFormation indicators, it's likely a CFN template
     cfn_count >= 2
 }
@@ -97,14 +98,8 @@ pub fn is_cloudformation_template(input: &str) -> bool {
 /// Check if the document appears to be a Kubernetes manifest
 pub fn is_kubernetes_manifest(input: &str) -> bool {
     // Kubernetes-specific patterns (not currently used in detection logic)
-    let _k8s_indicators = [
-        "apiVersion:",
-        "kind:",
-        "metadata:",
-        "spec:",
-        "status:",
-    ];
-    
+    let _k8s_indicators = ["apiVersion:", "kind:", "metadata:", "spec:", "status:"];
+
     // Kubernetes API versions
     let k8s_api_versions = [
         "apps/v1",
@@ -115,19 +110,18 @@ pub fn is_kubernetes_manifest(input: &str) -> bool {
         "autoscaling/v1",
         "rbac.authorization.k8s.io",
     ];
-    
+
     // Look for Kubernetes indicators in the first 20 lines
     let lines: Vec<&str> = input.lines().take(20).collect();
     let content = lines.join("\n");
-    
+
     // Check for apiVersion and kind (required for all K8s resources)
     let has_api_version = content.contains("apiVersion:");
     let has_kind = content.contains("kind:");
-    
+
     // Check for known Kubernetes API versions
-    let has_k8s_api = k8s_api_versions.iter()
-        .any(|&api| content.contains(api));
-    
+    let has_k8s_api = k8s_api_versions.iter().any(|&api| content.contains(api));
+
     // If we have apiVersion + kind + known K8s API, it's likely Kubernetes
     has_api_version && has_kind && has_k8s_api
 }

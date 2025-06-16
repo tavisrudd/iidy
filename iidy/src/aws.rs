@@ -44,7 +44,7 @@ pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
 }
 
 /// Load AWS SDK configuration using values from [`NormalizedAwsOpts`].
-/// 
+///
 /// This is a convenience function that extracts the relevant AWS configuration
 /// fields from NormalizedAwsOpts and delegates to config_from_opts.
 pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<SdkConfig> {
@@ -55,6 +55,6 @@ pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<Sdk
         assume_role_arn: opts.assume_role_arn.clone(),
         client_request_token: None, // Token is handled separately in NormalizedAwsOpts
     };
-    
+
     config_from_opts(&aws_opts).await
 }

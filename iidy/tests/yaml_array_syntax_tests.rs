@@ -1,5 +1,5 @@
 //! Tests for YAML tag array syntax support
-//! 
+//!
 //! Tests that tags support both direct syntax (!Tag value) and array syntax (!Tag [value])
 //! This ensures compatibility with iidy-js behavior where single-element arrays are unpacked.
 
@@ -17,7 +17,7 @@ test_not_false_array: !$not [false]
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         // Both syntaxes should produce identical results
         assert_eq!(
@@ -54,7 +54,7 @@ test_escape_array: !$escape ["{{test_var}}"]
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         // Both should escape handlebars processing (not process the template)
         assert_eq!(
@@ -89,15 +89,15 @@ test_yaml_array: !$toYamlString
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_yaml_direct".to_string()));
         let array_result = map.get(&Value::String("test_yaml_array".to_string()));
-        
+
         // Both should produce YAML strings (array should unpack to single element)
         assert!(direct_result.is_some());
         assert!(array_result.is_some());
-        
+
         // Should contain YAML representation
         if let Some(Value::String(yaml_str)) = direct_result {
             assert!(yaml_str.contains("key: value"));
@@ -131,15 +131,15 @@ test_json_array: !$toJsonString
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_json_direct".to_string()));
         let array_result = map.get(&Value::String("test_json_array".to_string()));
-        
+
         // Both should produce JSON strings (array should unpack to single element)
         assert!(direct_result.is_some());
         assert!(array_result.is_some());
-        
+
         // Should contain JSON representation
         if let Some(Value::String(json_str)) = direct_result {
             assert!(json_str.contains("\"key\":\"value\""));
@@ -164,16 +164,16 @@ test_parse_array: !$parseYaml ["key: value\nnumber: 42"]
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
         let array_result = map.get(&Value::String("test_parse_array".to_string()));
-        
+
         // Both should produce identical parsed structures
         assert!(direct_result.is_some());
         assert!(array_result.is_some());
         assert_eq!(direct_result, array_result);
-        
+
         // Should be a parsed mapping
         if let Some(Value::Mapping(parsed)) = direct_result {
             assert_eq!(
@@ -200,16 +200,16 @@ test_parse_array: !$parseJson ['{"key": "value", "number": 42}']
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
         let array_result = map.get(&Value::String("test_parse_array".to_string()));
-        
+
         // Both should produce identical parsed structures
         assert!(direct_result.is_some());
         assert!(array_result.is_some());
         assert_eq!(direct_result, array_result);
-        
+
         // Should be a parsed mapping
         if let Some(Value::Mapping(parsed)) = direct_result {
             assert_eq!(
@@ -243,15 +243,15 @@ test_getatt_array: !GetAtt ["MyResource.Property"]
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // Convert to string to check tag preservation
     let output = serde_yaml::to_string(&result)?;
-    
+
     // Both syntaxes should produce identical CloudFormation tag structures
     assert!(output.contains("!Ref MyResource"));
     assert!(output.contains("!Sub Hello ${param}"));
     assert!(output.contains("!GetAtt MyResource.Property"));
-    
+
     // Should not contain array structures
     assert!(!output.contains("!Ref\n- MyResource"));
     assert!(!output.contains("!Sub\n- Hello"));
@@ -274,9 +274,10 @@ test_filter: !$map
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
-        if let Some(Value::Sequence(filtered)) = map.get(&Value::String("test_filter".to_string())) {
+        if let Some(Value::Sequence(filtered)) = map.get(&Value::String("test_filter".to_string()))
+        {
             // Should exclude "worker" and include "api" and "web"
             assert_eq!(filtered.len(), 2);
             assert_eq!(filtered[0], Value::String("service: api".to_string()));
@@ -301,22 +302,28 @@ test_nested_array: !$not [[true]]
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(map) = result {
         // Empty array should be treated as direct empty array (not unpacked)
-        if let Some(Value::Bool(empty_result)) = map.get(&Value::String("test_empty_array".to_string())) {
+        if let Some(Value::Bool(empty_result)) =
+            map.get(&Value::String("test_empty_array".to_string()))
+        {
             // Empty array is falsy, so !$not [] should be true
             assert_eq!(*empty_result, true);
         }
-        
+
         // Multi-element array should be treated as direct array (not unpacked)
-        if let Some(Value::Bool(multi_result)) = map.get(&Value::String("test_multi_element_array".to_string())) {
+        if let Some(Value::Bool(multi_result)) =
+            map.get(&Value::String("test_multi_element_array".to_string()))
+        {
             // Non-empty array is truthy, so !$not [true, false] should be false
             assert_eq!(*multi_result, false);
         }
-        
+
         // Nested array should be treated as direct array (not unpacked)
-        if let Some(Value::Bool(nested_result)) = map.get(&Value::String("test_nested_array".to_string())) {
+        if let Some(Value::Bool(nested_result)) =
+            map.get(&Value::String("test_nested_array".to_string()))
+        {
             // Non-empty array is truthy, so !$not [[true]] should be false
             assert_eq!(*nested_result, false);
         }

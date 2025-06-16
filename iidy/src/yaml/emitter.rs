@@ -1,5 +1,5 @@
 //! Custom YAML emitter for iidy-js compatible output
-//! 
+//!
 //! This module provides a custom YAML emitter that extends yaml-rust's functionality
 //! with intelligent string handling to match iidy-js output formatting.
 
@@ -16,26 +16,27 @@ fn is_plain_safe_string(string: &str) -> bool {
     }
 
     let chars: Vec<char> = string.chars().collect();
-    
+
     // Check first character
     if !is_plain_safe_first(chars[0]) {
         return false;
     }
-    
-    // Check last character  
+
+    // Check last character
     if !is_plain_safe_last(chars[chars.len() - 1]) {
         return false;
     }
-    
+
     // Check all characters in sequence
     let mut prev_char: Option<char> = None;
     for &ch in &chars {
-        if !is_plain_safe(ch, prev_char, true) { // inblock = true for block context
+        if !is_plain_safe(ch, prev_char, true) {
+            // inblock = true for block context
             return false;
         }
         prev_char = Some(ch);
     }
-    
+
     true
 }
 
@@ -58,17 +59,34 @@ fn is_ns_char_or_whitespace(c: char) -> bool {
     is_printable(c)
         && c != '\u{FEFF}' // BOM
         && c != '\r'       // carriage return
-        && c != '\n'       // line feed
+        && c != '\n' // line feed
 }
 
 /// js-yaml isPlainSafeFirst equivalent
 fn is_plain_safe_first(c: char) -> bool {
-    is_printable(c) 
+    is_printable(c)
         && !is_whitespace(c)
-        && !matches!(c, 
-            '-' | '?' | ':' | ',' | '[' | ']' | '{' | '}' |
-            '#' | '&' | '*' | '!' | '|' | '=' | '>' | '\'' | '"' |
-            '%' | '@' | '`'
+        && !matches!(
+            c,
+            '-' | '?'
+                | ':'
+                | ','
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '#'
+                | '&'
+                | '*'
+                | '!'
+                | '|'
+                | '='
+                | '>'
+                | '\''
+                | '"'
+                | '%'
+                | '@'
+                | '`'
         )
 }
 
@@ -81,15 +99,14 @@ fn is_plain_safe_last(c: char) -> bool {
 fn is_plain_safe(c: char, prev_char: Option<char>, inblock: bool) -> bool {
     let c_is_ns_char_or_whitespace = is_ns_char_or_whitespace(c);
     let c_is_ns_char = c_is_ns_char_or_whitespace && !is_whitespace(c);
-    
+
     // ns-plain-safe logic
     let plain_safe = if inblock {
         c_is_ns_char_or_whitespace
     } else {
-        c_is_ns_char_or_whitespace
-            && !matches!(c, ',' | '[' | ']' | '{' | '}') // flow indicators
+        c_is_ns_char_or_whitespace && !matches!(c, ',' | '[' | ']' | '{' | '}') // flow indicators
     };
-    
+
     // ns-plain-char logic
     plain_safe
         && c != '#' // false on '#'
@@ -150,7 +167,7 @@ fn is_plain_safe(c: char, prev_char: Option<char>, inblock: bool) -> bool {
 /// js-yaml testImplicitResolving equivalent - test if string would be interpreted as another type
 fn is_ambiguous_type(string: &str) -> bool {
     // Check for boolean-like strings
-    matches!(string, 
+    matches!(string,
         "true" | "false" | "null" | "~" | 
         "yes" | "no" | "on" | "off" |
         "True" | "False" | "Null" |
@@ -171,14 +188,14 @@ fn is_base60_syntax(string: &str) -> bool {
     if string.is_empty() {
         return false;
     }
-    
+
     let mut chars = string.chars().peekable();
-    
+
     // Optional sign
     if matches!(chars.peek(), Some('-') | Some('+')) {
         chars.next();
     }
-    
+
     // Must have at least one digit or underscore
     let mut has_digit = false;
     while let Some(&ch) = chars.peek() {
@@ -189,18 +206,18 @@ fn is_base60_syntax(string: &str) -> bool {
             break;
         }
     }
-    
+
     if !has_digit {
         return false;
     }
-    
+
     // Must have at least one colon section
     let mut has_colon = false;
     while let Some(&ch) = chars.peek() {
         if ch == ':' {
             has_colon = true;
             chars.next();
-            
+
             // After colon, need digits/underscores
             let mut section_has_digit = false;
             while let Some(&ch) = chars.peek() {
@@ -211,7 +228,7 @@ fn is_base60_syntax(string: &str) -> bool {
                     break;
                 }
             }
-            
+
             if !section_has_digit {
                 return false;
             }
@@ -219,11 +236,11 @@ fn is_base60_syntax(string: &str) -> bool {
             break;
         }
     }
-    
+
     if !has_colon {
         return false;
     }
-    
+
     // Optional decimal part
     if let Some(&'.') = chars.peek() {
         chars.next();
@@ -235,7 +252,7 @@ fn is_base60_syntax(string: &str) -> bool {
             }
         }
     }
-    
+
     // Must have consumed all characters
     chars.peek().is_none()
 }
@@ -341,7 +358,7 @@ impl<'a> IidyYamlEmitter<'a> {
         }
         Ok(())
     }
-    
+
     // iidy CUSTOMIZED fns below:
 
     fn emit_val_iidy(&mut self, val: &Yaml) -> Result<(), fmt::Error> {
@@ -383,12 +400,12 @@ impl<'a> IidyYamlEmitter<'a> {
         if v.contains('\n') {
             return self.emit_multiline_string_iidy(v);
         }
-        
+
         // For single-line strings, prefer no quotes when possible
         if !self.need_quotes_iidy(v) {
             return write!(self.writer, "{}", v);
         }
-        
+
         // String needs quoting - prefer single quotes unless they contain single quotes
         if !v.contains('\'') {
             self.emit_single_quoted_string_iidy(v)
@@ -404,9 +421,11 @@ impl<'a> IidyYamlEmitter<'a> {
         // Use |- for simple line sequences (no blank lines, all lines short and non-empty)
         // Use | for everything else (content blocks, blank lines, etc.)
         let lines: Vec<&str> = string.lines().collect();
-        let is_simple_line_sequence = !string.contains("\n\n") 
-            && lines.iter().all(|line| !line.trim().is_empty() && line.len() < 20);
-        
+        let is_simple_line_sequence = !string.contains("\n\n")
+            && lines
+                .iter()
+                .all(|line| !line.trim().is_empty() && line.len() < 20);
+
         if is_simple_line_sequence {
             self.writer.write_str("|-")?;
         } else {
@@ -418,7 +437,11 @@ impl<'a> IidyYamlEmitter<'a> {
             // Only indent non-empty lines
             if !line.is_empty() {
                 // Multiline strings are indented one level beyond the current level
-                let indent_level = if self.level >= 0 { self.level as usize + 1 } else { 1 };
+                let indent_level = if self.level >= 0 {
+                    self.level as usize + 1
+                } else {
+                    1
+                };
                 for _ in 0..indent_level * self.best_indent {
                     self.writer.write_char(' ')?;
                 }
@@ -485,11 +508,15 @@ impl<'a> IidyYamlEmitter<'a> {
             if let Yaml::String(tag_name) = key {
                 // Write the tag name directly (e.g., "!Ref" -> !Ref)
                 self.writer.write_str(tag_name)?;
-                
+
                 // Handle the value based on its type
                 match value {
                     // Simple scalar values - write inline with space
-                    Yaml::String(_) | Yaml::Integer(_) | Yaml::Real(_) | Yaml::Boolean(_) | Yaml::Null => {
+                    Yaml::String(_)
+                    | Yaml::Integer(_)
+                    | Yaml::Real(_)
+                    | Yaml::Boolean(_)
+                    | Yaml::Null => {
                         self.writer.write_str(" ")?;
                         self.emit_node(value, true)?;
                     }
@@ -529,19 +556,19 @@ mod tests {
         let mut h = Hash::new();
         h.insert(
             yaml_rust::Yaml::String("!Ref".to_string()),
-            yaml_rust::Yaml::String("MyResource".to_string())
+            yaml_rust::Yaml::String("MyResource".to_string()),
         );
         let cf_tag_yaml = yaml_rust::Yaml::Hash(h);
-        
+
         // Test our emitter directly with this hash
         let mut output = String::new();
         {
             let mut emitter = IidyYamlEmitter::new(&mut output);
             emitter.emit_node(&cf_tag_yaml, true).unwrap();
         }
-        
+
         println!("CloudFormation tag emission test output: '{}'", output);
-        
+
         // Should emit "!Ref MyResource", not "'!Ref': MyResource"
         assert_eq!(output.trim(), "!Ref MyResource");
     }
@@ -552,27 +579,27 @@ mod tests {
         let mut cf_tag_hash = Hash::new();
         cf_tag_hash.insert(
             yaml_rust::Yaml::String("!Ref".to_string()),
-            yaml_rust::Yaml::String("MyResource".to_string())
+            yaml_rust::Yaml::String("MyResource".to_string()),
         );
-        
+
         let mut parent_hash = Hash::new();
         parent_hash.insert(
             yaml_rust::Yaml::String("test_ref".to_string()),
-            yaml_rust::Yaml::Hash(cf_tag_hash)
+            yaml_rust::Yaml::Hash(cf_tag_hash),
         );
-        
+
         let parent_yaml = yaml_rust::Yaml::Hash(parent_hash);
-        
+
         // Test our emitter with the parent hash (this mimics the real pipeline)
         let mut output = String::new();
         {
             let mut emitter = IidyYamlEmitter::new(&mut output);
             emitter.emit_node(&parent_yaml, true).unwrap();
         }
-        
+
         println!("Parent hash with CloudFormation tag emission test output:");
         println!("{}", output);
-        
+
         // Should emit "test_ref: !Ref MyResource", not "test_ref:\n  '!Ref': MyResource"
         let expected = "test_ref: !Ref MyResource";
         assert_eq!(output.trim(), expected);
@@ -582,28 +609,28 @@ mod tests {
     // fn test_iidy_vs_js_yaml_quoting_differences() {
     //     let test_strings = vec![
     //         "arn:aws:iam::123456789012:role/MyRole",
-    //         "key:value", 
+    //         "key:value",
     //         "key : value",
     //         "value:",
     //         ":value",
     //         "normaltext",
     //         "a:b:c:d",
     //     ];
-        
+
     //     let mut buffer = String::new();
     //     let emitter = IidyYamlEmitter::new(&mut buffer);
-        
+
     //     for test_str in test_strings {
     //         println!("Testing string: '{}'", test_str);
-            
+
     //         // Test current js-yaml logic
     //         let js_yaml_safe = emitter.is_plain_safe_string(test_str);
-            
-    //         // Test iidy-js logic 
+
+    //         // Test iidy-js logic
     //         let chars: Vec<char> = test_str.chars().collect();
     //         let first_char_safe = is_plain_safe_first_old_iidy(chars[0]);
     //         let last_char_safe = is_plain_safe_last(chars[chars.len() - 1]);
-            
+
     //         let mut all_chars_safe = first_char_safe && last_char_safe;
     //         if all_chars_safe {
     //             let mut prev_char: Option<char> = None;
@@ -615,9 +642,9 @@ mod tests {
     //                 prev_char = Some(ch);
     //             }
     //         }
-            
+
     //         println!("  js-yaml safe: {}, iidy-js safe: {}", js_yaml_safe, all_chars_safe);
-            
+
     //         if js_yaml_safe != all_chars_safe {
     //             println!("  *** DIFFERENCE DETECTED ***");
     //         }
@@ -636,34 +663,34 @@ nested_config:
     host: localhost
     port: 5432
 "#;
-        
+
         let docs = YamlLoader::load_from_str(yaml_str).unwrap();
         let doc = &docs[0];
-        
+
         // Test with standard yaml-rust emitter
         let mut std_out = String::new();
         {
             let mut std_emitter = yaml_rust::YamlEmitter::new(&mut std_out);
             std_emitter.dump(doc).unwrap();
         }
-        
+
         // Test with our emitter
         let mut our_out = String::new();
         {
             let mut our_emitter = IidyYamlEmitter::new(&mut our_out);
             our_emitter.dump(doc).unwrap();
         }
-        
+
         println!("Standard yaml-rust output:");
         println!("{}", std_out);
         println!("\nOur emitter output:");
         println!("{}", our_out);
-        
+
         // Our emitter is designed to prefer single quotes while yaml-rust prefers double quotes
         // This difference is intentional for iidy-js compatibility
         println!("Our emitter successfully processes the same YAML structure");
     }
-    
+
     // #[test]
     // fn test_yaml_version_quoting() {
     //     let mut map = serde_yaml::Mapping::new();
@@ -696,15 +723,15 @@ nested_config:
     //         Value::String("1-2-3".to_string())
     //     );
     //     let value = Value::Mapping(map);
-        
+
     //     let result = serialize_yaml_iidy_js_compatible(&value).unwrap();
-        
+
     //     // Should quote version numbers, dates, and dash versions
     //     assert!(result.contains("AWSTemplateFormatVersion: '2010-09-09'"));
     //     assert!(result.contains("Version: '1.2.3'"));
     //     assert!(result.contains("DateString: '2023-12-25'"));
     //     assert!(result.contains("DashVersion: '1-2-3'"));
-        
+
     //     // Should not quote regular text, regular numbers, or regular floats
     //     assert!(result.contains("Description: Test template"));
     //     assert!(!result.contains("Description: 'Test template'"));
@@ -713,5 +740,4 @@ nested_config:
     //     assert!(result.contains("RegularFloat: 1.5"));
     //     assert!(!result.contains("RegularFloat: '1.5'"));
     // }
-    
 }

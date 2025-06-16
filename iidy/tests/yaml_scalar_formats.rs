@@ -1,19 +1,19 @@
 //! Comprehensive tests for YAML scalar formats and round-trip fidelity
-//! 
+//!
 //! Tests various YAML scalar representations to ensure proper handling of:
 //! - Literal scalars (|, |-, |+)
-//! - Folded scalars (>, >-, >+) 
+//! - Folded scalars (>, >-, >+)
 //! - Mixed content with preprocessing
 //! - Round-trip fidelity through iidy render
-//! 
+//!
 //! This is crucial for CloudFormation templates that often use multi-line strings
 //! for UserData, policies, and other content.
 
 use anyhow::Result;
 use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 /// Test literal scalar formats (|, |-, |+) with preprocessing
 #[tokio::test]
@@ -56,10 +56,12 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = &result {
         // Check literal scalar with handlebars processing
-        if let Some(Value::String(user_data_basic)) = root.get(&Value::String("user_data_basic".to_string())) {
+        if let Some(Value::String(user_data_basic)) =
+            root.get(&Value::String("user_data_basic".to_string()))
+        {
             assert!(user_data_basic.contains("Environment: production"));
             assert!(user_data_basic.contains("Region: us-east-1"));
             assert!(user_data_basic.contains("#!/bin/bash"));
@@ -67,25 +69,36 @@ Resources:
         } else {
             panic!("Expected user_data_basic to be a string");
         }
-        
+
         // Check stripped version
-        if let Some(Value::String(user_data_strip)) = root.get(&Value::String("user_data_strip".to_string())) {
+        if let Some(Value::String(user_data_strip)) =
+            root.get(&Value::String("user_data_strip".to_string()))
+        {
             assert!(user_data_strip.contains("Environment: production"));
             assert!(user_data_strip.ends_with("yum update -y")); // Should strip final newline
             assert!(!user_data_strip.ends_with("yum update -y\n"));
         } else {
             panic!("Expected user_data_strip to be a string");
         }
-        
+
         // Check CloudFormation tag with literal scalar
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(instance)) = resources.get(&Value::String("EC2Instance".to_string())) {
-                if let Some(Value::Mapping(properties)) = instance.get(&Value::String("Properties".to_string())) {
-                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
+            if let Some(Value::Mapping(instance)) =
+                resources.get(&Value::String("EC2Instance".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    instance.get(&Value::String("Properties".to_string()))
+                {
+                    if let Some(Value::Tagged(user_data_tagged)) =
+                        properties.get(&Value::String("UserData".to_string()))
+                    {
                         // Should be a tagged value preserving !Base64
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                         if let Value::String(processed_content) = &user_data_tagged.value {
-                            assert!(processed_content.contains("Starting production instance in us-east-1"));
+                            assert!(
+                                processed_content
+                                    .contains("Starting production instance in us-east-1")
+                            );
                             assert!(processed_content.contains("#!/bin/bash"));
                         }
                     }
@@ -93,12 +106,12 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }
 
 /// Test folded scalar formats (>, >-, >+) with preprocessing
-#[tokio::test] 
+#[tokio::test]
 async fn test_folded_scalar_formats() -> Result<()> {
     let yaml_input = r#"
 $defs:
@@ -143,10 +156,12 @@ policy_document: >
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = &result {
         // Check folded scalar with handlebars processing
-        if let Some(Value::String(description_basic)) = root.get(&Value::String("description_basic".to_string())) {
+        if let Some(Value::String(description_basic)) =
+            root.get(&Value::String("description_basic".to_string()))
+        {
             assert!(description_basic.contains("MyApplication version 1.2.3"));
             // Folded scalars should fold lines into single spaces
             assert!(description_basic.contains("functionality for processing"));
@@ -157,9 +172,11 @@ policy_document: >
         } else {
             panic!("Expected description_basic to be a string");
         }
-        
+
         // Check stripped version
-        if let Some(Value::String(description_strip)) = root.get(&Value::String("description_strip".to_string())) {
+        if let Some(Value::String(description_strip)) =
+            root.get(&Value::String("description_strip".to_string()))
+        {
             assert!(description_strip.contains("MyApplication version 1.2.3"));
             // Should strip final newline
             assert!(description_strip.ends_with("templates."));
@@ -167,9 +184,10 @@ policy_document: >
         } else {
             panic!("Expected description_strip to be a string");
         }
-        
+
         // Check JSON policy document (real-world CloudFormation use case)
-        if let Some(Value::String(policy)) = root.get(&Value::String("policy_document".to_string())) {
+        if let Some(Value::String(policy)) = root.get(&Value::String("policy_document".to_string()))
+        {
             assert!(policy.contains("MyApplication-bucket"));
             assert!(policy.contains("\"Version\": \"2012-10-17\""));
             // JSON structure should be preserved
@@ -178,7 +196,7 @@ policy_document: >
             panic!("Expected policy_document to be a string");
         }
     }
-    
+
     Ok(())
 }
 
@@ -252,35 +270,53 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = &result {
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
             // Check ConfigMap with nested YAML
-            if let Some(Value::Mapping(config_map)) = resources.get(&Value::String("ConfigMap".to_string())) {
-                if let Some(Value::Mapping(data)) = config_map.get(&Value::String("data".to_string())) {
-                    if let Some(Value::String(app_config)) = data.get(&Value::String("app-config.yaml".to_string())) {
+            if let Some(Value::Mapping(config_map)) =
+                resources.get(&Value::String("ConfigMap".to_string()))
+            {
+                if let Some(Value::Mapping(data)) =
+                    config_map.get(&Value::String("data".to_string()))
+                {
+                    if let Some(Value::String(app_config)) =
+                        data.get(&Value::String("app-config.yaml".to_string()))
+                    {
                         // Check handlebars substitution in nested YAML
                         assert!(app_config.contains("name: production-cluster"));
                         assert!(app_config.contains("namespace: default"));
                         assert!(app_config.contains("host: db.default.svc.cluster.local"));
                         // Check that nested literal scalar is preserved
                         assert!(app_config.contains("echo \"Starting application in default\""));
-                        assert!(app_config.contains("export DB_HOST=\"db.default.svc.cluster.local\""));
+                        assert!(
+                            app_config.contains("export DB_HOST=\"db.default.svc.cluster.local\"")
+                        );
                     }
-                    
-                    if let Some(Value::String(db_config)) = data.get(&Value::String("database-config.json".to_string())) {
+
+                    if let Some(Value::String(db_config)) =
+                        data.get(&Value::String("database-config.json".to_string()))
+                    {
                         // Check JSON folded content
                         assert!(db_config.contains("postgresql://user:pass@db.default.svc.cluster.local:5432/production-cluster"));
                         assert!(db_config.contains("\"pool_size\": 10"));
                     }
                 }
             }
-            
+
             // Check LaunchTemplate with CloudFormation tag
-            if let Some(Value::Mapping(launch_template)) = resources.get(&Value::String("LaunchTemplate".to_string())) {
-                if let Some(Value::Mapping(properties)) = launch_template.get(&Value::String("Properties".to_string())) {
-                    if let Some(Value::Mapping(template_data)) = properties.get(&Value::String("LaunchTemplateData".to_string())) {
-                        if let Some(Value::Tagged(user_data_tagged)) = template_data.get(&Value::String("UserData".to_string())) {
+            if let Some(Value::Mapping(launch_template)) =
+                resources.get(&Value::String("LaunchTemplate".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    launch_template.get(&Value::String("Properties".to_string()))
+                {
+                    if let Some(Value::Mapping(template_data)) =
+                        properties.get(&Value::String("LaunchTemplateData".to_string()))
+                    {
+                        if let Some(Value::Tagged(user_data_tagged)) =
+                            template_data.get(&Value::String("UserData".to_string()))
+                        {
                             // Should preserve !Base64 tag
                             assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                             if let Value::String(user_data) = &user_data_tagged.value {
@@ -298,7 +334,7 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -358,13 +394,13 @@ Resources:
 
     // Process the YAML
     let result = preprocess_yaml_v11(yaml_content, temp_path).await?;
-    
+
     // Serialize back to YAML
     let output_yaml = serde_yaml::to_string(&result)?;
-    
+
     // Parse the output to ensure it's valid YAML
     let reparsed: Value = serde_yaml::from_str(&output_yaml)?;
-    
+
     // Verify structure preservation
     if let Value::Mapping(root) = &reparsed {
         // Check that strings section is preserved
@@ -372,47 +408,62 @@ Resources:
             assert!(strings.contains_key(&Value::String("plain".to_string())));
             assert!(strings.contains_key(&Value::String("literal".to_string())));
             assert!(strings.contains_key(&Value::String("folded".to_string())));
-            
+
             // Check variable substitution occurred
             if let Some(Value::String(plain)) = strings.get(&Value::String("plain".to_string())) {
                 assert!(plain.contains("staging"));
             }
-            
-            if let Some(Value::String(literal)) = strings.get(&Value::String("literal".to_string())) {
+
+            if let Some(Value::String(literal)) = strings.get(&Value::String("literal".to_string()))
+            {
                 assert!(literal.contains("Line 2 with staging"));
                 // Should preserve literal newlines
                 assert!(literal.contains("Line 1\nLine 2"));
             }
         }
-        
+
         // Check CloudFormation structure preservation
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(my_resource)) = resources.get(&Value::String("MyResource".to_string())) {
-                assert_eq!(my_resource.get(&Value::String("Type".to_string())), 
-                          Some(&Value::String("AWS::EC2::Instance".to_string())));
-                
-                if let Some(Value::Mapping(properties)) = my_resource.get(&Value::String("Properties".to_string())) {
+            if let Some(Value::Mapping(my_resource)) =
+                resources.get(&Value::String("MyResource".to_string()))
+            {
+                assert_eq!(
+                    my_resource.get(&Value::String("Type".to_string())),
+                    Some(&Value::String("AWS::EC2::Instance".to_string()))
+                );
+
+                if let Some(Value::Mapping(properties)) =
+                    my_resource.get(&Value::String("Properties".to_string()))
+                {
                     // UserData should be preserved as tagged value
-                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
+                    if let Some(Value::Tagged(user_data_tagged)) =
+                        properties.get(&Value::String("UserData".to_string()))
+                    {
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                     }
-                    
+
                     // Tags should be preserved as sequence
-                    if let Some(Value::Sequence(tags)) = properties.get(&Value::String("Tags".to_string())) {
+                    if let Some(Value::Sequence(tags)) =
+                        properties.get(&Value::String("Tags".to_string()))
+                    {
                         assert_eq!(tags.len(), 2);
-                        
+
                         if let Value::Mapping(first_tag) = &tags[0] {
-                            assert_eq!(first_tag.get(&Value::String("Key".to_string())), 
-                                      Some(&Value::String("Environment".to_string())));
-                            assert_eq!(first_tag.get(&Value::String("Value".to_string())), 
-                                      Some(&Value::String("staging".to_string())));
+                            assert_eq!(
+                                first_tag.get(&Value::String("Key".to_string())),
+                                Some(&Value::String("Environment".to_string()))
+                            );
+                            assert_eq!(
+                                first_tag.get(&Value::String("Value".to_string())),
+                                Some(&Value::String("staging".to_string()))
+                            );
                         }
                     }
                 }
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -472,33 +523,45 @@ Resources:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     if let Value::Mapping(root) = &result {
-        if let Some(Value::Mapping(whitespace_tests)) = root.get(&Value::String("whitespace_tests".to_string())) {
+        if let Some(Value::Mapping(whitespace_tests)) =
+            root.get(&Value::String("whitespace_tests".to_string()))
+        {
             // Check that tabs are preserved in literal content
-            if let Some(Value::String(with_tabs)) = whitespace_tests.get(&Value::String("with_tabs".to_string())) {
+            if let Some(Value::String(with_tabs)) =
+                whitespace_tests.get(&Value::String("with_tabs".to_string()))
+            {
                 assert!(with_tabs.contains("Line with tab:\t\tend")); // Tab should be preserved
                 assert!(with_tabs.contains("Line with spaces:    end")); // Spaces should be preserved
                 assert!(with_tabs.contains("Empty line below:\n\nLine after")); // Empty lines preserved
             }
-            
+
             // Check nested indentation
-            if let Some(Value::String(nested_literal)) = whitespace_tests.get(&Value::String("nested_literal".to_string())) {
+            if let Some(Value::String(nested_literal)) =
+                whitespace_tests.get(&Value::String("nested_literal".to_string()))
+            {
                 assert!(nested_literal.contains("def function():"));
                 assert!(nested_literal.contains("    if condition:")); // Python indentation preserved
                 assert!(nested_literal.contains("        print(\"Indented \t code\")")); // Tab in content
                 assert!(nested_literal.contains("            process(item)")); // Deep indentation preserved
             }
         }
-        
+
         // Check CloudFormation function with whitespace handling
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(my_function)) = resources.get(&Value::String("MyFunction".to_string())) {
-                if let Some(Value::Mapping(properties)) = my_function.get(&Value::String("Properties".to_string())) {
-                    if let Some(Value::Tagged(code_tagged)) = properties.get(&Value::String("Code".to_string())) {
+            if let Some(Value::Mapping(my_function)) =
+                resources.get(&Value::String("MyFunction".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    my_function.get(&Value::String("Properties".to_string()))
+                {
+                    if let Some(Value::Tagged(code_tagged)) =
+                        properties.get(&Value::String("Code".to_string()))
+                    {
                         // Should preserve !Sub tag
                         assert_eq!(code_tagged.tag.to_string(), "!Sub");
-                        
+
                         if let Value::String(code_content) = &code_tagged.value {
                             // Should have processed handlebars but preserved CloudFormation substitutions
                             assert!(code_content.contains("'environment': '\t${Environment}'"));
@@ -513,7 +576,7 @@ Resources:
             }
         }
     }
-    
+
     Ok(())
 }
 /// Test round-trip fidelity using the preprocessing API directly
@@ -560,34 +623,43 @@ Outputs:
 
     // Process using the same preprocessing pipeline as the render command
     let result = preprocess_yaml_v11(yaml_content, "test-template.yaml").await?;
-    
+
     // Serialize back to YAML (same as render command output)
     let rendered_content = serde_yaml::to_string(&result)?;
-    
+
     // Parse the rendered content to ensure it's valid YAML
     let parsed_output: Value = serde_yaml::from_str(&rendered_content)?;
-    
+
     // Verify key structure is preserved
     if let Value::Mapping(root) = &parsed_output {
         // Check CloudFormation template structure
         assert!(root.contains_key(&Value::String("AWSTemplateFormatVersion".to_string())));
         assert!(root.contains_key(&Value::String("Resources".to_string())));
         assert!(root.contains_key(&Value::String("Outputs".to_string())));
-        
+
         if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
             // Check EC2 instance with UserData
-            if let Some(Value::Mapping(ec2_instance)) = resources.get(&Value::String("EC2Instance".to_string())) {
-                if let Some(Value::Mapping(properties)) = ec2_instance.get(&Value::String("Properties".to_string())) {
+            if let Some(Value::Mapping(ec2_instance)) =
+                resources.get(&Value::String("EC2Instance".to_string()))
+            {
+                if let Some(Value::Mapping(properties)) =
+                    ec2_instance.get(&Value::String("Properties".to_string()))
+                {
                     // UserData should be preserved as tagged value
-                    if let Some(Value::Tagged(user_data_tagged)) = properties.get(&Value::String("UserData".to_string())) {
+                    if let Some(Value::Tagged(user_data_tagged)) =
+                        properties.get(&Value::String("UserData".to_string()))
+                    {
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
-                        
+
                         if let Value::String(user_data_content) = &user_data_tagged.value {
                             // Check that multi-line shell script structure is preserved
                             assert!(user_data_content.contains("#!/bin/bash"));
                             assert!(user_data_content.contains("yum update -y"));
                             // Check that HERE document is preserved
-                            assert!(user_data_content.contains("cat << 'INNER_EOF' > /opt/aws/config.json"));
+                            assert!(
+                                user_data_content
+                                    .contains("cat << 'INNER_EOF' > /opt/aws/config.json")
+                            );
                             assert!(user_data_content.contains("\"namespace\": \"CWAgent\""));
                         }
                     }
@@ -597,9 +669,9 @@ Outputs:
     } else {
         panic!("Expected output to be a YAML mapping");
     }
-    
+
     // Verify the output is still valid CloudFormation by checking it can be re-parsed
     let _reparsed: Value = serde_yaml::from_str(&rendered_content)?;
-    
+
     Ok(())
 }

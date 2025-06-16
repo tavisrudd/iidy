@@ -20,8 +20,14 @@ pub struct ParseLocation {
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(loc) = &self.location {
-            write!(f, "Parse error at {}:{}:{}: {}", 
-                   loc.uri, loc.start.line + 1, loc.start.character + 1, self.message)
+            write!(
+                f,
+                "Parse error at {}:{}:{}: {}",
+                loc.uri,
+                loc.start.line + 1,
+                loc.start.character + 1,
+                self.message
+            )
         } else {
             write!(f, "Parse error: {}", self.message)
         }
@@ -48,9 +54,9 @@ pub struct ParseDiagnostics {
 
 #[derive(Debug, Clone)]
 pub enum ParseMode {
-    StrictValidation,  // Current behavior - stop on first error
-    CollectAll,        // Collect all errors without AST building
-    // Future: BestEffort, // Build partial AST where possible (Phase 3)
+    StrictValidation, // Current behavior - stop on first error
+    CollectAll,       // Collect all errors without AST building
+                      // Future: BestEffort, // Build partial AST where possible (Phase 3)
 }
 
 pub mod error_codes {
@@ -70,7 +76,12 @@ impl ParseError {
         }
     }
 
-    pub fn with_location(message: impl Into<String>, uri: Url, start: Position, end: Position) -> Self {
+    pub fn with_location(
+        message: impl Into<String>,
+        uri: Url,
+        start: Position,
+        end: Position,
+    ) -> Self {
         Self {
             message: message.into(),
             location: Some(ParseLocation { uri, start, end }),
@@ -120,7 +131,12 @@ impl ParseWarning {
         }
     }
 
-    pub fn with_location(message: impl Into<String>, uri: Url, start: Position, end: Position) -> Self {
+    pub fn with_location(
+        message: impl Into<String>,
+        uri: Url,
+        start: Position,
+        end: Position,
+    ) -> Self {
         Self {
             message: message.into(),
             location: Some(ParseLocation { uri, start, end }),

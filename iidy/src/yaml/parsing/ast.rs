@@ -1,5 +1,5 @@
 //! AST definitions for YAML preprocessing
-//! 
+//!
 //! Defines the abstract syntax tree for YAML documents with custom preprocessing tags
 
 use serde_yaml::Value;
@@ -34,11 +34,11 @@ pub enum YamlAst {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnknownTag {
     pub tag: String,
-    pub value: Box<YamlAst>
+    pub value: Box<YamlAst>,
 }
 
 /// Represents an imported document within the AST
-/// 
+///
 /// This node type allows tracking of imported documents during traversal,
 /// maintaining the source URI and providing context for error reporting
 /// and debugging during the import resolution process.
@@ -47,7 +47,7 @@ pub struct ImportedDocumentNode {
     /// The source URI from which this document was imported
     pub source_uri: String,
     /// The key/alias under which this document was imported (from $imports)
-    pub import_key: String, 
+    pub import_key: String,
     /// The resolved AST content of the imported document
     pub content: Box<YamlAst>,
     /// Metadata about the import operation
@@ -65,7 +65,7 @@ pub struct ImportMetadata {
 }
 
 /// CloudFormation intrinsic function tags that can contain YamlAst for preprocessing
-/// 
+///
 /// These represent CloudFormation functions parsed from YAML that may still contain
 /// preprocessing directives (handlebars templates, variable references, etc.)
 /// that need to be resolved before converting to final CloudFormation expressions.
@@ -140,7 +140,7 @@ impl CloudFormationTag {
             _ => None,
         }
     }
-    
+
     /// Get the tag name for this CloudFormation function
     pub fn tag_name(&self) -> &'static str {
         match self {
@@ -166,7 +166,7 @@ impl CloudFormationTag {
             CloudFormationTag::Not(_) => "Not",
         }
     }
-    
+
     /// Get the inner YamlAst value that needs preprocessing
     pub fn inner_value(&self) -> &YamlAst {
         match self {
@@ -475,6 +475,4 @@ impl YamlAst {
             }
         }
     }
-    
 }
-

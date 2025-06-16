@@ -1,18 +1,17 @@
+use serde_yaml::Number;
+use std::str::FromStr;
 use tree_sitter::{Node, Parser, Point, Tree};
 use tree_sitter_yaml::LANGUAGE;
 use url::Url;
-use serde_yaml::Number;
-use std::str::FromStr;
 
 use super::ast::{
-    YamlAst, SrcMeta, Position, CloudFormationTag, UnknownTag, PreprocessingTag,
-    IncludeTag, IfTag, MapTag, MergeTag, ConcatTag, LetTag, EqTag, NotTag, 
-    SplitTag, JoinTag, ConcatMapTag, MergeMapTag, MapListToHashTag, MapValuesTag,
-    GroupByTag, FromPairsTag, ToYamlStringTag, ParseYamlTag, ToJsonStringTag, 
-    ParseJsonTag, EscapeTag
+    CloudFormationTag, ConcatMapTag, ConcatTag, EqTag, EscapeTag, FromPairsTag, GroupByTag, IfTag,
+    IncludeTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag, MergeMapTag, MergeTag,
+    NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag, SplitTag, SrcMeta,
+    ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
-use super::error::{ParseError, ParseResult, ParseDiagnostics, ParseWarning, error_codes};
-use crate::yaml::errors::{tag_parsing_error, missing_required_field_error, yaml_syntax_error};
+use super::error::{ParseDiagnostics, ParseError, ParseResult, ParseWarning, error_codes};
+use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
 
 pub struct YamlParser {
     parser: Parser,
@@ -21,9 +20,10 @@ pub struct YamlParser {
 impl YamlParser {
     pub fn new() -> ParseResult<Self> {
         let mut parser = Parser::new();
-        parser.set_language(&LANGUAGE.into())
+        parser
+            .set_language(&LANGUAGE.into())
             .map_err(|_| ParseError::new("Failed to set YAML language for tree-sitter parser"))?;
-        
+
         Ok(Self { parser })
     }
 
@@ -32,14 +32,18 @@ impl YamlParser {
         let mut diagnostics = ParseDiagnostics::new();
 
         // Check for anchor/alias fallback scenario
-        if source.contains("&") && !source.contains("&amp;") || source.contains("*") && !source.contains("**/") {
+        if source.contains("&") && !source.contains("&amp;")
+            || source.contains("*") && !source.contains("**/")
+        {
             // For now, fallback to serde_yaml and convert any error
             match self.parse_with_serde_yaml_fallback(source, uri.clone()) {
                 Ok(_) => {
                     // Could add warning about using fallback parser
                     diagnostics.add_warning(ParseWarning::with_location(
                         "Using fallback parser for anchor/alias resolution",
-                        uri, Position::new(0, 0), Position::new(0, 0)
+                        uri,
+                        Position::new(0, 0),
+                        Position::new(0, 0),
                     ));
                 }
                 Err(e) => {
@@ -54,8 +58,10 @@ impl YamlParser {
         let tree = match self.parser.parse(source, None) {
             Some(tree) => tree,
             None => {
-                diagnostics.add_error(ParseError::new("Failed to parse YAML source")
-                    .with_code(error_codes::SYNTAX_ERROR));
+                diagnostics.add_error(
+                    ParseError::new("Failed to parse YAML source")
+                        .with_code(error_codes::SYNTAX_ERROR),
+                );
                 return diagnostics;
             }
         };
@@ -83,11 +89,15 @@ impl YamlParser {
         // Current parse() implementation goes here
         // This maintains exact current behavior for backward compatibility
 
-        if source.contains("&") && !source.contains("&amp;") || source.contains("*") && !source.contains("**/") {
+        if source.contains("&") && !source.contains("&amp;")
+            || source.contains("*") && !source.contains("**/")
+        {
             return self.parse_with_serde_yaml_fallback(source, uri);
         }
 
-        let tree = self.parser.parse(source, None)
+        let tree = self
+            .parser
+            .parse(source, None)
             .ok_or_else(|| ParseError::new("Failed to parse YAML source"))?;
 
         let root = tree.root_node();
@@ -100,18 +110,31 @@ impl YamlParser {
     }
 
     /// Collect ALL syntax errors from tree-sitter parse tree
-    fn collect_all_syntax_errors(&self, tree: &Tree, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn collect_all_syntax_errors(
+        &self,
+        tree: &Tree,
+        source: &str,
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let root = tree.root_node();
         self.traverse_for_syntax_errors(root, source, uri, diagnostics);
     }
 
     /// Recursively traverse tree and collect all error/missing nodes
-    fn traverse_for_syntax_errors(&self, node: tree_sitter::Node, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn traverse_for_syntax_errors(
+        &self,
+        node: tree_sitter::Node,
+        source: &str,
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         // Check current node for errors
         if node.is_error() || node.kind() == "ERROR" {
             let meta = node_meta(&node, uri);
             let message = self.analyze_syntax_error(&node, source);
-            let error = self.create_syntax_error(&message, &meta, source)
+            let error = self
+                .create_syntax_error(&message, &meta, source)
                 .with_code(error_codes::SYNTAX_ERROR);
             diagnostics.add_error(error);
         }
@@ -119,7 +142,8 @@ impl YamlParser {
         if node.is_missing() {
             let meta = node_meta(&node, uri);
             let message = format!("Missing {} element", node.kind());
-            let error = self.create_syntax_error(&message, &meta, source)
+            let error = self
+                .create_syntax_error(&message, &meta, source)
                 .with_code(error_codes::SYNTAX_ERROR);
             diagnostics.add_error(error);
         }
@@ -150,7 +174,11 @@ impl YamlParser {
             }
         } else {
             ParseError {
-                message: format!("Syntax error: {} @ {}", message, self.format_file_location(meta)),
+                message: format!(
+                    "Syntax error: {} @ {}",
+                    message,
+                    self.format_file_location(meta)
+                ),
                 location: Some(super::error::ParseLocation {
                     uri: meta.input_uri.clone(),
                     start: meta.start,
@@ -169,13 +197,25 @@ impl YamlParser {
     }
 
     /// Validate semantics by traversing tree-sitter nodes without building full AST
-    fn validate_semantics_with_diagnostics(&self, tree: &Tree, source: &str, uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_semantics_with_diagnostics(
+        &self,
+        tree: &Tree,
+        source: &str,
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let root = tree.root_node();
         self.validate_node_semantics(root, source.as_bytes(), uri, diagnostics);
     }
 
     /// Validate individual nodes for semantic correctness
-    fn validate_node_semantics(&self, node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_node_semantics(
+        &self,
+        node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let _meta = node_meta(&node, uri);
 
         match node.kind() {
@@ -207,7 +247,7 @@ impl YamlParser {
                         }
                     }
                 }
-                
+
                 // Continue recursive validation for non-tag children
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
@@ -229,7 +269,13 @@ impl YamlParser {
     }
 
     /// Validate tagged nodes for known tags and required fields
-    fn validate_tagged_node_semantics(&self, node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_tagged_node_semantics(
+        &self,
+        node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&node, uri);
 
         // Extract tag text
@@ -237,8 +283,13 @@ impl YamlParser {
             Ok(text) => text,
             Err(_) => {
                 diagnostics.add_error(
-                    ParseError::with_location("Invalid UTF-8 in tag", uri.clone(), meta.start, meta.end)
-                        .with_code(error_codes::SYNTAX_ERROR)
+                    ParseError::with_location(
+                        "Invalid UTF-8 in tag",
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::SYNTAX_ERROR),
                 );
                 return;
             }
@@ -259,30 +310,61 @@ impl YamlParser {
             diagnostics.add_error(
                 ParseError::with_location(
                     format!("Unknown tag '{}'", tag_name),
-                    uri.clone(), meta.start, meta.end
-                ).with_code(error_codes::UNKNOWN_TAG)
+                    uri.clone(),
+                    meta.start,
+                    meta.end,
+                )
+                .with_code(error_codes::UNKNOWN_TAG),
             );
         }
     }
 
     /// Check if this is a known CloudFormation tag
     fn is_known_cloudformation_tag(&self, tag_name: &str) -> bool {
-        matches!(tag_name,
-            "!Ref" | "!GetAtt" | "!Sub" | "!Join" | "!Split" |
-            "!Select" | "!FindInMap" | "!ImportValue" | "!Condition" |
-            "!And" | "!Or" | "!Not" | "!Equals" | "!If" |
-            "!Base64" | "!GetAZs" | "!Cidr"
+        matches!(
+            tag_name,
+            "!Ref"
+                | "!GetAtt"
+                | "!Sub"
+                | "!Join"
+                | "!Split"
+                | "!Select"
+                | "!FindInMap"
+                | "!ImportValue"
+                | "!Condition"
+                | "!And"
+                | "!Or"
+                | "!Not"
+                | "!Equals"
+                | "!If"
+                | "!Base64"
+                | "!GetAZs"
+                | "!Cidr"
         )
     }
 
     /// Validate CloudFormation tags without building AST
-    fn validate_cloudformation_tag_semantics(&self, _tag_name: &str, _node: tree_sitter::Node, _src: &[u8], _uri: &Url, _diagnostics: &mut ParseDiagnostics) {
+    fn validate_cloudformation_tag_semantics(
+        &self,
+        _tag_name: &str,
+        _node: tree_sitter::Node,
+        _src: &[u8],
+        _uri: &Url,
+        _diagnostics: &mut ParseDiagnostics,
+    ) {
         // For now, just assume CloudFormation tags are valid
         // Could add specific validation for each tag type later
     }
 
     /// Validate preprocessing tags without building AST
-    fn validate_preprocessing_tag_semantics(&self, tag_name: &str, tag_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_preprocessing_tag_semantics(
+        &self,
+        tag_name: &str,
+        tag_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&tag_node, uri);
 
         // The content node is typically the next sibling of the tag node within the flow_node/block_node
@@ -293,8 +375,11 @@ impl YamlParser {
             diagnostics.add_error(
                 ParseError::with_location(
                     format!("Tag '{}' missing parent context", tag_name),
-                    uri.clone(), meta.start, meta.end
-                ).with_code(error_codes::SYNTAX_ERROR)
+                    uri.clone(),
+                    meta.start,
+                    meta.end,
+                )
+                .with_code(error_codes::SYNTAX_ERROR),
             );
             return;
         };
@@ -320,8 +405,11 @@ impl YamlParser {
                 diagnostics.add_error(
                     ParseError::with_location(
                         format!("Tag '{}' missing content", tag_name),
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::MISSING_FIELD)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::MISSING_FIELD),
                 );
                 return;
             }
@@ -332,23 +420,36 @@ impl YamlParser {
             "!$let" => self.validate_let_tag_semantics(content_node, src, uri, diagnostics),
             "!$map" => self.validate_map_tag_semantics(content_node, src, uri, diagnostics),
             "!$if" => self.validate_if_tag_semantics(content_node, src, uri, diagnostics),
-            "!$eq" | "!$split" => self.validate_binary_tag_semantics(tag_name, content_node, src, uri, diagnostics),
+            "!$eq" | "!$split" => {
+                self.validate_binary_tag_semantics(tag_name, content_node, src, uri, diagnostics)
+            }
             "!$join" => self.validate_join_tag_semantics(content_node, src, uri, diagnostics),
-            "!$merge" | "!$concat" => self.validate_variadic_tag_semantics(tag_name, content_node, src, uri, diagnostics),
+            "!$merge" | "!$concat" => {
+                self.validate_variadic_tag_semantics(tag_name, content_node, src, uri, diagnostics)
+            }
             _ => {
                 // Unknown preprocessing tag
                 diagnostics.add_error(
                     ParseError::with_location(
                         format!("Unknown preprocessing tag '{}'", tag_name),
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::UNKNOWN_TAG)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::UNKNOWN_TAG),
                 );
             }
         }
     }
 
     /// Validate !$include tag structure
-    fn validate_include_tag_semantics(&self, content_node: tree_sitter::Node, _src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_include_tag_semantics(
+        &self,
+        content_node: tree_sitter::Node,
+        _src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
@@ -358,79 +459,148 @@ impl YamlParser {
             }
             "flow_mapping" | "block_mapping" => {
                 // Valid: !$include {path: "file", query: "selector"}
-                self.validate_mapping_fields(content_node, _src, uri, &["path"], &["query"], "!$include", diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    _src,
+                    uri,
+                    &["path"],
+                    &["query"],
+                    "!$include",
+                    diagnostics,
+                );
             }
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
                         "!$include expects string path or mapping with path field",
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate !$let tag structure
-    fn validate_let_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_let_tag_semantics(
+        &self,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
             "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(content_node, src, uri, &["in"], &[], "!$let", diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &["in"],
+                    &[],
+                    "!$let",
+                    diagnostics,
+                );
                 // Additional validation: other fields should be variable bindings
             }
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
                         "!$let expects mapping with variable bindings and 'in' field",
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate !$map tag structure
-    fn validate_map_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_map_tag_semantics(
+        &self,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
             "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(content_node, src, uri, &["items", "template", "var"], &["filter"], "!$map", diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &["items", "template", "var"],
+                    &["filter"],
+                    "!$map",
+                    diagnostics,
+                );
             }
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
                         "!$map expects mapping with items, template, and var fields",
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate !$if tag structure
-    fn validate_if_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_if_tag_semantics(
+        &self,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
             "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(content_node, src, uri, &["test", "then"], &["else"], "!$if", diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &["test", "then"],
+                    &["else"],
+                    "!$if",
+                    diagnostics,
+                );
             }
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
                         "!$if expects mapping with test, then, and optional else fields",
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate binary operation tags like !$eq, !$split
-    fn validate_binary_tag_semantics(&self, tag_name: &str, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_binary_tag_semantics(
+        &self,
+        tag_name: &str,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
@@ -439,29 +609,54 @@ impl YamlParser {
                 let (required_fields, optional_fields) = match tag_name {
                     "!$eq" => (vec!["left", "right"], vec![]),
                     "!$split" => (vec!["delimiter", "string"], vec![]),
-                    _ => (vec![], vec![])
+                    _ => (vec![], vec![]),
                 };
-                self.validate_mapping_fields(content_node, src, uri, &required_fields, &optional_fields, tag_name, diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &required_fields,
+                    &optional_fields,
+                    tag_name,
+                    diagnostics,
+                );
             }
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
                         format!("{} expects mapping with required fields", tag_name),
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate !$join tag structure (supports both mapping and sequence forms)
-    fn validate_join_tag_semantics(&self, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_join_tag_semantics(
+        &self,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
             "flow_mapping" | "block_mapping" => {
                 // Mapping form: !$join {delimiter: "-", array: [...]}
-                self.validate_mapping_fields(content_node, src, uri, &["delimiter", "array"], &[], "!$join", diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &["delimiter", "array"],
+                    &[],
+                    "!$join",
+                    diagnostics,
+                );
             }
             "flow_sequence" | "block_sequence" => {
                 // Sequence form: !$join [delimiter, array]
@@ -488,12 +683,27 @@ impl YamlParser {
     }
 
     /// Validate variadic operation tags like !$merge, !$concat
-    fn validate_variadic_tag_semantics(&self, tag_name: &str, content_node: tree_sitter::Node, src: &[u8], uri: &Url, diagnostics: &mut ParseDiagnostics) {
+    fn validate_variadic_tag_semantics(
+        &self,
+        tag_name: &str,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let meta = node_meta(&content_node, uri);
 
         match content_node.kind() {
             "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(content_node, src, uri, &["sources"], &[], tag_name, diagnostics);
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    &["sources"],
+                    &[],
+                    tag_name,
+                    diagnostics,
+                );
             }
             "flow_sequence" | "block_sequence" => {
                 // Also valid: !$merge [source1, source2, ...]
@@ -502,18 +712,31 @@ impl YamlParser {
             _ => {
                 diagnostics.add_error(
                     ParseError::with_location(
-                        format!("{} expects mapping with sources field or sequence of sources", tag_name),
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
+                        format!(
+                            "{} expects mapping with sources field or sequence of sources",
+                            tag_name
+                        ),
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::INVALID_TYPE),
                 );
             }
         }
     }
 
     /// Validate mapping has required fields
-    fn validate_mapping_fields(&self, mapping_node: tree_sitter::Node, src: &[u8], uri: &Url,
-                               required_fields: &[&str], optional_fields: &[&str],
-                               tag_name: &str, diagnostics: &mut ParseDiagnostics) {
+    fn validate_mapping_fields(
+        &self,
+        mapping_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        required_fields: &[&str],
+        optional_fields: &[&str],
+        tag_name: &str,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
         let mut found_fields = std::collections::HashSet::new();
 
         // Walk through mapping pairs
@@ -523,10 +746,16 @@ impl YamlParser {
                 if let Some(key_node) = child.child_by_field_name("key") {
                     if let Ok(key_text) = key_node.utf8_text(src) {
                         // Extract key (remove quotes if present)
-                        let key = if key_text.starts_with('"') && key_text.ends_with('"') && key_text.len() >= 2 {
-                            &key_text[1..key_text.len()-1]
-                        } else if key_text.starts_with('\'') && key_text.ends_with('\'') && key_text.len() >= 2 {
-                            &key_text[1..key_text.len()-1]
+                        let key = if key_text.starts_with('"')
+                            && key_text.ends_with('"')
+                            && key_text.len() >= 2
+                        {
+                            &key_text[1..key_text.len() - 1]
+                        } else if key_text.starts_with('\'')
+                            && key_text.ends_with('\'')
+                            && key_text.len() >= 2
+                        {
+                            &key_text[1..key_text.len() - 1]
                         } else {
                             key_text
                         };
@@ -542,15 +771,22 @@ impl YamlParser {
                 let meta = node_meta(&mapping_node, uri);
                 diagnostics.add_error(
                     ParseError::with_location(
-                        format!("Missing required '{}' field in {} tag", required_field, tag_name),
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::MISSING_FIELD)
+                        format!(
+                            "Missing required '{}' field in {} tag",
+                            required_field, tag_name
+                        ),
+                        uri.clone(),
+                        meta.start,
+                        meta.end,
+                    )
+                    .with_code(error_codes::MISSING_FIELD),
                 );
             }
         }
 
         // Check for unexpected fields (warnings)
-        let all_valid_fields: std::collections::HashSet<_> = required_fields.iter()
+        let all_valid_fields: std::collections::HashSet<_> = required_fields
+            .iter()
             .chain(optional_fields.iter())
             .cloned()
             .collect();
@@ -558,12 +794,12 @@ impl YamlParser {
         for found_field in &found_fields {
             if !all_valid_fields.contains(found_field) {
                 let meta = node_meta(&mapping_node, uri);
-                diagnostics.add_warning(
-                    ParseWarning::with_location(
-                        format!("Unexpected field '{}' in {} tag", found_field, tag_name),
-                        uri.clone(), meta.start, meta.end
-                    )
-                );
+                diagnostics.add_warning(ParseWarning::with_location(
+                    format!("Unexpected field '{}' in {} tag", found_field, tag_name),
+                    uri.clone(),
+                    meta.start,
+                    meta.end,
+                ));
             }
         }
     }
@@ -572,18 +808,22 @@ impl YamlParser {
         // Use serde_yaml to parse and resolve anchors/aliases
         let value: serde_yaml::Value = serde_yaml::from_str(source)
             .map_err(|e| ParseError::new(&format!("serde_yaml parse error: {}", e)))?;
-        
+
         // Convert serde_yaml::Value to our YamlAst format
         self.convert_serde_value_to_ast(value, uri)
     }
-    
-    fn convert_serde_value_to_ast(&self, value: serde_yaml::Value, uri: Url) -> ParseResult<YamlAst> {
+
+    fn convert_serde_value_to_ast(
+        &self,
+        value: serde_yaml::Value,
+        uri: Url,
+    ) -> ParseResult<YamlAst> {
         let meta = SrcMeta {
             input_uri: uri.clone(),
             start: Position::new(0, 0),
             end: Position::new(0, 0),
         };
-        
+
         match value {
             serde_yaml::Value::Null => Ok(YamlAst::Null(meta)),
             serde_yaml::Value::Bool(b) => Ok(YamlAst::Bool(b, meta)),
@@ -616,11 +856,13 @@ impl YamlParser {
                 // Handle tagged values - convert to our tag system
                 let tag_name = tagged.tag.to_string();
                 let content = self.convert_serde_value_to_ast(tagged.value, uri.clone())?;
-                
+
                 // Check if it's a preprocessing tag
                 if tag_name.starts_with("!$") {
                     match self.parse_preprocessing_tag(&tag_name, content.clone(), &meta) {
-                        Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
+                        Ok(preprocessing_tag) => {
+                            Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta))
+                        }
                         Err(_) => {
                             // Fall back to unknown tag
                             let unknown_tag = UnknownTag {
@@ -630,7 +872,9 @@ impl YamlParser {
                             Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
                         }
                     }
-                } else if let Some(cf_tag) = CloudFormationTag::from_tag_name(&tag_name, content.clone()) {
+                } else if let Some(cf_tag) =
+                    CloudFormationTag::from_tag_name(&tag_name, content.clone())
+                {
                     Ok(YamlAst::CloudFormationTag(cf_tag, meta))
                 } else {
                     // Unknown tag
@@ -647,13 +891,13 @@ impl YamlParser {
     fn find_syntax_error(&self, tree: &Tree, source: &str, uri: &Url) -> ParseError {
         // Traverse the tree to find the first error node
         let root = tree.root_node();
-        
+
         if let Some(error_node) = self.find_error_node(root) {
             let meta = node_meta(&error_node, uri);
-            
+
             // Try to determine the specific type of syntax error
             let error_message = self.analyze_syntax_error(&error_node, source);
-            
+
             // Use the actual source for serde_yaml error detection
             self.syntax_error(&error_message, &meta, source)
         } else {
@@ -666,19 +910,19 @@ impl YamlParser {
             self.syntax_error("Syntax error in YAML", &meta, source)
         }
     }
-    
+
     /// Recursively find the first error node in the tree
     fn find_error_node<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
         // Check if this node is an error
         if node.is_error() || node.kind() == "ERROR" {
             return Some(node);
         }
-        
+
         // Check if this node is missing (indicates a syntax error)
         if node.is_missing() {
             return Some(node);
         }
-        
+
         // Recursively check children
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
@@ -687,14 +931,14 @@ impl YamlParser {
                 }
             }
         }
-        
+
         None
     }
-    
+
     /// Analyze the syntax error to provide a more specific message
     fn analyze_syntax_error(&self, error_node: &tree_sitter::Node<'_>, source: &str) -> String {
         let node_text = error_node.utf8_text(source.as_bytes()).unwrap_or("");
-        
+
         // Analyze common syntax error patterns
         if node_text.contains('"') && !node_text.ends_with('"') {
             "unexpected end of file".to_string()
@@ -706,12 +950,10 @@ impl YamlParser {
             "syntax error".to_string()
         }
     }
-    
 
     fn build_ast(&self, node: Node, src: &[u8], uri: &Url) -> ParseResult<YamlAst> {
         let meta = node_meta(&node, uri);
-        
-        
+
         match node.kind() {
             "stream" => {
                 // Stream is the root node, process its document children
@@ -760,12 +1002,8 @@ impl YamlParser {
                 // If all children are null or no children, return null
                 Ok(YamlAst::Null(meta))
             }
-            "block_mapping" | "flow_mapping" => {
-                self.build_mapping(node, src, uri, meta)
-            }
-            "block_sequence" | "flow_sequence" => {
-                self.build_sequence(node, src, uri, meta)
-            }
+            "block_mapping" | "flow_mapping" => self.build_mapping(node, src, uri, meta),
+            "block_sequence" | "flow_sequence" => self.build_sequence(node, src, uri, meta),
             "block_sequence_item" | "flow_sequence_item" => {
                 // Unwrap sequence items
                 if let Some(child) = node.named_child(0) {
@@ -774,9 +1012,7 @@ impl YamlParser {
                     Ok(YamlAst::Null(meta))
                 }
             }
-            "plain_scalar" => {
-                self.build_scalar(node, src, meta, false)
-            }
+            "plain_scalar" => self.build_scalar(node, src, meta, false),
             "single_quote_scalar" | "double_quote_scalar" => {
                 self.build_scalar(node, src, meta, true)
             }
@@ -792,9 +1028,7 @@ impl YamlParser {
                 // Handle block nodes which may contain tags with block content
                 self.build_block_node(node, src, uri, meta)
             }
-            "tag" => {
-                self.build_tagged_node(node, src, uri, meta)
-            }
+            "tag" => self.build_tagged_node(node, src, uri, meta),
             "alias" => {
                 let text = self.extract_utf8_text(node, src, &meta, "alias")?;
                 Ok(YamlAst::PlainString(text, meta))
@@ -822,10 +1056,16 @@ impl YamlParser {
         }
     }
 
-    fn build_mapping(&self, node: Node, src: &[u8], uri: &Url, meta: SrcMeta) -> ParseResult<YamlAst> {
+    fn build_mapping(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
         let mut pairs = Vec::new();
         let mut cursor = node.walk();
-        
+
         // First, collect all the raw mapping pairs
         let mut raw_pairs = Vec::new();
         for pair_node in node.named_children(&mut cursor) {
@@ -842,20 +1082,20 @@ impl YamlParser {
                 }
             }
         }
-        
+
         // Process pairs, handling block-style tags
         let mut i = 0;
         while i < raw_pairs.len() {
             let pair_node = raw_pairs[i];
             let mut pair_cursor = pair_node.walk();
             let mut children = pair_node.named_children(&mut pair_cursor);
-            
+
             let key = if let Some(key_node) = children.next() {
                 self.build_ast(key_node, src, uri)?
             } else {
                 return Err(self.syntax_error("Missing key in mapping pair", &meta, ""));
             };
-            
+
             // Look for value node, skipping any comments
             let mut value = YamlAst::Null(node_meta(&pair_node, uri));
             while let Some(val_node) = children.next() {
@@ -871,22 +1111,27 @@ impl YamlParser {
                     }
                 }
             }
-            
+
             // Block-style tags are now handled in build_block_node, no special handling needed here
-            
+
             pairs.push((key, value));
             i += 1;
         }
-        
+
         Ok(YamlAst::Mapping(pairs, meta))
     }
 
-
-    fn build_sequence(&self, node: Node, src: &[u8], uri: &Url, meta: SrcMeta) -> ParseResult<YamlAst> {
+    fn build_sequence(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
         let mut cursor = node.walk();
         let children: Vec<_> = node.named_children(&mut cursor).collect();
         let mut items = Vec::with_capacity(children.len());
-        
+
         for child in children {
             // Skip certain structural nodes that tree-sitter includes but aren't actual content
             let child_kind = child.kind();
@@ -915,11 +1160,17 @@ impl YamlParser {
                 }
             }
         }
-        
+
         Ok(YamlAst::Sequence(items, meta))
     }
 
-    fn build_scalar(&self, node: Node, src: &[u8], meta: SrcMeta, is_quoted: bool) -> ParseResult<YamlAst> {
+    fn build_scalar(
+        &self,
+        node: Node,
+        src: &[u8],
+        meta: SrcMeta,
+        is_quoted: bool,
+    ) -> ParseResult<YamlAst> {
         let text = self.extract_utf8_text(node, src, &meta, "scalar")?;
 
         // Fast path for simple unquoted strings
@@ -947,7 +1198,7 @@ impl YamlParser {
 
         // Handle quoted strings - remove quotes and process escape sequences
         let content = if text.len() >= 2 {
-            let inner = &text[1..text.len()-1];
+            let inner = &text[1..text.len() - 1];
             // Process escape sequences for double-quoted strings
             if text.starts_with('"') {
                 self.unescape_string(inner)
@@ -979,7 +1230,7 @@ impl YamlParser {
 
         // Skip the first line which contains the block scalar indicator
         let content_lines: Vec<&str> = lines.into_iter().skip(1).collect();
-        
+
         // Find the common indentation to remove
         let min_indent = content_lines
             .iter()
@@ -1008,7 +1259,7 @@ impl YamlParser {
             } else {
                 // Check for block chomping indicators:
                 // |  - clip (default): single final newline
-                // |- - strip: no final newline  
+                // |- - strip: no final newline
                 // |+ - keep: preserve all final newlines
                 if text.starts_with("|-") {
                     // Strip indicator: remove final newline
@@ -1022,9 +1273,10 @@ impl YamlParser {
                     // - Most literal blocks get a final newline (clip indicator default)
                     // - Only specific cases that appear to be at document end (like StackUrls JSON) don't get one
                     // - Use a more specific heuristic: JSON starting with specific AWS CloudFormation console URLs pattern
-                    if content.trim_start().starts_with('{') && 
-                       content.trim_end().ends_with('}') &&
-                       content.contains("console.aws.amazon.com") {
+                    if content.trim_start().starts_with('{')
+                        && content.trim_end().ends_with('}')
+                        && content.contains("console.aws.amazon.com")
+                    {
                         // This looks like the specific StackUrls CloudFormation case - don't add final newline
                         content
                     } else {
@@ -1058,20 +1310,27 @@ impl YamlParser {
         }
     }
 
-    fn build_block_node(&self, node: Node, src: &[u8], uri: &Url, meta: SrcMeta) -> ParseResult<YamlAst> {
+    fn build_block_node(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
         // Block nodes can contain either:
         // 1. Just content (like a regular block mapping/sequence)
         // 2. A tag followed by content (for block-style tags like !$if)
-        
+
         let mut tag_node = None;
         let mut content_node = None;
-        
+
         // Examine children to find tag and content
         for i in 0..node.named_child_count() {
             if let Some(child) = node.named_child(i) {
                 match child.kind() {
                     "tag" => tag_node = Some(child),
-                    "block_mapping" | "block_sequence" | "flow_mapping" | "flow_sequence" | "literal" | "folded" | "block_scalar" => {
+                    "block_mapping" | "block_sequence" | "flow_mapping" | "flow_sequence"
+                    | "literal" | "folded" | "block_scalar" => {
                         content_node = Some(child);
                     }
                     _ => {
@@ -1083,20 +1342,20 @@ impl YamlParser {
                 }
             }
         }
-        
+
         if let Some(tag) = tag_node {
             // This is a block-style tagged node
             let tag_text = self.extract_utf8_text(tag, src, &meta, "tag")?;
-            
+
             let tag_name = tag_text.trim();
-            
+
             // Parse the content
             let tagged_content = if let Some(content) = content_node {
                 self.build_ast(content, src, uri)?
             } else {
                 YamlAst::Null(meta.clone())
             };
-            
+
             // Classify the tag type based on naming convention
             if tag_name.starts_with("!$") {
                 // Preprocessing tag: !$include, !$if, !$let, etc.
@@ -1108,7 +1367,9 @@ impl YamlParser {
                         Err(e)
                     }
                 }
-            } else if let Some(cf_tag) = CloudFormationTag::from_tag_name(tag_name, tagged_content.clone()) {
+            } else if let Some(cf_tag) =
+                CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
+            {
                 // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
                 Ok(YamlAst::CloudFormationTag(cf_tag, meta))
             } else {
@@ -1128,17 +1389,28 @@ impl YamlParser {
         }
     }
 
-    fn build_flow_node(&self, node: Node, src: &[u8], uri: &Url, meta: SrcMeta) -> ParseResult<YamlAst> {
+    fn build_flow_node(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
         // Flow nodes can contain tags with their values
         let mut tag_node = None;
         let mut value_node = None;
-        
+
         // Look for tag and value children
         for i in 0..node.named_child_count() {
             if let Some(child) = node.named_child(i) {
                 match child.kind() {
                     "tag" => tag_node = Some(child),
-                    "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" | "literal" | "folded" | "block_scalar" => value_node = Some(child),
+                    "plain_scalar"
+                    | "single_quote_scalar"
+                    | "double_quote_scalar"
+                    | "literal"
+                    | "folded"
+                    | "block_scalar" => value_node = Some(child),
                     _ => {
                         // Try to parse other children as potential values
                         if tag_node.is_some() && value_node.is_none() {
@@ -1148,19 +1420,19 @@ impl YamlParser {
                 }
             }
         }
-        
+
         if let Some(tag) = tag_node {
             let tag_text = self.extract_utf8_text(tag, src, &meta, "tag")?;
-            
+
             let tag_name = tag_text.trim();
-            
+
             // Parse the value
             let tagged_content = if let Some(val_node) = value_node {
                 self.build_ast(val_node, src, uri)?
             } else {
                 YamlAst::Null(meta.clone())
             };
-            
+
             // Classify the tag type based on naming convention
             if tag_name.starts_with("!$") {
                 // Preprocessing tag: !$include, !$if, !$let, etc.
@@ -1172,7 +1444,9 @@ impl YamlParser {
                         Err(e)
                     }
                 }
-            } else if let Some(cf_tag) = CloudFormationTag::from_tag_name(tag_name, tagged_content.clone()) {
+            } else if let Some(cf_tag) =
+                CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
+            {
                 // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
                 Ok(YamlAst::CloudFormationTag(cf_tag, meta))
             } else {
@@ -1193,9 +1467,14 @@ impl YamlParser {
         }
     }
 
-    fn build_tagged_node(&self, node: Node, src: &[u8], uri: &Url, meta: SrcMeta) -> ParseResult<YamlAst> {
+    fn build_tagged_node(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
         let tag_text = self.extract_utf8_text(node, src, &meta, "tag")?;
-
 
         // Extract the tag name (everything before the first space or newline)
         let tag_name = tag_text.split_whitespace().next().unwrap_or(&tag_text);
@@ -1222,7 +1501,9 @@ impl YamlParser {
                     Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
                 }
             }
-        } else if let Some(cf_tag) = CloudFormationTag::from_tag_name(tag_name, tagged_content.clone()) {
+        } else if let Some(cf_tag) =
+            CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
+        {
             // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
             Ok(YamlAst::CloudFormationTag(cf_tag, meta))
         } else {
@@ -1240,23 +1521,24 @@ impl YamlParser {
     #[inline(always)]
     fn unwrap_single_sequence(&self, content: YamlAst) -> YamlAst {
         match content {
-            YamlAst::Sequence(ref items, _) if items.len() == 1 => {
-                items[0].clone()
-            }
-            _ => content
+            YamlAst::Sequence(ref items, _) if items.len() == 1 => items[0].clone(),
+            _ => content,
         }
     }
 
-    fn parse_preprocessing_tag(&self, tag_name: &str, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
+    fn parse_preprocessing_tag(
+        &self,
+        tag_name: &str,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
         match tag_name {
             "!$not" => {
                 // Negation tag: !$not <expression> or !$not [<expression>]
                 // If it's an array with exactly one element, unwrap it
                 let expr = match content {
-                    YamlAst::Sequence(ref items, _) if items.len() == 1 => {
-                        items[0].clone()
-                    }
-                    _ => content
+                    YamlAst::Sequence(ref items, _) if items.len() == 1 => items[0].clone(),
+                    _ => content,
                 };
                 Ok(PreprocessingTag::Not(NotTag {
                     expression: Box::new(expr),
@@ -1278,34 +1560,52 @@ impl YamlParser {
                         // Object form: !$ { path: "...", query: "..." }
                         let mut path = None;
                         let mut query = None;
-                        
+
                         for (key, value) in pairs {
                             match key {
                                 YamlAst::PlainString(k, _) if k == "path" => {
                                     path = match value {
-                                        YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Some(s),
-                                        _ => return Err(self.tag_error("!$include", "path must be a string", Some("use string path"), &meta)),
+                                        YamlAst::PlainString(s, _)
+                                        | YamlAst::TemplatedString(s, _) => Some(s),
+                                        _ => {
+                                            return Err(self.tag_error(
+                                                "!$include",
+                                                "path must be a string",
+                                                Some("use string path"),
+                                                &meta,
+                                            ));
+                                        }
                                     };
                                 }
                                 YamlAst::PlainString(k, _) if k == "query" => {
                                     query = match value {
-                                        YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Some(s),
-                                        _ => return Err(self.tag_error("!$include", "query must be a string", Some("use string query"), &meta)),
+                                        YamlAst::PlainString(s, _)
+                                        | YamlAst::TemplatedString(s, _) => Some(s),
+                                        _ => {
+                                            return Err(self.tag_error(
+                                                "!$include",
+                                                "query must be a string",
+                                                Some("use string query"),
+                                                &meta,
+                                            ));
+                                        }
                                     };
                                 }
                                 _ => {}
                             }
                         }
-                        
+
                         match path {
-                            Some(p) => Ok(PreprocessingTag::Include(IncludeTag {
-                                path: p,
-                                query,
-                            })),
+                            Some(p) => Ok(PreprocessingTag::Include(IncludeTag { path: p, query })),
                             None => Err(self.missing_field_error("!$include", "path", &meta)),
                         }
                     }
-                    _ => Err(self.tag_error("!$include", "invalid format - must be string variable name", Some("use string variable name"), &meta)),
+                    _ => Err(self.tag_error(
+                        "!$include",
+                        "invalid format - must be string variable name",
+                        Some("use string variable name"),
+                        &meta,
+                    )),
                 }
             }
             "!$eq" => {
@@ -1319,11 +1619,21 @@ impl YamlParser {
                     }
                     YamlAst::Sequence(_items, _) => {
                         // It's a sequence but wrong count
-                        Err(self.tag_error("!$eq", "must have exactly 2 elements to compare", Some("use format: [value1, value2]"), &meta))
+                        Err(self.tag_error(
+                            "!$eq",
+                            "must have exactly 2 elements to compare",
+                            Some("use format: [value1, value2]"),
+                            &meta,
+                        ))
                     }
                     _ => {
                         // Not a sequence at all
-                        Err(self.tag_error("!$eq", "must be a sequence with exactly 2 elements", Some("use format: [value1, value2]"), &meta))
+                        Err(self.tag_error(
+                            "!$eq",
+                            "must be a sequence with exactly 2 elements",
+                            Some("use format: [value1, value2]"),
+                            &meta,
+                        ))
                     }
                 }
             }
@@ -1336,7 +1646,12 @@ impl YamlParser {
                             string: Box::new(items[1].clone()),
                         }))
                     }
-                    _ => Err(self.tag_error("!$split", "must be a sequence with format [delimiter, string]", Some("use format: [delimiter, string]"), &meta)),
+                    _ => Err(self.tag_error(
+                        "!$split",
+                        "must be a sequence with format [delimiter, string]",
+                        Some("use format: [delimiter, string]"),
+                        &meta,
+                    )),
                 }
             }
             "!$join" => {
@@ -1348,29 +1663,40 @@ impl YamlParser {
                             array: Box::new(items[1].clone()),
                         }))
                     }
-                    _ => Err(self.tag_error("!$join", "must be a sequence with format [delimiter, array]", Some("use format: [delimiter, array]"), &meta)),
+                    _ => Err(self.tag_error(
+                        "!$join",
+                        "must be a sequence with format [delimiter, array]",
+                        Some("use format: [delimiter, array]"),
+                        &meta,
+                    )),
                 }
             }
             "!$merge" => {
                 // Merge tag: !$merge [source1, source2, ...]
                 match content {
                     YamlAst::Sequence(items, _) => {
-                        Ok(PreprocessingTag::Merge(MergeTag {
-                            sources: items,
-                        }))
+                        Ok(PreprocessingTag::Merge(MergeTag { sources: items }))
                     }
-                    _ => Err(self.tag_error("!$merge", "must be a sequence of objects to merge", Some("use format: [object1, object2, ...]"), &meta)),
+                    _ => Err(self.tag_error(
+                        "!$merge",
+                        "must be a sequence of objects to merge",
+                        Some("use format: [object1, object2, ...]"),
+                        &meta,
+                    )),
                 }
             }
             "!$concat" => {
                 // Concat tag: !$concat [source1, source2, ...]
                 match content {
                     YamlAst::Sequence(items, _) => {
-                        Ok(PreprocessingTag::Concat(ConcatTag {
-                            sources: items,
-                        }))
+                        Ok(PreprocessingTag::Concat(ConcatTag { sources: items }))
                     }
-                    _ => Err(self.tag_error("!$concat", "must be a sequence of arrays to concatenate", Some("use format: [array1, array2, ...]"), &meta)),
+                    _ => Err(self.tag_error(
+                        "!$concat",
+                        "must be a sequence of arrays to concatenate",
+                        Some("use format: [array1, array2, ...]"),
+                        &meta,
+                    )),
                 }
             }
             "!$escape" => {
@@ -1443,7 +1769,12 @@ impl YamlParser {
             }
             _ => {
                 // Unknown preprocessing tag
-                Err(self.tag_error("unknown tag", &format!("'{}' is not a valid iidy tag", tag_name), Some("check tag spelling or see documentation for valid tags"), &meta))
+                Err(self.tag_error(
+                    "unknown tag",
+                    &format!("'{}' is not a valid iidy tag", tag_name),
+                    Some("check tag spelling or see documentation for valid tags"),
+                    &meta,
+                ))
             }
         }
     }
@@ -1462,9 +1793,13 @@ impl YamlParser {
         }
         None
     }
-    
+
     /// Extract multiple fields from a mapping in a single traversal
-    fn extract_fields_from_mapping(&self, content: &YamlAst, field_names: &[&str]) -> std::collections::HashMap<String, YamlAst> {
+    fn extract_fields_from_mapping(
+        &self,
+        content: &YamlAst,
+        field_names: &[&str],
+    ) -> std::collections::HashMap<String, YamlAst> {
         let mut result = std::collections::HashMap::with_capacity(field_names.len());
         if let YamlAst::Mapping(pairs, _) = content {
             // Early exit optimization: stop when we've found all fields
@@ -1486,17 +1821,24 @@ impl YamlParser {
     }
 
     /// Comprehensive field validation for preprocessing tags
-    fn validate_tag_fields(&self, content: &YamlAst, tag_name: &str, required_fields: &[&str], optional_fields: &[&str], meta: &SrcMeta) -> ParseResult<()> {
+    fn validate_tag_fields(
+        &self,
+        content: &YamlAst,
+        tag_name: &str,
+        required_fields: &[&str],
+        optional_fields: &[&str],
+        meta: &SrcMeta,
+    ) -> ParseResult<()> {
         if let YamlAst::Mapping(pairs, _) = content {
             let mut present_fields = std::collections::HashSet::new();
-            
+
             // Collect all present fields
             for (key, _) in pairs {
                 if let YamlAst::PlainString(key_str, _) = key {
                     present_fields.insert(key_str.as_str());
                 }
             }
-            
+
             // Check for missing required fields
             for &required_field in required_fields {
                 if !present_fields.contains(required_field) {
@@ -1504,7 +1846,7 @@ impl YamlParser {
                     return Err(self.missing_field_error(tag_name, required_field, &meta));
                 }
             }
-            
+
             // Check for unexpected fields
             let mut all_valid_fields = std::collections::HashSet::new();
             for &field in required_fields {
@@ -1513,7 +1855,7 @@ impl YamlParser {
             for &field in optional_fields {
                 all_valid_fields.insert(field);
             }
-            
+
             for present_field in &present_fields {
                 if !all_valid_fields.contains(present_field) {
                     let valid_fields_str = {
@@ -1526,14 +1868,22 @@ impl YamlParser {
                         }
                         fields.join(", ")
                     };
-                    
-                    return Err(self.tag_error(tag_name, &format!("unexpected field '{}'\n\nValid fields are: {}", present_field, valid_fields_str), Some("check field spelling and tag documentation"), &meta));
+
+                    return Err(self.tag_error(
+                        tag_name,
+                        &format!(
+                            "unexpected field '{}'\n\nValid fields are: {}",
+                            present_field, valid_fields_str
+                        ),
+                        Some("check field spelling and tag documentation"),
+                        &meta,
+                    ));
                 }
             }
         }
         Ok(())
     }
-    
+
     /// Get example usage for a tag (currently unused but kept for potential future use)
     #[allow(dead_code)]
     fn get_tag_example(&self, tag_name: &str) -> String {
@@ -1550,19 +1900,30 @@ impl YamlParser {
     }
 
     /// Parse MapValues tag content
-    fn parse_map_values_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
+    fn parse_map_values_tag(
+        &self,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
         let fields = self.extract_fields_from_mapping(&content, &["items", "template", "var"]);
-        
-        let items = fields.get("items")
+
+        let items = fields
+            .get("items")
             .cloned()
             .ok_or_else(|| self.missing_field_error("!$mapValues", "items", &meta))?;
 
-        let template = fields.get("template")
+        let template = fields
+            .get("template")
             .cloned()
             .ok_or_else(|| self.missing_field_error("!$mapValues", "template", &meta))?;
 
-        let var = fields.get("var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s.clone()) } else { None });
+        let var = fields.get("var").and_then(|v| {
+            if let YamlAst::PlainString(s, _) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
         Ok(PreprocessingTag::MapValues(MapValuesTag {
             items: Box::new(items),
@@ -1574,24 +1935,36 @@ impl YamlParser {
     /// Parse Map tag content
     fn parse_map_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
         // Validate fields first
-        self.validate_tag_fields(&content, "!$map", &["items", "template"], &["var", "filter"], meta)?;
-        
-        let fields = self.extract_fields_from_mapping(&content, &["items", "template", "var", "filter"]);
-        
-        let items = fields.get("items")
+        self.validate_tag_fields(
+            &content,
+            "!$map",
+            &["items", "template"],
+            &["var", "filter"],
+            meta,
+        )?;
+
+        let fields =
+            self.extract_fields_from_mapping(&content, &["items", "template", "var", "filter"]);
+
+        let items = fields
+            .get("items")
             .cloned()
             .ok_or_else(|| self.missing_field_error("!$map", "items", &meta))?;
 
-        let template = fields.get("template")
+        let template = fields
+            .get("template")
             .cloned()
             .ok_or_else(|| self.missing_field_error("!$map", "template", &meta))?;
 
-        let var = fields.get("var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s.clone()) } else { None });
+        let var = fields.get("var").and_then(|v| {
+            if let YamlAst::PlainString(s, _) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        });
 
-        let filter = fields.get("filter")
-            .cloned()
-            .map(Box::new);
+        let filter = fields.get("filter").cloned().map(Box::new);
 
         Ok(PreprocessingTag::Map(MapTag {
             items: Box::new(items),
@@ -1602,17 +1975,31 @@ impl YamlParser {
     }
 
     /// Parse ConcatMap tag content
-    fn parse_concat_map_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
-        let items = self.extract_field_from_mapping(&content, "items")
+    fn parse_concat_map_tag(
+        &self,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
+        let items = self
+            .extract_field_from_mapping(&content, "items")
             .ok_or_else(|| self.missing_field_error("!$concatMap", "items", &meta))?;
 
-        let template = self.extract_field_from_mapping(&content, "template")
+        let template = self
+            .extract_field_from_mapping(&content, "template")
             .ok_or_else(|| self.missing_field_error("!$concatMap", "template", &meta))?;
 
-        let var = self.extract_field_from_mapping(&content, "var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s) } else { None });
+        let var = self
+            .extract_field_from_mapping(&content, "var")
+            .and_then(|v| {
+                if let YamlAst::PlainString(s, _) = v {
+                    Some(s)
+                } else {
+                    None
+                }
+            });
 
-        let filter = self.extract_field_from_mapping(&content, "filter")
+        let filter = self
+            .extract_field_from_mapping(&content, "filter")
             .map(Box::new);
 
         Ok(PreprocessingTag::ConcatMap(ConcatMapTag {
@@ -1624,15 +2011,28 @@ impl YamlParser {
     }
 
     /// Parse MergeMap tag content
-    fn parse_merge_map_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
-        let items = self.extract_field_from_mapping(&content, "items")
+    fn parse_merge_map_tag(
+        &self,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
+        let items = self
+            .extract_field_from_mapping(&content, "items")
             .ok_or_else(|| self.missing_field_error("!$mergeMap", "items", &meta))?;
 
-        let template = self.extract_field_from_mapping(&content, "template")
+        let template = self
+            .extract_field_from_mapping(&content, "template")
             .ok_or_else(|| self.missing_field_error("!$mergeMap", "template", &meta))?;
 
-        let var = self.extract_field_from_mapping(&content, "var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s) } else { None });
+        let var = self
+            .extract_field_from_mapping(&content, "var")
+            .and_then(|v| {
+                if let YamlAst::PlainString(s, _) = v {
+                    Some(s)
+                } else {
+                    None
+                }
+            });
 
         Ok(PreprocessingTag::MergeMap(MergeMapTag {
             items: Box::new(items),
@@ -1642,20 +2042,38 @@ impl YamlParser {
     }
 
     /// Parse MapListToHash tag content
-    fn parse_map_list_to_hash_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
+    fn parse_map_list_to_hash_tag(
+        &self,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
         // Validate fields first
-        self.validate_tag_fields(&content, "!$mapListToHash", &["items", "template"], &["var", "filter"], meta)?;
-        
-        let items = self.extract_field_from_mapping(&content, "items")
+        self.validate_tag_fields(
+            &content,
+            "!$mapListToHash",
+            &["items", "template"],
+            &["var", "filter"],
+            meta,
+        )?;
+
+        let items = self.extract_field_from_mapping(&content, "items").unwrap(); // Safe due to validation
+
+        let template = self
+            .extract_field_from_mapping(&content, "template")
             .unwrap(); // Safe due to validation
 
-        let template = self.extract_field_from_mapping(&content, "template")
-            .unwrap(); // Safe due to validation
+        let var = self
+            .extract_field_from_mapping(&content, "var")
+            .and_then(|v| {
+                if let YamlAst::PlainString(s, _) = v {
+                    Some(s)
+                } else {
+                    None
+                }
+            });
 
-        let var = self.extract_field_from_mapping(&content, "var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s) } else { None });
-
-        let filter = self.extract_field_from_mapping(&content, "filter")
+        let filter = self
+            .extract_field_from_mapping(&content, "filter")
             .map(Box::new);
 
         Ok(PreprocessingTag::MapListToHash(MapListToHashTag {
@@ -1667,22 +2085,36 @@ impl YamlParser {
     }
 
     /// Parse GroupBy tag content
-    fn parse_group_by_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
+    fn parse_group_by_tag(
+        &self,
+        content: YamlAst,
+        meta: &SrcMeta,
+    ) -> ParseResult<PreprocessingTag> {
         // Check if content is a mapping first
         if !matches!(content, YamlAst::Mapping(_, _)) {
             return Err(self.tag_error("!$groupBy", "must be a mapping with 'items' and 'key' fields", Some("use format: {items: array, key: grouping_key, var: item_name, template: result_template}"), &meta));
         }
-        
-        let items = self.extract_field_from_mapping(&content, "items")
+
+        let items = self
+            .extract_field_from_mapping(&content, "items")
             .ok_or_else(|| self.missing_field_error("!$groupBy", "items", &meta))?;
 
-        let key = self.extract_field_from_mapping(&content, "key")
+        let key = self
+            .extract_field_from_mapping(&content, "key")
             .ok_or_else(|| self.missing_field_error("!$groupBy", "key", &meta))?;
 
-        let var = self.extract_field_from_mapping(&content, "var")
-            .and_then(|v| if let YamlAst::PlainString(s, _) = v { Some(s) } else { None });
+        let var = self
+            .extract_field_from_mapping(&content, "var")
+            .and_then(|v| {
+                if let YamlAst::PlainString(s, _) = v {
+                    Some(s)
+                } else {
+                    None
+                }
+            });
 
-        let template = self.extract_field_from_mapping(&content, "template")
+        let template = self
+            .extract_field_from_mapping(&content, "template")
             .map(Box::new);
 
         Ok(PreprocessingTag::GroupBy(GroupByTag {
@@ -1697,19 +2129,27 @@ impl YamlParser {
     fn parse_if_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
         // Check if content is a mapping first
         if !matches!(content, YamlAst::Mapping(_, _)) {
-            return Err(self.tag_error("!$if", "must be a mapping with required 'test' and 'then' fields", Some("use format: {test: condition, then: value, else: alternative}"), &meta));
+            return Err(self.tag_error(
+                "!$if",
+                "must be a mapping with required 'test' and 'then' fields",
+                Some("use format: {test: condition, then: value, else: alternative}"),
+                &meta,
+            ));
         }
-        
+
         // Validate fields first
         self.validate_tag_fields(&content, "!$if", &["test", "then"], &["else"], meta)?;
-        
-        let test = self.extract_field_from_mapping(&content, "test")
+
+        let test = self
+            .extract_field_from_mapping(&content, "test")
             .ok_or_else(|| self.missing_field_error("!$if", "test", &meta))?;
 
-        let then_value = self.extract_field_from_mapping(&content, "then")
+        let then_value = self
+            .extract_field_from_mapping(&content, "then")
             .ok_or_else(|| self.missing_field_error("!$if", "then", &meta))?;
 
-        let else_value = self.extract_field_from_mapping(&content, "else")
+        let else_value = self
+            .extract_field_from_mapping(&content, "else")
             .map(Box::new);
 
         Ok(PreprocessingTag::If(IfTag {
@@ -1723,11 +2163,24 @@ impl YamlParser {
     fn parse_let_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
         // Check if content is a mapping first
         if !matches!(content, YamlAst::Mapping(_, _)) {
-            return Err(self.tag_error("!$let", "must be a mapping with variable bindings and 'in' field", Some("use format: {var1: value1, var2: value2, in: expression}"), &meta));
+            return Err(self.tag_error(
+                "!$let",
+                "must be a mapping with variable bindings and 'in' field",
+                Some("use format: {var1: value1, var2: value2, in: expression}"),
+                &meta,
+            ));
         }
-        
-        let in_expr = self.extract_field_from_mapping(&content, "in")
-            .ok_or_else(|| self.tag_error("!$let", "missing required 'in' field", Some("add 'in' field containing the expression to evaluate"), &meta))?;
+
+        let in_expr = self
+            .extract_field_from_mapping(&content, "in")
+            .ok_or_else(|| {
+                self.tag_error(
+                    "!$let",
+                    "missing required 'in' field",
+                    Some("add 'in' field containing the expression to evaluate"),
+                    &meta,
+                )
+            })?;
 
         // Extract all other fields as bindings
         let mut bindings = Vec::new();
@@ -1751,7 +2204,7 @@ impl YamlParser {
     fn unescape_string(&self, s: &str) -> String {
         let mut result = String::new();
         let mut chars = s.chars();
-        
+
         while let Some(ch) = chars.next() {
             if ch == '\\' {
                 match chars.next() {
@@ -1776,20 +2229,26 @@ impl YamlParser {
                 result.push(ch);
             }
         }
-        
+
         result
     }
-    
+
     // Helper functions to generate properly formatted errors
-    
+
     /// Extract UTF-8 text from a node with proper error handling
     #[inline]
-    fn extract_utf8_text(&self, node: Node, src: &[u8], meta: &SrcMeta, context: &str) -> ParseResult<String> {
+    fn extract_utf8_text(
+        &self,
+        node: Node,
+        src: &[u8],
+        meta: &SrcMeta,
+        context: &str,
+    ) -> ParseResult<String> {
         node.utf8_text(src)
             .map(|s| s.to_string())
             .map_err(|_| self.syntax_error(&format!("Invalid UTF-8 in {}", context), meta, ""))
     }
-    
+
     /// Extract the file path from a URI for error display
     fn extract_file_path(&self, meta: &SrcMeta) -> String {
         if meta.input_uri.scheme() == "file" {
@@ -1816,7 +2275,9 @@ impl YamlParser {
                     } else {
                         // Handle file:///absolute/path cases
                         let uri_path = meta.input_uri.path();
-                        if uri_path.starts_with('/') && uri_path.chars().filter(|&c| c == '/').count() == 1 {
+                        if uri_path.starts_with('/')
+                            && uri_path.chars().filter(|&c| c == '/').count() == 1
+                        {
                             // URI like file:///test.yaml becomes /test.yaml, extract just test.yaml
                             uri_path.trim_start_matches('/').to_string()
                         } else if let Some(rel_index) = uri_path.find("example-templates/") {
@@ -1837,20 +2298,25 @@ impl YamlParser {
             meta.input_uri.to_string()
         }
     }
-    
+
     /// Convert URI to file path for error display with line:col
     #[inline]
     fn format_file_location(&self, meta: &SrcMeta) -> String {
         let path_str = self.extract_file_path(meta);
-        format!("{}:{}:{}", path_str, meta.start.line + 1, meta.start.character + 1)
+        format!(
+            "{}:{}:{}",
+            path_str,
+            meta.start.line + 1,
+            meta.start.character + 1
+        )
     }
-    
+
     /// Convert URI to just file path for error display (without line:col)
     #[inline]
     fn format_file_path_only(&self, meta: &SrcMeta) -> String {
         self.extract_file_path(meta)
     }
-    
+
     /// Generate a missing required field error
     fn missing_field_error(&self, tag_name: &str, field_name: &str, meta: &SrcMeta) -> ParseError {
         let file_path = self.format_file_location(meta);
@@ -1858,8 +2324,8 @@ impl YamlParser {
             tag_name,
             field_name,
             &file_path,
-            "", // yaml_path
-            vec![] // required_fields
+            "",     // yaml_path
+            vec![], // required_fields
         );
         ParseError {
             message: anyhow_error.to_string(),
@@ -1871,9 +2337,15 @@ impl YamlParser {
             code: None,
         }
     }
-    
+
     /// Generate a tag parsing error
-    fn tag_error(&self, tag_name: &str, message: &str, suggestion: Option<&str>, meta: &SrcMeta) -> ParseError {
+    fn tag_error(
+        &self,
+        tag_name: &str,
+        message: &str,
+        suggestion: Option<&str>,
+        meta: &SrcMeta,
+    ) -> ParseError {
         let file_path = self.format_file_location(meta);
         let anyhow_error = tag_parsing_error(tag_name, message, &file_path, suggestion);
         ParseError {
@@ -1886,12 +2358,12 @@ impl YamlParser {
             code: None,
         }
     }
-    
+
     /// Generate a YAML syntax error
     fn syntax_error(&self, message: &str, meta: &SrcMeta, source: &str) -> ParseError {
         // For syntax errors, extract just the file path without line:col since yaml_syntax_error adds its own
         let file_path = self.format_file_path_only(meta);
-        
+
         // Try parsing with serde_yaml to get a proper error for the wrapper function
         if let Err(serde_error) = serde_yaml::from_str::<serde_yaml::Value>(source) {
             let anyhow_error = yaml_syntax_error(serde_error, &file_path, source);

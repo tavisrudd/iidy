@@ -1,5 +1,5 @@
 //! AWS CloudFormation import loader
-//! 
+//!
 //! Provides functionality for loading stack outputs and exports from CloudFormation
 
 use anyhow::{Result, anyhow};
@@ -47,17 +47,25 @@ impl AwsCfnClient {
 #[async_trait]
 impl CfnClient for AwsCfnClient {
     async fn get_stack_outputs(&self, stack_name: &str) -> Result<Vec<CfnOutput>> {
-        let response = self.client
+        let response = self
+            .client
             .describe_stacks()
             .stack_name(stack_name)
             .send()
             .await
-            .map_err(|e| anyhow!("Failed to describe CloudFormation stack {}: {}", stack_name, e))?;
-        
-        let stack = response.stacks
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to describe CloudFormation stack {}: {}",
+                    stack_name,
+                    e
+                )
+            })?;
+
+        let stack = response
+            .stacks
             .and_then(|stacks| stacks.into_iter().next())
             .ok_or_else(|| anyhow!("CloudFormation stack {} not found", stack_name))?;
-        
+
         let mut outputs = Vec::new();
         if let Some(stack_outputs) = stack.outputs {
             for output in stack_outputs {
@@ -70,22 +78,24 @@ impl CfnClient for AwsCfnClient {
                 }
             }
         }
-        
+
         Ok(outputs)
     }
 
     async fn get_stack_exports(&self) -> Result<Vec<CfnExport>> {
-        let response = self.client
+        let response = self
+            .client
             .list_exports()
             .send()
             .await
             .map_err(|e| anyhow!("Failed to list CloudFormation exports: {}", e))?;
-        
+
         let mut exports = Vec::new();
         if let Some(cfn_exports) = response.exports {
             for export in cfn_exports {
-                if let (Some(name), Some(value), Some(exporting_stack_id)) = 
-                    (export.name, export.value, export.exporting_stack_id) {
+                if let (Some(name), Some(value), Some(exporting_stack_id)) =
+                    (export.name, export.value, export.exporting_stack_id)
+                {
                     exports.push(CfnExport {
                         name,
                         value,
@@ -94,42 +104,57 @@ impl CfnClient for AwsCfnClient {
                 }
             }
         }
-        
+
         Ok(exports)
     }
 }
 
 /// Load a CloudFormation import
-pub async fn load_cfn_import(location: &str, aws_config: &aws_config::SdkConfig) -> Result<ImportData> {
+pub async fn load_cfn_import(
+    location: &str,
+    aws_config: &aws_config::SdkConfig,
+) -> Result<ImportData> {
     let client = AwsCfnClient::new(aws_config);
     load_cfn_import_with_client(location, &client).await
 }
 
 /// Load a CloudFormation import with custom client (for testing)
-pub async fn load_cfn_import_with_client(location: &str, client: &dyn CfnClient) -> Result<ImportData> {
+pub async fn load_cfn_import_with_client(
+    location: &str,
+    client: &dyn CfnClient,
+) -> Result<ImportData> {
     // Parse cfn:stack-name.OutputKey or cfn:export:ExportName
     let (import_type, stack_name, output_key) = parse_cfn_location(location)?;
-    
+
     let data = match import_type.as_str() {
         "stack" => {
             // Get specific output from stack
             let outputs = client.get_stack_outputs(&stack_name).await?;
-            let output = outputs.iter()
+            let output = outputs
+                .iter()
                 .find(|o| o.output_key == output_key)
-                .ok_or_else(|| anyhow!("Output {} not found in stack {}", output_key, stack_name))?;
+                .ok_or_else(|| {
+                    anyhow!("Output {} not found in stack {}", output_key, stack_name)
+                })?;
             output.output_value.clone()
-        },
+        }
         "export" => {
             // Get specific export by name
             let exports = client.get_stack_exports().await?;
-            let export = exports.iter()
+            let export = exports
+                .iter()
                 .find(|e| e.name == output_key)
                 .ok_or_else(|| anyhow!("Export {} not found", output_key))?;
             export.value.clone()
-        },
-        _ => return Err(anyhow!("Invalid CloudFormation import type: {}", import_type)),
+        }
+        _ => {
+            return Err(anyhow!(
+                "Invalid CloudFormation import type: {}",
+                import_type
+            ));
+        }
     };
-    
+
     Ok(ImportData {
         import_type: ImportType::Cfn,
         resolved_location: location.to_string(),
@@ -139,31 +164,48 @@ pub async fn load_cfn_import_with_client(location: &str, client: &dyn CfnClient)
 }
 
 /// Parse CloudFormation location
-/// 
+///
 /// Supported formats:
 /// - cfn:stack-name.OutputKey (stack output)
 /// - cfn:export:ExportName (stack export)
 fn parse_cfn_location(location: &str) -> Result<(String, String, String)> {
     if !location.starts_with("cfn:") {
-        return Err(anyhow!("Invalid CloudFormation location format: {}", location));
+        return Err(anyhow!(
+            "Invalid CloudFormation location format: {}",
+            location
+        ));
     }
-    
+
     let path = location.strip_prefix("cfn:").unwrap();
-    
+
     if path.starts_with("export:") {
         // cfn:export:ExportName
         let export_name = path.strip_prefix("export:").unwrap();
         if export_name.is_empty() {
-            return Err(anyhow!("Invalid CloudFormation export name in: {}", location));
+            return Err(anyhow!(
+                "Invalid CloudFormation export name in: {}",
+                location
+            ));
         }
-        Ok(("export".to_string(), "".to_string(), export_name.to_string()))
+        Ok((
+            "export".to_string(),
+            "".to_string(),
+            export_name.to_string(),
+        ))
     } else {
         // cfn:stack-name.OutputKey
         let parts: Vec<&str> = path.splitn(2, '.').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-            return Err(anyhow!("Invalid CloudFormation stack output format: {}", location));
+            return Err(anyhow!(
+                "Invalid CloudFormation stack output format: {}",
+                location
+            ));
         }
-        Ok(("stack".to_string(), parts[0].to_string(), parts[1].to_string()))
+        Ok((
+            "stack".to_string(),
+            parts[0].to_string(),
+            parts[1].to_string(),
+        ))
     }
 }
 
@@ -187,23 +229,27 @@ mod tests {
         }
 
         fn with_stack_outputs(mut self, stack_name: &str, outputs: Vec<(&str, &str)>) -> Self {
-            let cfn_outputs = outputs.into_iter()
+            let cfn_outputs = outputs
+                .into_iter()
                 .map(|(key, value)| CfnOutput {
                     output_key: key.to_string(),
                     output_value: value.to_string(),
                     description: None,
                 })
                 .collect();
-            self.stack_outputs.insert(stack_name.to_string(), cfn_outputs);
+            self.stack_outputs
+                .insert(stack_name.to_string(), cfn_outputs);
             self
         }
 
         fn with_exports(mut self, exports: Vec<(&str, &str)>) -> Self {
-            let cfn_exports = exports.into_iter()
+            let cfn_exports = exports
+                .into_iter()
                 .map(|(name, value)| CfnExport {
                     name: name.to_string(),
                     value: value.to_string(),
-                    exporting_stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test/123".to_string(),
+                    exporting_stack_id:
+                        "arn:aws:cloudformation:us-east-1:123456789012:stack/test/123".to_string(),
                 })
                 .collect();
             self.exports = cfn_exports;
@@ -256,36 +302,40 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_cfn_import_stack_output() -> Result<()> {
-        let client = MockCfnClient::new()
-            .with_stack_outputs("my-stack", vec![
-                ("VpcId", "vpc-12345"),
-                ("SubnetId", "subnet-67890"),
-            ]);
+        let client = MockCfnClient::new().with_stack_outputs(
+            "my-stack",
+            vec![("VpcId", "vpc-12345"), ("SubnetId", "subnet-67890")],
+        );
 
         let result = load_cfn_import_with_client("cfn:my-stack.VpcId", &client).await?;
 
         assert_eq!(result.import_type, ImportType::Cfn);
         assert_eq!(result.resolved_location, "cfn:my-stack.VpcId");
         assert_eq!(result.data, "vpc-12345");
-        assert_eq!(result.doc, serde_yaml::Value::String("vpc-12345".to_string()));
+        assert_eq!(
+            result.doc,
+            serde_yaml::Value::String("vpc-12345".to_string())
+        );
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_load_cfn_import_export() -> Result<()> {
-        let client = MockCfnClient::new()
-            .with_exports(vec![
-                ("SharedVpcId", "vpc-shared-123"),
-                ("SharedSubnetId", "subnet-shared-456"),
-            ]);
+        let client = MockCfnClient::new().with_exports(vec![
+            ("SharedVpcId", "vpc-shared-123"),
+            ("SharedSubnetId", "subnet-shared-456"),
+        ]);
 
         let result = load_cfn_import_with_client("cfn:export:SharedVpcId", &client).await?;
 
         assert_eq!(result.import_type, ImportType::Cfn);
         assert_eq!(result.resolved_location, "cfn:export:SharedVpcId");
         assert_eq!(result.data, "vpc-shared-123");
-        assert_eq!(result.doc, serde_yaml::Value::String("vpc-shared-123".to_string()));
+        assert_eq!(
+            result.doc,
+            serde_yaml::Value::String("vpc-shared-123".to_string())
+        );
 
         Ok(())
     }
@@ -300,8 +350,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_cfn_import_output_not_found() {
-        let client = MockCfnClient::new()
-            .with_stack_outputs("my-stack", vec![("VpcId", "vpc-12345")]);
+        let client =
+            MockCfnClient::new().with_stack_outputs("my-stack", vec![("VpcId", "vpc-12345")]);
 
         let result = load_cfn_import_with_client("cfn:my-stack.NonexistentOutput", &client).await;
         assert!(result.is_err());
@@ -310,8 +360,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_cfn_import_export_not_found() {
-        let client = MockCfnClient::new()
-            .with_exports(vec![("SharedVpcId", "vpc-shared-123")]);
+        let client = MockCfnClient::new().with_exports(vec![("SharedVpcId", "vpc-shared-123")]);
 
         let result = load_cfn_import_with_client("cfn:export:NonexistentExport", &client).await;
         assert!(result.is_err());

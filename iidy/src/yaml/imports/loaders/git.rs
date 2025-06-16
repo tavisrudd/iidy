@@ -1,10 +1,10 @@
 //! Git command execution import loader
-//! 
+//!
 //! Provides functionality for executing git commands and retrieving git information
 
 use anyhow::{Result, anyhow};
-use serde_yaml::Value;
 use async_trait::async_trait;
+use serde_yaml::Value;
 
 use crate::yaml::imports::{ImportData, ImportType};
 
@@ -65,9 +65,9 @@ pub async fn load_git_import(location: &str, _base_location: &str) -> Result<Imp
 
 /// Load a git import with custom executor (for testing)
 pub async fn load_git_import_with_executor(
-    location: &str, 
-    _base_location: &str, 
-    executor: &dyn GitCommandExecutor
+    location: &str,
+    _base_location: &str,
+    executor: &dyn GitCommandExecutor,
 ) -> Result<ImportData> {
     let parts: Vec<&str> = location.splitn(2, ':').collect();
     if parts.len() != 2 || parts[0] != "git" {
@@ -81,7 +81,7 @@ pub async fn load_git_import_with_executor(
         "sha" => "git rev-parse HEAD",
         _ => return Err(anyhow!("Invalid git command: {}", location)),
     };
-    
+
     let data = executor.execute(command).await?;
 
     Ok(ImportData {
@@ -142,8 +142,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_git_import_describe() -> Result<()> {
-        let executor = MockGitExecutor::new()
-            .expect_command("git describe --dirty --tags", Ok("v1.2.3-4-gabcdef".to_string()));
+        let executor = MockGitExecutor::new().expect_command(
+            "git describe --dirty --tags",
+            Ok("v1.2.3-4-gabcdef".to_string()),
+        );
 
         let result = load_git_import_with_executor("git:describe", "/base", &executor).await?;
 
@@ -158,8 +160,8 @@ mod tests {
     #[tokio::test]
     async fn test_load_git_import_sha() -> Result<()> {
         let sha = "abcdef1234567890abcdef1234567890abcdef12";
-        let executor = MockGitExecutor::new()
-            .expect_command("git rev-parse HEAD", Ok(sha.to_string()));
+        let executor =
+            MockGitExecutor::new().expect_command("git rev-parse HEAD", Ok(sha.to_string()));
 
         let result = load_git_import_with_executor("git:sha", "/base", &executor).await?;
 
@@ -177,7 +179,12 @@ mod tests {
         let result = load_git_import_with_executor("git:invalid", "/base", &executor).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid git command"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid git command")
+        );
     }
 
     #[tokio::test]
@@ -186,24 +193,38 @@ mod tests {
         let result = load_git_import_with_executor("invalid:format", "/base", &executor).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Invalid git import format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid git import format")
+        );
     }
 
     #[tokio::test]
     async fn test_load_git_import_command_failure() {
-        let executor = MockGitExecutor::new()
-            .expect_command("git rev-parse --abbrev-ref HEAD", Err(anyhow!("Git command failed")));
+        let executor = MockGitExecutor::new().expect_command(
+            "git rev-parse --abbrev-ref HEAD",
+            Err(anyhow!("Git command failed")),
+        );
 
         let result = load_git_import_with_executor("git:branch", "/base", &executor).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Git command failed"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Git command failed")
+        );
     }
 
     #[tokio::test]
     async fn test_load_git_import_dirty_describe() -> Result<()> {
-        let executor = MockGitExecutor::new()
-            .expect_command("git describe --dirty --tags", Ok("v1.0.0-dirty".to_string()));
+        let executor = MockGitExecutor::new().expect_command(
+            "git describe --dirty --tags",
+            Ok("v1.0.0-dirty".to_string()),
+        );
 
         let result = load_git_import_with_executor("git:describe", "/base", &executor).await?;
 

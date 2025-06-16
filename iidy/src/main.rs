@@ -1,13 +1,18 @@
-use std::io;
-use log::debug;
-use env_logger;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use clap_complete::{Shell, generate};
+use env_logger;
+use log::debug;
+use std::io;
 
-use iidy::{cfn, cli::{Cli, Commands}, color::ColorContext, render::handle_render_command, explain::handle_explain_command};
+use iidy::{
+    cfn,
+    cli::{Cli, Commands},
+    color::ColorContext,
+    explain::handle_explain_command,
+    render::handle_render_command,
+};
 mod demo;
 use tokio::runtime::Runtime;
-
 
 fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
@@ -38,7 +43,8 @@ fn handle_command(cli: Cli) {
         }
         Commands::EstimateCost(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args))
+            {
                 eprintln!("error estimating cost: {e:?}");
                 std::process::exit(1);
             }
@@ -56,7 +62,9 @@ fn handle_command(cli: Cli) {
         }
         Commands::ExecChangeset(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args)) {
+            if let Err(e) =
+                rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args))
+            {
                 eprintln!("error executing change set: {e:?}");
                 std::process::exit(1);
             }
@@ -64,7 +72,9 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args)) {
+            if let Err(e) =
+                rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args))
+            {
                 eprintln!("error describing stack: {e:?}");
                 std::process::exit(1);
             }
@@ -161,16 +171,13 @@ fn handle_command(cli: Cli) {
     }
 }
 
-
-
-
 fn main() {
     env_logger::Builder::from_default_env().init();
 
     match Cli::try_parse() {
         Ok(cli) => {
             debug!("CLI options: {:?}", cli);
-            
+
             // Initialize color context early for global access
             let theme = match cli.global_opts.theme {
                 iidy::cli::Theme::Auto => iidy::terminal::Theme::Auto,
@@ -179,9 +186,9 @@ fn main() {
                 iidy::cli::Theme::HighContrast => iidy::terminal::Theme::HighContrast,
             };
             ColorContext::init_global(cli.global_opts.color.clone(), theme);
-            
+
             handle_command(cli)
-        },
+        }
         Err(e)
             if matches!(
                 e.kind(),

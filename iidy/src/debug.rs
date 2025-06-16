@@ -1,5 +1,5 @@
 //! Zero-cost debug logging utilities
-//! 
+//!
 //! This module provides debug logging that compiles to nothing in release builds
 //! unless explicitly enabled with the 'debug-logging' feature flag.
 

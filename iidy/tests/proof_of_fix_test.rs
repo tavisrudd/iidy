@@ -39,29 +39,44 @@ fn proof_thirteenth_if_error_points_to_correct_line() {
     }
 
     let result = parse_yaml_with_custom_tags_from_file(yaml_content, "proof.yaml");
-    
-    assert!(result.is_err(), "Should have an error due to missing 'test' field");
-    
+
+    assert!(
+        result.is_err(),
+        "Should have an error due to missing 'test' field"
+    );
+
     let error_msg = result.unwrap_err().to_string();
     println!("\n=== ERROR MESSAGE ===");
     println!("{}", error_msg);
     println!("====================\n");
-    
+
     // Verify the error is about missing 'test' field
-    assert!(error_msg.contains("test"), "Error should mention missing 'test' field");
-    assert!(error_msg.contains("missing") || error_msg.contains("required"), 
-            "Error should indicate field is missing/required");
-    
+    assert!(
+        error_msg.contains("test"),
+        "Error should mention missing 'test' field"
+    );
+    assert!(
+        error_msg.contains("missing") || error_msg.contains("required"),
+        "Error should indicate field is missing/required"
+    );
+
     // THE CRITICAL TEST: Error should point to line 14 (where Condition13 is)
     // NOT to line 2 (where Condition01 is)
-    assert!(error_msg.contains("proof.yaml:14:"), 
-            "❌ FAIL: Error should point to line 14 (Condition13), but got: {}", error_msg);
-    
+    assert!(
+        error_msg.contains("proof.yaml:14:"),
+        "❌ FAIL: Error should point to line 14 (Condition13), but got: {}",
+        error_msg
+    );
+
     // Verify it's NOT pointing to the first occurrence
-    assert!(!error_msg.contains("proof.yaml:2:"), 
-            "❌ FAIL: Error incorrectly points to line 2 (first !$if) instead of line 14 (13th !$if)");
-    
-    println!("✅ SUCCESS: Error correctly points to line 14 (13th !$if) where the actual problem is!");
+    assert!(
+        !error_msg.contains("proof.yaml:2:"),
+        "❌ FAIL: Error incorrectly points to line 2 (first !$if) instead of line 14 (13th !$if)"
+    );
+
+    println!(
+        "✅ SUCCESS: Error correctly points to line 14 (13th !$if) where the actual problem is!"
+    );
     println!("✅ SUCCESS: Error does NOT point to line 2 (1st !$if) which would be wrong!");
 }
 
@@ -81,20 +96,30 @@ fn proof_different_occurrence_different_error() {
   Cond10: !$if { test: true, then: "ok10", else: "fail10" }"#;
 
     let result = parse_yaml_with_custom_tags_from_file(yaml_content, "proof7.yaml");
-    
-    assert!(result.is_err(), "Should have an error due to missing 'test' field in 7th !$if");
-    
+
+    assert!(
+        result.is_err(),
+        "Should have an error due to missing 'test' field in 7th !$if"
+    );
+
     let error_msg = result.unwrap_err().to_string();
     println!("\n=== 7TH OCCURRENCE ERROR ===");
     println!("{}", error_msg);
     println!("===========================\n");
-    
+
     // Should point to line 8 (where Cond7 is), NOT line 2 (where Cond1 is)
-    assert!(error_msg.contains("proof7.yaml:8:"), 
-            "❌ FAIL: Error should point to line 8 (Cond7), but got: {}", error_msg);
-    
-    assert!(!error_msg.contains("proof7.yaml:2:"), 
-            "❌ FAIL: Error incorrectly points to line 2 (first !$if) instead of line 8 (7th !$if)");
-    
-    println!("✅ SUCCESS: Error correctly points to line 8 (7th !$if) where the actual problem is!");
+    assert!(
+        error_msg.contains("proof7.yaml:8:"),
+        "❌ FAIL: Error should point to line 8 (Cond7), but got: {}",
+        error_msg
+    );
+
+    assert!(
+        !error_msg.contains("proof7.yaml:2:"),
+        "❌ FAIL: Error incorrectly points to line 2 (first !$if) instead of line 8 (7th !$if)"
+    );
+
+    println!(
+        "✅ SUCCESS: Error correctly points to line 8 (7th !$if) where the actual problem is!"
+    );
 }

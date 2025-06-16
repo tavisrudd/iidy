@@ -1,5 +1,5 @@
 //! YAML tag resolution module
-//! 
+//!
 //! Contains the tag resolution logic for processing custom preprocessing tags
 //! and converting them to final YAML values.
 //!
@@ -10,10 +10,6 @@ pub mod context;
 pub mod resolver_split_args;
 
 // Re-export key types
-pub use context::{
-    TagContext, VariableSource,
-};
+pub use context::{TagContext, VariableSource};
 
-pub use resolver_split_args::{
-    SplitArgsResolver,  TagResolver, resolve_ast_split_args,
-};
+pub use resolver_split_args::{SplitArgsResolver, TagResolver, resolve_ast_split_args};

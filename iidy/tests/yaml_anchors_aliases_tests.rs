@@ -3,11 +3,11 @@ use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
 
 /// Tests for YAML anchors, aliases, and merge key operations
-/// 
+///
 /// YAML anchors (&) and aliases (*) are part of YAML 1.2 and should be handled by the parser
 /// before our preprocessing pipeline runs.
-/// 
-/// YAML merge keys (<<) were part of YAML 1.1 but removed in YAML 1.2. Since serde_yaml 
+///
+/// YAML merge keys (<<) were part of YAML 1.1 but removed in YAML 1.2. Since serde_yaml
 /// follows YAML 1.2, we should detect merge key usage and provide helpful error messages.
 
 #[tokio::test]
@@ -33,24 +33,47 @@ service2:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // Verify that anchors/aliases were resolved by the parser before preprocessing
     let service1 = result.get("service1").unwrap().as_mapping().unwrap();
-    let service1_config = service1.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    
+    let service1_config = service1
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+
     // The alias should be expanded to the full config
-    assert_eq!(service1_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    assert_eq!(service1_config.get(&Value::String("retries".to_string())), Some(&Value::Number(serde_yaml::Number::from(3))));
-    assert_eq!(service1_config.get(&Value::String("debug".to_string())), Some(&Value::Bool(false)));
-    
+    assert_eq!(
+        service1_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+    assert_eq!(
+        service1_config.get(&Value::String("retries".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(3)))
+    );
+    assert_eq!(
+        service1_config.get(&Value::String("debug".to_string())),
+        Some(&Value::Bool(false))
+    );
+
     // Verify handlebars processing still worked
-    assert_eq!(service1.get(&Value::String("name".to_string())), Some(&Value::String("test-app-service1".to_string())));
-    
+    assert_eq!(
+        service1.get(&Value::String("name".to_string())),
+        Some(&Value::String("test-app-service1".to_string()))
+    );
+
     // Verify service2 has the same config (from the same alias)
     let service2 = result.get("service2").unwrap().as_mapping().unwrap();
-    let service2_config = service2.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(service2_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    
+    let service2_config = service2
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        service2_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+
     Ok(())
 }
 
@@ -74,21 +97,21 @@ prod_config:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await;
-    
+
     // This should now fail with a proper error message about merge keys
     assert!(result.is_err());
     let error = result.unwrap_err();
     let error_message = error.to_string();
-    
+
     // Verify the error message contains the expected information
     assert!(error_message.contains("YAML merge keys ('<<') are not supported in YAML 1.2"));
     assert!(error_message.contains("in file 'test.yaml'"));
     assert!(error_message.contains("Consider using iidy's !$merge tag instead"));
     assert!(error_message.contains("!$merge"));
-    
+
     println!("✅ Merge key properly detected with helpful error:");
     println!("{}", error_message);
-    
+
     Ok(())
 }
 
@@ -121,20 +144,41 @@ service_config: !$merge
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     let service_config = result.get("service_config").unwrap().as_mapping().unwrap();
-    
+
     // Verify all configs were merged using iidy's !$merge tag
-    assert_eq!(service_config.get(&Value::String("port".to_string())), Some(&Value::Number(serde_yaml::Number::from(9090)))); // overridden
-    assert_eq!(service_config.get(&Value::String("host".to_string())), Some(&Value::String("0.0.0.0".to_string()))); // from network
-    assert_eq!(service_config.get(&Value::String("ssl".to_string())), Some(&Value::Bool(true))); // from security
-    assert_eq!(service_config.get(&Value::String("auth_required".to_string())), Some(&Value::Bool(true))); // from security
-    assert_eq!(service_config.get(&Value::String("level".to_string())), Some(&Value::String("INFO".to_string()))); // from logging
-    assert_eq!(service_config.get(&Value::String("format".to_string())), Some(&Value::String("json".to_string()))); // from logging
-    
+    assert_eq!(
+        service_config.get(&Value::String("port".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(9090)))
+    ); // overridden
+    assert_eq!(
+        service_config.get(&Value::String("host".to_string())),
+        Some(&Value::String("0.0.0.0".to_string()))
+    ); // from network
+    assert_eq!(
+        service_config.get(&Value::String("ssl".to_string())),
+        Some(&Value::Bool(true))
+    ); // from security
+    assert_eq!(
+        service_config.get(&Value::String("auth_required".to_string())),
+        Some(&Value::Bool(true))
+    ); // from security
+    assert_eq!(
+        service_config.get(&Value::String("level".to_string())),
+        Some(&Value::String("INFO".to_string()))
+    ); // from logging
+    assert_eq!(
+        service_config.get(&Value::String("format".to_string())),
+        Some(&Value::String("json".to_string()))
+    ); // from logging
+
     // Verify handlebars processing worked
-    assert_eq!(service_config.get(&Value::String("name".to_string())), Some(&Value::String("multi-app-service".to_string())));
-    
+    assert_eq!(
+        service_config.get(&Value::String("name".to_string())),
+        Some(&Value::String("multi-app-service".to_string()))
+    );
+
     Ok(())
 }
 
@@ -164,25 +208,54 @@ service_configs: !$map
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
-    let service_configs = result.get("service_configs").unwrap().as_sequence().unwrap();
+
+    let service_configs = result
+        .get("service_configs")
+        .unwrap()
+        .as_sequence()
+        .unwrap();
     assert_eq!(service_configs.len(), 2);
-    
+
     // Check first service (api)
     let api_service = service_configs[0].as_mapping().unwrap();
-    assert_eq!(api_service.get(&Value::String("name".to_string())), Some(&Value::String("test-api".to_string())));
-    assert_eq!(api_service.get(&Value::String("port".to_string())), Some(&Value::Number(serde_yaml::Number::from(8080))));
-    
-    let api_config = api_service.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(api_config.get(&Value::String("replicas".to_string())), Some(&Value::Number(serde_yaml::Number::from(2))));
-    assert_eq!(api_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    assert_eq!(api_config.get(&Value::String("health_check".to_string())), Some(&Value::String("/health".to_string())));
-    
+    assert_eq!(
+        api_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("test-api".to_string()))
+    );
+    assert_eq!(
+        api_service.get(&Value::String("port".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(8080)))
+    );
+
+    let api_config = api_service
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        api_config.get(&Value::String("replicas".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(2)))
+    );
+    assert_eq!(
+        api_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+    assert_eq!(
+        api_config.get(&Value::String("health_check".to_string())),
+        Some(&Value::String("/health".to_string()))
+    );
+
     // Check second service (web)
     let web_service = service_configs[1].as_mapping().unwrap();
-    assert_eq!(web_service.get(&Value::String("name".to_string())), Some(&Value::String("test-web".to_string())));
-    assert_eq!(web_service.get(&Value::String("port".to_string())), Some(&Value::Number(serde_yaml::Number::from(3000))));
-    
+    assert_eq!(
+        web_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("test-web".to_string()))
+    );
+    assert_eq!(
+        web_service.get(&Value::String("port".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(3000)))
+    );
+
     Ok(())
 }
 
@@ -225,27 +298,65 @@ staging_cache: !$merge
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // Verify production_db configuration
     let prod_db = result.get("production_db").unwrap().as_mapping().unwrap();
-    assert_eq!(prod_db.get(&Value::String("engine".to_string())), Some(&Value::String("postgresql".to_string())));
-    assert_eq!(prod_db.get(&Value::String("version".to_string())), Some(&Value::String("13".to_string())));
-    assert_eq!(prod_db.get(&Value::String("name".to_string())), Some(&Value::String("myapp-prod-db".to_string())));
-    
-    let prod_db_settings = prod_db.get(&Value::String("settings".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(prod_db_settings.get(&Value::String("max_connections".to_string())), Some(&Value::Number(serde_yaml::Number::from(200))));
-    assert_eq!(prod_db_settings.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    assert_eq!(prod_db_settings.get(&Value::String("backup_enabled".to_string())), Some(&Value::Bool(true)));
-    
+    assert_eq!(
+        prod_db.get(&Value::String("engine".to_string())),
+        Some(&Value::String("postgresql".to_string()))
+    );
+    assert_eq!(
+        prod_db.get(&Value::String("version".to_string())),
+        Some(&Value::String("13".to_string()))
+    );
+    assert_eq!(
+        prod_db.get(&Value::String("name".to_string())),
+        Some(&Value::String("myapp-prod-db".to_string()))
+    );
+
+    let prod_db_settings = prod_db
+        .get(&Value::String("settings".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        prod_db_settings.get(&Value::String("max_connections".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(200)))
+    );
+    assert_eq!(
+        prod_db_settings.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+    assert_eq!(
+        prod_db_settings.get(&Value::String("backup_enabled".to_string())),
+        Some(&Value::Bool(true))
+    );
+
     // Verify staging_cache configuration
     let staging_cache = result.get("staging_cache").unwrap().as_mapping().unwrap();
-    assert_eq!(staging_cache.get(&Value::String("engine".to_string())), Some(&Value::String("redis".to_string())));
-    assert_eq!(staging_cache.get(&Value::String("name".to_string())), Some(&Value::String("myapp-staging-cache".to_string())));
-    
-    let cache_settings = staging_cache.get(&Value::String("settings".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(cache_settings.get(&Value::String("max_memory".to_string())), Some(&Value::String("128mb".to_string())));
-    assert_eq!(cache_settings.get(&Value::String("eviction_policy".to_string())), Some(&Value::String("allkeys-lru".to_string())));
-    
+    assert_eq!(
+        staging_cache.get(&Value::String("engine".to_string())),
+        Some(&Value::String("redis".to_string()))
+    );
+    assert_eq!(
+        staging_cache.get(&Value::String("name".to_string())),
+        Some(&Value::String("myapp-staging-cache".to_string()))
+    );
+
+    let cache_settings = staging_cache
+        .get(&Value::String("settings".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        cache_settings.get(&Value::String("max_memory".to_string())),
+        Some(&Value::String("128mb".to_string()))
+    );
+    assert_eq!(
+        cache_settings.get(&Value::String("eviction_policy".to_string())),
+        Some(&Value::String("allkeys-lru".to_string()))
+    );
+
     Ok(())
 }
 
@@ -283,32 +394,58 @@ all_services: !$map
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // Verify service1 env vars
     let service1 = result.get("service1").unwrap().as_mapping().unwrap();
-    let service1_env = service1.get(&Value::String("env_vars".to_string())).unwrap().as_sequence().unwrap();
+    let service1_env = service1
+        .get(&Value::String("env_vars".to_string()))
+        .unwrap()
+        .as_sequence()
+        .unwrap();
     assert_eq!(service1_env.len(), 2);
-    
+
     let env_var1 = service1_env[0].as_mapping().unwrap();
-    assert_eq!(env_var1.get(&Value::String("name".to_string())), Some(&Value::String("ENVIRONMENT".to_string())));
-    assert_eq!(env_var1.get(&Value::String("value".to_string())), Some(&Value::String("production".to_string())));
-    
+    assert_eq!(
+        env_var1.get(&Value::String("name".to_string())),
+        Some(&Value::String("ENVIRONMENT".to_string()))
+    );
+    assert_eq!(
+        env_var1.get(&Value::String("value".to_string())),
+        Some(&Value::String("production".to_string()))
+    );
+
     let env_var2 = service1_env[1].as_mapping().unwrap();
-    assert_eq!(env_var2.get(&Value::String("name".to_string())), Some(&Value::String("REGION".to_string())));
-    assert_eq!(env_var2.get(&Value::String("value".to_string())), Some(&Value::String("us-west-2".to_string()))); // handlebars processed
-    
+    assert_eq!(
+        env_var2.get(&Value::String("name".to_string())),
+        Some(&Value::String("REGION".to_string()))
+    );
+    assert_eq!(
+        env_var2.get(&Value::String("value".to_string())),
+        Some(&Value::String("us-west-2".to_string()))
+    ); // handlebars processed
+
     // Verify all_services from iidy preprocessing
     let all_services = result.get("all_services").unwrap().as_sequence().unwrap();
     assert_eq!(all_services.len(), 3);
-    
+
     let api_service = all_services[0].as_mapping().unwrap();
-    assert_eq!(api_service.get(&Value::String("name".to_string())), Some(&Value::String("api-service".to_string())));
-    
-    let api_env = api_service.get(&Value::String("env_vars".to_string())).unwrap().as_sequence().unwrap();
+    assert_eq!(
+        api_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("api-service".to_string()))
+    );
+
+    let api_env = api_service
+        .get(&Value::String("env_vars".to_string()))
+        .unwrap()
+        .as_sequence()
+        .unwrap();
     assert_eq!(api_env.len(), 2);
     let api_region_var = api_env[1].as_mapping().unwrap();
-    assert_eq!(api_region_var.get(&Value::String("value".to_string())), Some(&Value::String("us-west-2".to_string())));
-    
+    assert_eq!(
+        api_region_var.get(&Value::String("value".to_string())),
+        Some(&Value::String("us-west-2".to_string()))
+    );
+
     Ok(())
 }
 
@@ -346,29 +483,74 @@ section2:
 "#;
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
-    
+
     // Verify section1 service uses section1_config
     let section1 = result.get("section1").unwrap().as_mapping().unwrap();
-    let section1_service = section1.get(&Value::String("service".to_string())).unwrap().as_mapping().unwrap();
-    let section1_config = section1_service.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(section1_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    
-    // Verify section2 service uses the same section1_config  
+    let section1_service = section1
+        .get(&Value::String("service".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    let section1_config = section1_service
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        section1_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+
+    // Verify section2 service uses the same section1_config
     let section2 = result.get("section2").unwrap().as_mapping().unwrap();
-    let section2_service = section2.get(&Value::String("service".to_string())).unwrap().as_mapping().unwrap();
-    let section2_service_config = section2_service.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(section2_service_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(30))));
-    
+    let section2_service = section2
+        .get(&Value::String("service".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    let section2_service_config = section2_service
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        section2_service_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(30)))
+    );
+
     // Verify debug_service uses section2_config
-    let debug_service = section2.get(&Value::String("debug_service".to_string())).unwrap().as_mapping().unwrap();
-    let debug_config = debug_service.get(&Value::String("config".to_string())).unwrap().as_mapping().unwrap();
-    assert_eq!(debug_config.get(&Value::String("timeout".to_string())), Some(&Value::Number(serde_yaml::Number::from(60))));
-    assert_eq!(debug_config.get(&Value::String("debug".to_string())), Some(&Value::Bool(true)));
-    
+    let debug_service = section2
+        .get(&Value::String("debug_service".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    let debug_config = debug_service
+        .get(&Value::String("config".to_string()))
+        .unwrap()
+        .as_mapping()
+        .unwrap();
+    assert_eq!(
+        debug_config.get(&Value::String("timeout".to_string())),
+        Some(&Value::Number(serde_yaml::Number::from(60)))
+    );
+    assert_eq!(
+        debug_config.get(&Value::String("debug".to_string())),
+        Some(&Value::Bool(true))
+    );
+
     // Verify handlebars worked in all services
-    assert_eq!(section1_service.get(&Value::String("name".to_string())), Some(&Value::String("scoped-app-service1".to_string())));
-    assert_eq!(section2_service.get(&Value::String("name".to_string())), Some(&Value::String("scoped-app-service2".to_string())));
-    assert_eq!(debug_service.get(&Value::String("name".to_string())), Some(&Value::String("scoped-app-debug".to_string())));
-    
+    assert_eq!(
+        section1_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("scoped-app-service1".to_string()))
+    );
+    assert_eq!(
+        section2_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("scoped-app-service2".to_string()))
+    );
+    assert_eq!(
+        debug_service.get(&Value::String("name".to_string())),
+        Some(&Value::String("scoped-app-debug".to_string()))
+    );
+
     Ok(())
 }

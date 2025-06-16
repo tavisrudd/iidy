@@ -1,13 +1,13 @@
 //! Integration tests for YAML preprocessing
-//! 
+//!
 //! Tests the complete preprocessing pipeline with realistic scenarios
 //! matching iidy-js behavior
 
 use anyhow::Result;
 use iidy::yaml::preprocess_yaml_v11;
 use serde_yaml::Value;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 #[tokio::test]
 async fn test_complete_preprocessing_pipeline() -> Result<()> {
@@ -18,7 +18,8 @@ async fn test_complete_preprocessing_pipeline() -> Result<()> {
     writeln!(config_file, "cache_host: cache.example.com")?;
     let config_path = config_file.path().to_string_lossy().to_string();
 
-    let yaml_input = format!(r#"
+    let yaml_input = format!(
+        r#"
 $defs:
   environment: "prod"
   app_name: "my-app"
@@ -52,7 +53,9 @@ merged_config: !$merge
   - name: "{{{{app_name}}}}"
     env: "{{{{environment}}}}"
   - !$ config
-"#, config_path);
+"#,
+        config_path
+    );
 
     let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await?;
 
@@ -185,15 +188,21 @@ Outputs:
         );
 
         // Check resources
-        if let Some(Value::Mapping(resources)) = template.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) =
+            template.get(&Value::String("Resources".to_string()))
+        {
             // Check S3 bucket
-            if let Some(Value::Mapping(s3_bucket)) = resources.get(&Value::String("S3Bucket".to_string())) {
+            if let Some(Value::Mapping(s3_bucket)) =
+                resources.get(&Value::String("S3Bucket".to_string()))
+            {
                 assert_eq!(
                     s3_bucket.get(&Value::String("Type".to_string())),
                     Some(&Value::String("AWS::S3::Bucket".to_string()))
                 );
 
-                if let Some(Value::Mapping(properties)) = s3_bucket.get(&Value::String("Properties".to_string())) {
+                if let Some(Value::Mapping(properties)) =
+                    s3_bucket.get(&Value::String("Properties".to_string()))
+                {
                     // Note: The actual handlebars toLowerCase and concat would need to be implemented
                     // For now, we check that the structure is correct
                     assert!(properties.contains_key(&Value::String("BucketName".to_string())));
@@ -202,7 +211,9 @@ Outputs:
             }
 
             // Check fromPairs result
-            if let Some(Value::Mapping(security_groups)) = resources.get(&Value::String("SecurityGroups".to_string())) {
+            if let Some(Value::Mapping(security_groups)) =
+                resources.get(&Value::String("SecurityGroups".to_string()))
+            {
                 assert!(security_groups.contains_key(&Value::String("WebSG".to_string())));
                 assert!(security_groups.contains_key(&Value::String("DBSG".to_string())));
             }
@@ -235,7 +246,8 @@ async fn test_nested_imports_and_complex_transformations() -> Result<()> {
     writeln!(env_config, "  port: 5432")?;
     let env_config_path = env_config.path().to_string_lossy().to_string();
 
-    let yaml_input = format!(r#"
+    let yaml_input = format!(
+        r#"
 $imports:
   config: "{}"
 
@@ -270,7 +282,9 @@ all_endpoints: !$concatMap
       type: "internal"
     - name: "{{item}}-external"
       type: "external"
-"#, env_config_path);
+"#,
+        env_config_path
+    );
 
     let result = preprocess_yaml_v11(&yaml_input, "complex.yaml").await?;
 
@@ -292,11 +306,15 @@ all_endpoints: !$concatMap
         );
 
         // Check mapValues transformation (debugging)
-        if let Some(Value::Mapping(service_configs)) = map.get(&Value::String("service_configs".to_string())) {
+        if let Some(Value::Mapping(service_configs)) =
+            map.get(&Value::String("service_configs".to_string()))
+        {
             assert!(service_configs.contains_key(&Value::String("api".to_string())));
             assert!(service_configs.contains_key(&Value::String("web".to_string())));
-            
-            if let Some(Value::Mapping(api_config)) = service_configs.get(&Value::String("api".to_string())) {
+
+            if let Some(Value::Mapping(api_config)) =
+                service_configs.get(&Value::String("api".to_string()))
+            {
                 // Debug: Check what we actually got
                 if let Some(actual_name) = api_config.get(&Value::String("name".to_string())) {
                     println!("DEBUG: Expected 'api', got: {:?}", actual_name);
@@ -310,7 +328,9 @@ all_endpoints: !$concatMap
         }
 
         // Check concatMap result
-        if let Some(Value::Sequence(endpoints)) = map.get(&Value::String("all_endpoints".to_string())) {
+        if let Some(Value::Sequence(endpoints)) =
+            map.get(&Value::String("all_endpoints".to_string()))
+        {
             // Should have internal and external endpoints for each service
             assert_eq!(endpoints.len(), 6); // 3 services * 2 endpoints each
         }
@@ -372,7 +392,9 @@ parsed_json: !$parseJson '{"key": "value", "number": 456}'
 
     if let Value::Mapping(map) = result {
         // Check string case transformations
-        if let Some(Value::Mapping(formatted)) = map.get(&Value::String("formatted_strings".to_string())) {
+        if let Some(Value::Mapping(formatted)) =
+            map.get(&Value::String("formatted_strings".to_string()))
+        {
             assert_eq!(
                 formatted.get(&Value::String("upper".to_string())),
                 Some(&Value::String("HELLO WORLD".to_string()))
@@ -392,7 +414,9 @@ parsed_json: !$parseJson '{"key": "value", "number": 456}'
         }
 
         // Check string manipulation
-        if let Some(Value::Mapping(processed)) = map.get(&Value::String("processed_strings".to_string())) {
+        if let Some(Value::Mapping(processed)) =
+            map.get(&Value::String("processed_strings".to_string()))
+        {
             assert_eq!(
                 processed.get(&Value::String("trimmed".to_string())),
                 Some(&Value::String("extra spaces".to_string()))
@@ -404,7 +428,9 @@ parsed_json: !$parseJson '{"key": "value", "number": 456}'
         }
 
         // Check YAML serialization
-        if let Some(Value::String(yaml_str)) = map.get(&Value::String("serialized_data".to_string())) {
+        if let Some(Value::String(yaml_str)) =
+            map.get(&Value::String("serialized_data".to_string()))
+        {
             assert!(yaml_str.contains("message: Hello World"));
         }
 
@@ -422,7 +448,9 @@ parsed_json: !$parseJson '{"key": "value", "number": 456}'
         }
 
         // Check parsed JSON
-        if let Some(Value::Mapping(parsed_json)) = map.get(&Value::String("parsed_json".to_string())) {
+        if let Some(Value::Mapping(parsed_json)) =
+            map.get(&Value::String("parsed_json".to_string()))
+        {
             assert_eq!(
                 parsed_json.get(&Value::String("key".to_string())),
                 Some(&Value::String("value".to_string()))

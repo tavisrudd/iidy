@@ -18,22 +18,22 @@ fn test_mixed_tabs_and_spaces() {
     then: "mixed""#;
 
     let context = ParseContext::new("mixed.yaml", yaml_content);
-    
+
     // Test that we can still find the correct tag even with mixed indentation
     let first_ctx = context.with_path("Resources").with_path("FirstLevel");
     let second_ctx = context.with_path("Resources").with_path("SecondLevel");
     let third_ctx = context.with_path("Resources").with_path("ThirdLevel");
-    
+
     // All should find their respective !$if tags
     assert!(first_ctx.find_tag_position_in_context("!$if").is_some());
     assert!(second_ctx.find_tag_position_in_context("!$if").is_some());
     assert!(third_ctx.find_tag_position_in_context("!$if").is_some());
-    
+
     // Verify line numbers are correct
     let first_pos = first_ctx.find_tag_position_in_context("!$if").unwrap();
     let second_pos = second_ctx.find_tag_position_in_context("!$if").unwrap();
     let third_pos = third_ctx.find_tag_position_in_context("!$if").unwrap();
-    
+
     assert_eq!(first_pos.line, 2);
     assert_eq!(second_pos.line, 5);
     assert_eq!(third_pos.line, 8);
@@ -56,18 +56,18 @@ fn test_varying_indent_sizes() {
          template: "{{item}}""#;
 
     let context = ParseContext::new("varying.yaml", yaml_content);
-    
+
     // Test that we can find each tag correctly despite varying indentation
     let tag1_ctx = context.with_path("Resources").with_path("Tag1");
     let tag2_ctx = context.with_path("Resources").with_path("Tag2");
     let tag3_ctx = context.with_path("Resources").with_path("Tag3");
     let tag4_ctx = context.with_path("Resources").with_path("Tag4");
-    
+
     let tag1_pos = tag1_ctx.find_tag_position_in_context("!$map").unwrap();
     let tag2_pos = tag2_ctx.find_tag_position_in_context("!$map").unwrap();
     let tag3_pos = tag3_ctx.find_tag_position_in_context("!$map").unwrap();
     let tag4_pos = tag4_ctx.find_tag_position_in_context("!$map").unwrap();
-    
+
     assert_eq!(tag1_pos.line, 2);
     assert_eq!(tag2_pos.line, 5);
     assert_eq!(tag3_pos.line, 8);
@@ -88,12 +88,19 @@ fn test_nested_tags_with_inconsistent_indentation() {
           then: "third""#;
 
     let context = ParseContext::new("test.yaml", yaml_content);
-    
+
     // Test that our location finding system works regardless of indentation inconsistencies
     let tag1_ctx = context.with_path("Resources").with_path("Tag1");
-    let tag2_ctx = context.with_path("Resources").with_path("Tag1").with_path("Tag2");
-    let tag3_ctx = context.with_path("Resources").with_path("Tag1").with_path("Tag2").with_path("Tag3");
-    
+    let tag2_ctx = context
+        .with_path("Resources")
+        .with_path("Tag1")
+        .with_path("Tag2");
+    let tag3_ctx = context
+        .with_path("Resources")
+        .with_path("Tag1")
+        .with_path("Tag2")
+        .with_path("Tag3");
+
     // All should find their respective tags using tree-sitter (or manual fallback)
     assert!(tag1_ctx.find_tag_position_in_context("!$if").is_some());
     assert!(tag2_ctx.find_tag_position_in_context("!$if").is_some());
@@ -105,13 +112,16 @@ fn test_tab_based_indentation() {
     let yaml_content = "Resources:\n\tTag1: !$if\n\t\ttest: true\n\t\tthen: \"tab_based\"\n\t\tTag2: !$if\n\t\t\ttest: false\n\t\t\tthen: \"nested_tabs\"";
 
     let context = ParseContext::new("tabs.yaml", yaml_content);
-    
+
     let tag1_ctx = context.with_path("Resources").with_path("Tag1");
-    let tag2_ctx = context.with_path("Resources").with_path("Tag1").with_path("Tag2");
-    
+    let tag2_ctx = context
+        .with_path("Resources")
+        .with_path("Tag1")
+        .with_path("Tag2");
+
     let tag1_pos = tag1_ctx.find_tag_position_in_context("!$if").unwrap();
     let tag2_pos = tag2_ctx.find_tag_position_in_context("!$if").unwrap();
-    
+
     assert_eq!(tag1_pos.line, 2);
     assert_eq!(tag2_pos.line, 5);
 }
@@ -140,22 +150,22 @@ fn test_inconsistent_mixed_indentation_real_world() {
         InstanceType: "t3.medium""#;
 
     let context = ParseContext::new("inconsistent.yaml", yaml_content);
-    
+
     // Test finding the first !$if (Database)
     let db_ctx = context.with_path("Resources").with_path("Database");
     let db_pos = db_ctx.find_tag_position_in_context("!$if").unwrap();
     assert_eq!(db_pos.line, 2);
-    
+
     // Test finding the !$eq inside the Database !$if
     let db_test_ctx = db_ctx.with_path("test");
     let eq_pos = db_test_ctx.find_tag_position_in_context("!$eq").unwrap();
     assert_eq!(eq_pos.line, 3);
-    
+
     // Test finding the second !$if (WebServer)
     let web_ctx = context.with_path("Resources").with_path("WebServer");
     let web_pos = web_ctx.find_tag_position_in_context("!$if").unwrap();
     assert_eq!(web_pos.line, 14);
-    
+
     // Test finding nested tags with complex indentation
     let web_test_ctx = web_ctx.with_path("test");
     let not_pos = web_test_ctx.find_tag_position_in_context("!$not").unwrap();
@@ -185,15 +195,15 @@ fn test_empty_lines_and_comments_with_inconsistent_indentation() {
 		- source2"#;
 
     let context = ParseContext::new("comments.yaml", yaml_content);
-    
+
     let tag1_ctx = context.with_path("Resources").with_path("Tag1");
     let tag2_ctx = context.with_path("Resources").with_path("Tag2");
     let tag3_ctx = context.with_path("Resources").with_path("Tag3");
-    
+
     let tag1_pos = tag1_ctx.find_tag_position_in_context("!$map").unwrap();
     let tag2_pos = tag2_ctx.find_tag_position_in_context("!$if").unwrap();
     let tag3_pos = tag3_ctx.find_tag_position_in_context("!$merge").unwrap();
-    
+
     assert_eq!(tag1_pos.line, 3);
     assert_eq!(tag2_pos.line, 11);
     assert_eq!(tag3_pos.line, 17);

@@ -1,23 +1,26 @@
 /// Ratatui demonstration for CloudFormation describe-stack functionality
 use chrono::{DateTime, Utc};
+use crossterm::{
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+        MouseEventKind,
+    },
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
-        Block, Paragraph, Row, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Table, TableState, Wrap,
+        Block, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
+        Wrap,
     },
-    Frame, Terminal,
 };
-use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use std::time::{Duration, Instant};
 use std::io;
+use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]
 pub struct StackInfo {
@@ -114,7 +117,7 @@ impl App {
         events_table_state.select(Some(0));
         let mut resources_table_state = TableState::default();
         resources_table_state.select(Some(0));
-        
+
         App {
             stack_info: create_fake_stack_info(),
             events: create_fake_events(),
@@ -225,7 +228,7 @@ impl App {
 
     pub fn get_sorted_events(&self) -> Vec<&StackEvent> {
         let mut events: Vec<&StackEvent> = self.events.iter().collect();
-        
+
         events.sort_by(|a, b| {
             let ordering = match self.events_sort_column {
                 EventsSortColumn::Time => a.timestamp.cmp(&b.timestamp),
@@ -238,14 +241,14 @@ impl App {
                     a_reason.cmp(b_reason)
                 }
             };
-            
+
             if self.events_sort_ascending {
                 ordering
             } else {
                 ordering.reverse()
             }
         });
-        
+
         events
     }
 
@@ -255,7 +258,7 @@ impl App {
             self.handle_tab_click(x, y, full_area);
             return;
         }
-        
+
         // Calculate content area (below tab bar)
         let content_y = 3;
         let content_area = Rect {
@@ -264,19 +267,19 @@ impl App {
             width: full_area.width,
             height: full_area.height.saturating_sub(3),
         };
-        
+
         match self.current_tab {
             1 => self.handle_events_mouse_click(x, y, content_area),
             2 => self.handle_resources_mouse_click(x, y, content_area),
             _ => {}
         }
     }
-    
+
     fn handle_tab_click(&mut self, x: u16, _y: u16, area: Rect) {
         // Tab titles are roughly: "Stack Info", "Events", "Resources"
         // Each tab is approximately area.width / 3
         let tab_width = area.width / 3;
-        
+
         if x < tab_width {
             self.current_tab = 0; // Stack Info
         } else if x < tab_width * 2 {
@@ -288,11 +291,12 @@ impl App {
 
     fn handle_events_mouse_click(&mut self, x: u16, y: u16, area: Rect) {
         // Check if click is in header area for sorting
-        if y == area.y + 1 { // Header is at y + 1 (after title)
+        if y == area.y + 1 {
+            // Header is at y + 1 (after title)
             // Determine which column was clicked based on x position
             let mut col_start = area.x;
             let constraints = [10u16, 25, 25, 20]; // Time, Resource ID, Type, Status (Reason takes remaining)
-            
+
             for (i, &width) in constraints.iter().enumerate() {
                 if x >= col_start && x < col_start + width {
                     match i {
@@ -310,7 +314,8 @@ impl App {
             if x >= col_start {
                 self.sort_events(EventsSortColumn::Reason);
             }
-        } else if y > area.y + 1 { // Click in data rows
+        } else if y > area.y + 1 {
+            // Click in data rows
             let row_index = (y - area.y - 2) as usize; // -2 for title and header
             let events = self.get_sorted_events();
             if row_index < events.len() {
@@ -321,11 +326,12 @@ impl App {
 
     fn handle_resources_mouse_click(&mut self, x: u16, y: u16, area: Rect) {
         // Check if click is in header area for sorting
-        if y == area.y + 1 { // Header is at y + 1 (after title)
+        if y == area.y + 1 {
+            // Header is at y + 1 (after title)
             // Determine which column was clicked based on x position
             let mut col_start = area.x;
             let constraints = [25u16, 30, 18, 15]; // Logical ID, Type, Status, Drift (Physical ID takes remaining)
-            
+
             for (i, &width) in constraints.iter().enumerate() {
                 if x >= col_start && x < col_start + width {
                     match i {
@@ -343,7 +349,8 @@ impl App {
             if x >= col_start {
                 self.sort_resources(ResourcesSortColumn::PhysicalId);
             }
-        } else if y > area.y + 1 { // Click in data rows
+        } else if y > area.y + 1 {
+            // Click in data rows
             let row_index = (y - area.y - 2) as usize; // -2 for title and header
             let resources = self.get_sorted_resources();
             if row_index < resources.len() {
@@ -352,7 +359,13 @@ impl App {
         }
     }
 
-    pub fn get_column_header(&self, name: &str, column: &EventsSortColumn, current_sort: EventsSortColumn, ascending: bool) -> String {
+    pub fn get_column_header(
+        &self,
+        name: &str,
+        column: &EventsSortColumn,
+        current_sort: EventsSortColumn,
+        ascending: bool,
+    ) -> String {
         if std::mem::discriminant(column) == std::mem::discriminant(&current_sort) {
             if ascending {
                 format!("{} ▲", name)
@@ -363,8 +376,14 @@ impl App {
             name.to_string()
         }
     }
-    
-    pub fn get_resource_column_header(&self, name: &str, column: &ResourcesSortColumn, current_sort: ResourcesSortColumn, ascending: bool) -> String {
+
+    pub fn get_resource_column_header(
+        &self,
+        name: &str,
+        column: &ResourcesSortColumn,
+        current_sort: ResourcesSortColumn,
+        ascending: bool,
+    ) -> String {
         if std::mem::discriminant(column) == std::mem::discriminant(&current_sort) {
             if ascending {
                 format!("{} ▲", name)
@@ -375,10 +394,10 @@ impl App {
             name.to_string()
         }
     }
-    
+
     pub fn get_sorted_resources(&self) -> Vec<&StackResource> {
         let mut resources: Vec<&StackResource> = self.resources.iter().collect();
-        
+
         resources.sort_by(|a, b| {
             let ordering = match self.resources_sort_column {
                 ResourcesSortColumn::LogicalId => a.logical_resource_id.cmp(&b.logical_resource_id),
@@ -395,14 +414,14 @@ impl App {
                     a_drift.cmp(b_drift)
                 }
             };
-            
+
             if self.resources_sort_ascending {
                 ordering
             } else {
                 ordering.reverse()
             }
         });
-        
+
         resources
     }
 
@@ -447,18 +466,18 @@ impl App {
             // Update timestamp to current time
             let mut new_event = event;
             new_event.timestamp = Utc::now();
-            
+
             // Add to front of events list (most recent first)
             self.events.insert(0, new_event.clone());
-            
+
             // Update corresponding resource status if it exists
             self.update_resource_status(&new_event);
-            
+
             // Update stack status
             self.update_stack_status(&new_event);
-            
+
             // Keep current selection stable - don't auto-reset to top
-            
+
             // Keep only last 50 events to prevent memory growth
             if self.events.len() > 50 {
                 self.events.truncate(50);
@@ -467,8 +486,11 @@ impl App {
     }
 
     fn update_resource_status(&mut self, event: &StackEvent) {
-        if let Some(resource) = self.resources.iter_mut()
-            .find(|r| r.logical_resource_id == event.logical_resource_id) {
+        if let Some(resource) = self
+            .resources
+            .iter_mut()
+            .find(|r| r.logical_resource_id == event.logical_resource_id)
+        {
             resource.resource_status = event.resource_status.clone();
             resource.resource_status_reason = event.resource_status_reason.clone();
             resource.last_updated_timestamp = Some(event.timestamp);
@@ -537,11 +559,19 @@ fn run_app<B: ratatui::backend::Backend>(
                             KeyCode::Char('3') => app.sort_events(EventsSortColumn::ResourceType),
                             KeyCode::Char('4') => app.sort_events(EventsSortColumn::Status),
                             KeyCode::Char('5') => app.sort_events(EventsSortColumn::Reason),
-                            KeyCode::Char('!') => app.sort_resources(ResourcesSortColumn::LogicalId),
-                            KeyCode::Char('@') => app.sort_resources(ResourcesSortColumn::ResourceType),
+                            KeyCode::Char('!') => {
+                                app.sort_resources(ResourcesSortColumn::LogicalId)
+                            }
+                            KeyCode::Char('@') => {
+                                app.sort_resources(ResourcesSortColumn::ResourceType)
+                            }
                             KeyCode::Char('#') => app.sort_resources(ResourcesSortColumn::Status),
-                            KeyCode::Char('$') => app.sort_resources(ResourcesSortColumn::PhysicalId),
-                            KeyCode::Char('%') => app.sort_resources(ResourcesSortColumn::DriftStatus),
+                            KeyCode::Char('$') => {
+                                app.sort_resources(ResourcesSortColumn::PhysicalId)
+                            }
+                            KeyCode::Char('%') => {
+                                app.sort_resources(ResourcesSortColumn::DriftStatus)
+                            }
                             _ => {}
                         }
                     }
@@ -555,7 +585,7 @@ fn run_app<B: ratatui::backend::Backend>(
                 _ => {}
             }
         }
-        
+
         // Update simulation (add new events every 3 seconds)
         app.update_simulation();
     }
@@ -574,9 +604,13 @@ fn ui(f: &mut Frame, app: &mut App) {
         .enumerate()
         .map(|(i, &title)| {
             let style = if i == app.current_tab {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED)
             };
             let text = if i == app.current_tab {
                 format!("[{}]", title)
@@ -602,12 +636,9 @@ fn ui(f: &mut Frame, app: &mut App) {
             app.update_counter, app.simulation_stage
         ),
     };
-    
-    let tabs_paragraph = Paragraph::new(Text::from(vec![
-        Line::from(help_text),
-        tabs_line,
-    ]))
-    .block(Block::default().title("iidy watch-stack (Live Demo)"));
+
+    let tabs_paragraph = Paragraph::new(Text::from(vec![Line::from(help_text), tabs_line]))
+        .block(Block::default().title("iidy watch-stack (Live Demo)"));
 
     f.render_widget(tabs_paragraph, chunks[0]);
 
@@ -625,11 +656,11 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
     let main_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),  // Left column
-            Constraint::Percentage(50),  // Right column
+            Constraint::Percentage(50), // Left column
+            Constraint::Percentage(50), // Right column
         ])
         .split(area);
-    
+
     // Left column layout
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -638,13 +669,13 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
             Constraint::Min(0),     // Parameters
         ])
         .split(main_chunks[0]);
-    
-    // Right column layout  
+
+    // Right column layout
     let right_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6),  // Tags
-            Constraint::Min(0),     // Outputs
+            Constraint::Length(6), // Tags
+            Constraint::Min(0),    // Outputs
         ])
         .split(main_chunks[1]);
 
@@ -652,11 +683,20 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
     let basic_info = vec![
         format!("Name: {}", stack_info.stack_name),
         format!("Status: {}", colorize_status(&stack_info.stack_status)),
-        format!("Created: {}", stack_info.creation_time.format("%Y-%m-%d %H:%M:%S UTC")),
+        format!(
+            "Created: {}",
+            stack_info.creation_time.format("%Y-%m-%d %H:%M:%S UTC")
+        ),
         format!("Capabilities: {}", stack_info.capabilities.join(", ")),
         "".to_string(), // spacing
         format!("Description:"),
-        format!("  {}", stack_info.description.as_ref().unwrap_or(&"None".to_string())),
+        format!(
+            "  {}",
+            stack_info
+                .description
+                .as_ref()
+                .unwrap_or(&"None".to_string())
+        ),
         "".to_string(), // spacing
         format!("Stack ID:"),
         format!("  {}", stack_info.stack_id),
@@ -675,9 +715,15 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
             .map(|(key, value)| Row::new(vec![key.clone(), value.clone()]))
             .collect();
 
-        let params_table = Table::new(param_rows, [Constraint::Percentage(45), Constraint::Percentage(55)])
-            .header(Row::new(vec!["Parameter", "Value"]).style(Style::default().add_modifier(Modifier::BOLD)))
-            .block(Block::default().title("Parameters"));
+        let params_table = Table::new(
+            param_rows,
+            [Constraint::Percentage(45), Constraint::Percentage(55)],
+        )
+        .header(
+            Row::new(vec!["Parameter", "Value"])
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        )
+        .block(Block::default().title("Parameters"));
         f.render_widget(params_table, left_chunks[1]);
     }
 
@@ -689,9 +735,12 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
             .map(|(key, value)| Row::new(vec![key.clone(), value.clone()]))
             .collect();
 
-        let tags_table = Table::new(tag_rows, [Constraint::Percentage(45), Constraint::Percentage(55)])
-            .header(Row::new(vec!["Tag", "Value"]).style(Style::default().add_modifier(Modifier::BOLD)))
-            .block(Block::default().title("Tags"));
+        let tags_table = Table::new(
+            tag_rows,
+            [Constraint::Percentage(45), Constraint::Percentage(55)],
+        )
+        .header(Row::new(vec!["Tag", "Value"]).style(Style::default().add_modifier(Modifier::BOLD)))
+        .block(Block::default().title("Tags"));
         f.render_widget(tags_table, right_chunks[0]);
     }
 
@@ -704,8 +753,16 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
                 Row::new(vec![
                     output.output_key.clone(),
                     output.output_value.clone(),
-                    output.description.as_ref().unwrap_or(&"".to_string()).clone(),
-                    output.export_name.as_ref().unwrap_or(&"".to_string()).clone(),
+                    output
+                        .description
+                        .as_ref()
+                        .unwrap_or(&"".to_string())
+                        .clone(),
+                    output
+                        .export_name
+                        .as_ref()
+                        .unwrap_or(&"".to_string())
+                        .clone(),
                 ])
             })
             .collect();
@@ -717,11 +774,11 @@ fn render_stack_info(f: &mut Frame, area: Rect, stack_info: &StackInfo) {
                 Constraint::Percentage(35),
                 Constraint::Percentage(35),
                 Constraint::Length(15),
-            ]
+            ],
         )
         .header(
             Row::new(vec!["Key", "Value", "Description", "Export"])
-                .style(Style::default().add_modifier(Modifier::BOLD))
+                .style(Style::default().add_modifier(Modifier::BOLD)),
         )
         .block(Block::default().title("Outputs"));
         f.render_widget(outputs_table, right_chunks[1]);
@@ -732,7 +789,7 @@ fn render_events(f: &mut Frame, area: Rect, app: &mut App) {
     let sorted_events = app.get_sorted_events();
     let events_count = sorted_events.len();
     let total_events = app.events.len();
-    
+
     let event_rows: Vec<Row> = sorted_events
         .iter()
         .map(|event| {
@@ -741,7 +798,11 @@ fn render_events(f: &mut Frame, area: Rect, app: &mut App) {
                 event.logical_resource_id.clone(),
                 event.resource_type.clone(),
                 colorize_status(&event.resource_status),
-                event.resource_status_reason.as_ref().unwrap_or(&"".to_string()).clone(),
+                event
+                    .resource_status_reason
+                    .as_ref()
+                    .unwrap_or(&"".to_string())
+                    .clone(),
             ])
         })
         .collect();
@@ -749,27 +810,49 @@ fn render_events(f: &mut Frame, area: Rect, app: &mut App) {
     let events_table = Table::new(
         event_rows,
         [
-            Constraint::Length(10),  // Time
-            Constraint::Length(25),  // Resource ID
-            Constraint::Length(25),  // Resource Type
-            Constraint::Length(20),  // Status
-            Constraint::Min(20),     // Reason
-        ]
+            Constraint::Length(10), // Time
+            Constraint::Length(25), // Resource ID
+            Constraint::Length(25), // Resource Type
+            Constraint::Length(20), // Status
+            Constraint::Min(20),    // Reason
+        ],
     )
     .header(
         Row::new(vec![
-            app.get_column_header("Time", &EventsSortColumn::Time, app.events_sort_column, app.events_sort_ascending),
-            app.get_column_header("Resource ID", &EventsSortColumn::ResourceId, app.events_sort_column, app.events_sort_ascending),
-            app.get_column_header("Type", &EventsSortColumn::ResourceType, app.events_sort_column, app.events_sort_ascending),
-            app.get_column_header("Status", &EventsSortColumn::Status, app.events_sort_column, app.events_sort_ascending),
-            app.get_column_header("Reason", &EventsSortColumn::Reason, app.events_sort_column, app.events_sort_ascending),
+            app.get_column_header(
+                "Time",
+                &EventsSortColumn::Time,
+                app.events_sort_column,
+                app.events_sort_ascending,
+            ),
+            app.get_column_header(
+                "Resource ID",
+                &EventsSortColumn::ResourceId,
+                app.events_sort_column,
+                app.events_sort_ascending,
+            ),
+            app.get_column_header(
+                "Type",
+                &EventsSortColumn::ResourceType,
+                app.events_sort_column,
+                app.events_sort_ascending,
+            ),
+            app.get_column_header(
+                "Status",
+                &EventsSortColumn::Status,
+                app.events_sort_column,
+                app.events_sort_ascending,
+            ),
+            app.get_column_header(
+                "Reason",
+                &EventsSortColumn::Reason,
+                app.events_sort_column,
+                app.events_sort_ascending,
+            ),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD))
+        .style(Style::default().add_modifier(Modifier::BOLD)),
     )
-    .block(
-        Block::default()
-            .title(format!("Stack Events ({}/{})", events_count, total_events))
-    )
+    .block(Block::default().title(format!("Stack Events ({}/{})", events_count, total_events)))
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .highlight_symbol(">> ");
 
@@ -782,7 +865,7 @@ fn render_events(f: &mut Frame, area: Rect, app: &mut App) {
             .orientation(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
-        
+
         let selected = app.events_table_state.selected().unwrap_or(0);
         let mut scrollbar_state = ScrollbarState::default()
             .content_length(events_count)
@@ -790,7 +873,10 @@ fn render_events(f: &mut Frame, area: Rect, app: &mut App) {
 
         f.render_stateful_widget(
             scrollbar,
-            area.inner(Margin { vertical: 1, horizontal: 0 }),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
             &mut scrollbar_state,
         );
     }
@@ -808,8 +894,16 @@ fn render_resources(f: &mut Frame, area: Rect, app: &mut App) {
                 resource.logical_resource_id.clone(),
                 resource.resource_type.clone(),
                 colorize_status(&resource.resource_status),
-                resource.physical_resource_id.as_ref().unwrap_or(&"N/A".to_string()).clone(),
-                resource.drift_status.as_ref().unwrap_or(&"N/A".to_string()).clone(),
+                resource
+                    .physical_resource_id
+                    .as_ref()
+                    .unwrap_or(&"N/A".to_string())
+                    .clone(),
+                resource
+                    .drift_status
+                    .as_ref()
+                    .unwrap_or(&"N/A".to_string())
+                    .clone(),
             ])
         })
         .collect();
@@ -817,27 +911,52 @@ fn render_resources(f: &mut Frame, area: Rect, app: &mut App) {
     let resources_table = Table::new(
         resource_rows,
         [
-            Constraint::Length(25),  // Logical ID
-            Constraint::Length(30),  // Resource Type
-            Constraint::Length(18),  // Status
-            Constraint::Min(25),     // Physical ID
-            Constraint::Length(15),  // Drift Status
-        ]
+            Constraint::Length(25), // Logical ID
+            Constraint::Length(30), // Resource Type
+            Constraint::Length(18), // Status
+            Constraint::Min(25),    // Physical ID
+            Constraint::Length(15), // Drift Status
+        ],
     )
     .header(
         Row::new(vec![
-            app.get_resource_column_header("Logical ID", &ResourcesSortColumn::LogicalId, app.resources_sort_column, app.resources_sort_ascending),
-            app.get_resource_column_header("Type", &ResourcesSortColumn::ResourceType, app.resources_sort_column, app.resources_sort_ascending),
-            app.get_resource_column_header("Status", &ResourcesSortColumn::Status, app.resources_sort_column, app.resources_sort_ascending),
-            app.get_resource_column_header("Physical ID", &ResourcesSortColumn::PhysicalId, app.resources_sort_column, app.resources_sort_ascending),
-            app.get_resource_column_header("Drift", &ResourcesSortColumn::DriftStatus, app.resources_sort_column, app.resources_sort_ascending),
+            app.get_resource_column_header(
+                "Logical ID",
+                &ResourcesSortColumn::LogicalId,
+                app.resources_sort_column,
+                app.resources_sort_ascending,
+            ),
+            app.get_resource_column_header(
+                "Type",
+                &ResourcesSortColumn::ResourceType,
+                app.resources_sort_column,
+                app.resources_sort_ascending,
+            ),
+            app.get_resource_column_header(
+                "Status",
+                &ResourcesSortColumn::Status,
+                app.resources_sort_column,
+                app.resources_sort_ascending,
+            ),
+            app.get_resource_column_header(
+                "Physical ID",
+                &ResourcesSortColumn::PhysicalId,
+                app.resources_sort_column,
+                app.resources_sort_ascending,
+            ),
+            app.get_resource_column_header(
+                "Drift",
+                &ResourcesSortColumn::DriftStatus,
+                app.resources_sort_column,
+                app.resources_sort_ascending,
+            ),
         ])
-        .style(Style::default().add_modifier(Modifier::BOLD))
+        .style(Style::default().add_modifier(Modifier::BOLD)),
     )
-    .block(
-        Block::default()
-            .title(format!("Stack Resources ({}/{})", resources_count, total_resources))
-    )
+    .block(Block::default().title(format!(
+        "Stack Resources ({}/{})",
+        resources_count, total_resources
+    )))
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
     .highlight_symbol(">> ");
 
@@ -850,7 +969,7 @@ fn render_resources(f: &mut Frame, area: Rect, app: &mut App) {
             .orientation(ScrollbarOrientation::VerticalRight)
             .begin_symbol(Some("↑"))
             .end_symbol(Some("↓"));
-        
+
         let selected = app.resources_table_state.selected().unwrap_or(0);
         let mut scrollbar_state = ScrollbarState::default()
             .content_length(resources_count)
@@ -858,7 +977,10 @@ fn render_resources(f: &mut Frame, area: Rect, app: &mut App) {
 
         f.render_stateful_widget(
             scrollbar,
-            area.inner(Margin { vertical: 1, horizontal: 0 }),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
             &mut scrollbar_state,
         );
     }

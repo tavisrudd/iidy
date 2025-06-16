@@ -1,5 +1,5 @@
-use std::fmt;
 use crate::yaml::errors::ErrorId;
+use std::fmt;
 
 /// Source location information for precise error reporting
 #[derive(Debug, Clone, PartialEq)]
@@ -19,7 +19,7 @@ impl SourceLocation {
             yaml_path: yaml_path.to_string(),
         }
     }
-    
+
     pub fn unknown(file: &str) -> Self {
         Self {
             file: file.to_string(),
@@ -50,7 +50,7 @@ pub enum EnhancedPreprocessingError {
         available_vars: Vec<String>,
         suggestions: Vec<String>,
     },
-    
+
     TypeMismatch {
         error_id: ErrorId,
         expected: String,
@@ -59,7 +59,7 @@ pub enum EnhancedPreprocessingError {
         context: String,
         help: Option<String>,
     },
-    
+
     MissingRequiredField {
         error_id: ErrorId,
         tag_name: String,
@@ -67,7 +67,7 @@ pub enum EnhancedPreprocessingError {
         location: SourceLocation,
         required_fields: Vec<String>,
     },
-    
+
     ImportError {
         error_id: ErrorId,
         import_type: String,
@@ -76,7 +76,7 @@ pub enum EnhancedPreprocessingError {
         underlying_error: String,
         suggestions: Vec<String>,
     },
-    
+
     HandlebarsError {
         error_id: ErrorId,
         template: String,
@@ -84,7 +84,7 @@ pub enum EnhancedPreprocessingError {
         underlying_error: String,
         available_helpers: Vec<String>,
     },
-    
+
     CloudFormationValidation {
         error_id: ErrorId,
         tag_name: String,
@@ -105,7 +105,7 @@ impl EnhancedPreprocessingError {
             Self::CloudFormationValidation { error_id, .. } => *error_id,
         }
     }
-    
+
     pub fn location(&self) -> &SourceLocation {
         match self {
             Self::VariableNotFound { location, .. } => location,
@@ -116,13 +116,13 @@ impl EnhancedPreprocessingError {
             Self::CloudFormationValidation { location, .. } => location,
         }
     }
-    
+
     /// Display error with clean, user-friendly formatting
     pub fn display_with_context(&self, source_lines: Option<&[String]>) -> String {
         let mut output = String::new();
         let loc = self.location();
         let use_color = std::env::var("NO_COLOR").is_err() && atty::is(atty::Stream::Stderr);
-        
+
         // Color codes
         let red = if use_color { "\x1b[31m" } else { "" };
         let bold_red = if use_color { "\x1b[1;31m" } else { "" };
@@ -132,32 +132,50 @@ impl EnhancedPreprocessingError {
         let light_blue = if use_color { "\x1b[38;5;75m" } else { "" }; // light blue for help text
         let grey = if use_color { "\x1b[90m" } else { "" }; // grey for line numbers
         let reset = if use_color { "\x1b[0m" } else { "" };
-        
+
         // Error header - concise and scannable
         let error_type = match self {
             Self::VariableNotFound { .. } => "Variable error",
-            Self::TypeMismatch { .. } => "Type error", 
+            Self::TypeMismatch { .. } => "Type error",
             Self::MissingRequiredField { .. } => "Missing field error",
             Self::ImportError { .. } => "Import error",
             Self::HandlebarsError { .. } => "Template error",
             Self::CloudFormationValidation { .. } => "CloudFormation error",
         };
-        
+
         let short_message = match self {
             Self::VariableNotFound { variable, .. } => format!("'{}' not found", variable),
-            Self::TypeMismatch { expected, found, .. } => format!("expected {}, found {}", expected, found),
-            Self::MissingRequiredField { missing_field, tag_name, .. } => format!("'{}' missing in {} tag", missing_field, tag_name),
-            Self::ImportError { import_type, location_str, .. } => format!("{} import failed: {}", import_type, location_str),
+            Self::TypeMismatch {
+                expected, found, ..
+            } => format!("expected {}, found {}", expected, found),
+            Self::MissingRequiredField {
+                missing_field,
+                tag_name,
+                ..
+            } => format!("'{}' missing in {} tag", missing_field, tag_name),
+            Self::ImportError {
+                import_type,
+                location_str,
+                ..
+            } => format!("{} import failed: {}", import_type, location_str),
             Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
             Self::CloudFormationValidation { message, .. } => message.clone(),
         };
-        
-        output.push_str(&format!("{}{}{}: {} @ {}{}{} {}(errno: {}){}\n", 
-            bold_red, error_type, reset, short_message,
-            cyan, loc, reset,
-            grey, self.error_id().code(), reset
+
+        output.push_str(&format!(
+            "{}{}{}: {} @ {}{}{} {}(errno: {}){}\n",
+            bold_red,
+            error_type,
+            reset,
+            short_message,
+            cyan,
+            loc,
+            reset,
+            grey,
+            self.error_id().code(),
+            reset
         ));
-        
+
         // Add specific guidance on next line
         let guidance = match self {
             Self::VariableNotFound { .. } => "variable not defined in current scope",
@@ -167,64 +185,114 @@ impl EnhancedPreprocessingError {
             Self::HandlebarsError { .. } => "template syntax error",
             Self::CloudFormationValidation { .. } => "invalid CloudFormation intrinsic function",
         };
-        
+
         output.push_str(&format!("{}  -> {}{}\n", light_blue, guidance, reset));
-        
+
         // Show source context prominently (helps user find the problem quickly)
         if let Some(lines) = source_lines {
             if loc.line > 0 && loc.line <= lines.len() {
                 output.push_str("\n");
-                
+
                 // Show line before for context (if available) - in blue-grey with grey line number
                 if loc.line > 1 {
                     let prev_line = &lines[loc.line - 2];
-                    output.push_str(&format!("{}{:4}{} | {}{}{}\n", grey, loc.line - 1, reset, blue_grey, prev_line, reset));
+                    output.push_str(&format!(
+                        "{}{:4}{} | {}{}{}\n",
+                        grey,
+                        loc.line - 1,
+                        reset,
+                        blue_grey,
+                        prev_line,
+                        reset
+                    ));
                 }
-                
+
                 // Show the problematic line with highlighting - make line number red to draw attention
                 let line_content = &lines[loc.line - 1];
-                output.push_str(&format!("{}{:4}{} | {}\n", red, loc.line, reset, line_content));
-                
+                output.push_str(&format!(
+                    "{}{:4}{} | {}\n",
+                    red, loc.line, reset, line_content
+                ));
+
                 // Show caret pointing to the error with color
                 if loc.column > 0 && loc.column <= line_content.len() {
                     let spaces = " ".repeat(loc.column - 1); // column offset
-                    let span_len = self.error_span_length().min(line_content.len() - loc.column + 1);
+                    let span_len = self
+                        .error_span_length()
+                        .min(line_content.len() - loc.column + 1);
                     let carets = "^".repeat(span_len.max(1));
-                    
+
                     // Use red color for the error highlight and blue-grey for description
-                    output.push_str(&format!("     | {}{}{}{} {}{}{}\n", 
-                        spaces, red, carets, reset, blue_grey, self.inline_description(), reset));
+                    output.push_str(&format!(
+                        "     | {}{}{}{} {}{}{}\n",
+                        spaces,
+                        red,
+                        carets,
+                        reset,
+                        blue_grey,
+                        self.inline_description(),
+                        reset
+                    ));
                 }
-                
+
                 // Show line after for context (if available) - in blue-grey with grey line number
                 if loc.line < lines.len() {
                     let next_line = &lines[loc.line];
-                    output.push_str(&format!("{}{:4}{} | {}{}{}\n", grey, loc.line + 1, reset, blue_grey, next_line, reset));
+                    output.push_str(&format!(
+                        "{}{:4}{} | {}{}{}\n",
+                        grey,
+                        loc.line + 1,
+                        reset,
+                        blue_grey,
+                        next_line,
+                        reset
+                    ));
                 }
-                
+
                 output.push_str("\n");
             }
         }
-        
+
         // Most important information - specific help for this error (in light blue, no prefixes)
         match self {
-            Self::VariableNotFound { suggestions, available_vars, .. } => {
+            Self::VariableNotFound {
+                suggestions,
+                available_vars,
+                ..
+            } => {
                 // Show suggestions first (most actionable)
                 if !suggestions.is_empty() {
-                    output.push_str(&format!("{}   did you mean '{}'?{}\n", light_blue, suggestions.join("' or '"), reset));
+                    output.push_str(&format!(
+                        "{}   did you mean '{}'?{}\n",
+                        light_blue,
+                        suggestions.join("' or '"),
+                        reset
+                    ));
                 }
-                
+
                 // Show available variables (scan-friendly, one line) - sort for stable output
                 if !available_vars.is_empty() {
                     let mut sorted_vars = available_vars.clone();
                     sorted_vars.sort();
-                    output.push_str(&format!("{}   available variables: {}{}\n", light_blue, sorted_vars.join(", "), reset));
+                    output.push_str(&format!(
+                        "{}   available variables: {}{}\n",
+                        light_blue,
+                        sorted_vars.join(", "),
+                        reset
+                    ));
                 }
-            },
-            Self::MissingRequiredField { missing_field, tag_name, .. } => {
+            }
+            Self::MissingRequiredField {
+                missing_field,
+                tag_name,
+                ..
+            } => {
                 // Show the specific fix needed
-                output.push_str(&format!("{}   add '{}' field to {} tag{}\n", light_blue, missing_field, tag_name, reset));
-                
+                output.push_str(&format!(
+                    "{}   add '{}' field to {} tag{}\n",
+                    light_blue, missing_field, tag_name, reset
+                ));
+
                 // Show example if available
                 let help_messages = self.help_messages();
                 if let Some(help) = help_messages.first() {
@@ -232,25 +300,34 @@ impl EnhancedPreprocessingError {
                         output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
                     }
                 }
-            },
-            Self::TypeMismatch { expected, found, help, .. } => {
-                output.push_str(&format!("{}   expected {}, found {}{}\n", light_blue, expected, found, reset));
+            }
+            Self::TypeMismatch {
+                expected,
+                found,
+                help,
+                ..
+            } => {
+                output.push_str(&format!(
+                    "{}   expected {}, found {}{}\n",
+                    light_blue, expected, found, reset
+                ));
                 if let Some(type_help) = help {
                     output.push_str(&format!("{}   {}{}\n", light_blue, type_help, reset));
                 }
-            },
+            }
             Self::CloudFormationValidation { help_text, .. } => {
                 // Show the specific guidance
                 output.push_str(&format!("{}   {}{}\n", light_blue, help_text, reset));
-                
+
                 // Show examples
                 let help_messages = self.help_messages();
-                for help in &help_messages[1..] { // Skip first message (help_text already shown)
+                for help in &help_messages[1..] {
+                    // Skip first message (help_text already shown)
                     if help.starts_with("example:") {
                         output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
                     }
                 }
-            },
+            }
             _ => {
                 // For other error types, show first help message if available
                 let help_messages = self.help_messages();
@@ -259,107 +336,147 @@ impl EnhancedPreprocessingError {
                 }
             }
         }
-        
+
         // Reference to detailed help (compact, in light blue)
-        output.push_str(&format!("\n{}   For more info: iidy explain {}{}\n", light_blue, self.error_id().code(), reset));
-        
+        output.push_str(&format!(
+            "\n{}   For more info: iidy explain {}{}\n",
+            light_blue,
+            self.error_id().code(),
+            reset
+        ));
+
         output
     }
-        
+
     fn inline_description(&self) -> String {
         match self {
             Self::VariableNotFound { .. } => "variable not defined".to_string(),
             Self::TypeMismatch { expected, .. } => format!("expected {}", expected),
-            Self::MissingRequiredField { missing_field, .. } => format!("missing '{}'", missing_field),
+            Self::MissingRequiredField { missing_field, .. } => {
+                format!("missing '{}'", missing_field)
+            }
             Self::ImportError { .. } => "import failed".to_string(),
             Self::HandlebarsError { .. } => "template error".to_string(),
             Self::CloudFormationValidation { .. } => "invalid CloudFormation tag".to_string(),
         }
     }
-    
+
     fn error_span_length(&self) -> usize {
         match self {
             Self::VariableNotFound { variable, .. } => variable.len() + 3, // "!$ " prefix
             Self::MissingRequiredField { tag_name, .. } => tag_name.len() + 2, // "!$" prefix
             Self::CloudFormationValidation { .. } => 4, // Reasonable span for values like "null", "[]"
-            _ => 8, // Default span length
+            _ => 8,                                     // Default span length
         }
     }
-        
+
     fn help_messages(&self) -> Vec<String> {
         let mut help = Vec::new();
-        
+
         match self {
-            Self::VariableNotFound { available_vars, suggestions, .. } => {
+            Self::VariableNotFound {
+                available_vars,
+                suggestions,
+                ..
+            } => {
                 if !available_vars.is_empty() {
                     let mut sorted_vars = available_vars.clone();
                     sorted_vars.sort();
-                    help.push(format!("available variables in this scope: {}", sorted_vars.join(", ")));
+                    help.push(format!(
+                        "available variables in this scope: {}",
+                        sorted_vars.join(", ")
+                    ));
                 }
                 for suggestion in suggestions {
                     help.push(format!("did you mean '{}'?", suggestion));
                 }
-            },
-            Self::TypeMismatch { help: type_help, .. } => {
+            }
+            Self::TypeMismatch {
+                help: type_help, ..
+            } => {
                 if let Some(h) = type_help {
                     help.push(h.clone());
                 }
-            },
-            Self::MissingRequiredField { missing_field, tag_name, .. } => {
-                help.push(format!("add a '{}' field to the {} tag", missing_field, tag_name));
+            }
+            Self::MissingRequiredField {
+                missing_field,
+                tag_name,
+                ..
+            } => {
+                help.push(format!(
+                    "add a '{}' field to the {} tag",
+                    missing_field, tag_name
+                ));
                 match missing_field.as_str() {
                     "template" => help.push("example: template: \"{{item}}\"".to_string()),
                     "items" => help.push("example: items: [1, 2, 3]".to_string()),
                     "test" => help.push("example: test: true".to_string()),
                     _ => {}
                 }
-            },
+            }
             Self::ImportError { suggestions, .. } => {
                 help.extend(suggestions.clone());
-            },
-            Self::HandlebarsError { available_helpers, .. } => {
+            }
+            Self::HandlebarsError {
+                available_helpers, ..
+            } => {
                 if !available_helpers.is_empty() {
-                    help.push(format!("available helpers: {}", available_helpers.join(", ")));
+                    help.push(format!(
+                        "available helpers: {}",
+                        available_helpers.join(", ")
+                    ));
                 }
-            },
-            Self::CloudFormationValidation { help_text, tag_name, .. } => {
+            }
+            Self::CloudFormationValidation {
+                help_text,
+                tag_name,
+                ..
+            } => {
                 help.push(help_text.clone());
-                
+
                 // Add examples based on tag type
                 match tag_name.as_str() {
                     "Ref" => {
                         help.push("example: BucketName: !Ref MyBucket".to_string());
                         help.push("example: Environment: !Ref EnvironmentParam".to_string());
-                    },
+                    }
                     "Sub" => {
                         help.push("example: UserData: !Sub 'Hello ${AWS::StackName}'".to_string());
-                        help.push("example: Message: !Sub ['Hello ${name}', {name: MyValue}]".to_string());
-                    },
+                        help.push(
+                            "example: Message: !Sub ['Hello ${name}', {name: MyValue}]".to_string(),
+                        );
+                    }
                     "GetAtt" => {
                         help.push("example: DnsName: !GetAtt LoadBalancer.DNSName".to_string());
                         help.push("example: Value: !GetAtt [MyResource, Attribute]".to_string());
-                    },
+                    }
                     "Join" => {
-                        help.push("example: Name: !Join ['-', [!Ref 'AWS::StackName', 'suffix']]".to_string());
-                    },
+                        help.push(
+                            "example: Name: !Join ['-', [!Ref 'AWS::StackName', 'suffix']]"
+                                .to_string(),
+                        );
+                    }
                     "Select" => {
                         help.push("example: AZ: !Select [0, !GetAZs '']".to_string());
-                    },
+                    }
                     "Split" => {
                         help.push("example: Parts: !Split [',', 'a,b,c']".to_string());
-                    },
+                    }
                     "FindInMap" => {
-                        help.push("example: AMI: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]".to_string());
-                    },
+                        help.push(
+                            "example: AMI: !FindInMap [RegionMap, !Ref 'AWS::Region', AMI]"
+                                .to_string(),
+                        );
+                    }
                     "Base64" => {
                         help.push("example: UserData: !Base64 'echo Hello'".to_string());
                         help.push("example: Script: !Base64 !Sub 'echo ${Parameter}'".to_string());
-                    },
+                    }
                     _ => {}
                 }
-            },
+            }
         }
-        
+
         help
     }
 }
@@ -380,7 +497,7 @@ impl EnhancedPreprocessingError {
         available_vars: Vec<String>,
     ) -> Self {
         let suggestions = fuzzy_match_variables(variable, &available_vars);
-        
+
         Self::VariableNotFound {
             error_id: ErrorId::VariableNotFound,
             variable: variable.to_string(),
@@ -389,7 +506,7 @@ impl EnhancedPreprocessingError {
             suggestions,
         }
     }
-    
+
     pub fn type_mismatch(
         expected: &str,
         found: &str,
@@ -397,7 +514,7 @@ impl EnhancedPreprocessingError {
         context: &str,
     ) -> Self {
         let help = generate_type_conversion_help(expected, found);
-        
+
         Self::TypeMismatch {
             error_id: ErrorId::TypeMismatchInOperation,
             expected: expected.to_string(),
@@ -407,7 +524,7 @@ impl EnhancedPreprocessingError {
             help,
         }
     }
-    
+
     pub fn missing_required_field(
         tag_name: &str,
         missing_field: &str,
@@ -422,7 +539,7 @@ impl EnhancedPreprocessingError {
             required_fields,
         }
     }
-    
+
     pub fn cloudformation_validation(
         tag_name: &str,
         message: &str,
@@ -431,16 +548,16 @@ impl EnhancedPreprocessingError {
         // Generate tag-specific help text
         let help_text = match tag_name {
             "Ref" => "!Ref expects a string (resource or parameter name)",
-            "Sub" => "!Sub expects a string or [string, variables] array", 
+            "Sub" => "!Sub expects a string or [string, variables] array",
             "GetAtt" => "!GetAtt expects 'Resource.Attribute' or [Resource, Attribute]",
             "Join" => "!Join expects [delimiter, array] with exactly 2 elements",
             "Select" => "!Select expects [index, array] with exactly 2 elements",
-            "Split" => "!Split expects [delimiter, string] with exactly 2 elements", 
+            "Split" => "!Split expects [delimiter, string] with exactly 2 elements",
             "FindInMap" => "!FindInMap expects [MapName, TopLevelKey, SecondLevelKey]",
             "Base64" => "!Base64 expects a non-null string value",
             _ => "check CloudFormation documentation for proper syntax",
         };
-        
+
         Self::CloudFormationValidation {
             error_id: ErrorId::InvalidCloudFormationIntrinsic,
             tag_name: tag_name.to_string(),
@@ -454,7 +571,7 @@ impl EnhancedPreprocessingError {
 /// Simple fuzzy matching for variable suggestions
 fn fuzzy_match_variables(target: &str, available: &Vec<String>) -> Vec<String> {
     let mut suggestions = Vec::new();
-    
+
     for var in available {
         let distance = levenshtein_distance(target, var);
         // Suggest if edit distance is small relative to string length
@@ -462,10 +579,10 @@ fn fuzzy_match_variables(target: &str, available: &Vec<String>) -> Vec<String> {
             suggestions.push(var.clone());
         }
     }
-    
+
     // Sort by similarity (shorter distance first)
     suggestions.sort_by_key(|var| levenshtein_distance(target, var));
-    
+
     // Return top 3 suggestions
     suggestions.truncate(3);
     suggestions
@@ -477,34 +594,52 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let s2_chars: Vec<char> = s2.chars().collect();
     let m = s1_chars.len();
     let n = s2_chars.len();
-    
-    if m == 0 { return n; }
-    if n == 0 { return m; }
-    
+
+    if m == 0 {
+        return n;
+    }
+    if n == 0 {
+        return m;
+    }
+
     let mut matrix = vec![vec![0; n + 1]; m + 1];
-    
-    for i in 0..=m { matrix[i][0] = i; }
-    for j in 0..=n { matrix[0][j] = j; }
-    
+
+    for i in 0..=m {
+        matrix[i][0] = i;
+    }
+    for j in 0..=n {
+        matrix[0][j] = j;
+    }
+
     for i in 1..=m {
         for j in 1..=n {
-            let cost = if s1_chars[i-1] == s2_chars[j-1] { 0 } else { 1 };
-            matrix[i][j] = (matrix[i-1][j] + 1)
-                .min(matrix[i][j-1] + 1)
-                .min(matrix[i-1][j-1] + cost);
+            let cost = if s1_chars[i - 1] == s2_chars[j - 1] {
+                0
+            } else {
+                1
+            };
+            matrix[i][j] = (matrix[i - 1][j] + 1)
+                .min(matrix[i][j - 1] + 1)
+                .min(matrix[i - 1][j - 1] + cost);
         }
     }
-    
+
     matrix[m][n]
 }
 
 /// Generate helpful suggestions for type conversion
 fn generate_type_conversion_help(expected: &str, found: &str) -> Option<String> {
     match (expected, found) {
-        ("array", "string") => Some("try using !$split to convert a string to an array".to_string()),
+        ("array", "string") => {
+            Some("try using !$split to convert a string to an array".to_string())
+        }
         ("string", "array") => Some("try using !$join to convert an array to a string".to_string()),
-        ("object", "string") => Some("try using !$parseJson or !$parseYaml to parse the string".to_string()),
-        ("string", "object") => Some("try using !$toJsonString or !$toYamlString to serialize the object".to_string()),
+        ("object", "string") => {
+            Some("try using !$parseJson or !$parseYaml to parse the string".to_string())
+        }
+        ("string", "object") => {
+            Some("try using !$toJsonString or !$toYamlString to serialize the object".to_string())
+        }
         (_, _) => None,
     }
 }
@@ -512,49 +647,49 @@ fn generate_type_conversion_help(expected: &str, found: &str) -> Option<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_source_location_display() {
         let loc = SourceLocation::new("test.yaml", 5, 12, "<root>.config");
         assert_eq!(loc.to_string(), "test.yaml:5:12");
-        
+
         let unknown_loc = SourceLocation::unknown("test.yaml");
         assert_eq!(unknown_loc.to_string(), "test.yaml");
     }
-    
+
     #[test]
     fn test_variable_not_found_error() {
         let location = SourceLocation::new("test.yaml", 3, 9, "<root>.result");
         let available_vars = vec!["app_name".to_string(), "config".to_string()];
-        
+
         let error = EnhancedPreprocessingError::variable_not_found(
             "app_nme", // typo
             location,
             available_vars,
         );
-        
+
         assert_eq!(error.error_id(), ErrorId::VariableNotFound);
-        
+
         let display = error.to_string();
         assert!(display.contains("IY2001"));
         assert!(display.contains("'app_nme' not found"));
         assert!(display.contains("did you mean 'app_name'?"));
     }
-    
+
     #[test]
     fn test_fuzzy_matching() {
         let available = vec![
             "app_name".to_string(),
-            "application_name".to_string(), 
+            "application_name".to_string(),
             "config".to_string(),
             "database_url".to_string(),
         ];
-        
+
         let suggestions = fuzzy_match_variables("app_nme", &available);
         assert!(suggestions.contains(&"app_name".to_string()));
         assert!(!suggestions.contains(&"database_url".to_string()));
     }
-    
+
     #[test]
     fn test_levenshtein_distance() {
         assert_eq!(levenshtein_distance("app_name", "app_nme"), 1);

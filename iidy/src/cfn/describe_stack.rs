@@ -6,9 +6,9 @@ use std::sync::Arc;
 use crate::display::display_lines;
 use crate::{
     aws,
-    cli::{NormalizedAwsOpts, DescribeArgs},
-    timing::{ReliableTimeProvider, TimeProvider},
     cfn::{CfnContext, ConsoleReporter},
+    cli::{DescribeArgs, NormalizedAwsOpts},
+    timing::{ReliableTimeProvider, TimeProvider},
 };
 
 /// Format a [`Stack`] object into human readable lines.
@@ -61,11 +61,12 @@ pub async fn describe_stack(opts: &NormalizedAwsOpts, args: &DescribeArgs) -> Re
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
     let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
-    
+
     let reporter = ConsoleReporter::new("describe-stack");
     reporter.show_primary_token(&context.primary_token());
 
-    let resp = context.client
+    let resp = context
+        .client
         .describe_stacks()
         .stack_name(args.stackname.clone())
         .send()
@@ -77,7 +78,7 @@ pub async fn describe_stack(opts: &NormalizedAwsOpts, args: &DescribeArgs) -> Re
         .ok_or_else(|| anyhow!("stack not found"))?;
 
     display_lines(format_stack(stack));
-    
+
     reporter.show_operation_summary(&context);
     Ok(())
 }

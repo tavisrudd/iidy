@@ -1,34 +1,34 @@
 //! Import loaders for various data sources
-//! 
+//!
 //! This module provides a collection of loaders for different import types
 //! including files, environment variables, git commands, random values,
 //! HTTP endpoints, and AWS services.
 
-pub mod utils;
-pub mod file;
+pub mod cfn;
 pub mod env;
+pub mod file;
 pub mod git;
-pub mod random;
 pub mod http;
+pub mod random;
 pub mod s3;
 pub mod ssm;
-pub mod cfn;
+pub mod utils;
 
 // Re-export the main loader functions
-pub use file::{load_file_import, load_filehash_import};
+pub use cfn::load_cfn_import;
 pub use env::load_env_import;
+pub use file::{load_file_import, load_filehash_import};
 pub use git::load_git_import;
-pub use random::load_random_import;
 pub use http::load_http_import;
+pub use random::load_random_import;
 pub use s3::load_s3_import;
 pub use ssm::{load_ssm_import, load_ssm_path_import};
-pub use cfn::load_cfn_import;
 
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use reqwest::Client;
 
-use crate::yaml::imports::{ImportLoader, ImportData, ImportType};
+use crate::yaml::imports::{ImportData, ImportLoader, ImportType};
 
 /// Production import loader that routes to specific loader implementations
 pub struct ProductionImportLoader {
@@ -39,7 +39,7 @@ impl ProductionImportLoader {
     pub fn new() -> Self {
         Self { aws_config: None }
     }
-    
+
     /// Configure AWS SDK for AWS-based imports
     pub fn with_aws_config(mut self, config: aws_config::SdkConfig) -> Self {
         self.aws_config = Some(config);
@@ -57,7 +57,7 @@ impl Default for ProductionImportLoader {
 impl ImportLoader for ProductionImportLoader {
     async fn load(&self, location: &str, base_location: &str) -> Result<ImportData> {
         let import_type = ImportType::from_location(location, base_location)?;
-        
+
         match import_type {
             ImportType::File => load_file_import(location, base_location).await,
             ImportType::Env => load_env_import(location, base_location).await,
@@ -68,30 +68,30 @@ impl ImportLoader for ProductionImportLoader {
             ImportType::Http => {
                 let client = Client::new();
                 load_http_import(location, base_location, &client).await
+            }
+            ImportType::S3 => match &self.aws_config {
+                Some(aws_config) => load_s3_import(location, aws_config).await,
+                None => Err(anyhow!(
+                    "AWS configuration required for S3 imports. Use with_aws_config() to configure."
+                )),
             },
-            ImportType::S3 => {
-                match &self.aws_config {
-                    Some(aws_config) => load_s3_import(location, aws_config).await,
-                    None => Err(anyhow!("AWS configuration required for S3 imports. Use with_aws_config() to configure.")),
-                }
+            ImportType::Cfn => match &self.aws_config {
+                Some(aws_config) => load_cfn_import(location, aws_config).await,
+                None => Err(anyhow!(
+                    "AWS configuration required for CloudFormation imports. Use with_aws_config() to configure."
+                )),
             },
-            ImportType::Cfn => {
-                match &self.aws_config {
-                    Some(aws_config) => load_cfn_import(location, aws_config).await,
-                    None => Err(anyhow!("AWS configuration required for CloudFormation imports. Use with_aws_config() to configure.")),
-                }
+            ImportType::Ssm => match &self.aws_config {
+                Some(aws_config) => load_ssm_import(location, aws_config).await,
+                None => Err(anyhow!(
+                    "AWS configuration required for SSM parameter imports. Use with_aws_config() to configure."
+                )),
             },
-            ImportType::Ssm => {
-                match &self.aws_config {
-                    Some(aws_config) => load_ssm_import(location, aws_config).await,
-                    None => Err(anyhow!("AWS configuration required for SSM parameter imports. Use with_aws_config() to configure.")),
-                }
-            },
-            ImportType::SsmPath => {
-                match &self.aws_config {
-                    Some(aws_config) => load_ssm_path_import(location, aws_config).await,
-                    None => Err(anyhow!("AWS configuration required for SSM parameter path imports. Use with_aws_config() to configure.")),
-                }
+            ImportType::SsmPath => match &self.aws_config {
+                Some(aws_config) => load_ssm_path_import(location, aws_config).await,
+                None => Err(anyhow!(
+                    "AWS configuration required for SSM parameter path imports. Use with_aws_config() to configure."
+                )),
             },
         }
     }

@@ -6,10 +6,10 @@
 use crate::yaml::errors::ErrorId;
 
 /// Handle the explain command - show detailed explanations for error codes
-/// 
+///
 /// Takes a list of error codes (like "IY2001", "IY4002") and prints
 /// detailed explanations for each one.
-/// 
+///
 /// # Arguments
 /// * `codes` - Vector of error code strings to explain
 pub fn handle_explain_command(codes: Vec<String>) {
@@ -17,7 +17,7 @@ pub fn handle_explain_command(codes: Vec<String>) {
         eprintln!("Please provide one or more error codes to explain (e.g., IY2001)");
         return;
     }
-    
+
     for code in codes {
         // Try to parse the error code
         if let Some(error_id) = ErrorId::from_code(&code) {
@@ -32,26 +32,26 @@ pub fn handle_explain_command(codes: Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_handle_explain_command_empty() {
         // This test just ensures the function doesn't panic with empty input
         // The actual output goes to stderr/stdout so we can't easily test it
         handle_explain_command(vec![]);
     }
-    
+
     #[test]
     fn test_handle_explain_command_valid_code() {
         // Test with a valid error code
         handle_explain_command(vec!["IY2001".to_string()]);
     }
-    
+
     #[test]
     fn test_handle_explain_command_invalid_code() {
         // Test with an invalid error code
         handle_explain_command(vec!["INVALID".to_string()]);
     }
-    
+
     #[test]
     fn test_handle_explain_command_multiple_codes() {
         // Test with multiple codes
