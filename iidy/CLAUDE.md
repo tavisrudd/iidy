@@ -1,24 +1,32 @@
 # CLAUDE.md
 
+## General requirements 
+- Work to completion of your goal with 100% of tests passing, no regressions, and no new code warnings. 
+- Don't stop to brag or celebrate. Keep going until you have completely reached the goal and completed all tasks.
+- Use your Write tool to write files rather than echo or cat.
+- 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is. 
+- Do not claim that failing tests are edge cases or not important. That is for the user to determine.
+
 ## Development Commands
 - Use the standard cargo stuff. 
 - Do not use `rustc` directly. Use cargo.
 - Use our local @tmp/ dir instead of the system level /tmp
-- Never `git checkout HEAD -- <file>` or `git restore` without making
-  a backup of the uncommitted changes and asking for confirmation.
+- Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making
+  a backup of the uncommitted changes and asking for user confirmation.
 
 ## Coding Standards
 - use meaningful variable and fn names and omit useless comments. If a
   fn's purpose is clear there is no need for comment above it unless
   we are documenting it for the public api.
-- comment the non-obvious
+- comment only the non-obvious
+- keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
 
 ## Testing
 - run `cargo check --lib --tests --bins --benches` for a fast sanity check
 - **All tests**: `cargo nextest r --color=never --hide-progress-bar`
 - **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
 - Run tests: `cargo test --test example_templates_snapshots`
-- Accept snapshot changes, if valid: `cargo insta accept`, but only if the change is value and not a regression.
+- Only the user may accept snapshot changes unless they explicitly tell you to and if valid: `cargo insta accept`, but only if the change is value and not a regression.
 - Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure.
 - Do not reward hack by commenting out tests or fudging to make them
   pass. Our goal is working software not tests that pretend to pass.
