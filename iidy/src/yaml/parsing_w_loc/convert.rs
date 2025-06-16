@@ -5,7 +5,6 @@
 
 use super::ast as with_location;
 use super::error::ParseDiagnostics;
-use super::parse_yaml_ast_with_diagnostics;
 use super::parser::parse_yaml_ast;
 use crate::yaml::parsing::ast as original;
 use url::Url;
@@ -356,7 +355,7 @@ pub fn parse_and_convert_to_original_with_diagnostics(
     uri_str: &str,
 ) -> Result<ParseDiagnostics, anyhow::Error> {
     let uri = create_uri_from_string(uri_str)?;
-    let diagnostics = parse_yaml_ast_with_diagnostics(source, uri);
+    let diagnostics = super::parse_yaml_ast_with_diagnostics(source, uri);
     Ok(diagnostics)
 }
 
@@ -376,184 +375,179 @@ fn create_uri_from_string(uri_str: &str) -> anyhow::Result<Url> {
     }
 }
 
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::yaml::parsing_w_loc::parse_yaml_ast;
-    use url::Url;
+fn test_uri() -> Url {
+    Url::parse("file:///test.yaml").unwrap()
+}
 
-    fn test_uri() -> Url {
-        Url::parse("file:///test.yaml").unwrap()
+#[test]
+fn test_convert_simple_scalar() {
+    let yaml = "hello world";
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
+
+    match original {
+        original::YamlAst::PlainString(s) => assert_eq!(s, "hello world"),
+        _ => panic!("Expected PlainString, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_simple_scalar() {
-        let yaml = "hello world";
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+#[test]
+fn test_convert_boolean() {
+    let yaml = "true";
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        match original {
-            original::YamlAst::PlainString(s) => assert_eq!(s, "hello world"),
-            _ => panic!("Expected PlainString, got {:?}", original),
-        }
+    match original {
+        original::YamlAst::Bool(b) => assert!(b),
+        _ => panic!("Expected Bool, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_boolean() {
-        let yaml = "true";
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
-
-        match original {
-            original::YamlAst::Bool(b) => assert!(b),
-            _ => panic!("Expected Bool, got {:?}", original),
-        }
-    }
-
-    #[test]
-    fn test_convert_sequence() {
-        let yaml = r#"
+#[test]
+fn test_convert_sequence() {
+    let yaml = r#"
 - item1
 - item2
 - 42
 "#;
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        match original {
-            original::YamlAst::Sequence(items) => {
-                assert_eq!(items.len(), 3);
-                assert!(matches!(items[0], original::YamlAst::PlainString(ref s) if s == "item1"));
-                assert!(matches!(items[1], original::YamlAst::PlainString(ref s) if s == "item2"));
-                assert!(matches!(items[2], original::YamlAst::Number(_)));
-            }
-            _ => panic!("Expected Sequence, got {:?}", original),
+    match original {
+        original::YamlAst::Sequence(items) => {
+            assert_eq!(items.len(), 3);
+            assert!(matches!(items[0], original::YamlAst::PlainString(ref s) if s == "item1"));
+            assert!(matches!(items[1], original::YamlAst::PlainString(ref s) if s == "item2"));
+            assert!(matches!(items[2], original::YamlAst::Number(_)));
         }
+        _ => panic!("Expected Sequence, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_mapping() {
-        let yaml = r#"
+#[test]
+fn test_convert_mapping() {
+    let yaml = r#"
 key1: value1
 key2: 42
 "#;
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        match original {
-            original::YamlAst::Mapping(pairs) => {
-                assert_eq!(pairs.len(), 2);
+    match original {
+        original::YamlAst::Mapping(pairs) => {
+            assert_eq!(pairs.len(), 2);
 
-                let (key1, val1) = &pairs[0];
-                let (key2, val2) = &pairs[1];
+            let (key1, val1) = &pairs[0];
+            let (key2, val2) = &pairs[1];
 
-                assert!(matches!(key1, original::YamlAst::PlainString(s) if s == "key1"));
-                assert!(matches!(val1, original::YamlAst::PlainString(s) if s == "value1"));
+            assert!(matches!(key1, original::YamlAst::PlainString(s) if s == "key1"));
+            assert!(matches!(val1, original::YamlAst::PlainString(s) if s == "value1"));
 
-                assert!(matches!(key2, original::YamlAst::PlainString(s) if s == "key2"));
-                assert!(matches!(val2, original::YamlAst::Number(_)));
-            }
-            _ => panic!("Expected Mapping, got {:?}", original),
+            assert!(matches!(key2, original::YamlAst::PlainString(s) if s == "key2"));
+            assert!(matches!(val2, original::YamlAst::Number(_)));
         }
+        _ => panic!("Expected Mapping, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_cloudformation_tag() {
-        let yaml = "!Ref MyResource";
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+#[test]
+fn test_convert_cloudformation_tag() {
+    let yaml = "!Ref MyResource";
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        match original {
-            original::YamlAst::CloudFormationTag(original::CloudFormationTag::Ref(content)) => {
-                assert!(
-                    matches!(content.as_ref(), original::YamlAst::PlainString(s) if s == "MyResource")
-                );
-            }
-            _ => panic!("Expected CloudFormationTag::Ref, got {:?}", original),
+    match original {
+        original::YamlAst::CloudFormationTag(original::CloudFormationTag::Ref(content)) => {
+            assert!(
+                matches!(content.as_ref(), original::YamlAst::PlainString(s) if s == "MyResource")
+            );
         }
+        _ => panic!("Expected CloudFormationTag::Ref, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_unknown_tag() {
-        let yaml = "!CustomTag value";
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+#[test]
+fn test_convert_unknown_tag() {
+    let yaml = "!CustomTag value";
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        match original {
-            original::YamlAst::UnknownYamlTag(tag) => {
-                assert_eq!(tag.tag, "!CustomTag");
-                assert!(
-                    matches!(tag.value.as_ref(), original::YamlAst::PlainString(s) if s == "value")
-                );
-            }
-            _ => panic!("Expected UnknownYamlTag, got {:?}", original),
+    match original {
+        original::YamlAst::UnknownYamlTag(tag) => {
+            assert_eq!(tag.tag, "!CustomTag");
+            assert!(
+                matches!(tag.value.as_ref(), original::YamlAst::PlainString(s) if s == "value")
+            );
         }
+        _ => panic!("Expected UnknownYamlTag, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_convert_nested_structure() {
-        let yaml = r#"
+#[test]
+fn test_convert_nested_structure() {
+    let yaml = r#"
 Resources:
   MyBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref BucketNameParam
+Type: AWS::S3::Bucket
+Properties:
+  BucketName: !Ref BucketNameParam
 "#;
-        let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
-        let original = to_original_ast(&with_loc);
+    let with_loc = parse_yaml_ast(yaml, test_uri()).unwrap();
+    let original = to_original_ast(&with_loc);
 
-        // Just verify it's a mapping and contains expected structure
-        match original {
-            original::YamlAst::Mapping(_) => {
-                // Successfully converted nested structure
-            }
-            _ => panic!("Expected top-level Mapping, got {:?}", original),
+    // Just verify it's a mapping and contains expected structure
+    match original {
+        original::YamlAst::Mapping(_) => {
+            // Successfully converted nested structure
         }
+        _ => panic!("Expected top-level Mapping, got {:?}", original),
     }
+}
 
-    #[test]
-    fn test_parse_and_convert_convenience_function() {
-        let yaml = r#"
+#[test]
+fn test_parse_and_convert_convenience_function() {
+    let yaml = r#"
 name: test
 value: !Ref Parameter
 items:
   - item1
   - item2
 "#;
-        let result = parse_and_convert_to_original(yaml, test_uri().as_str()).unwrap();
+    let result = parse_and_convert_to_original(yaml, test_uri().as_str()).unwrap();
 
-        match result {
-            original::YamlAst::Mapping(pairs) => {
-                assert_eq!(pairs.len(), 3);
+    match result {
+        original::YamlAst::Mapping(pairs) => {
+            assert_eq!(pairs.len(), 3);
 
-                // Verify we have the expected keys
-                let keys: Vec<_> = pairs
-                    .iter()
-                    .filter_map(|(k, _)| {
-                        if let original::YamlAst::PlainString(s) = k {
-                            Some(s.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+            // Verify we have the expected keys
+            let keys: Vec<_> = pairs
+                .iter()
+                .filter_map(|(k, _)| {
+                    if let original::YamlAst::PlainString(s) = k {
+                        Some(s.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-                assert!(keys.contains(&"name"));
-                assert!(keys.contains(&"value"));
-                assert!(keys.contains(&"items"));
+            assert!(keys.contains(&"name"));
+            assert!(keys.contains(&"value"));
+            assert!(keys.contains(&"items"));
 
-                // Verify the CloudFormation tag was preserved
-                let value_pair = pairs
-                    .iter()
-                    .find(|(k, _)| matches!(k, original::YamlAst::PlainString(s) if s == "value"))
-                    .unwrap();
+            // Verify the CloudFormation tag was preserved
+            let value_pair = pairs
+                .iter()
+                .find(|(k, _)| matches!(k, original::YamlAst::PlainString(s) if s == "value"))
+                .unwrap();
 
-                assert!(matches!(
-                    value_pair.1,
-                    original::YamlAst::CloudFormationTag(original::CloudFormationTag::Ref(_))
-                ));
-            }
-            _ => panic!("Expected Mapping, got {:?}", result),
+            assert!(matches!(
+                value_pair.1,
+                original::YamlAst::CloudFormationTag(original::CloudFormationTag::Ref(_))
+            ));
         }
+        _ => panic!("Expected Mapping, got {:?}", result),
     }
 }

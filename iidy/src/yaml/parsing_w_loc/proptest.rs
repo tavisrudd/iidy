@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use url::Url;
 
 use super::compatibility_test::{asts_equal, compare_asts};
-use super::{convert::to_original_ast, parse_yaml_ast};
+use super::{convert::to_original_ast, parser::parse_yaml_ast};
 use crate::yaml::parsing::parser as original_parser;
 
 /// Tag type selection for configuration

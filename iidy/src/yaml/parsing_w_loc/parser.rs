@@ -13,6 +13,14 @@ use super::ast::{
 use super::error::{ParseDiagnostics, ParseError, ParseResult, ParseWarning, error_codes};
 use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
 
+/// Tag validation configuration
+struct TagValidationConfig {
+    allowed_node_types: &'static [&'static str],
+    required_fields: &'static [&'static str],
+    optional_fields: &'static [&'static str],
+    error_message: &'static str,
+}
+
 pub struct YamlParser {
     parser: Parser,
 }
@@ -442,45 +450,149 @@ impl YamlParser {
         }
     }
 
+
+    /// Get validation configuration for a tag
+    fn get_tag_validation_config(tag_name: &str) -> TagValidationConfig {
+        match tag_name {
+            "!$include" => TagValidationConfig {
+                allowed_node_types: &["plain_scalar", "single_quote_scalar", "double_quote_scalar", "flow_mapping", "block_mapping"],
+                required_fields: &["path"],
+                optional_fields: &["query"],
+                error_message: "!$include expects string path or mapping with path field",
+            },
+            "!$let" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["in"],
+                optional_fields: &[],
+                error_message: "!$let expects mapping with variable bindings and 'in' field",
+            },
+            "!$map" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["items", "template", "var"],
+                optional_fields: &["filter"],
+                error_message: "!$map expects mapping with items, template, and var fields",
+            },
+            "!$if" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["test", "then"],
+                optional_fields: &["else"],
+                error_message: "!$if expects mapping with test, then, and optional else fields",
+            },
+            "!$eq" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["left", "right"],
+                optional_fields: &[],
+                error_message: "!$eq expects mapping with left and right fields",
+            },
+            "!$split" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["delimiter", "string"],
+                optional_fields: &[],
+                error_message: "!$split expects mapping with delimiter and string fields",
+            },
+            "!$join" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping", "flow_sequence", "block_sequence"],
+                required_fields: &["delimiter", "array"],
+                optional_fields: &[],
+                error_message: "!$join expects mapping with delimiter and array fields or sequence with [delimiter, array]",
+            },
+            "!$merge" | "!$concat" => TagValidationConfig {
+                allowed_node_types: &["flow_mapping", "block_mapping"],
+                required_fields: &["sources"],
+                optional_fields: &[],
+                error_message: "expects mapping with sources field",
+            },
+            _ => TagValidationConfig {
+                allowed_node_types: &[],
+                required_fields: &[],
+                optional_fields: &[],
+                error_message: "Unknown tag",
+            },
+        }
+    }
+
+    /// Generic tag content validation
+    #[inline]
+    fn validate_tag_content(
+        &self,
+        tag_name: &str,
+        content_node: tree_sitter::Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
+        let config = Self::get_tag_validation_config(tag_name);
+        let meta = node_meta(&content_node, uri);
+
+        // Check if node type is allowed
+        let node_kind = content_node.kind();
+        if !config.allowed_node_types.contains(&node_kind) {
+            diagnostics.add_error(
+                ParseError::with_location(
+                    if tag_name.starts_with("!$merge") || tag_name.starts_with("!$concat") {
+                        format!("{} {}", tag_name, config.error_message)
+                    } else {
+                        config.error_message.to_string()
+                    },
+                    uri.clone(),
+                    meta.start,
+                    meta.end,
+                )
+                .with_code(error_codes::INVALID_TYPE),
+            );
+            return;
+        }
+
+        // Special handling for different node types
+        match node_kind {
+            "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" => {
+                // Scalar values are valid for some tags (like !$include)
+                return;
+            }
+            "flow_mapping" | "block_mapping" => {
+                // Validate mapping fields
+                self.validate_mapping_fields(
+                    content_node,
+                    src,
+                    uri,
+                    config.required_fields,
+                    config.optional_fields,
+                    tag_name,
+                    diagnostics,
+                );
+            }
+            "flow_sequence" | "block_sequence" => {
+                // Special handling for !$join sequence form
+                if tag_name == "!$join" {
+                    let child_count = content_node.named_child_count();
+                    if child_count != 2 {
+                        diagnostics.add_error(
+                            ParseError::with_location(
+                                format!("!$join sequence form expects exactly 2 elements (delimiter, array), found {}", child_count),
+                                uri.clone(),
+                                meta.start,
+                                meta.end,
+                            )
+                            .with_code(error_codes::INVALID_FORMAT),
+                        );
+                    }
+                }
+            }
+            _ => {
+                // Unexpected node type - this should be caught by the allowed_node_types check above
+            }
+        }
+    }
+
     /// Validate !$include tag structure
     fn validate_include_tag_semantics(
         &self,
         content_node: tree_sitter::Node,
-        _src: &[u8],
+        src: &[u8],
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" => {
-                // Valid: !$include "path/to/file"
-                // Could add additional validation for file path format
-            }
-            "flow_mapping" | "block_mapping" => {
-                // Valid: !$include {path: "file", query: "selector"}
-                self.validate_mapping_fields(
-                    content_node,
-                    _src,
-                    uri,
-                    &["path"],
-                    &["query"],
-                    "!$include",
-                    diagnostics,
-                );
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        "!$include expects string path or mapping with path field",
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content("!$include", content_node, src, uri, diagnostics);
     }
 
     /// Validate !$let tag structure
@@ -491,33 +603,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &["in"],
-                    &[],
-                    "!$let",
-                    diagnostics,
-                );
-                // Additional validation: other fields should be variable bindings
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        "!$let expects mapping with variable bindings and 'in' field",
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content("!$let", content_node, src, uri, diagnostics);
     }
 
     /// Validate !$map tag structure
@@ -528,32 +614,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &["items", "template", "var"],
-                    &["filter"],
-                    "!$map",
-                    diagnostics,
-                );
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        "!$map expects mapping with items, template, and var fields",
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content("!$map", content_node, src, uri, diagnostics);
     }
 
     /// Validate !$if tag structure
@@ -564,32 +625,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &["test", "then"],
-                    &["else"],
-                    "!$if",
-                    diagnostics,
-                );
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        "!$if expects mapping with test, then, and optional else fields",
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content("!$if", content_node, src, uri, diagnostics);
     }
 
     /// Validate binary operation tags like !$eq, !$split
@@ -601,38 +637,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                // Each binary tag has different required fields
-                let (required_fields, optional_fields) = match tag_name {
-                    "!$eq" => (vec!["left", "right"], vec![]),
-                    "!$split" => (vec!["delimiter", "string"], vec![]),
-                    _ => (vec![], vec![]),
-                };
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &required_fields,
-                    &optional_fields,
-                    tag_name,
-                    diagnostics,
-                );
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        format!("{} expects mapping with required fields", tag_name),
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content(tag_name, content_node, src, uri, diagnostics);
     }
 
     /// Validate !$join tag structure (supports both mapping and sequence forms)
@@ -643,43 +648,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                // Mapping form: !$join {delimiter: "-", array: [...]}
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &["delimiter", "array"],
-                    &[],
-                    "!$join",
-                    diagnostics,
-                );
-            }
-            "flow_sequence" | "block_sequence" => {
-                // Sequence form: !$join [delimiter, array]
-                // Should have exactly 2 elements
-                let child_count = content_node.named_child_count();
-                if child_count != 2 {
-                    diagnostics.add_error(
-                        ParseError::with_location(
-                            format!("!$join sequence form expects exactly 2 elements (delimiter, array), found {}", child_count),
-                            uri.clone(), meta.start, meta.end
-                        ).with_code(error_codes::INVALID_FORMAT)
-                    );
-                }
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        "!$join expects mapping with delimiter and array fields or sequence with [delimiter, array]",
-                        uri.clone(), meta.start, meta.end
-                    ).with_code(error_codes::INVALID_TYPE)
-                );
-            }
-        }
+        self.validate_tag_content("!$join", content_node, src, uri, diagnostics);
     }
 
     /// Validate variadic operation tags like !$merge, !$concat
@@ -691,39 +660,7 @@ impl YamlParser {
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let meta = node_meta(&content_node, uri);
-
-        match content_node.kind() {
-            "flow_mapping" | "block_mapping" => {
-                self.validate_mapping_fields(
-                    content_node,
-                    src,
-                    uri,
-                    &["sources"],
-                    &[],
-                    tag_name,
-                    diagnostics,
-                );
-            }
-            "flow_sequence" | "block_sequence" => {
-                // Also valid: !$merge [source1, source2, ...]
-                // No specific validation needed for sequence form
-            }
-            _ => {
-                diagnostics.add_error(
-                    ParseError::with_location(
-                        format!(
-                            "{} expects mapping with sources field or sequence of sources",
-                            tag_name
-                        ),
-                        uri.clone(),
-                        meta.start,
-                        meta.end,
-                    )
-                    .with_code(error_codes::INVALID_TYPE),
-                );
-            }
-        }
+        self.validate_tag_content(tag_name, content_node, src, uri, diagnostics);
     }
 
     /// Validate mapping has required fields
@@ -737,7 +674,7 @@ impl YamlParser {
         tag_name: &str,
         diagnostics: &mut ParseDiagnostics,
     ) {
-        let mut found_fields = std::collections::HashSet::new();
+        let mut found_fields = std::collections::HashSet::with_capacity(required_fields.len() + optional_fields.len());
 
         // Walk through mapping pairs
         let mut cursor = mapping_node.walk();
@@ -837,14 +774,14 @@ impl YamlParser {
                 }
             }
             serde_yaml::Value::Sequence(seq) => {
-                let mut items = Vec::new();
+                let mut items = Vec::with_capacity(seq.len());
                 for item in seq {
                     items.push(self.convert_serde_value_to_ast(item, uri.clone())?);
                 }
                 Ok(YamlAst::Sequence(items, meta))
             }
             serde_yaml::Value::Mapping(map) => {
-                let mut pairs = Vec::new();
+                let mut pairs = Vec::with_capacity(map.len());
                 for (key, value) in map {
                     let key_ast = self.convert_serde_value_to_ast(key, uri.clone())?;
                     let value_ast = self.convert_serde_value_to_ast(value, uri.clone())?;
@@ -951,6 +888,7 @@ impl YamlParser {
         }
     }
 
+    #[inline]
     fn build_ast(&self, node: Node, src: &[u8], uri: &Url) -> ParseResult<YamlAst> {
         let meta = node_meta(&node, uri);
 
@@ -1063,11 +1001,12 @@ impl YamlParser {
         uri: &Url,
         meta: SrcMeta,
     ) -> ParseResult<YamlAst> {
-        let mut pairs = Vec::new();
+        let estimated_pairs = node.named_child_count() / 2; // Rough estimate
+        let mut pairs = Vec::with_capacity(estimated_pairs);
         let mut cursor = node.walk();
 
         // First, collect all the raw mapping pairs
-        let mut raw_pairs = Vec::new();
+        let mut raw_pairs = Vec::with_capacity(estimated_pairs);
         for pair_node in node.named_children(&mut cursor) {
             match pair_node.kind() {
                 "block_mapping_pair" | "flow_pair" => {
@@ -2403,7 +2342,7 @@ fn point_to_position(p: Point) -> Position {
     Position::new(p.row as u32, p.column as u32)
 }
 
-#[inline(always)]
+#[inline]
 fn node_meta(node: &Node, uri: &Url) -> SrcMeta {
     SrcMeta {
         input_uri: uri.clone(),

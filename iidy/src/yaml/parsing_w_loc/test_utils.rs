@@ -1,7 +1,9 @@
 //! Shared test utilities for YAML parsing tests
 
 use super::convert::to_original_ast;
-use super::{ParseError, YamlAst, parse_yaml_ast};
+use super::ast::YamlAst;
+use super::error::ParseError;
+use super::parser::parse_yaml_ast;
 use crate::yaml::parsing::parser as original_parser;
 use url::Url;
 

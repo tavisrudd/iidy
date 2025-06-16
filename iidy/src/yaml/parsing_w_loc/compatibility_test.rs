@@ -36,7 +36,7 @@ use std::fs;
 use std::path::Path;
 
 use super::convert::to_original_ast;
-use super::parse_yaml_ast;
+use super::parser::parse_yaml_ast;
 use crate::yaml::parsing::ast as original_ast;
 use crate::yaml::parsing::parser as original_parser;
 use url::Url;
