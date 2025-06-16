@@ -12,4 +12,4 @@ pub mod resolver;
 // Re-export key types
 pub use context::{TagContext, VariableSource};
 
-pub use resolver::{SplitArgsResolver, TagResolver, resolve_ast_split_args};
+pub use resolver::{Resolver, TagResolver, resolve_ast};

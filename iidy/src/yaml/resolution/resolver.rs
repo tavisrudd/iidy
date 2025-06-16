@@ -315,9 +315,9 @@ pub trait TagResolver {
 
 /// Split-args tag resolver that separates static context from dynamic path tracking
 #[derive(Debug)]
-pub struct SplitArgsResolver;
+pub struct Resolver;
 
-impl SplitArgsResolver {
+impl Resolver {
     /// Helper function to check if a value is truthy
     fn is_truthy(&self, value: &Value) -> bool {
         match value {
@@ -672,7 +672,7 @@ impl SplitArgsResolver {
     }
 }
 
-impl TagResolver for SplitArgsResolver {
+impl TagResolver for Resolver {
     /// Resolve an AST node with split arguments for better performance
     fn resolve_ast(
         &self,
@@ -2422,8 +2422,8 @@ impl TagResolver for SplitArgsResolver {
 }
 
 /// Convenience function to resolve AST with automatic path tracker creation
-pub fn resolve_ast_split_args(ast: &YamlAst, context: &TagContext) -> Result<Value> {
-    let resolver = SplitArgsResolver;
+pub fn resolve_ast(ast: &YamlAst, context: &TagContext) -> Result<Value> {
+    let resolver = Resolver;
     let mut path_tracker = PathTracker::new();
     resolver.resolve_ast(ast, context, &mut path_tracker)
 }
@@ -2565,7 +2565,7 @@ mod tests {
 
     #[test]
     fn test_split_args_simple_mapping() {
-        let resolver = SplitArgsResolver;
+        let resolver = Resolver;
         let context = TagContext::new();
         let mut path_tracker = PathTracker::new();
 
@@ -2592,7 +2592,7 @@ mod tests {
 
     #[test]
     fn test_split_args_nested_structure() {
-        let resolver = SplitArgsResolver;
+        let resolver = Resolver;
         let context = TagContext::new();
         let mut path_tracker = PathTracker::new();
 

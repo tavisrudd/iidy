@@ -30,7 +30,7 @@ use crate::yaml::parsing::ast::{PreprocessingTag, YamlAst};
 use crate::yaml::parsing;
 use crate::yaml::resolution::{TagContext, VariableSource};
 
-use super::resolution::resolve_ast_split_args;
+use super::resolution::resolve_ast;
 
 /// Metadata for tracking variable sources during import processing
 #[derive(Debug, Clone)]
@@ -584,7 +584,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     ) -> Result<Value> {
         // let mut path_tracker = PathTracker::new();
         // self.split_args_resolver.resolve_ast(&ast, context, &mut path_tracker)
-        resolve_ast_split_args(&ast, context)
+        resolve_ast(&ast, context)
     }
 }
 
