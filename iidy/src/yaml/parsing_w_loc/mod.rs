@@ -31,7 +31,7 @@ pub fn parse_yaml_with_custom_tags_from_file(source: &str, file_path: &str) -> a
 pub mod ast;
 pub(crate) mod convert;
 pub(crate) mod error;
-pub(crate) mod parser;
+pub mod parser;
 
 
 #[cfg(test)]

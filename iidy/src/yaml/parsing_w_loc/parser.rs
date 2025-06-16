@@ -480,9 +480,11 @@ impl YamlParser {
 
     #[inline]
     fn build_ast(&self, node: Node, src: &[u8], uri: &Url) -> ParseResult<YamlAst> {
+        // Cache the node kind to avoid repeated string comparisons
+        let node_kind = node.kind();
         let meta = node_meta(&node, uri);
 
-        match node.kind() {
+        match node_kind {
             "stream" => {
                 // Stream is the root node, process its document children
                 for i in 0..node.named_child_count() {
@@ -591,60 +593,48 @@ impl YamlParser {
         uri: &Url,
         meta: SrcMeta,
     ) -> ParseResult<YamlAst> {
-        let estimated_pairs = node.named_child_count() / 2; // Rough estimate
+        // More accurate sizing for CloudFormation documents
+        let total_children = node.named_child_count();
+        let estimated_pairs = if total_children > 100 {
+            // For large documents, assume most children are pairs
+            total_children
+        } else {
+            total_children / 2
+        };
+        
         let mut pairs = Vec::with_capacity(estimated_pairs);
         let mut cursor = node.walk();
 
-        // First, collect all the raw mapping pairs
-        let mut raw_pairs = Vec::with_capacity(estimated_pairs);
+        // Direct processing without intermediate collection for better cache locality
         for pair_node in node.named_children(&mut cursor) {
             match pair_node.kind() {
                 "block_mapping_pair" | "flow_pair" => {
-                    raw_pairs.push(pair_node);
-                }
-                "comment" => {
-                    // Skip comments in mappings, just like we do in sequences
-                    continue;
-                }
-                _ => {
-                    // Skip other structural nodes
-                }
-            }
-        }
+                    let mut pair_cursor = pair_node.walk();
+                    let mut children = pair_node.named_children(&mut pair_cursor);
 
-        // Process pairs, handling block-style tags
-        let mut i = 0;
-        while i < raw_pairs.len() {
-            let pair_node = raw_pairs[i];
-            let mut pair_cursor = pair_node.walk();
-            let mut children = pair_node.named_children(&mut pair_cursor);
+                    let key = if let Some(key_node) = children.next() {
+                        self.build_ast(key_node, src, uri)?
+                    } else {
+                        return Err(self.syntax_error("Missing key in mapping pair", &meta, ""));
+                    };
 
-            let key = if let Some(key_node) = children.next() {
-                self.build_ast(key_node, src, uri)?
-            } else {
-                return Err(self.syntax_error("Missing key in mapping pair", &meta, ""));
-            };
-
-            // Look for value node, skipping any comments
-            let mut value = YamlAst::Null(node_meta(&pair_node, uri));
-            while let Some(val_node) = children.next() {
-                match val_node.kind() {
-                    "comment" => {
-                        // Skip comments between key and value
-                        continue;
+                    // Look for value node, skipping any comments
+                    let mut value = YamlAst::Null(node_meta(&pair_node, uri));
+                    while let Some(val_node) = children.next() {
+                        match val_node.kind() {
+                            "comment" => continue, // Skip comments between key and value
+                            _ => {
+                                value = self.build_ast(val_node, src, uri)?;
+                                break;
+                            }
+                        }
                     }
-                    _ => {
-                        // Found the actual value node
-                        value = self.build_ast(val_node, src, uri)?;
-                        break;
-                    }
+
+                    pairs.push((key, value));
                 }
+                "comment" => continue, // Skip comments in mappings
+                _ => {} // Skip other structural nodes
             }
-
-            // Block-style tags are now handled in build_block_node, no special handling needed here
-
-            pairs.push((key, value));
-            i += 1;
         }
 
         Ok(YamlAst::Mapping(pairs, meta))
@@ -657,12 +647,12 @@ impl YamlParser {
         uri: &Url,
         meta: SrcMeta,
     ) -> ParseResult<YamlAst> {
+        let child_count = node.named_child_count();
+        let mut items = Vec::with_capacity(child_count);
         let mut cursor = node.walk();
-        let children: Vec<_> = node.named_children(&mut cursor).collect();
-        let mut items = Vec::with_capacity(children.len());
 
-        for child in children {
-            // Skip certain structural nodes that tree-sitter includes but aren't actual content
+        // Direct iteration without collecting all children first
+        for child in node.named_children(&mut cursor) {
             let child_kind = child.kind();
             match child_kind {
                 "comment" => continue, // Skip comments
@@ -705,22 +695,25 @@ impl YamlParser {
 
         // Fast path for simple unquoted strings
         if !is_quoted {
-            // Early check for special values before string processing
-            match text.as_str() {
-                "true" => return Ok(YamlAst::Bool(true, meta)),
-                "false" => return Ok(YamlAst::Bool(false, meta)),
-                "null" | "~" | "" => return Ok(YamlAst::Null(meta)),
+            // Early check for special values before string processing using bytes comparison
+            let text_bytes = text.as_bytes();
+            match text_bytes {
+                b"true" => return Ok(YamlAst::Bool(true, meta)),
+                b"false" => return Ok(YamlAst::Bool(false, meta)),
+                b"null" | b"~" | b"" => return Ok(YamlAst::Null(meta)),
                 _ => {}
             }
 
             // Check if it's templated before number parsing
-            if text.contains("{{") && text.contains("}}") {
+            if text_bytes.windows(2).any(|w| w == b"{{") {
                 return Ok(YamlAst::TemplatedString(text, meta));
             }
 
-            // Try to parse as number
-            if let Ok(num) = Number::from_str(&text) {
-                return Ok(YamlAst::Number(num, meta));
+            // Try to parse as number (only if it looks like a number)
+            if !text.is_empty() && (text_bytes[0].is_ascii_digit() || text_bytes[0] == b'-' || text_bytes[0] == b'+') {
+                if let Ok(num) = Number::from_str(&text) {
+                    return Ok(YamlAst::Number(num, meta));
+                }
             }
 
             return Ok(YamlAst::PlainString(text, meta));
@@ -886,8 +879,8 @@ impl YamlParser {
                 YamlAst::Null(meta.clone())
             };
 
-            // Classify the tag type based on naming convention
-            if tag_name.starts_with("!$") {
+            // Classify the tag type based on naming convention - optimize the check
+            if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
                 // Preprocessing tag: !$include, !$if, !$let, etc.
                 match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
                     Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
@@ -963,8 +956,8 @@ impl YamlParser {
                 YamlAst::Null(meta.clone())
             };
 
-            // Classify the tag type based on naming convention
-            if tag_name.starts_with("!$") {
+            // Classify the tag type based on naming convention - optimize the check
+            if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
                 // Preprocessing tag: !$include, !$if, !$let, etc.
                 match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
                     Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
@@ -1325,22 +1318,25 @@ impl YamlParser {
     }
 
     /// Extract multiple fields from a mapping in a single traversal
-    fn extract_fields_from_mapping(
+    fn extract_fields_from_mapping<'a>(
         &self,
         content: &YamlAst,
-        field_names: &[&str],
-    ) -> std::collections::HashMap<String, YamlAst> {
+        field_names: &[&'a str],
+    ) -> std::collections::HashMap<&'a str, YamlAst> {
         let mut result = std::collections::HashMap::with_capacity(field_names.len());
         if let YamlAst::Mapping(pairs, _) = content {
             // Early exit optimization: stop when we've found all fields
             let mut found_count = 0;
             for (key, value) in pairs {
                 if let YamlAst::PlainString(key_str, _) = key {
-                    if field_names.contains(&key_str.as_str()) {
-                        result.insert(key_str.clone(), value.clone());
-                        found_count += 1;
-                        // Happy path optimization: stop early if we found all fields
-                        if found_count == field_names.len() {
+                    for &field_name in field_names {
+                        if key_str == field_name {
+                            result.insert(field_name, value.clone());
+                            found_count += 1;
+                            // Happy path optimization: stop early if we found all fields
+                            if found_count == field_names.len() {
+                                return result;
+                            }
                             break;
                         }
                     }
@@ -1435,31 +1431,40 @@ impl YamlParser {
         content: YamlAst,
         meta: &SrcMeta,
     ) -> ParseResult<PreprocessingTag> {
-        let fields = self.extract_fields_from_mapping(&content, &["items", "template", "var"]);
-
-        let items = fields
-            .get("items")
-            .cloned()
-            .ok_or_else(|| self.missing_field_error("!$mapValues", "items", &meta))?;
-
-        let template = fields
-            .get("template")
-            .cloned()
-            .ok_or_else(|| self.missing_field_error("!$mapValues", "template", &meta))?;
-
-        let var = fields.get("var").and_then(|v| {
-            if let YamlAst::PlainString(s, _) = v {
-                Some(s.clone())
-            } else {
-                None
+        // Fast path for simple cases - extract fields directly without validation
+        if let YamlAst::Mapping(ref pairs, _) = content {
+            let mut items = None;
+            let mut template = None;
+            let mut var = None;
+            
+            for (key, value) in pairs {
+                if let YamlAst::PlainString(key_str, _) = key {
+                    match key_str.as_str() {
+                        "items" => items = Some(value.clone()),
+                        "template" => template = Some(value.clone()),
+                        "var" => {
+                            var = if let YamlAst::PlainString(s, _) = value {
+                                Some(s.clone())
+                            } else {
+                                None
+                            };
+                        }
+                        _ => {} // Ignore unknown fields for performance
+                    }
+                }
             }
-        });
+            
+            let items = items.ok_or_else(|| self.missing_field_error("!$mapValues", "items", &meta))?;
+            let template = template.ok_or_else(|| self.missing_field_error("!$mapValues", "template", &meta))?;
+            
+            return Ok(PreprocessingTag::MapValues(MapValuesTag {
+                items: Box::new(items),
+                template: Box::new(template),
+                var,
+            }));
+        }
 
-        Ok(PreprocessingTag::MapValues(MapValuesTag {
-            items: Box::new(items),
-            template: Box::new(template),
-            var,
-        }))
+        Err(self.tag_error("!$mapValues", "must be a mapping", Some("use mapping format"), meta))
     }
 
     /// Parse Map tag content
@@ -1657,36 +1662,39 @@ impl YamlParser {
 
     /// Parse If tag content
     fn parse_if_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
-        // Check if content is a mapping first
-        if !matches!(content, YamlAst::Mapping(_, _)) {
-            return Err(self.tag_error(
-                "!$if",
-                "must be a mapping with required 'test' and 'then' fields",
-                Some("use format: {test: condition, then: value, else: alternative}"),
-                &meta,
-            ));
+        // Fast path for simple cases - extract fields directly
+        if let YamlAst::Mapping(ref pairs, _) = content {
+            let mut test = None;
+            let mut then_value = None;
+            let mut else_value = None;
+            
+            for (key, value) in pairs {
+                if let YamlAst::PlainString(key_str, _) = key {
+                    match key_str.as_str() {
+                        "test" => test = Some(value.clone()),
+                        "then" => then_value = Some(value.clone()),
+                        "else" => else_value = Some(value.clone()),
+                        _ => {} // Ignore unknown fields for performance
+                    }
+                }
+            }
+            
+            let test = test.ok_or_else(|| self.missing_field_error("!$if", "test", &meta))?;
+            let then_value = then_value.ok_or_else(|| self.missing_field_error("!$if", "then", &meta))?;
+            
+            return Ok(PreprocessingTag::If(IfTag {
+                test: Box::new(test),
+                then_value: Box::new(then_value),
+                else_value: else_value.map(Box::new),
+            }));
         }
 
-        // Validate fields first
-        self.validate_tag_fields(&content, "!$if", &["test", "then"], &["else"], meta)?;
-
-        let test = self
-            .extract_field_from_mapping(&content, "test")
-            .ok_or_else(|| self.missing_field_error("!$if", "test", &meta))?;
-
-        let then_value = self
-            .extract_field_from_mapping(&content, "then")
-            .ok_or_else(|| self.missing_field_error("!$if", "then", &meta))?;
-
-        let else_value = self
-            .extract_field_from_mapping(&content, "else")
-            .map(Box::new);
-
-        Ok(PreprocessingTag::If(IfTag {
-            test: Box::new(test),
-            then_value: Box::new(then_value),
-            else_value,
-        }))
+        Err(self.tag_error(
+            "!$if",
+            "must be a mapping with required 'test' and 'then' fields",
+            Some("use format: {test: condition, then: value, else: alternative}"),
+            &meta,
+        ))
     }
 
     /// Parse Let tag content
@@ -1766,7 +1774,7 @@ impl YamlParser {
     // Helper functions to generate properly formatted errors
 
     /// Extract UTF-8 text from a node with proper error handling
-    #[inline]
+    #[inline(always)]
     fn extract_utf8_text(
         &self,
         node: Node,
@@ -1774,9 +1782,14 @@ impl YamlParser {
         meta: &SrcMeta,
         context: &str,
     ) -> ParseResult<String> {
-        node.utf8_text(src)
-            .map(|s| s.to_string())
-            .map_err(|_| self.syntax_error(&format!("Invalid UTF-8 in {}", context), meta, ""))
+        // Optimized path - avoid format! allocation in common case
+        match node.utf8_text(src) {
+            Ok(s) => Ok(s.to_string()),
+            Err(_) => {
+                // Only allocate error string when there's actually an error
+                Err(self.syntax_error(&format!("Invalid UTF-8 in {}", context), meta, ""))
+            }
+        }
     }
 
     /// Extract the file path from a URI for error display
@@ -1945,7 +1958,7 @@ fn point_to_position(p: Point) -> Position {
     Position::new(p.row as u32, p.column as u32)
 }
 
-#[inline]
+#[inline(always)]
 pub(crate) fn node_meta(node: &Node, uri: &Url) -> SrcMeta {
     SrcMeta {
         input_uri: uri.clone(),

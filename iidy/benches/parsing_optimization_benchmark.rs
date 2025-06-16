@@ -50,6 +50,7 @@ fn bench_custom_parser(c: &mut Criterion, yaml_content: &str, name: &str) {
     });
 }
 
+
 /// Benchmark plain YAML parsing (no preprocessing tags)
 fn bench_plain_yaml(c: &mut Criterion) {
     // Simple YAML without preprocessing tags
