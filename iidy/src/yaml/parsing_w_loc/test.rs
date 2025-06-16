@@ -268,6 +268,175 @@ fn test_meta_information() {
     assert_eq!(meta.end.character, 5);
 }
 
+// ============================================================================
+// PHASE 1: Block-Style Tag Parsing Tests - CRITICAL for old parser removal
+// ============================================================================
+
+#[test]
+fn test_block_style_let_tag() {
+    let yaml = r#"!$let
+database_url: "postgres://localhost"
+redis_url: "redis://localhost"  
+in:
+  database: "{{database_url}}/myapp"
+  cache: "{{redis_url}}/0""#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::PreprocessingTag(PreprocessingTag::Let(let_tag), _) => {
+            assert_eq!(let_tag.bindings.len(), 2);
+            
+            // Check bindings
+            let (key1, val1) = &let_tag.bindings[0];
+            let (key2, val2) = &let_tag.bindings[1];
+            
+            assert_eq!(key1, "database_url");
+            assert_eq!(key2, "redis_url");
+            
+            assert!(matches!(val1, YamlAst::PlainString(s, _) if s == "postgres://localhost"));
+            assert!(matches!(val2, YamlAst::PlainString(s, _) if s == "redis://localhost"));
+            
+            // Check 'in' expression is a mapping
+            assert!(matches!(let_tag.expression.as_ref(), YamlAst::Mapping(_, _)));
+        }
+        _ => panic!("Expected PreprocessingTag::Let, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_block_style_map_tag() {
+    let yaml = r#"!$map
+items: !$ servers
+template:
+  name: "{{item.name}}"
+  port: "{{item.port}}"
+  url: "http://{{item.name}}:{{item.port}}""#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::PreprocessingTag(PreprocessingTag::Map(map_tag), _) => {
+            // Check items field
+            assert!(matches!(map_tag.items.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Include(_), _)));
+            
+            // Check template is a mapping
+            assert!(matches!(map_tag.template.as_ref(), YamlAst::Mapping(_, _)));
+            
+            // Default var should be None (uses "item")
+            assert_eq!(map_tag.var, None);
+        }
+        _ => panic!("Expected PreprocessingTag::Map, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_nested_block_style_tags() {
+    let yaml = r#"!$map
+items: !$groupBy
+  items: !$ rawData
+  key: "{{item.category}}"
+template: !$merge
+  - category: "{{item.key}}"
+  - items: !$map
+      items: "{{item.value}}"
+      template:
+        id: "{{item.id}}"
+        processed: true"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::PreprocessingTag(PreprocessingTag::Map(outer_map), _) => {
+            // Check items is a groupBy tag
+            assert!(matches!(outer_map.items.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::GroupBy(_), _)));
+            
+            // Check template is a merge tag
+            assert!(matches!(outer_map.template.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)));
+        }
+        _ => panic!("Expected nested PreprocessingTag::Map, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_mixed_flow_and_block_styles() {
+    let yaml = r#"env: !$if { test: !$ isProd, then: "production", else: !$let { debug: true, in: "{{debug}}" } }"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 1);
+            let (key, value) = &pairs[0];
+            
+            assert!(matches!(key, YamlAst::PlainString(s, _) if s == "env"));
+            assert!(matches!(value, YamlAst::PreprocessingTag(PreprocessingTag::If(_), _)));
+        }
+        _ => panic!("Expected Mapping with If tag, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_complex_indentation_scenarios() {
+    let yaml = r#"data: !$mapValues
+  items:
+    server1: { type: "web", port: 80 }
+    server2: { type: "api", port: 8080 }
+    database: { type: "db", port: 5432 }
+  template: "{{item.type}}:{{item.port}}""#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 1);
+            let (key, value) = &pairs[0];
+            
+            assert!(matches!(key, YamlAst::PlainString(s, _) if s == "data"));
+            
+            match value {
+                YamlAst::PreprocessingTag(PreprocessingTag::MapValues(map_values), _) => {
+                    // Check items is a mapping
+                    assert!(matches!(map_values.items.as_ref(), YamlAst::Mapping(_, _)));
+                    
+                    // Check template is a templated string
+                    assert!(matches!(map_values.template.as_ref(), YamlAst::TemplatedString(_, _)));
+                }
+                _ => panic!("Expected MapValues tag, got {:?}", value),
+            }
+        }
+        _ => panic!("Expected Mapping, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_block_style_if_with_complex_conditions() {
+    let yaml = r#"!$if
+test: true
+then: !$merge
+  - !$ baseConfig
+  - database_pool_size: 20
+    cache_enabled: true
+else: !$merge
+  - !$ baseConfig  
+  - database_pool_size: 5
+    debug_mode: true"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::PreprocessingTag(PreprocessingTag::If(if_tag), _) => {
+            // Test condition should be a boolean
+            assert!(matches!(if_tag.test.as_ref(), YamlAst::Bool(true, _)));
+            
+            // Then and else should be merge operations
+            assert!(matches!(if_tag.then_value.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)));
+            assert!(matches!(if_tag.else_value.as_ref(), Some(else_val) if matches!(else_val.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _))));
+        }
+        _ => panic!("Expected PreprocessingTag::If, got {:?}", result),
+    }
+}
+
 #[test]
 fn test_syntax_error() {
     let yaml = "key: [\n  unclosed";

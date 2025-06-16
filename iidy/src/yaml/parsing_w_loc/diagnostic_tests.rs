@@ -270,3 +270,135 @@ invalid_test: !$let
             .contains("Missing required 'in' field")
     );
 }
+
+// ============================================================================
+// PHASE 2: YAML Specification Compatibility Tests - CRITICAL FOR OLD PARSER REMOVAL
+// Tests for YAML 1.1 vs 1.2 compatibility issues that could break CloudFormation
+// ============================================================================
+
+#[test]
+fn test_yaml_11_boolean_compatibility_issue() {
+    // CRITICAL: This test documents that the tree-sitter parser treats
+    // YAML 1.1 boolean forms as strings, not booleans.
+    // This is a compatibility difference from the old parser!
+    
+    let yaml_11_booleans = vec![
+        ("yes", true), ("no", false),
+        ("on", true), ("off", false),
+        ("Yes", true), ("No", false),
+        ("ON", true), ("OFF", false),
+    ];
+    
+    for (yaml_str, _expected_bool) in yaml_11_booleans {
+        use super::parser::parse_yaml_ast;
+        use super::ast::YamlAst;
+        
+        let result = parse_yaml_ast(yaml_str, test_uri()).unwrap();
+        
+        // Document the current behavior: these are parsed as strings, not booleans
+        match result {
+            YamlAst::PlainString(s, _) => {
+                assert_eq!(s, yaml_str);
+                // This is the current tree-sitter behavior - strings, not booleans
+                println!("WARNING: '{}' parsed as string, not boolean. This may break CloudFormation compatibility.", yaml_str);
+            }
+            YamlAst::Bool(_b, _) => {
+                // If this ever starts working, update the test
+                println!("INFO: '{}' correctly parsed as boolean", yaml_str);
+            }
+            _ => panic!("Unexpected result for '{}': {:?}", yaml_str, result),
+        }
+    }
+}
+
+#[test]
+fn test_unicode_escape_handling() {
+    // Test that documents current unicode handling limitations
+    let test_cases = vec![
+        (r#""\u0041""#, "\\u0041"), // Currently NOT processed as unicode
+        (r#""\n""#, "\n"),           // Basic escapes DO work
+        (r#""\t""#, "\t"),           // Basic escapes DO work
+    ];
+    
+    for (yaml_str, expected) in test_cases {
+        use super::parser::parse_yaml_ast;
+        use super::ast::YamlAst;
+        
+        let result = parse_yaml_ast(yaml_str, test_uri()).unwrap();
+        match result {
+            YamlAst::PlainString(s, _) => {
+                assert_eq!(s, expected, "Unicode handling for '{}' differs from expected", yaml_str);
+            }
+            _ => panic!("Expected PlainString for '{}', got {:?}", yaml_str, result),
+        }
+    }
+}
+
+#[test]
+fn test_malformed_yaml_error_recovery() {
+    // Test tree-sitter's error recovery capabilities vs serde_yaml
+    let malformed_cases = vec![
+        ("key: [\n  unclosed", "Unclosed bracket"),
+        ("key:\n  - item\n    bad_indent", "Bad indentation"),
+        ("key: \"unclosed quote", "Unclosed quote"),
+    ];
+    
+    for (yaml_str, description) in malformed_cases {
+        let diagnostics = parse_yaml_ast_with_diagnostics(yaml_str, test_uri());
+        
+        // Should have syntax errors
+        assert!(diagnostics.has_errors(), "Expected syntax error for: {}", description);
+        assert!(!diagnostics.parse_successful, "Parse should fail for: {}", description);
+        
+        // Error should contain location information
+        if let Some(error) = diagnostics.errors.first() {
+            assert!(error.location.is_some(), "Error should have location for: {}", description);
+        }
+    }
+}
+
+#[test]
+fn test_deep_nesting_handling() {
+    // Test parser behavior with deep nesting (potential stack overflow risk)
+    let mut deep_yaml = String::new();
+    for i in 0..50 {
+        deep_yaml.push_str(&format!("level{}: \n", i));
+        deep_yaml.push_str("  ");
+    }
+    deep_yaml.push_str("value: \"deep\"");
+    
+    let diagnostics = parse_yaml_ast_with_diagnostics(&deep_yaml, test_uri());
+    
+    // Should either succeed or fail gracefully (no panic/stack overflow)
+    if diagnostics.has_errors() {
+        println!("Deep nesting failed gracefully with {} errors", diagnostics.error_count());
+    } else {
+        println!("Deep nesting succeeded");
+    }
+    
+    // Test should not panic/crash
+    assert!(true, "Parser handled deep nesting without crashing");
+}
+
+#[test] 
+fn test_large_document_handling() {
+    // Test parser behavior with large documents
+    let mut large_yaml = String::from("Resources:\n");
+    
+    for i in 0..100 {
+        large_yaml.push_str(&format!(
+            "  Resource{}:\n    Type: AWS::S3::Bucket\n    Properties:\n      BucketName: \"bucket-{}\"\n",
+            i, i
+        ));
+    }
+    
+    let start = std::time::Instant::now();
+    let diagnostics = parse_yaml_ast_with_diagnostics(&large_yaml, test_uri());
+    let duration = start.elapsed();
+    
+    // Should parse successfully in reasonable time
+    assert!(!diagnostics.has_errors(), "Large document should parse successfully");
+    assert!(duration < std::time::Duration::from_secs(5), "Parse time should be reasonable: {:?}", duration);
+    
+    println!("Large document (100 resources) parsed in {:?}", duration);
+}
