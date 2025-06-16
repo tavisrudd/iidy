@@ -6,7 +6,6 @@
 use crate::yaml::parsing::ast as original;
 use super::ast as with_location;
 use super::parser::parse_yaml_ast;
-use super::error::ParseResult;
 use url::Url;
 
 /// Convert from location-aware YamlAst to original YamlAst
@@ -295,17 +294,34 @@ fn convert_preprocessing_tag(tag: &with_location::PreprocessingTag) -> original:
     }
 }
 
-/// Parse YAML with location tracking and convert to original AST
+/// Drop-in replacement for `parser::parse_yaml_with_custom_tags_from_file`
 /// 
-/// This convenience function combines parsing with tree-sitter (to get location information)
-/// and then converts the result to the original AST format. This can be used as a drop-in
-/// replacement for the original parser when you want the benefits of tree-sitter parsing
-/// but need the result in the original AST format.
-#[allow(dead_code)]
-pub fn parse_and_convert_to_original(source: &str, uri: Url) -> ParseResult<original::YamlAst> {
-    let with_location_ast = parse_yaml_ast(source, uri)?;
+/// This function provides the same interface as the original parser but uses
+/// the new tree-sitter parser with location tracking internally, then converts
+/// the result to the original AST format for full compatibility.
+pub fn parse_and_convert_to_original(source: &str, uri_str: &str) -> anyhow::Result<original::YamlAst> {
+    // Try parsing as URI first, fallback to treating as file path
+    let uri = match Url::parse(uri_str) {
+        Ok(uri) => uri,
+        Err(_) => {
+            // If it's not a valid URI, try treating it as a file path
+            match Url::from_file_path(uri_str) {
+                Ok(uri) => uri,
+                Err(_) => {
+                    // As last resort, create a basic file URI
+                    Url::parse(&format!("file://{}", uri_str))
+                        .map_err(|e| anyhow::anyhow!("Cannot create URI from '{}': {}", uri_str, e))?
+                }
+            }
+        }
+    };
+    
+    let with_location_ast = parse_yaml_ast(source, uri)
+        .map_err(|e| anyhow::anyhow!("{}", e.message))?;
+    
     Ok(to_original_ast(&with_location_ast))
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -447,7 +463,7 @@ items:
   - item1
   - item2
 "#;
-        let result = parse_and_convert_to_original(yaml, test_uri()).unwrap();
+        let result = parse_and_convert_to_original(yaml, test_uri().as_str()).unwrap();
         
         match result {
             original::YamlAst::Mapping(pairs) => {

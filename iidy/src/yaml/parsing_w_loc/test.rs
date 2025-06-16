@@ -142,15 +142,19 @@ key3: true
 
     #[test]
     fn test_parse_preprocessing_if_tag() {
-        let yaml = "!$if condition";
+        let yaml = r#"!$if
+test: true
+then: "yes"
+else: "no""#;
         let result = parse_yaml_ast(yaml, test_uri()).unwrap();
         
         match result {
-            YamlAst::UnknownYamlTag(tag, _) => {
-                assert_eq!(tag.tag, "!$if");
-                assert!(matches!(tag.value.as_ref(), YamlAst::PlainString(s, _) if s == "condition"));
+            YamlAst::PreprocessingTag(PreprocessingTag::If(if_tag), _) => {
+                assert!(matches!(if_tag.test.as_ref(), YamlAst::Bool(true, _)));
+                assert!(matches!(if_tag.then_value.as_ref(), YamlAst::PlainString(s, _) if s == "yes"));
+                assert!(matches!(if_tag.else_value.as_ref(), Some(else_val) if matches!(else_val.as_ref(), YamlAst::PlainString(s, _) if s == "no")));
             }
-            _ => panic!("Expected UnknownYamlTag for !$if, got {:?}", result),
+            _ => panic!("Expected PreprocessingTag::If, got {:?}", result),
         }
     }
 
