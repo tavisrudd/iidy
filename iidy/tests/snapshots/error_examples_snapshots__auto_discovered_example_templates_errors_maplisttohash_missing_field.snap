@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: 'template' missing in !$mapListToHash tag @ example-templates/errors/maplisttohash-missing-field.yaml:2:21 (errno: IY4002)
+Tag error: 'template' missing in !$mapListToHash tag @ example-templates/errors/maplisttohash-missing-field.yaml:2:21 (errno: ERR_4002)
   -> add 'template' field to !$mapListToHash tag
 
    1 | # !$mapListToHash missing required field
@@ -14,4 +14,4 @@ Tag error: 'template' missing in !$mapListToHash tag @ example-templates/errors/
      items: [{"key": "a", "value": 1}, {"key": "b", "value": 2}]
      keyPath: key
      valuePath: value
-   For more info, run: iidy explain IY4002
+   For more info, run: iidy explain ERR_4002

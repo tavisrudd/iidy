@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Variable error: 'config.storage' not found @ example-templates/errors/variable-include-not-found.yaml:7:10 (errno: IY2001)
+Variable error: 'config.storage' not found @ example-templates/errors/variable-include-not-found.yaml:7:10 (errno: ERR_2001)
   -> variable not defined in current scope
 
    6 | 
@@ -11,4 +11,4 @@ Variable error: 'config.storage' not found @ example-templates/errors/variable-i
 
    available variables: config
 
-   For more info: iidy explain IY2001
+   For more info: iidy explain ERR_2001

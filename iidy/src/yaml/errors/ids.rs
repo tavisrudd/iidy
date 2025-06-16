@@ -1,6 +1,6 @@
 /// Error ID system for iidy YAML preprocessing
 ///
-/// Format: IY + Category + Number
+/// Format: ERR_ + Category + Number
 /// Categories:
 /// - 1xxx: YAML Syntax & Parsing  
 /// - 2xxx: Variable & Scope Errors
@@ -84,9 +84,9 @@ pub enum ErrorId {
 }
 
 impl ErrorId {
-    /// Get the error code string (e.g., "IY2001")
+    /// Get the error code string (e.g., "ERR_2001")
     pub fn code(&self) -> String {
-        format!("IY{:04}", *self as u16)
+        format!("ERR_{:04}", *self as u16)
     }
 
     /// Get the category name for this error
@@ -181,10 +181,10 @@ impl ErrorId {
     /// Get detailed explanation for CLI help
     pub fn detailed_explanation(&self) -> &'static str {
         match self {
-            ErrorId::InvalidYamlSyntax => include_str!("../../docs/errors/IY1001.md"),
-            ErrorId::VariableNotFound => include_str!("../../docs/errors/IY2001.md"),
-            ErrorId::TypeMismatchInOperation => include_str!("../../docs/errors/IY5001.md"),
-            ErrorId::MissingRequiredTagField => include_str!("../../docs/errors/IY4002.md"),
+            ErrorId::InvalidYamlSyntax => include_str!("../../docs/errors/ERR_1001.md"),
+            ErrorId::VariableNotFound => include_str!("../../docs/errors/ERR_2001.md"),
+            ErrorId::TypeMismatchInOperation => include_str!("../../docs/errors/ERR_5001.md"),
+            ErrorId::MissingRequiredTagField => include_str!("../../docs/errors/ERR_4002.md"),
             // For now, provide basic explanation for others
             _ => "Detailed explanation not yet available. See error message for context.",
         }
@@ -193,7 +193,7 @@ impl ErrorId {
     /// Parse error code string to ErrorId
     pub fn from_code(code: &str) -> Option<ErrorId> {
         let code = code.to_uppercase();
-        let code = code.strip_prefix("IY").unwrap_or(&code);
+        let code = code.strip_prefix("ERR_").unwrap_or(&code);
 
         match code.parse::<u16>().ok()? {
             1001 => Some(ErrorId::InvalidYamlSyntax),
@@ -358,9 +358,9 @@ mod tests {
 
     #[test]
     fn test_error_id_code_format() {
-        assert_eq!(ErrorId::VariableNotFound.code(), "IY2001");
-        assert_eq!(ErrorId::ImportFileNotFound.code(), "IY3001");
-        assert_eq!(ErrorId::MissingRequiredTagField.code(), "IY4002");
+        assert_eq!(ErrorId::VariableNotFound.code(), "ERR_2001");
+        assert_eq!(ErrorId::ImportFileNotFound.code(), "ERR_3001");
+        assert_eq!(ErrorId::MissingRequiredTagField.code(), "ERR_4002");
     }
 
     #[test]
@@ -376,11 +376,11 @@ mod tests {
     #[test]
     fn test_error_id_from_code() {
         assert_eq!(
-            ErrorId::from_code("IY2001"),
+            ErrorId::from_code("ERR_2001"),
             Some(ErrorId::VariableNotFound)
         );
         assert_eq!(
-            ErrorId::from_code("iy2001"),
+            ErrorId::from_code("err_2001"),
             Some(ErrorId::VariableNotFound)
         );
         assert_eq!(ErrorId::from_code("2001"), Some(ErrorId::VariableNotFound));

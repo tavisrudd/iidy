@@ -177,7 +177,7 @@ pub fn yaml_syntax_error(
 
         // Create a concise parsing error header
         let error_display = format!(
-            "{}Syntax error{}: {} @ {}{}:{}:{}{} {}(errno: IY1001){}\n",
+            "{}Syntax error{}: {} @ {}{}:{}:{}{} {}(errno: ERR_1001){}\n",
             bold_red, reset, short_msg, cyan, file_path, line_num, col_num, reset, grey, reset
         );
 
@@ -244,13 +244,13 @@ pub fn yaml_syntax_error(
             }
 
             output.push_str(&format!(
-                "\n{}   For more info, run: iidy explain IY1001{}\n",
+                "\n{}   For more info, run: iidy explain ERR_1001{}\n",
                 light_blue, reset
             ));
             output
         } else {
             format!(
-                "{}{}\n{}   For more info, run: iidy explain IY1001{}\n",
+                "{}{}\n{}   For more info, run: iidy explain ERR_1001{}\n",
                 error_display, guidance_line, light_blue, reset
             )
         };
@@ -300,7 +300,7 @@ pub fn tag_parsing_error(
 
         // Create error header
         let error_display = format!(
-            "{}Tag error{}: {} @ {}{}{} {}(errno: IY4002){}\n",
+            "{}Tag error{}: {} @ {}{}{} {}(errno: ERR_4002){}\n",
             bold_red, reset, message, cyan, file_path, reset, grey, reset
         );
 
@@ -463,7 +463,7 @@ pub fn tag_parsing_error(
         };
 
         let final_display = format!(
-            "{}{}{}{}{}   For more info, run: iidy explain IY4002{}\n",
+            "{}{}{}{}{}   For more info, run: iidy explain ERR_4002{}\n",
             error_display, guidance, context_display, example_display, light_blue, reset
         );
 

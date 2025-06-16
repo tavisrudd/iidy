@@ -63,13 +63,44 @@ async fn test_other_common_typos() {
         ("!$lets", "lets_typo"),     // typo of !$let
     ];
 
+    // Collect all errors instead of panicking on first failure
+    let mut failures = Vec::new();
+
     for (typo, snapshot_name) in test_cases {
         let yaml_input = format!("test: {} \"value\"", typo);
         let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await;
 
-        assert!(result.is_err(), "Should fail for typo: {}", typo);
+        if result.is_ok() {
+            failures.push(format!("Should fail for typo: {}", typo));
+            continue;
+        }
+
         let error_msg = result.unwrap_err().to_string();
-        assert_snapshot!(snapshot_name, error_msg);
+        
+        // Use catch_unwind to continue on snapshot failure
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert_snapshot!(snapshot_name, error_msg);
+        })) {
+            Ok(_) => {
+                // Snapshot matched or was accepted
+            },
+            Err(_) => {
+                // Snapshot failed - insta should have created .new files
+                failures.push(format!(
+                    "Snapshot mismatch for typo '{}' (check .snap.new files)",
+                    typo
+                ));
+            }
+        }
+    }
+
+    // Report all failures at the end
+    if !failures.is_empty() {
+        panic!(
+            "Found {} test failures:\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 }
 

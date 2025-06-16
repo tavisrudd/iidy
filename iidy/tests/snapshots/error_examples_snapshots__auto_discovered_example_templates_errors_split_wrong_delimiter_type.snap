@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Type error: expected string, found number @ example-templates/errors/split-wrong-delimiter-type.yaml:2:20 (errno: IY5001)
+Type error: expected string, found number @ example-templates/errors/split-wrong-delimiter-type.yaml:2:20 (errno: ERR_5001)
   -> data type mismatch
 
    1 | # !$split with delimiter that's not a string
@@ -11,4 +11,4 @@ Type error: expected string, found number @ example-templates/errors/split-wrong
 
    expected string, found number
 
-   For more info: iidy explain IY5001
+   For more info: iidy explain ERR_5001

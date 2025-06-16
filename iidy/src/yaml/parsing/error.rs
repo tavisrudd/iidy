@@ -52,11 +52,11 @@ pub enum ParseMode {
 }
 
 pub mod error_codes {
-    pub const SYNTAX_ERROR: &str = "IY1001";
-    pub const UNKNOWN_TAG: &str = "IY4001";
-    pub const MISSING_FIELD: &str = "IY4002";
-    pub const INVALID_TYPE: &str = "IY4003";
-    pub const INVALID_FORMAT: &str = "IY4004";
+    pub const SYNTAX_ERROR: &str = "ERR_1001";
+    pub const UNKNOWN_TAG: &str = "ERR_4001";
+    pub const MISSING_FIELD: &str = "ERR_4002";
+    pub const INVALID_TYPE: &str = "ERR_4003";
+    pub const INVALID_FORMAT: &str = "ERR_4004";
 }
 
 impl ParseError {

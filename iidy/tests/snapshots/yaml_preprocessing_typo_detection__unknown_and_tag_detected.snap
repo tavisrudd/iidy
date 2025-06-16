@@ -2,7 +2,7 @@
 source: tests/yaml_preprocessing_typo_detection.rs
 expression: error_msg_and
 ---
-Tag error: '!$and' is not a valid iidy tag @ test.yaml:1:11 (errno: IY4002)
+Tag error: '!$and' is not a valid iidy tag @ test.yaml:1:11 (errno: ERR_4002)
   -> check tag spelling or see documentation for valid tags
 
-   For more info, run: iidy explain IY4002
+   For more info, run: iidy explain ERR_4002

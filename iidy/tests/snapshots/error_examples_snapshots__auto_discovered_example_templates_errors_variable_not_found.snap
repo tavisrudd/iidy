@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Variable error: 'app_name' not found @ example-templates/errors/variable-not-found.yaml:6:15 (errno: IY2001)
+Variable error: 'app_name' not found @ example-templates/errors/variable-not-found.yaml:6:15 (errno: ERR_2001)
   -> variable not defined in current scope
 
    5 | 
@@ -11,4 +11,4 @@ Variable error: 'app_name' not found @ example-templates/errors/variable-not-fou
 
    available variables: environment, region
 
-   For more info: iidy explain IY2001
+   For more info: iidy explain ERR_2001

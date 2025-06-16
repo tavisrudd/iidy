@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: invalid format - must be string variable name @ example-templates/errors/parsing-include-invalid-format.yaml:2:7 (errno: IY4002)
+Tag error: invalid format - must be string variable name @ example-templates/errors/parsing-include-invalid-format.yaml:2:7 (errno: ERR_4002)
   -> use string variable name
 
    1 | # !$ variable include with invalid format (number instead of string or mapping with path)
@@ -10,4 +10,4 @@ Tag error: invalid format - must be string variable name @ example-templates/err
 
    example:
    !$ variable_name
-   For more info, run: iidy explain IY4002
+   For more info, run: iidy explain ERR_4002

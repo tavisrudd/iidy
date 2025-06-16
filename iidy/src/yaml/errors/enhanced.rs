@@ -671,7 +671,7 @@ mod tests {
         assert_eq!(error.error_id(), ErrorId::VariableNotFound);
 
         let display = error.to_string();
-        assert!(display.contains("IY2001"));
+        assert!(display.contains("ERR_2001"));
         assert!(display.contains("'app_nme' not found"));
         assert!(display.contains("did you mean 'app_name'?"));
     }

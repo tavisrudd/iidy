@@ -2,11 +2,11 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: '!$mapp' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo.yaml:5:9 (errno: IY4002)
+Tag error: '!$mapp' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo.yaml:5:9 (errno: ERR_4002)
   -> check tag spelling or see documentation for valid tags
 
    4 | 
    5 | result: !$mapp
      |         ^^^^^^
    6 |   items: !$ data
-   For more info, run: iidy explain IY4002
+   For more info, run: iidy explain ERR_4002

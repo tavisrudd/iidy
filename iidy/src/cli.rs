@@ -323,7 +323,7 @@ pub enum Commands {
     Completion { shell: Option<Shell> },
     /// explain error codes
     Explain {
-        /// Error code(s) to explain (e.g., IY2001)
+        /// Error code(s) to explain (e.g., ERR_2001)
         codes: Vec<String>,
     },
 }
