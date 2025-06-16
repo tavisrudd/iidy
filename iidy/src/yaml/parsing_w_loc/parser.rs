@@ -588,6 +588,7 @@ impl YamlParser {
         Ok(YamlAst::Sequence(items, meta))
     }
 
+    #[inline]
     fn build_scalar(
         &self,
         node: Node,
@@ -1254,7 +1255,7 @@ impl YamlParser {
         meta: &SrcMeta,
     ) -> ParseResult<()> {
         if let YamlAst::Mapping(pairs, _) = content {
-            let mut present_fields = std::collections::HashSet::new();
+            let mut present_fields = std::collections::HashSet::with_capacity(pairs.len());
 
             // Collect all present fields
             for (key, _) in pairs {
@@ -1272,7 +1273,7 @@ impl YamlParser {
             }
 
             // Check for unexpected fields
-            let mut all_valid_fields = std::collections::HashSet::new();
+            let mut all_valid_fields = std::collections::HashSet::with_capacity(required_fields.len() + optional_fields.len());
             for &field in required_fields {
                 all_valid_fields.insert(field);
             }
@@ -1283,7 +1284,7 @@ impl YamlParser {
             for present_field in &present_fields {
                 if !all_valid_fields.contains(present_field) {
                     let valid_fields_str = {
-                        let mut fields = Vec::new();
+                        let mut fields = Vec::with_capacity(required_fields.len() + optional_fields.len());
                         for &field in required_fields {
                             fields.push(field.to_string());
                         }
@@ -1607,7 +1608,7 @@ impl YamlParser {
             })?;
 
         // Extract all other fields as bindings
-        let mut bindings = Vec::new();
+        let mut bindings = Vec::new(); // Size unknown, will grow as needed
         if let YamlAst::Mapping(pairs, _) = content {
             for (key, value) in pairs {
                 if let YamlAst::PlainString(key_str, _) = key {

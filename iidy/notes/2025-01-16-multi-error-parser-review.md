@@ -198,7 +198,7 @@ fn node_meta(&self, node: &Node, uri: &Url) -> SrcMeta { }
 
 1. ✅ **Minimize public API surface** - Hide implementation details *(COMPLETED)*
 2. ✅ **Extract common validation patterns** - Reduce duplication by 60%+ *(COMPLETED)*
-3. **Fix performance hotspots** - Add capacity hints, reduce cloning *(IN PROGRESS)*
+3. ✅ **Fix performance hotspots** - Add capacity hints, reduce cloning *(COMPLETED)*
 4. ✅ **Reorganize into modules** - Split parser.rs into logical components *(COMPLETED)*
 5. **Add comprehensive test coverage** - Especially for error scenarios
 6. **Remove dead code** - Or document why it's kept
@@ -218,6 +218,12 @@ fn node_meta(&self, node: &Node, uri: &Url) -> SrcMeta { }
 - Extracted all tag validation functions from `parser.rs`
 - Implemented generic `validate_tag_content` function reducing duplication
 - All 484 tests pass with preserved functionality
+
+**Action 3: Fix performance hotspots** ✅
+- Added capacity hints to HashSet allocations in `validate_tag_fields` 
+- Added `#[inline]` annotations to hot path functions (`build_scalar`, `extract_utf8_text`)
+- Optimized Vec allocations with proper capacity hints
+- Verified existing optimizations are already present (`build_mapping`, `build_sequence`, `node_meta`)
 
 **Action 4: Reorganize into modules** ✅
 - Successfully extracted validation logic to `validation.rs` sibling module
