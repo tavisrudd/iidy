@@ -473,3 +473,183 @@ fn test_quoted_strings() {
         _ => panic!("Expected PlainString, got {:?}", result),
     }
 }
+
+// ============================================================================
+// PHASE 3: Tree-Sitter Edge Cases and Complex Integration Tests
+// ============================================================================
+
+#[test]
+fn test_deeply_nested_preprocessing_chain() {
+    let yaml = r#"!$map
+items: !$groupBy
+  items: !$map
+    items: !$ servers
+    template: !$merge
+      - name: "{{item.hostname}}"
+      - !$if
+          test: !$eq ["{{item.env}}", "prod"]
+          then: 
+            replicas: 3
+            monitoring: true
+          else:
+            replicas: 1
+            debug: true
+  key: "{{item.environment}}"
+template: !$merge
+  - environment: "{{item.key}}"
+  - servers: "{{item.value}}"
+  - count: !$ "{{item.value.length}}""#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::PreprocessingTag(PreprocessingTag::Map(outer_map), _) => {
+            // Should parse complex nested structure without error
+            assert!(matches!(outer_map.items.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::GroupBy(_), _)));
+            assert!(matches!(outer_map.template.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)));
+        }
+        _ => panic!("Expected deeply nested Map tag, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_mixed_cloudformation_and_preprocessing() {
+    let yaml = r#"Resources:
+  DynamicBucket: !$map
+    items: !$ environments
+    template:
+      "{{item.name}}Bucket":
+        Type: AWS::S3::Bucket
+        Properties:
+          BucketName: !Sub "${AWS::StackName}-{{item.name}}-bucket"
+          Tags: !$map
+            items: !$ item.tags
+            template:
+              Key: "{{item.key}}"
+              Value: !Ref "{{item.valueParam}}"
+  StaticResource:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketNameParam"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 1);
+            let (key, value) = &pairs[0];
+            assert!(matches!(key, YamlAst::PlainString(s, _) if s == "Resources"));
+            assert!(matches!(value, YamlAst::Mapping(_, _)));
+        }
+        _ => panic!("Expected CloudFormation/preprocessing mix, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_unicode_and_special_characters() {
+    let yaml = r#"
+unicode_key_🚀: "emoji value 🎉"
+chinese_中文: "测试"
+special_chars: "line1\nline2\ttabbed"
+quotes_mixed: 'single "double" quotes'
+escape_sequences: "backslash\\ quote\" newline\n"
+"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 5);
+            // Should parse all unicode and special character combinations
+            for (key, value) in pairs {
+                assert!(matches!(key, YamlAst::PlainString(_, _)));
+                assert!(matches!(value, YamlAst::PlainString(_, _)));
+            }
+        }
+        _ => panic!("Expected Mapping with unicode content, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_flow_vs_block_style_mixing() {
+    let yaml = r#"
+flow_style: { key1: value1, key2: [item1, item2] }
+block_style:
+  key1: value1
+  key2:
+    - item1
+    - item2
+mixed_tags:
+  flow_if: !$if { test: true, then: "yes", else: "no" }
+  block_map: !$map
+    items: [1, 2, 3]
+    template: "item-{{item}}"
+"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 3);
+            // Should handle mixed flow and block styles correctly
+            for (key, _value) in pairs {
+                assert!(matches!(key, YamlAst::PlainString(_, _)));
+            }
+        }
+        _ => panic!("Expected mixed flow/block styles, got {:?}", result),
+    }
+}
+
+#[test]
+fn test_empty_and_null_variations() {
+    let yaml = r#"
+explicit_null: null
+tilde_null: ~
+empty_string: ""
+empty_value: 
+empty_sequence: []
+empty_mapping: {}
+nested_empty:
+  null_val: null
+  empty_val:
+"#;
+    
+    let result = parse_yaml_ast(yaml, test_uri()).unwrap();
+    
+    match result {
+        YamlAst::Mapping(pairs, _) => {
+            assert_eq!(pairs.len(), 7); // 7 top-level keys including nested_empty
+            
+            // Verify different null/empty representations
+            for (key, value) in pairs {
+                match key {
+                    YamlAst::PlainString(k, _) if k == "explicit_null" => {
+                        assert!(matches!(value, YamlAst::Null(_)));
+                    }
+                    YamlAst::PlainString(k, _) if k == "tilde_null" => {
+                        assert!(matches!(value, YamlAst::Null(_)));
+                    }
+                    YamlAst::PlainString(k, _) if k == "empty_string" => {
+                        assert!(matches!(value, YamlAst::PlainString(s, _) if s.is_empty()));
+                    }
+                    YamlAst::PlainString(k, _) if k == "empty_value" => {
+                        assert!(matches!(value, YamlAst::Null(_)));
+                    }
+                    YamlAst::PlainString(k, _) if k == "empty_sequence" => {
+                        assert!(matches!(value, YamlAst::Sequence(seq, _) if seq.is_empty()));
+                    }
+                    YamlAst::PlainString(k, _) if k == "empty_mapping" => {
+                        assert!(matches!(value, YamlAst::Mapping(map, _) if map.is_empty()));
+                    }
+                    YamlAst::PlainString(k, _) if k == "nested_empty" => {
+                        assert!(matches!(value, YamlAst::Mapping(_, _)));
+                    }
+                    _ => {
+                        panic!("Unexpected key: {:?}", key);
+                    }
+                }
+            }
+        }
+        _ => panic!("Expected null/empty variations mapping, got {:?}", result),
+    }
+}
