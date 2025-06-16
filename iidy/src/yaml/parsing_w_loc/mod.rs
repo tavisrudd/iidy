@@ -16,6 +16,7 @@ pub(crate) mod ast;
 pub(crate) mod convert;
 pub(crate) mod error;
 pub(crate) mod parser;
+pub(crate) mod validation;
 
 #[cfg(test)]
 pub(crate) mod test_utils;
