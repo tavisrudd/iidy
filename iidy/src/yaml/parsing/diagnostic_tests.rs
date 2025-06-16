@@ -1,7 +1,7 @@
 use url::Url;
 
 // Import the diagnostic API functions
-use crate::yaml::parsing_w_loc::{
+use crate::yaml::parsing::{
 error_codes, parse_and_convert_to_original_with_diagnostics,
 parse_yaml_ast_with_diagnostics, validate_yaml_only,
 };

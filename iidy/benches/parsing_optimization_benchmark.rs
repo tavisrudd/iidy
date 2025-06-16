@@ -4,7 +4,7 @@
 //! with various YAML document types and sizes.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use iidy::yaml::parsing_w_loc::{parse_and_convert_to_original, parse_yaml_ast_with_diagnostics};
+use iidy::yaml::parsing::{parse_and_convert_to_original, parse_yaml_ast_with_diagnostics};
 use serde_yaml::Value;
 use tree_sitter::Parser;
 use tree_sitter_yaml::LANGUAGE;

@@ -26,8 +26,8 @@ use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
-use crate::yaml::parsing_w_loc::ast::{PreprocessingTag, YamlAst};
-use crate::yaml::parsing_w_loc;
+use crate::yaml::parsing::ast::{PreprocessingTag, YamlAst};
+use crate::yaml::parsing;
 use crate::yaml::resolution::{TagContext, VariableSource};
 
 use super::resolution::resolve_ast_split_args;
@@ -119,7 +119,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     /// Main processing entry point - implements the two-phase pipeline
     pub async fn process(&mut self, input: &str, base_location: &str) -> Result<Value> {
         // Parse YAML with custom tag support
-        let ast = parsing_w_loc::parse_and_convert_to_original(input, base_location)?;
+        let ast = parsing::parse_and_convert_to_original(input, base_location)?;
 
         // Initialize import stack for cycle detection
         let mut import_stack = ImportStack::new();
@@ -366,7 +366,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                         // This document needs recursive preprocessing - parse it back to AST and process
                         let doc_yaml = serde_yaml::to_string(&doc)?;
                         let doc_ast =
-                            parsing_w_loc::parse_and_convert_to_original(&doc_yaml, doc_location)?;
+                            parsing::parse_and_convert_to_original(&doc_yaml, doc_location)?;
 
                         // Recursively process this document with its own environment
                         let mut doc_env_values = EnvValues::new();

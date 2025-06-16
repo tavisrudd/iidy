@@ -4,8 +4,8 @@
 //! rather than testing individual components in isolation.
 
 use anyhow::Result;
-use iidy::yaml::parsing_w_loc::ast::YamlAst;
-use iidy::yaml::parsing_w_loc::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::ast::YamlAst;
+use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
 use std::path::Path;
 
 /// Helper function to load and parse fixture files

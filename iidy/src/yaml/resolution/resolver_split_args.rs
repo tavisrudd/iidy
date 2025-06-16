@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
-use crate::yaml::parsing_w_loc::ast::*;
+use crate::yaml::parsing::ast::*;
 use crate::yaml::resolution::context::TagContext;
 
 /// Check if an AST value is simple (no processing needed)
@@ -2014,7 +2014,7 @@ impl TagResolver for SplitArgsResolver {
         context: &TagContext,
         path_tracker: &PathTracker,
     ) -> Result<()> {
-        use crate::yaml::parsing_w_loc::ast::CloudFormationTag::*;
+        use crate::yaml::parsing::ast::CloudFormationTag::*;
 
         match cfn_tag {
             Ref(_) => {

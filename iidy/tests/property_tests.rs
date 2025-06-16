@@ -3,7 +3,7 @@
 //! These tests use proptest to verify invariants and properties of the YAML
 //! preprocessing system across a wide range of inputs.
 
-use iidy::yaml::parsing_w_loc::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
 use proptest::prelude::*;
 use serde_yaml::Value;
 use std::collections::HashMap;
