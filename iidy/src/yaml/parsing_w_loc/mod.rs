@@ -18,8 +18,6 @@ pub(crate) mod error;
 pub(crate) mod parser;
 pub(crate) mod validation;
 
-#[cfg(test)]
-pub(crate) mod test_utils;
 
 #[cfg(test)]
 mod compatibility_test;

@@ -1,6 +1,11 @@
-use super::test_utils::test_uri;
 use super::ast::{CloudFormationTag, PreprocessingTag, UnknownTag, YamlAst};
 use super::parser::parse_yaml_ast;
+use url::Url;
+
+/// Standard test URI for consistency across tests
+fn test_uri() -> Url {
+    Url::parse("file:///test.yaml").unwrap()
+}
 
 #[test]
 fn test_parse_simple_scalar() {
