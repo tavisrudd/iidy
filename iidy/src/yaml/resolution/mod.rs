@@ -7,9 +7,9 @@
 //! (28% faster, available for performance-critical applications).
 
 pub mod context;
-pub mod resolver_split_args;
+pub mod resolver;
 
 // Re-export key types
 pub use context::{TagContext, VariableSource};
 
-pub use resolver_split_args::{SplitArgsResolver, TagResolver, resolve_ast_split_args};
+pub use resolver::{SplitArgsResolver, TagResolver, resolve_ast_split_args};

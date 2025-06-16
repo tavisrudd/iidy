@@ -321,7 +321,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             for (key, yaml_value) in env_values {
                 // Use the yaml_to_json_value function from split_args module
                 let json_value =
-                    crate::yaml::resolution::resolver_split_args::yaml_to_json_value(yaml_value)?;
+                    crate::yaml::resolution::resolver::yaml_to_json_value(yaml_value)?;
                 json_env.insert(key.clone(), json_value);
             }
 
