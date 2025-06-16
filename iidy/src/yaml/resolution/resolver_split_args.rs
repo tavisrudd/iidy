@@ -30,14 +30,14 @@ use std::collections::HashMap;
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
-use crate::yaml::parsing::ast::*;
+use crate::yaml::parsing_w_loc::ast::*;
 use crate::yaml::resolution::context::TagContext;
 
 /// Check if an AST value is simple (no processing needed)
 #[inline(always)]
 fn is_simple_ast_value(ast: &YamlAst) -> bool {
     match ast {
-        YamlAst::Null | YamlAst::Bool(_) | YamlAst::Number(_) | YamlAst::PlainString(_) => true,
+        YamlAst::Null(_) | YamlAst::Bool(_, _) | YamlAst::Number(_, _) | YamlAst::PlainString(_, _) => true,
         _ => false,
     }
 }
@@ -53,7 +53,7 @@ fn is_simple_sequence(seq: &[YamlAst]) -> bool {
 #[inline(always)]
 fn is_simple_mapping(pairs: &[(YamlAst, YamlAst)]) -> bool {
     pairs.iter().all(|(key, value)| match key {
-        YamlAst::PlainString(s) if !s.starts_with('$') => is_simple_ast_value(value),
+        YamlAst::PlainString(s, _) if !s.starts_with('$') => is_simple_ast_value(value),
         _ => false,
     })
 }
@@ -63,10 +63,10 @@ fn is_simple_mapping(pairs: &[(YamlAst, YamlAst)]) -> bool {
 #[inline(always)]
 fn simple_ast_to_value(ast: &YamlAst) -> Value {
     match ast {
-        YamlAst::Null => Value::Null,
-        YamlAst::Bool(b) => Value::Bool(*b),
-        YamlAst::Number(n) => Value::Number(n.clone()),
-        YamlAst::PlainString(s) => Value::String(s.clone()),
+        YamlAst::Null(_) => Value::Null,
+        YamlAst::Bool(b, _) => Value::Bool(*b),
+        YamlAst::Number(n, _) => Value::Number(n.clone()),
+        YamlAst::PlainString(s, _) => Value::String(s.clone()),
         _ => unreachable!("simple_ast_to_value called on non-simple AST"),
     }
 }
@@ -632,18 +632,18 @@ impl SplitArgsResolver {
     /// Convert AST to Value without any preprocessing (for escape tag)
     fn ast_to_value_without_preprocessing(&self, ast: &YamlAst) -> Result<Value> {
         match ast {
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s.clone())),
-            YamlAst::Sequence(seq) => {
+            YamlAst::Null(_) => Ok(Value::Null),
+            YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n, _) => Ok(Value::Number(n.clone())),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s.clone())),
+            YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
                     result.push(self.ast_to_value_without_preprocessing(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
-            YamlAst::Mapping(pairs) => {
+            YamlAst::Mapping(pairs, _) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
                     let key_val = self.ast_to_value_without_preprocessing(key)?;
@@ -652,11 +652,11 @@ impl SplitArgsResolver {
                 }
                 Ok(Value::Mapping(result))
             }
-            YamlAst::PreprocessingTag(_) => {
+            YamlAst::PreprocessingTag(_, _) => {
                 // Escaped preprocessing tags should be converted to strings
                 Ok(Value::String(format!("!${}", "escaped_tag")))
             }
-            YamlAst::CloudFormationTag(cfn_tag) => {
+            YamlAst::CloudFormationTag(cfn_tag, _) => {
                 // Escaped CloudFormation tags should preserve their structure
                 let mut result = serde_yaml::Mapping::with_capacity(1);
                 let tag_name = format!("!{}", cfn_tag.tag_name());
@@ -664,10 +664,10 @@ impl SplitArgsResolver {
                 result.insert(Value::String(tag_name), inner_val);
                 Ok(Value::Mapping(result))
             }
-            YamlAst::UnknownYamlTag(unknown) => {
+            YamlAst::UnknownYamlTag(unknown, _) => {
                 self.ast_to_value_without_preprocessing(&unknown.value)
             }
-            YamlAst::ImportedDocument(doc) => self.ast_to_value_without_preprocessing(&doc.content),
+            YamlAst::ImportedDocument(doc, _) => self.ast_to_value_without_preprocessing(&doc.content),
         }
     }
 }
@@ -682,29 +682,29 @@ impl TagResolver for SplitArgsResolver {
     ) -> Result<Value> {
         match ast {
             // Scalars - direct conversion
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s) => Ok(Value::String(s.clone())),
+            YamlAst::Null(_) => Ok(Value::Null),
+            YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n, _) => Ok(Value::Number(n.clone())),
+            YamlAst::PlainString(s, _) => Ok(Value::String(s.clone())),
 
             // Templated strings - need variable resolution
-            YamlAst::TemplatedString(template) => {
+            YamlAst::TemplatedString(template, _) => {
                 self.resolve_template_string(template, context, path_tracker)
             }
 
             // Composite types
-            YamlAst::Mapping(pairs) => self.resolve_mapping(pairs, context, path_tracker),
-            YamlAst::Sequence(items) => self.resolve_sequence(items, context, path_tracker),
+            YamlAst::Mapping(pairs, _) => self.resolve_mapping(pairs, context, path_tracker),
+            YamlAst::Sequence(items, _) => self.resolve_sequence(items, context, path_tracker),
 
-            YamlAst::PreprocessingTag(tag) => {
+            YamlAst::PreprocessingTag(tag, _) => {
                 self.resolve_preprocessing_tag(tag, context, path_tracker)
             }
 
-            YamlAst::CloudFormationTag(cfn_tag) => {
+            YamlAst::CloudFormationTag(cfn_tag, _) => {
                 self.resolve_cloudformation_tag(cfn_tag, context, path_tracker)
             }
 
-            YamlAst::UnknownYamlTag(tag) => {
+            YamlAst::UnknownYamlTag(tag, _) => {
                 // Convert unknown tags to strings for now
                 let resolved_value = self.resolve_ast(&tag.value, context, path_tracker)?;
                 let tagged_value = TaggedValue {
@@ -714,7 +714,7 @@ impl TagResolver for SplitArgsResolver {
                 Ok(Value::Tagged(Box::new(tagged_value)))
             }
 
-            YamlAst::ImportedDocument(doc) => {
+            YamlAst::ImportedDocument(doc, _) => {
                 // Process the imported document content
                 self.resolve_ast(&doc.content, context, path_tracker)
             }
@@ -1951,18 +1951,18 @@ impl TagResolver for SplitArgsResolver {
         // Escape tag prevents preprocessing on its content
         // For now, we'll just convert the content to value without processing
         match &*tag.content {
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(*b)),
-            YamlAst::Number(n) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s.clone())),
-            YamlAst::Sequence(seq) => {
+            YamlAst::Null(_) => Ok(Value::Null),
+            YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
+            YamlAst::Number(n, _) => Ok(Value::Number(n.clone())),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s.clone())),
+            YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
                     result.push(self.ast_to_value_without_preprocessing(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
-            YamlAst::Mapping(pairs) => {
+            YamlAst::Mapping(pairs, _) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
                     let key_val = self.ast_to_value_without_preprocessing(key)?;
@@ -2014,7 +2014,7 @@ impl TagResolver for SplitArgsResolver {
         context: &TagContext,
         path_tracker: &PathTracker,
     ) -> Result<()> {
-        use crate::yaml::parsing::ast::CloudFormationTag::*;
+        use crate::yaml::parsing_w_loc::ast::CloudFormationTag::*;
 
         match cfn_tag {
             Ref(_) => {
@@ -2512,6 +2512,16 @@ pub fn yaml_to_json_value(yaml_value: &Value) -> Result<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use url::Url;
+
+    // Helper function to create dummy SrcMeta for tests
+    fn dummy_src_meta() -> SrcMeta {
+        SrcMeta {
+            input_uri: Url::parse("file:///test.yaml").unwrap(),
+            start: Position::new(0, 0),
+            end: Position::new(0, 0),
+        }
+    }
 
     #[test]
     fn test_path_tracker_basic_operations() {
@@ -2560,9 +2570,9 @@ mod tests {
         let mut path_tracker = PathTracker::new();
 
         // Create a simple mapping AST
-        let key = YamlAst::PlainString("test_key".to_string());
-        let value = YamlAst::PlainString("test_value".to_string());
-        let mapping = YamlAst::Mapping(vec![(key, value)]);
+        let key = YamlAst::PlainString("test_key".to_string(), dummy_src_meta());
+        let value = YamlAst::PlainString("test_value".to_string(), dummy_src_meta());
+        let mapping = YamlAst::Mapping(vec![(key, value)], dummy_src_meta());
 
         let result = resolver
             .resolve_ast(&mapping, &context, &mut path_tracker)
@@ -2587,12 +2597,12 @@ mod tests {
         let mut path_tracker = PathTracker::new();
 
         // Create nested structure: {outer: {inner: "value"}}
-        let inner_key = YamlAst::PlainString("inner".to_string());
-        let inner_value = YamlAst::PlainString("value".to_string());
-        let inner_mapping = YamlAst::Mapping(vec![(inner_key, inner_value)]);
+        let inner_key = YamlAst::PlainString("inner".to_string(), dummy_src_meta());
+        let inner_value = YamlAst::PlainString("value".to_string(), dummy_src_meta());
+        let inner_mapping = YamlAst::Mapping(vec![(inner_key, inner_value)], dummy_src_meta());
 
-        let outer_key = YamlAst::PlainString("outer".to_string());
-        let outer_mapping = YamlAst::Mapping(vec![(outer_key, inner_mapping)]);
+        let outer_key = YamlAst::PlainString("outer".to_string(), dummy_src_meta());
+        let outer_mapping = YamlAst::Mapping(vec![(outer_key, inner_mapping)], dummy_src_meta());
 
         let result = resolver
             .resolve_ast(&outer_mapping, &context, &mut path_tracker)

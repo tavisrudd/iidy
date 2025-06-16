@@ -19,18 +19,8 @@ pub struct ParseLocation {
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(loc) = &self.location {
-            write!(
-                f,
-                "Parse error at {}:{}:{}: {}",
-                loc.uri,
-                loc.start.line + 1,
-                loc.start.character + 1,
-                self.message
-            )
-        } else {
-            write!(f, "Parse error: {}", self.message)
-        }
+        // Just display the message - it already contains location info in the correct format
+        write!(f, "{}", self.message)
     }
 }
 

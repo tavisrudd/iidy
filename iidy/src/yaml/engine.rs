@@ -26,7 +26,7 @@ use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
-use crate::yaml::parsing::ast::{PreprocessingTag, YamlAst};
+use crate::yaml::parsing_w_loc::ast::{PreprocessingTag, YamlAst};
 use crate::yaml::parsing_w_loc;
 use crate::yaml::resolution::{TagContext, VariableSource};
 
@@ -173,9 +173,9 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         import_stack: &mut ImportStack,
     ) -> Result<()> {
         // Look for $imports and $defs in the root mapping
-        if let YamlAst::Mapping(pairs) = ast {
+        if let YamlAst::Mapping(pairs, _) = ast {
             for (key, value) in pairs {
-                if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
+                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key {
                     match key_str.as_str() {
                         "$defs" => {
                             self.process_defs(value, env_values, base_location)?;
@@ -205,9 +205,9 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         env_values: &mut EnvValues,
         base_location: &str,
     ) -> Result<()> {
-        if let YamlAst::Mapping(pairs) = defs_ast {
+        if let YamlAst::Mapping(pairs, _) = defs_ast {
             for (key, value) in pairs {
-                if let YamlAst::PlainString(key_str) | YamlAst::TemplatedString(key_str) = key {
+                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key {
                     // Check for collisions with existing imports
                     if env_values.contains_key(key_str) {
                         return Err(anyhow::anyhow!(
@@ -244,11 +244,11 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         import_records: &mut Vec<ImportRecord>,
         import_stack: &mut ImportStack,
     ) -> Result<()> {
-        if let YamlAst::Mapping(pairs) = imports_ast {
+        if let YamlAst::Mapping(pairs, _) = imports_ast {
             for (key, value) in pairs {
                 if let (
-                    YamlAst::PlainString(import_key) | YamlAst::TemplatedString(import_key),
-                    YamlAst::PlainString(location) | YamlAst::TemplatedString(location),
+                    YamlAst::PlainString(import_key, _) | YamlAst::TemplatedString(import_key, _),
+                    YamlAst::PlainString(location, _) | YamlAst::TemplatedString(location, _),
                 ) = (key, value)
                 {
                     // Check for collisions
@@ -420,18 +420,18 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     /// Convert AST to Value without processing (for Phase 1 storage)
     fn ast_to_value_unprocessed(&mut self, ast: YamlAst) -> Result<Value> {
         match ast {
-            YamlAst::Null => Ok(Value::Null),
-            YamlAst::Bool(b) => Ok(Value::Bool(b)),
-            YamlAst::Number(n) => Ok(Value::Number(n)),
-            YamlAst::PlainString(s) | YamlAst::TemplatedString(s) => Ok(Value::String(s)),
-            YamlAst::Sequence(seq) => {
+            YamlAst::Null(_) => Ok(Value::Null),
+            YamlAst::Bool(b, _) => Ok(Value::Bool(b)),
+            YamlAst::Number(n, _) => Ok(Value::Number(n)),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s)),
+            YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
                     result.push(self.ast_to_value_unprocessed(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
-            YamlAst::Mapping(pairs) => {
+            YamlAst::Mapping(pairs, _) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
                     let key_val = self.ast_to_value_unprocessed(key)?;
@@ -440,7 +440,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 }
                 Ok(Value::Mapping(result))
             }
-            YamlAst::PreprocessingTag(tag) => {
+            YamlAst::PreprocessingTag(tag, _) => {
                 // Store preprocessing tags with unique identifiers to prevent collision
                 let tag_id = format!(
                     "__PREPROCESSING_TAG_{}__",
@@ -451,7 +451,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     .insert(tag_id.clone(), tag.clone());
                 Ok(Value::String(tag_id))
             }
-            YamlAst::CloudFormationTag(cfn_tag) => {
+            YamlAst::CloudFormationTag(cfn_tag, _) => {
                 // Store CloudFormation tags as placeholders for later processing
                 // The inner value will be processed during Phase 2
                 let tag_id = format!(
@@ -464,11 +464,11 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 // They will be handled directly in the resolve_ast_with_context method
                 Ok(Value::String(tag_id))
             }
-            YamlAst::UnknownYamlTag(tag) => {
+            YamlAst::UnknownYamlTag(tag, _) => {
                 // Store unknown tags by converting their value
                 self.ast_to_value_unprocessed(*tag.value)
             }
-            YamlAst::ImportedDocument(doc) => {
+            YamlAst::ImportedDocument(doc, _) => {
                 // Convert the imported document's content
                 self.ast_to_value_unprocessed(*doc.content)
             }

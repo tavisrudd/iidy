@@ -4,8 +4,8 @@
 //! rather than testing individual components in isolation.
 
 use anyhow::Result;
-use iidy::yaml::parsing::ast::YamlAst;
-use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing_w_loc::ast::YamlAst;
+use iidy::yaml::parsing_w_loc::parse_yaml_with_custom_tags_from_file;
 use std::path::Path;
 
 /// Helper function to load and parse fixture files
@@ -46,7 +46,7 @@ OnFailure: ROLLBACK
 
     // Should successfully parse the complete stack-args structure
     assert!(
-        matches!(ast, YamlAst::Mapping(_)),
+        matches!(ast, YamlAst::Mapping(_, _)),
         "Stack-args should parse as a mapping"
     );
 
@@ -95,7 +95,7 @@ tags:
 
     // Should successfully parse handlebars template structure
     assert!(
-        matches!(ast, YamlAst::Mapping(_)),
+        matches!(ast, YamlAst::Mapping(_, _)),
         "Handlebars example should parse as a mapping"
     );
 
@@ -149,7 +149,7 @@ capabilities: !$concat
 
     // Should successfully parse complex nested structure
     assert!(
-        matches!(ast, YamlAst::Mapping(_)),
+        matches!(ast, YamlAst::Mapping(_, _)),
         "Complex example should parse as a mapping"
     );
 
@@ -172,7 +172,7 @@ fn test_database_config_workflow() -> Result<()> {
 
     // Database config should parse successfully
     assert!(
-        ast.is_preprocessing_tag() || matches!(ast, YamlAst::Mapping(_)),
+        ast.is_preprocessing_tag() || matches!(ast, YamlAst::Mapping(_, _)),
         "Database config should parse as mapping or preprocessing tag"
     );
 
@@ -192,7 +192,7 @@ fn test_default_features_workflow() -> Result<()> {
 
     // Default features should parse successfully
     assert!(
-        ast.is_preprocessing_tag() || matches!(ast, YamlAst::Mapping(_)),
+        ast.is_preprocessing_tag() || matches!(ast, YamlAst::Mapping(_, _)),
         "Default features should parse as mapping or preprocessing tag"
     );
 
@@ -298,7 +298,7 @@ fn test_end_to_end_preprocessing_workflow_placeholder() -> Result<()> {
     let ast = parse_yaml_with_custom_tags_from_file(&yaml_content, "stack-args.yaml")?;
 
     // Currently we can only test parsing
-    assert!(matches!(ast, YamlAst::Mapping(_)));
+    assert!(matches!(ast, YamlAst::Mapping(_, _)));
 
     // TODO: Once AST resolution is implemented, this test should:
     //

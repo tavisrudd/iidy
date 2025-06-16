@@ -10,7 +10,6 @@ pub mod errors;
 pub mod handlebars;
 pub mod imports;
 pub mod location;
-pub mod parsing;
 pub mod parsing_w_loc;
 pub mod resolution;
 pub mod tree_sitter_location;

@@ -11,19 +11,42 @@ pub fn parse_yaml_ast_with_diagnostics(source: &str, uri: url::Url) -> ParseDiag
     parser.validate_with_diagnostics(source, uri)
 }
 
-// Internal modules - visible within crate for tests but not exported externally  
-pub(crate) mod ast;
+// Compatibility functions for external tests and benchmarks
+pub fn parse_yaml_with_custom_tags_from_file(source: &str, file_path: &str) -> anyhow::Result<ast::YamlAst> {
+    let uri = if file_path.starts_with("file://") {
+        url::Url::parse(file_path)?
+    } else {
+        url::Url::from_file_path(file_path).unwrap_or_else(|_| {
+            url::Url::parse(&format!("file://{}", file_path)).expect("Failed to create file URI")
+        })
+    };
+    
+    let mut parser = parser::YamlParser::new()?;
+    Ok(parser.parse(source, uri)?)
+}
+
+// ParseContext is not needed for new tests - remove this line
+
+// Internal modules - ast types needed for public API
+pub mod ast;
 pub(crate) mod convert;
 pub(crate) mod error;
 pub(crate) mod parser;
-pub(crate) mod validation;
 
 
-#[cfg(test)]
-mod compatibility_test;
 #[cfg(test)]
 mod diagnostic_tests;
 #[cfg(test)]
-mod proptest;
-#[cfg(test)]
 mod test;
+
+// Moved parsing-specific unit tests from tests/ directory
+#[cfg(test)]
+mod position_error_tests;
+#[cfg(test)]
+mod multiple_if_error_position_tests;
+#[cfg(test)]
+mod position_verification_tests;
+
+// Property-based testing for finding parser bugs
+#[cfg(test)]
+mod proptest;

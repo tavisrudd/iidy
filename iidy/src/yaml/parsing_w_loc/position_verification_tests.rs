@@ -1,6 +1,6 @@
 //! Test to verify the context-aware position finding works correctly
 
-use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
+use super::parse_yaml_with_custom_tags_from_file;
 
 #[test]
 fn test_multiple_map_tags_with_missing_template() {

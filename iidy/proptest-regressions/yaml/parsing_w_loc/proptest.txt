@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc fe4ad0e108053385ce01dbcca6354738a2789881540ee47486567cf5c21f01f8 # shrinks to yaml_doc = "A: !$include true"
+cc 264bc0fbc3b198286ee1b163b0296c8d31569e5423a02aac97d74b97eb94c577 # shrinks to yaml_doc = "A: !$include true"
+cc 547ceaea05b542247c8dee435fcb85e0f5da25f6e3f11d72944957d371306fad # shrinks to yaml_doc = "A: !$include true"

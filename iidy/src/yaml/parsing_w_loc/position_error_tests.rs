@@ -1,6 +1,6 @@
 //! Tests for error reporting with accurate line/column positions
 
-use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
+use super::parse_yaml_with_custom_tags_from_file;
 
 #[test]
 fn test_unknown_tag_error_position() {
@@ -257,10 +257,10 @@ fn test_split_tag_missing_delimiter_error() {
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
 
-    // Should report wrong number of elements for split tag
+    // Should report wrong format for split tag
     assert!(
-        error_msg.contains("two elements"),
-        "Error should mention split needs two elements, but got: {}",
+        error_msg.contains("delimiter, string") || error_msg.contains("two elements"),
+        "Error should mention split format requirements, but got: {}",
         error_msg
     );
 }

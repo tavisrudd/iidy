@@ -11,7 +11,6 @@ use super::ast::{
     ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
 use super::error::{ParseDiagnostics, ParseError, ParseResult, ParseWarning, error_codes};
-use super::validation;
 use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
 
 
@@ -198,7 +197,7 @@ impl YamlParser {
         diagnostics.has_errors()
     }
 
-    /// Validate semantics by traversing tree-sitter nodes without building full AST
+    /// Validate semantics by building AST in error-tolerant mode
     fn validate_semantics_with_diagnostics(
         &self,
         tree: &Tree,
@@ -207,7 +206,113 @@ impl YamlParser {
         diagnostics: &mut ParseDiagnostics,
     ) {
         let root = tree.root_node();
-        validation::validate_node_semantics(root, source.as_bytes(), uri, diagnostics);
+        
+        // Use a modified version of build_ast that collects errors instead of stopping
+        self.build_ast_with_error_collection(root, source.as_bytes(), uri, diagnostics);
+    }
+    
+    /// Build AST but collect all errors instead of stopping on first error
+    fn build_ast_with_error_collection(
+        &self,
+        node: Node,
+        src: &[u8],
+        uri: &Url,
+        diagnostics: &mut ParseDiagnostics,
+    ) {
+        match node.kind() {
+            "stream" => {
+                // Process all document children
+                for i in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(i) {
+                        if child.kind() == "document" {
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                        }
+                    }
+                }
+            }
+            "document" => {
+                // Process all children in document
+                for i in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(i) {
+                        self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                    }
+                }
+            }
+            "block_mapping" | "flow_mapping" => {
+                // Process mapping pairs
+                let mut cursor = node.walk();
+                for pair_node in node.named_children(&mut cursor) {
+                    if matches!(pair_node.kind(), "block_mapping_pair" | "flow_pair") {
+                        self.build_ast_with_error_collection(pair_node, src, uri, diagnostics);
+                    }
+                }
+            }
+            "block_mapping_pair" | "flow_pair" => {
+                // Process key and value
+                let mut pair_cursor = node.walk();
+                for child in node.named_children(&mut pair_cursor) {
+                    self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                }
+            }
+            "flow_node" => {
+                // Check if this flow_node contains a tag - if so, validate it
+                let has_tag = (0..node.named_child_count())
+                    .any(|i| node.named_child(i).map_or(false, |child| child.kind() == "tag"));
+                
+                if has_tag {
+                    // This is a tagged flow node - validate it
+                    match self.build_ast(node, src, uri) {
+                        Ok(_) => {
+                            // Success, no error to collect
+                        }
+                        Err(parse_error) => {
+                            // Collect this error and continue
+                            diagnostics.add_error(parse_error);
+                        }
+                    }
+                } else {
+                    // Not a tagged node, recurse into children
+                    for i in 0..node.named_child_count() {
+                        if let Some(child) = node.named_child(i) {
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                        }
+                    }
+                }
+            }
+            "block_node" => {
+                // Check if this block_node contains a tag - if so, validate it
+                let has_tag = (0..node.named_child_count())
+                    .any(|i| node.named_child(i).map_or(false, |child| child.kind() == "tag"));
+                
+                if has_tag {
+                    // This is a tagged block node - validate it
+                    match self.build_ast(node, src, uri) {
+                        Ok(_) => {
+                            // Success, no error to collect
+                        }
+                        Err(parse_error) => {
+                            // Collect this error and continue
+                            diagnostics.add_error(parse_error);
+                        }
+                    }
+                } else {
+                    // Not a tagged node, recurse into children
+                    for i in 0..node.named_child_count() {
+                        if let Some(child) = node.named_child(i) {
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                        }
+                    }
+                }
+            }
+            _ => {
+                // For other nodes, recurse into children
+                for i in 0..node.named_child_count() {
+                    if let Some(child) = node.named_child(i) {
+                        self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                    }
+                }
+            }
+        }
     }
 
 
@@ -1759,7 +1864,7 @@ impl YamlParser {
                 start: meta.start,
                 end: meta.end,
             }),
-            code: None,
+            code: Some(error_codes::MISSING_FIELD.to_string()),
         }
     }
 
@@ -1773,6 +1878,18 @@ impl YamlParser {
     ) -> ParseError {
         let file_path = self.format_file_location(meta);
         let anyhow_error = tag_parsing_error(tag_name, message, &file_path, suggestion);
+        
+        // Determine the appropriate error code based on the message content
+        let error_code = if message.contains("missing required") {
+            error_codes::MISSING_FIELD
+        } else if message.contains("is not a valid iidy tag") {
+            error_codes::UNKNOWN_TAG
+        } else if message.contains("invalid format") || message.contains("must be") {
+            error_codes::INVALID_FORMAT
+        } else {
+            error_codes::INVALID_TYPE // fallback
+        };
+        
         ParseError {
             message: anyhow_error.to_string(),
             location: Some(super::error::ParseLocation {
@@ -1780,7 +1897,7 @@ impl YamlParser {
                 start: meta.start,
                 end: meta.end,
             }),
-            code: None,
+            code: Some(error_code.to_string()),
         }
     }
 
@@ -1837,6 +1954,7 @@ pub(crate) fn node_meta(node: &Node, uri: &Url) -> SrcMeta {
     }
 }
 
+#[allow(dead_code)]
 pub fn parse_yaml_ast(source: &str, uri: Url) -> ParseResult<YamlAst> {
     let mut parser = YamlParser::new()?;
     parser.parse(source, uri)
