@@ -11,6 +11,7 @@ pub mod handlebars;
 pub mod imports;
 pub mod location;
 pub mod parsing;
+pub mod path_tracker;
 pub mod resolution;
 pub mod tree_sitter_location;
 

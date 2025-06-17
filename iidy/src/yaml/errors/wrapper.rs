@@ -477,7 +477,7 @@ pub fn tag_parsing_error(
 pub fn variable_not_found_error_with_path_tracker(
     variable: &str,
     file_path: &str,
-    path: &crate::yaml::resolution::resolver::PathTracker,
+    path: &crate::yaml::path_tracker::PathTracker,
     available_vars: Vec<String>,
 ) -> anyhow::Error {
     let yaml_path = path.current_path();
@@ -490,7 +490,7 @@ pub fn type_mismatch_error_with_path_tracker(
     found_type: &str,
     context_description: &str,
     file_path: &str,
-    path: &crate::yaml::resolution::resolver::PathTracker,
+    path: &crate::yaml::path_tracker::PathTracker,
 ) -> anyhow::Error {
     let yaml_path = path.current_path();
     type_mismatch_error_impl(
@@ -916,7 +916,7 @@ pub fn cloudformation_validation_error_with_path_tracker(
     tag_name: &str,
     message: &str,
     file_path: &str,
-    path: &crate::yaml::resolution::resolver::PathTracker,
+    path: &crate::yaml::path_tracker::PathTracker,
 ) -> anyhow::Error {
     let yaml_path = path.current_path();
     cloudformation_validation_error_impl(tag_name, message, file_path, &yaml_path)

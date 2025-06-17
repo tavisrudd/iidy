@@ -24,13 +24,13 @@
 use anyhow::{Context, Result, anyhow};
 use serde_yaml::Value;
 use serde_yaml::value::{Tag, TaggedValue};
-use smallvec::SmallVec;
 use std::collections::HashMap;
 
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
 use crate::yaml::parsing::ast::*;
+use crate::yaml::path_tracker::PathTracker;
 use crate::yaml::resolution::context::TagContext;
 
 /// Helper trait for extracting human-readable type strings from serde_yaml::Value
@@ -91,66 +91,6 @@ fn simple_ast_to_value(ast: &YamlAst) -> Value {
     }
 }
 
-/// Path tracker using SmallVec optimized for typical AST depths (usually < 8 levels)
-#[derive(Debug, Clone)]
-pub struct PathTracker {
-    /// Path segments through the AST
-    segments: SmallVec<[String; 8]>,
-    // TODO consider SmallVec<[Cow<'a, str>; 8]>,
-}
-
-impl PathTracker {
-    /// Create a new empty path tracker with optimal default capacity
-    pub fn new() -> Self {
-        Self {
-            segments: SmallVec::with_capacity(8), // Start with 8 - good balance for most cases
-        }
-    }
-
-    /// Create path tracker with pre-allocated capacity
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            segments: SmallVec::with_capacity(capacity),
-        }
-    }
-
-    /// Push a path segment
-    #[inline]
-    pub fn push(&mut self, segment: &str) {
-        self.segments.push(segment.to_string());
-    }
-
-    /// Pop the last path segment
-    #[inline]
-    pub fn pop(&mut self) -> Option<String> {
-        self.segments.pop()
-    }
-
-    /// Get current path as dot-separated string
-    pub fn current_path(&self) -> String {
-        self.segments.join(".")
-    }
-
-    /// Get path length
-    pub fn len(&self) -> usize {
-        self.segments.len()
-    }
-
-    /// Check if path is empty
-    pub fn is_empty(&self) -> bool {
-        self.segments.is_empty()
-    }
-
-    /// Get path segments as slice
-    pub fn segments(&self) -> &[String] {
-        &self.segments
-    }
-
-    /// Clear all path segments
-    pub fn clear(&mut self) {
-        self.segments.clear();
-    }
-}
 pub trait TagResolver {
     /// Resolve an AST node to a value
     fn resolve_ast(
@@ -787,7 +727,7 @@ impl TagResolver for Resolver {
                                 .map(|loc| format!("in '{}'", loc))
                                 .unwrap_or_else(|| "in unknown location".to_string())
                         };
-                        let yaml_path = format!("/{}", path_tracker.segments.join("/"));
+                        let yaml_path = format!("/{}", path_tracker.segments().join("/"));
                         let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
                             format!(" at path '{}'", yaml_path)
                         } else {
