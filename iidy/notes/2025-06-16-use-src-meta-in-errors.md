@@ -68,166 +68,60 @@ let meta = ast.meta(); // Available but ignored
 - **Clear Error Messages**: Explain what went wrong in plain language
 - **Actionable Suggestions**: Provide fixes or alternatives
 - **Error Codes**: Consistent identifiers for documentation/search
-- **Stack Traces**: Optional verbose mode showing resolution path
+- **Clear Examples of good syntax**: Show what good looks like
+- Later: **Stack Traces**: Optional verbose mode showing resolution path
 
 ### 2. API Usage Requirements (LSP, LLM Helpers)
 
 **Note**: A Language Server Protocol (LSP) server will be implemented later to provide diagnostic information about all errors in a document. The parser already supports collecting all errors rather than stopping at the first one, which enables comprehensive document analysis for IDEs and editors.
 
-#### Structured Data
-```rust
-pub struct ErrorReport {
-    // Core identification
-    pub error_code: ErrorId,         // e.g., ErrorId::ERR_7001
-    // severity: always Error (derives from error_code)
-    
-    // Location information
-    pub location: ErrorLocation {
-        pub file_uri: Url,           // File URL
-        pub range: Range {           // LSP-compatible range
-            pub start: Position { line: u32, character: u32 },
-            pub end: Position { line: u32, character: u32 },
-        },
-        pub snippet: Option<String>, // Affected code snippet
-    },
-    
-    // Content
-    pub message: String,             // Main error message
-    pub details: Option<String>,     // Extended explanation
-    pub suggestions: Vec<Suggestion>,// Possible fixes
-    
-    // Navigation
-    pub related_locations: Vec<RelatedLocation>, // Other relevant positions
-    pub tags: Vec<DiagnosticTag>,   // Currently unused (all errors are blocking)
-}
-```
-
-#### API Methods
-```rust
-pub trait ErrorReporter {
-    // Serialization for different consumers
-    fn to_json(&self) -> serde_json::Value;
-    fn to_lsp_diagnostic(&self) -> lsp_types::Diagnostic;
-    fn to_sarif(&self) -> sarif::Result;  // Static analysis format
-    
-    // Rendering
-    fn format_human(&self, style: OutputStyle) -> String;
-    fn format_github_annotation(&self) -> String;
-    fn format_junit(&self) -> String;
-}
-
-// ErrorId should be serializable for APIs
-impl ErrorId {
-    pub fn as_str(&self) -> &'static str {
-        // Return the string representation (e.g., "ERR_7001")
-    }
-    
-    pub fn description(&self) -> &'static str {
-        // Return human-readable description
-    }
-    
-    pub fn severity(&self) -> Severity {
-        // All current errors prevent successful template processing
-        Severity::Error
-    }
-}
-```
-
 ### 3. Performance Requirements
-- No file re-reading during error construction
-- Cache source content during parsing for error context
-- Lazy evaluation of expensive operations (fuzzy matching, suggestions)
+- No file re-parsing during error construction
 
 ## Step-by-Step Implementation Plan
 
-### Phase 1: Refactor Error Types
+### Phase 1: Refactor Error Codes ⏳ IN PROGRESS
 
-1. **Consolidate Error Modules**
-   - Merge `src/yaml/errors/wrapper.rs` functionality into `src/yaml/errors/enhanced.rs`
-   - Create a single, clean API for error construction
-   - Remove `EnhancedErrorWrapper` struct from `wrapper.rs`
-
-2. **Update Error Structure**
-   ```rust
-   pub struct EnhancedPreprocessingError {
-       pub error_code: ErrorId,      // Use ErrorId enum, not String
-       pub location: SourceLocation, // Now from SrcMeta, not derived
-       pub message: String,
-       pub details: Option<String>,
-       pub suggestions: Vec<String>,
-       pub source_context: SourceContext,
-       pub related_info: Vec<RelatedInfo>,
-   }
-   ```
-
-3. **Update ErrorId Prefix**
+1. **Update ErrorId Prefix** ✅ COMPLETED (ab02fba)
    - Change error code prefix from `IY` to `ERR_` in `src/yaml/errors/ids.rs`
    - Update all error codes: `IY1001` → `ERR_1001`, `IY4002` → `ERR_4002`, etc.
    - Update `explain` command in `src/explain.rs` to handle new prefix
    - Update error message formatting in `enhanced.rs` to show new prefix
 
-4. **Fix Panic Potentials**
-   - Add bounds checking for all array accesses in `wrapper.rs:240-280`
-   - Validate string slicing operations in `wrapper.rs:300-350`
-   - Use saturating arithmetic where needed
+2. **Verify Phase 1 Completion**
+   - cargo check --lib --tests --bins --benches
+   - cargo nextest r --color=never --hide-progress-bar
+   - user must approve all snapshot changes
 
-5. **Verify Phase 1 Completion**
-   ```bash
-   # Run comprehensive checks
-   cargo check --lib --tests --bins --benches
-   cargo nextest r --color=never --hide-progress-bar
-   
-   # Handle snapshot test changes (will likely be many due to error format changes)
-   # Review and accept valid snapshot changes - USER APPROVAL REQUIRED
-   cargo insta review  # Only accept if changes are valid, not regressions
-   
-   # If all tests pass, stage and commit changes - USER APPROVAL REQUIRED
-   git add .
-   git status  # Review staged changes with user
-   # ASK USER: Ready to commit Phase 1 changes?
-   git commit -m "refactor: consolidate error modules and update ErrorId prefix
-   
-   - Merge wrapper.rs functionality into enhanced.rs
-   - Change error code prefix from IY to ERR_
-   - Fix panic potentials in error handling
-   - Remove EnhancedErrorWrapper struct
-   
-   🤖 Generated with [Claude Code](https://claude.ai/code)
-   
-   Co-Authored-By: Claude <noreply@anthropic.com>"
-   ```
+### Phase 2: Create new Error Construction API
 
-### Phase 2: Simplify Error Construction API
-
-1. **Ultra-Simple 1-Liner API**
+1. **Create new Consolidated Error module**
+   - create `src/yaml/errors/error.rs`
+   - Create a single, clean API for error construction
+   - copy in SourceLocation from `enhanced.rs` (copy not import)
    
-   Make `ErrorType` responsible for creating errors - no builders, no complex APIs:
-
    ```rust
-   // Main API - 1 liner for all cases
-   impl ErrorType {
-       pub fn at_node(self, node: &YamlAst, msg: Option<impl Into<String>>) -> EnhancedPreprocessingError {
-           let message = msg.map(|m| m.into())
-               .unwrap_or_else(|| self.auto_generate_message(node));
-           EnhancedPreprocessingError::new(self, node, message)
-       }
-       
-       // For non-parsing errors without YamlAst nodes
-       pub fn without_node(self, msg: impl Into<String>) -> EnhancedPreprocessingError {
-           EnhancedPreprocessingError::new_without_location(self, msg.into())
-       }
+   pub struct IidyError {
+       pub error_code: ErrorId,      // Use ErrorId enum, not String
+       pub location: SourceLocation, // Now from SrcMeta, not derived
+       pub message: String,
+       pub suggestions: Vec<String>,
+       pub examples: Vec<String>,
+       // LATER: pub details: Option<String>,
+       // LATER: pub source_context: SourceContext,
+       // LATER: pub related_info: Vec<RelatedInfo>,
    }
    
-   impl EnhancedPreprocessingError {
-       fn new(error_type: ErrorType, node: &YamlAst, message: String) -> Self {
+   impl IidyError {
+       fn new(error_code: ErrorId, node: &YamlAst, message: String) -> Self {
            let meta = node.meta();
            let mut error = Self {
-               error_type,
+               error_code,
                location: Some(SourceLocation::from_src_meta(meta)),
                message,
                suggestions: Vec::new(),
                examples: Vec::new(),
-               context: ErrorContext::from_node(node),
+               //context: ErrorContext::from_node(node),
            };
            
            // Auto-generate suggestions and examples based on error type and node
@@ -235,9 +129,9 @@ impl ErrorId {
            error
        }
        
-       fn new_without_location(error_type: ErrorType, message: String) -> Self {
+       fn new_without_location(error_code: ErrorId, message: String) -> Self {
            let mut error = Self {
-               error_type,
+               error_code,
                location: None, // No source location available
                message,
                suggestions: Vec::new(),
@@ -252,10 +146,10 @@ impl ErrorId {
        
        fn auto_populate(&mut self) {
            // Automatically add suggestions based on error type
-           self.suggestions = self.error_type.generate_suggestions(&self.context);
+           self.suggestions = self.error_code.generate_suggestions(&self.context);
            
            // Automatically add examples from central registry
-           self.examples = self.error_type.get_examples();
+           self.examples = self.error_code.get_examples();
        }
        
        // Override methods for rare cases needing customization
@@ -292,18 +186,38 @@ impl ErrorId {
    }
    ```
 
+   Make `ErrorId` responsible for creating errors - no builders, no complex APIs:
+
+   ```rust
+   // Main API - 1 liner for all cases
+   impl ErrorId {
+       pub fn at_node(self, node: &YamlAst, msg: Option<impl Into<String>>) -> IidyError {
+           let message = msg.map(|m| m.into())
+               .unwrap_or_else(|| self.auto_generate_message(node));
+           IidyError::new(self, node, message)
+       }
+       
+       // For non-parsing errors without YamlAst nodes
+       pub fn without_node(self, msg: impl Into<String>) -> IidyError {
+           IidyError::new_without_location(self, msg.into())
+       }
+   }
+   ```
+
    **Auto-Message Generation:**
    ```rust
-   impl ErrorType {
+   impl ErrorId {
        fn auto_generate_message(&self, node: &YamlAst) -> String {
+           // TODO the rest of this will also need to refer to node props to get the tag name until we get to
+           // the later point in this plan were ErrorIds are directly tied to tag names
            match self {
-               ErrorType::MapMissingItems => "'items' field missing in !$map tag".to_string(),
-               ErrorType::MapMissingTemplate => "'template' field missing in !$map tag".to_string(),
-               ErrorType::IfMissingTest => "'test' field missing in !$if tag".to_string(),
-               ErrorType::RefInvalidType => format!("!Ref expects a string, found {}", 
+               ErrorId::MapMissingItems => "'items' field missing in !$map tag".to_string(),
+               ErrorId::MapMissingTemplate => "'template' field missing in !$map tag".to_string(),
+               ErrorId::IfMissingTest => "'test' field missing in !$if tag".to_string(),
+               ErrorId::RefInvalidType => format!("!Ref expects a string, found {}", 
                    node.type_description()),
-               ErrorType::VariableNotFound(name) => format!("variable '{}' not found", name),
-               // ... precise messages for each ErrorType
+               ErrorId::VariableNotFound(name) => format!("variable '{}' not found", name),
+               // ... precise messages for each ErrorId
            }
        }
    }
@@ -312,27 +226,59 @@ impl ErrorId {
    **Usage Examples:**
    ```rust
    // Auto-generated messages (most common case)
-   return Err(ErrorType::MapMissingTemplate.at_node(&node, None));
+   return Err(ErrorId::MapMissingTemplate.at_node(&node, None));
    // → "'template' field missing in !$map tag"
    
-   return Err(ErrorType::RefInvalidType.at_node(&node, None));
+   return Err(ErrorId::RefInvalidType.at_node(&node, None));
    // → "!Ref expects a string, found array"
    
    // Custom message when needed
-   return Err(ErrorType::VariableNotFound.at_node(&node, Some("variable 'config.database' not found in current scope")));
+   return Err(ErrorId::VariableNotFound.at_node(&node, Some("variable 'config.database' not found in current scope")));
    
    // Non-parsing errors without nodes
-   return Err(ErrorType::FileNotFound.without_node("template file 'missing.yaml' not found"));
+   return Err(ErrorId::FileNotFound.without_node("template file 'missing.yaml' not found"));
    
    // Parse error with dummy node
    let dummy_node = YamlAst::dummy_for_parse_error(file_uri, line, column, None);
-   return Err(ErrorType::UnexpectedEof.at_node(&dummy_node, None));
+   return Err(ErrorId::UnexpectedEof.at_node(&dummy_node, None));
    // → Auto-generated: "unexpected end of file"
    ```
 
+
+#### API Methods
+```rust
+pub trait ErrorReporter {
+    // Serialization for different consumers
+    fn to_json(&self) -> serde_json::Value;
+    // LATER: fn to_lsp_diagnostic(&self) -> lsp_types::Diagnostic;
+    // LATER: fn to_sarif(&self) -> sarif::Result;  // Static analysis format
+    
+    // Rendering
+    fn format_human(&self, style: OutputStyle) -> String;
+    // LATER: fn format_github_annotation(&self) -> String;
+    // LATER: fn format_junit(&self) -> String;
+}
+
+// ErrorId should be serializable for APIs
+impl ErrorId {
+    pub fn as_str(&self) -> &'static str {
+        // Return the string representation (e.g., "ERR_7001")
+    }
+    
+    pub fn description(&self) -> &'static str {
+        // Return human-readable description
+    }
+    
+    pub fn severity(&self) -> Severity {
+        // All current errors prevent successful template processing
+        Severity::Error
+    }
+}
+```
+
    **Enhanced Error Context for Explain Command:**
    ```rust
-   impl EnhancedPreprocessingError {
+   impl IidyError {
        pub fn to_explain_reference(&self) -> String {
            let context = ExplainContext {
                tag_name: self.extract_tag_name(),
@@ -350,13 +296,13 @@ impl ErrorId {
 
    **Auto-Generation Logic:**
    ```rust
-   impl ErrorType {
+   impl ErrorId {
        fn generate_suggestions(&self, context: &ErrorContext) -> Vec<String> {
            match self {
-               ErrorType::TypeMismatch => self.type_mismatch_suggestions(context),
-               ErrorType::MissingField(field) => vec![format!("Add '{field}' field to the tag")],
-               ErrorType::UnknownTag => self.unknown_tag_suggestions(context),
-               ErrorType::CloudFormationValidation => self.cf_suggestions(context),
+               ErrorId::TypeMismatch => self.type_mismatch_suggestions(context),
+               ErrorId::MissingField(field) => vec![format!("Add '{field}' field to the tag")],
+               ErrorId::UnknownTag => self.unknown_tag_suggestions(context),
+               ErrorId::CloudFormationValidation => self.cf_suggestions(context),
                // ... etc for all error types
            }
        }
@@ -369,32 +315,23 @@ impl ErrorId {
    }
    ```
 
-2. **Verify Phase 2 Completion**
-   ```bash
-   # Run comprehensive checks
-   cargo check --lib --tests --bins --benches
-   cargo nextest r --color=never --hide-progress-bar
-   
-   # Handle snapshot test changes - USER APPROVAL REQUIRED
-   cargo insta review  # Many snapshots will change due to new error API
-   
-   # If all tests pass, stage and commit changes - USER APPROVAL REQUIRED
-   git add .
-   git status  # Review staged changes with user
-   # ASK USER: Ready to commit Phase 2 changes?
-   git commit -m "feat: implement ultra-simple 1-liner error construction API
-   
-   - Add ErrorType::at_node() and ErrorType::without_node() methods
-   - Implement auto-generated error messages with optional override
-   - Add support for non-parsing errors without YamlAst nodes
-   - Create enhanced error context for explain command
-   - Add YamlAst::dummy_for_parse_error() helper method
-   
-   🤖 Generated with [Claude Code](https://claude.ai/code)
-   
-   Co-Authored-By: Claude <noreply@anthropic.com>"
-   ```
+   - Study `src/yaml/errors/wrapper.rs` and `src/yaml/errors/enhanced.rs` error formatting helpers. 
+     Add something in `error.rs` to acheive the exact same formatting.
 
+2. **Add unit tests to new module**
+   - test construction
+   - test error formatting
+   - test ErrorId integration
+
+3. **Fix Panic Potentials**
+   E.g. from the older error modules:
+      - Add bounds checking for all array accesses in `wrapper.rs:240-280`
+      - Validate string slicing operations in `wrapper.rs:300-350`
+   - Use saturating arithmetic where needed
+
+4. **Verify Phase 2 Completion**
+   - same verification steps as for phase 1
+   
 ### Phase 3: Update All Error Call Sites
 
 1. **Update Resolver Methods**
@@ -407,7 +344,7 @@ impl ErrorId {
    ))
    
    // After  
-   Err(ErrorType::CloudFormationValidation.at_node(&ast_node, msg))
+   Err(ErrorId::CloudFormationValidation.at_node(&ast_node, msg))
    ```
 
 2. **Update Parser Error Handling**
@@ -415,7 +352,7 @@ impl ErrorId {
    ```rust
    // Parse error handling
    let dummy_node = YamlAst::dummy_for_parse_error(file_uri, line, column, error_text);
-   Err(ErrorType::SyntaxError.at_node(&dummy_node, "malformed YAML structure"))
+   Err(ErrorId::SyntaxError.at_node(&dummy_node, "malformed YAML structure"))
    ```
 
 3. **Simplify PathTracker Integration**
@@ -423,30 +360,8 @@ impl ErrorId {
    - No need for special handling since it's part of the error context analysis
 
 4. **Verify Phase 3 Completion**
-   ```bash
-   # Run comprehensive checks
-   cargo check --lib --tests --bins --benches
-   cargo nextest r --color=never --hide-progress-bar
+   - same review steps as previous phases
    
-   # Handle snapshot test changes - USER APPROVAL REQUIRED
-   cargo insta review  # All error call sites changed, many snapshots affected
-   
-   # If all tests pass, stage and commit changes - USER APPROVAL REQUIRED
-   git add .
-   git status  # Review staged changes with user
-   # ASK USER: Ready to commit Phase 3 changes?
-   git commit -m "refactor: update all error call sites to use new SrcMeta-based API
-   
-   - Replace all error construction with 1-liner ErrorType::at_node() calls
-   - Update parser error handling to use dummy nodes
-   - Simplify PathTracker integration
-   - All error locations now come directly from SrcMeta
-   
-   🤖 Generated with [Claude Code](https://claude.ai/code)
-   
-   Co-Authored-By: Claude <noreply@anthropic.com>"
-   ```
-
 ### Phase 4: Remove Legacy Code
 
 1. **Delete Old Location Finding**
@@ -459,30 +374,8 @@ impl ErrorId {
    - Update error module exports
 
 3. **Verify Phase 4 Completion**
-   ```bash
-   # Run comprehensive checks
-   cargo check --lib --tests --bins --benches
-   cargo nextest r --color=never --hide-progress-bar
+   - same review steps as previous phases
    
-   # Handle snapshot test changes if any - USER APPROVAL REQUIRED
-   cargo insta review  # Should be minimal changes since legacy code removal
-   
-   # If all tests pass, stage and commit changes - USER APPROVAL REQUIRED
-   git add .
-   git status  # Review staged changes with user
-   # ASK USER: Ready to commit Phase 4 changes?
-   git commit -m "refactor: remove legacy location-finding code
-   
-   - Delete location.rs and tree_sitter_location.rs
-   - Remove location derivation from file paths
-   - Clean up unused imports and dependencies
-   - Complete migration to SrcMeta-based error locations
-   
-   🤖 Generated with [Claude Code](https://claude.ai/code)
-   
-   Co-Authored-By: Claude <noreply@anthropic.com>"
-   ```
-
 ### Phase 5: Add API Support
 
 1. **Implement Serialization**
@@ -492,7 +385,7 @@ impl ErrorId {
        // LSP-compatible structure
    }
    
-   impl From<EnhancedPreprocessingError> for SerializableError {
+   impl From<IidyError> for SerializableError {
        // Conversion logic
    }
    ```
@@ -635,7 +528,7 @@ impl ErrorId {
    
    **Implementation Approach:**
    ```rust
-   impl EnhancedPreprocessingError {
+   impl IidyError {
        pub fn to_explain_reference(&self) -> String {
            let context = ExplainContext {
                tag_name: self.extract_tag_name(),
@@ -834,27 +727,27 @@ impl ErrorId {
    With precise ErrorIds, most error messages can be auto-generated:
    
    ```rust
-   impl ErrorType {
+   impl ErrorId {
        fn auto_generate_message(&self, node: Option<&YamlAst>) -> String {
            match self {
                // Tag-specific errors with context
-               ErrorType::MapMissingItems => "'items' field missing in !$map tag",
-               ErrorType::MapMissingTemplate => "'template' field missing in !$map tag", 
-               ErrorType::IfMissingTest => "'test' field missing in !$if tag",
-               ErrorType::LetMissingIn => "'in' field missing in !$let tag",
+               ErrorId::MapMissingItems => "'items' field missing in !$map tag",
+               ErrorId::MapMissingTemplate => "'template' field missing in !$map tag", 
+               ErrorId::IfMissingTest => "'test' field missing in !$if tag",
+               ErrorId::LetMissingIn => "'in' field missing in !$let tag",
                
                // Type errors with node analysis
-               ErrorType::RefInvalidType => {
+               ErrorId::RefInvalidType => {
                    let found_type = node.map(|n| n.type_description()).unwrap_or("unknown");
                    format!("!Ref expects a string, found {}", found_type)
                },
                
                // Variable errors
-               ErrorType::VariableNotFound(name) => format!("variable '{}' not found", name),
+               ErrorId::VariableNotFound(name) => format!("variable '{}' not found", name),
                
                // File system errors (no node context)
-               ErrorType::FileNotFound(path) => format!("file '{}' not found", path),
-               ErrorType::PermissionDenied(path) => format!("permission denied: '{}'", path),
+               ErrorId::FileNotFound(path) => format!("file '{}' not found", path),
+               ErrorId::PermissionDenied(path) => format!("permission denied: '{}'", path),
            }
        }
    }
@@ -862,7 +755,7 @@ impl ErrorId {
 
 5. **Benefits of Precise ErrorIds + Auto-Generation**
    - **Consistent Messages**: All similar errors have identical, well-crafted messages
-   - **Less Boilerplate**: `ErrorType::MapMissingTemplate.at_node(&node, None)` instead of manually writing messages
+   - **Less Boilerplate**: `ErrorId::MapMissingTemplate.at_node(&node, None)` instead of manually writing messages
    - **Specific Documentation**: Each ErrorId has precise explanation for that exact failure
    - **Better Explain Command**: `explain ERR_4201` shows `!$map` missing items examples
    - **Targeted Fixes**: LLM tools can provide highly specific solutions
@@ -953,7 +846,7 @@ impl ErrorId {
 ## Success Criteria
 
 1. **No Location Heuristics**: All error locations come directly from SrcMeta
-2. **Ultra-Simple API**: `ErrorType::SomeError.at_node(&node, "message")` for all cases
+2. **Ultra-Simple API**: `ErrorId::SomeError.at_node(&node, "message")` for all cases
 3. **Auto-Everything**: Suggestions and examples generated automatically unless overridden
 4. **No Redundancy**: One module for error handling, not multiple
 5. **API Ready**: Errors serializable for LSP/tool consumption
