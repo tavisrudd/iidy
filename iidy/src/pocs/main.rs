@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use iidy::cli::ColorChoice;
+use iidy::cli::{ColorChoice, Theme};
 use iidy::color::ColorContext;
-use iidy::pocs::{ratatui_demo, spinner_demo, theme_demo};
-use iidy::terminal::Theme;
+use iidy::pocs::{detect_background, ratatui_demo, spinner_demo, theme_demo};
 
 #[derive(Parser)]
 #[command(
@@ -19,6 +18,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Detect terminal background and validate theme selection
+    DetectBackground {
+        /// Override theme selection (takes priority over auto-detection)
+        #[arg(long, value_enum)]
+        theme: Option<Theme>,
+    },
     /// Demonstrate color themes and terminal capabilities
     ThemeDemo,
     /// Demonstrate spinner and progress indicators
@@ -30,10 +35,14 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Initialize color context for demos
-    ColorContext::init_global(ColorChoice::Auto, Theme::Auto);
+    // Initialize color context for demos with default theme
+    // (individual commands can override this)
+    ColorContext::init_global(ColorChoice::Auto, iidy::terminal::Theme::Auto);
 
     match cli.command {
+        Commands::DetectBackground { theme } => {
+            detect_background::run_detect_background_demo(theme);
+        }
         Commands::ThemeDemo => {
             theme_demo::run_theme_demo();
         }

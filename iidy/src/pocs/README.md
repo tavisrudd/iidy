@@ -11,6 +11,7 @@ Use the dedicated `iidy-pocs` binary to run demonstrations:
 cargo build
 
 # Run a specific demo
+cargo run --bin iidy-pocs detect-background
 cargo run --bin iidy-pocs theme-demo
 cargo run --bin iidy-pocs spinner-demo
 cargo run --bin iidy-pocs ratatui-demo
@@ -20,6 +21,15 @@ cargo run --bin iidy-pocs --help
 ```
 
 ## Available Demonstrations
+
+### `detect-background`
+Terminal background detection and theme validation featuring:
+- Multiple detection strategies (COLORFGBG, TERM_PROGRAM, theme variables)
+- Comprehensive environment variable analysis
+- Detection strategy voting and priority system
+- Theme color comparison across Dark, Light, and High Contrast themes
+- Testing recommendations for different terminal configurations
+- Validates the auto-detection logic used by `--theme=auto`
 
 ### `theme-demo`
 Demonstrates the color theming system including:
@@ -50,6 +60,7 @@ Interactive terminal UI demonstration featuring:
 
 - `main.rs` - POCs binary entry point
 - `mod.rs` - Module declarations
+- `detect_background.rs` - Terminal background detection and theme validation
 - `theme_demo.rs` - Color theming demonstrations
 - `spinner_demo.rs` - Progress indicator demonstrations  
 - `ratatui_demo.rs` - Terminal UI demonstrations
