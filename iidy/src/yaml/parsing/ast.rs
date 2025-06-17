@@ -510,6 +510,23 @@ impl YamlAst {
         }
     }
 
+    /// Get a human-readable type string for error reporting
+    pub fn to_type_str(&self) -> &'static str {
+        match self {
+            YamlAst::Null(_) => "null",
+            YamlAst::Bool(_, _) => "boolean",
+            YamlAst::Number(_, _) => "number",
+            YamlAst::PlainString(_, _) => "string",
+            YamlAst::TemplatedString(_, _) => "templated string",
+            YamlAst::Sequence(_, _) => "sequence",
+            YamlAst::Mapping(_, _) => "object",
+            YamlAst::PreprocessingTag(_, _) => "preprocessing tag",
+            YamlAst::CloudFormationTag(_, _) => "CloudFormation tag",
+            YamlAst::UnknownYamlTag(_, _) => "unknown tag",
+            YamlAst::ImportedDocument(_, _) => "imported document",
+        }
+    }
+
     #[allow(dead_code)]
     pub fn is_preprocessing_tag(&self) -> bool {
         matches!(self, YamlAst::PreprocessingTag(_, _))

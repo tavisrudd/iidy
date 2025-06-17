@@ -33,6 +33,26 @@ use crate::yaml::handlebars::interpolate_handlebars_string;
 use crate::yaml::parsing::ast::*;
 use crate::yaml::resolution::context::TagContext;
 
+/// Helper trait for extracting human-readable type strings from serde_yaml::Value
+trait ValueTypeStr {
+    /// Get a human-readable type string for error reporting
+    fn to_type_str(&self) -> &'static str;
+}
+
+impl ValueTypeStr for Value {
+    fn to_type_str(&self) -> &'static str {
+        match self {
+            Value::Null => "null",
+            Value::Bool(_) => "boolean",
+            Value::Number(_) => "number", 
+            Value::String(_) => "string",
+            Value::Sequence(_) => "sequence",
+            Value::Mapping(_) => "object",
+            Value::Tagged(_) => "tagged value",
+        }
+    }
+}
+
 /// Check if an AST value is simple (no processing needed)
 #[inline(always)]
 fn is_simple_ast_value(ast: &YamlAst) -> bool {
@@ -352,6 +372,32 @@ impl Resolver {
         }
     }
 
+    /// Extract file path from context for error reporting
+    #[inline(always)]
+    fn get_file_path<'a>(&self, context: &'a TagContext) -> &'a str {
+        context.input_uri.as_deref().unwrap_or("unknown")
+    }
+
+    /// Create a type mismatch error with consistent formatting
+    fn create_type_mismatch_error(
+        &self,
+        expected_type: &str,
+        found_value: &Value,
+        context_desc: &str,
+        context: &TagContext,
+        path_tracker: &PathTracker,
+    ) -> anyhow::Error {
+        let file_path = self.get_file_path(context);
+        let found_type = found_value.to_type_str();
+        type_mismatch_error_with_path_tracker(
+            expected_type,
+            found_type,
+            context_desc,
+            file_path,
+            path_tracker,
+        )
+    }
+
     /// Parse path and query from include path
     fn parse_path_and_query(
         &self,
@@ -466,14 +512,7 @@ impl Resolver {
             }
             _ => Err(anyhow!(
                 "Query selectors can only be applied to mappings, found {}",
-                match value {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Sequence(_) => "sequence",
-                    _ => "unknown type",
-                }
+                value.to_type_str()
             )),
         }
     }
@@ -501,14 +540,7 @@ impl Resolver {
                     return Err(anyhow!(
                         "Cannot traverse path further at '{}', found {}",
                         part,
-                        match current_value {
-                            Value::Null => "null",
-                            Value::Bool(_) => "boolean",
-                            Value::Number(_) => "number",
-                            Value::String(_) => "string",
-                            Value::Sequence(_) => "sequence",
-                            _ => "unknown type",
-                        }
+                        current_value.to_type_str()
                     ));
                 }
             }
@@ -1139,21 +1171,11 @@ impl TagResolver for Resolver {
                 Ok(Value::Sequence(result))
             }
             _ => {
-                let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match items_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "object",
-                    _ => "unknown type",
-                };
-
-                Err(type_mismatch_error_with_path_tracker(
+                Err(self.create_type_mismatch_error(
                     "sequence",
-                    found_type,
+                    &items_result,
                     "!$map items field",
-                    file_path,
+                    context,
                     path_tracker,
                 ))
             }
@@ -1177,21 +1199,11 @@ impl TagResolver for Resolver {
                     result.extend(map);
                 }
                 _ => {
-                    let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                    let found_type = match source_result {
-                        Value::Null => "null",
-                        Value::Bool(_) => "boolean",
-                        Value::Number(_) => "number",
-                        Value::String(_) => "string",
-                        Value::Sequence(_) => "sequence",
-                        _ => "unknown type",
-                    };
-
-                    return Err(type_mismatch_error_with_path_tracker(
+                    return Err(self.create_type_mismatch_error(
                         "object",
-                        found_type,
+                        &source_result,
                         "!$merge source argument",
-                        file_path,
+                        context,
                         path_tracker,
                     ));
                 }
@@ -1291,38 +1303,17 @@ impl TagResolver for Resolver {
                     match (&delimiter_result, &string_result) {
                         (Value::String(_), _) => {
                             // Delimiter is correct, string is wrong
-                            let found_type = match string_result {
-                                Value::Null => "null",
-                                Value::Bool(_) => "boolean",
-                                Value::Number(_) => "number",
-                                Value::Sequence(_) => "sequence",
-                                Value::Mapping(_) => "object",
-                                _ => "unknown type",
-                            };
+                            let found_type = string_result.to_type_str();
                             ("string", found_type, "!$split string argument")
                         }
                         (_, Value::String(_)) => {
                             // String is correct, delimiter is wrong
-                            let found_type = match delimiter_result {
-                                Value::Null => "null",
-                                Value::Bool(_) => "boolean",
-                                Value::Number(_) => "number",
-                                Value::Sequence(_) => "sequence",
-                                Value::Mapping(_) => "object",
-                                _ => "unknown type",
-                            };
+                            let found_type = delimiter_result.to_type_str();
                             ("string", found_type, "!$split delimiter argument")
                         }
                         (_, _) => {
                             // Both are wrong, report delimiter first
-                            let found_type = match delimiter_result {
-                                Value::Null => "null",
-                                Value::Bool(_) => "boolean",
-                                Value::Number(_) => "number",
-                                Value::Sequence(_) => "sequence",
-                                Value::Mapping(_) => "object",
-                                _ => "unknown type",
-                            };
+                            let found_type = delimiter_result.to_type_str();
                             ("string", found_type, "!$split delimiter argument")
                         }
                     };
@@ -1354,19 +1345,11 @@ impl TagResolver for Resolver {
             Value::Number(n) => n.to_string(),
             Value::Bool(b) => b.to_string(),
             _ => {
-                let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match delimiter_result {
-                    Value::Null => "null",
-                    Value::Sequence(_) => "sequence",
-                    Value::Mapping(_) => "object",
-                    _ => "unsupported type",
-                };
-
-                return Err(type_mismatch_error_with_path_tracker(
+                return Err(self.create_type_mismatch_error(
                     "string",
-                    found_type,
+                    &delimiter_result,
                     "!$join delimiter argument",
-                    file_path,
+                    context,
                     path_tracker,
                 ));
             }
@@ -1382,12 +1365,7 @@ impl TagResolver for Resolver {
                         Value::Bool(b) => Ok(b.to_string()),
                         _ => {
                             let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                            let found_type = match v {
-                                Value::Null => "null",
-                                Value::Sequence(_) => "sequence",
-                                Value::Mapping(_) => "object",
-                                _ => "unsupported type",
-                            };
+                            let found_type = v.to_type_str();
 
                             Err(type_mismatch_error_with_path_tracker(
                                 "string",
@@ -1404,21 +1382,11 @@ impl TagResolver for Resolver {
                 Ok(Value::String(joined))
             }
             _ => {
-                let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match array_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "object",
-                    _ => "unknown type",
-                };
-
-                Err(type_mismatch_error_with_path_tracker(
+                Err(self.create_type_mismatch_error(
                     "sequence",
-                    found_type,
+                    &array_result,
                     "!$join sequence argument",
-                    file_path,
+                    context,
                     path_tracker,
                 ))
             }
@@ -1460,14 +1428,7 @@ impl TagResolver for Resolver {
             }
             _ => {
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match items_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Sequence(_) => "sequence",
-                    _ => "unknown type",
-                };
+                let found_type = items_result.to_type_str();
 
                 Err(type_mismatch_error_with_path_tracker(
                     "object",
@@ -1512,14 +1473,7 @@ impl TagResolver for Resolver {
             }
             _ => {
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match map_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "object",
-                    _ => "unknown type",
-                };
+                let found_type = map_result.to_type_str();
 
                 Err(type_mismatch_error_with_path_tracker(
                     "sequence",
@@ -1559,14 +1513,7 @@ impl TagResolver for Resolver {
                         Value::Mapping(map) => result.extend(map),
                         _ => {
                             let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                            let found_type = match item {
-                                Value::Null => "null",
-                                Value::Bool(_) => "boolean",
-                                Value::Number(_) => "number",
-                                Value::String(_) => "string",
-                                Value::Sequence(_) => "sequence",
-                                _ => "unknown type",
-                            };
+                            let found_type = item.to_type_str();
 
                             return Err(type_mismatch_error_with_path_tracker(
                                 "object",
@@ -1582,14 +1529,7 @@ impl TagResolver for Resolver {
             }
             _ => {
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
-                let found_type = match map_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "object",
-                    _ => "unknown type",
-                };
+                let found_type = map_result.to_type_str();
 
                 Err(type_mismatch_error_with_path_tracker(
                     "sequence",
@@ -1692,14 +1632,7 @@ impl TagResolver for Resolver {
                 Ok(Value::Mapping(result))
             }
             _ => {
-                let found_type = match items_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "mapping",
-                    _ => "unknown type",
-                };
+                let found_type = items_result.to_type_str();
 
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
                 Err(type_mismatch_error_with_path_tracker(
@@ -1753,14 +1686,7 @@ impl TagResolver for Resolver {
                 Ok(Value::Mapping(result))
             }
             _ => {
-                let found_type = match items_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "mapping",
-                    _ => "unknown type",
-                };
+                let found_type = items_result.to_type_str();
 
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
                 Err(type_mismatch_error_with_path_tracker(
@@ -1795,15 +1721,7 @@ impl TagResolver for Resolver {
                             result.insert(key.clone(), value.clone());
                         }
                         _ => {
-                            let found_type = match item {
-                                Value::Null => "null",
-                                Value::Bool(_) => "boolean",
-                                Value::Number(_) => "number",
-                                Value::String(_) => "string",
-                                Value::Mapping(_) => "mapping",
-                                Value::Sequence(_) => "sequence",
-                                _ => "unknown type",
-                            };
+                            let found_type = item.to_type_str();
                             let file_path = context.input_uri.as_deref().unwrap_or("unknown");
                             return Err(type_mismatch_error_with_path_tracker(
                                 "sequence",
@@ -1819,14 +1737,7 @@ impl TagResolver for Resolver {
                 Ok(Value::Mapping(result))
             }
             _ => {
-                let found_type = match items_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::String(_) => "string",
-                    Value::Mapping(_) => "mapping",
-                    _ => "unknown type",
-                };
+                let found_type = items_result.to_type_str();
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown");
                 Err(type_mismatch_error_with_path_tracker(
                     "sequence",
@@ -1896,14 +1807,7 @@ impl TagResolver for Resolver {
             }
             _ => Err(anyhow!(
                 "ParseJson requires a string input, found {}",
-                match json_string_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::Sequence(_) => "sequence",
-                    Value::Mapping(_) => "mapping",
-                    _ => "unknown type",
-                }
+                json_string_result.to_type_str()
             ))
             .with_context(|| "resolving !$parseJson tag"),
         }
@@ -1928,14 +1832,7 @@ impl TagResolver for Resolver {
             }
             _ => Err(anyhow!(
                 "ParseYaml requires a string input, found {}",
-                match yaml_string_result {
-                    Value::Null => "null",
-                    Value::Bool(_) => "boolean",
-                    Value::Number(_) => "number",
-                    Value::Sequence(_) => "sequence",
-                    Value::Mapping(_) => "mapping",
-                    _ => "unknown type",
-                }
+                yaml_string_result.to_type_str()
             ))
             .with_context(|| "resolving !$parseYaml tag"),
         }
