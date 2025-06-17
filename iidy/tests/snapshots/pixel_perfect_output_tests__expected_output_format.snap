@@ -1,0 +1,6 @@
+---
+source: tests/pixel_perfect_output_tests.rs
+description: Expected output format structure
+expression: output_summary
+---
+{"has_command_metadata":true,"has_command_result":true,"has_stack_details":true,"has_stack_events":true,"has_stack_outputs":true,"has_stack_resources":true,"interactive_length":3084,"interactive_lines":64,"plain_length":3083,"plain_lines":63}

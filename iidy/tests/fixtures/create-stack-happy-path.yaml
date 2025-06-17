@@ -1,0 +1,250 @@
+name: "create-stack-happy-path"
+description: "Successful stack creation with all standard sections"
+
+tokens:
+  primary: "test-token-12345678-abcd-efgh-ijkl-123456789012"
+  derived:
+    create-stack: "test-token-a1b2c3d4"
+
+aws_responses:
+  describe_stacks:
+    stacks:
+      - stack_name: "test-stack"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_status: "CREATE_COMPLETE"
+        creation_time: "2025-06-17T10:30:00Z"
+        last_updated_time: "2025-06-17T11:15:30Z"
+        description: "Test stack for iidy development and testing"
+        capabilities: ["CAPABILITY_IAM"]
+        disable_rollback: false
+        enable_termination_protection: false
+        timeout_in_minutes: 10
+        role_arn: "arn:aws:iam::123456789012:role/CloudFormationRole"
+        tags:
+          - key: "environment"
+            value: "test"
+          - key: "project" 
+            value: "iidy-test"
+          - key: "owner"
+            value: "development-team"
+        parameters:
+          - parameter_key: "InstanceType"
+            parameter_value: "t3.micro"
+          - parameter_key: "Environment"
+            parameter_value: "test"
+        outputs:
+          - output_key: "BucketName"
+            output_value: "test-stack-mybucket-1a2b3c4d5e6f"
+            description: "The name of the S3 bucket"
+            export_name: "test-stack-bucket-name"
+          - output_key: "InstanceId"
+            output_value: "i-0123456789abcdef0"
+            description: "The ID of the EC2 instance"
+
+  describe_stack_events:
+    stack_events:
+      - event_id: "event-001"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+        logical_resource_id: "test-stack"
+        physical_resource_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        resource_type: "AWS::CloudFormation::Stack"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:15:30Z"
+        resource_status_reason: "Stack creation completed successfully"
+        client_request_token: "test-token-12345678-abcd-efgh-ijkl-123456789012"
+      - event_id: "event-002"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+        logical_resource_id: "MyBucket"
+        physical_resource_id: "test-stack-mybucket-1a2b3c4d5e6f"
+        resource_type: "AWS::S3::Bucket"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:15:00Z"
+        client_request_token: "test-token-12345678-abcd-efgh-ijkl-123456789012"
+      - event_id: "event-003"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+        logical_resource_id: "MyBucket"
+        physical_resource_id: "test-stack-mybucket-1a2b3c4d5e6f"
+        resource_type: "AWS::S3::Bucket"
+        resource_status: "CREATE_IN_PROGRESS"
+        timestamp: "2025-06-17T11:14:15Z"
+        resource_status_reason: "Resource creation initiated"
+        client_request_token: "test-token-12345678-abcd-efgh-ijkl-123456789012"
+      - event_id: "event-004"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+        logical_resource_id: "MySecurityGroup"
+        physical_resource_id: "sg-0123456789abcdef0"
+        resource_type: "AWS::EC2::SecurityGroup"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:13:45Z"
+        client_request_token: "test-token-12345678-abcd-efgh-ijkl-123456789012"
+
+  describe_stack_resources:
+    stack_resources:
+      - logical_resource_id: "MyBucket"
+        physical_resource_id: "test-stack-mybucket-1a2b3c4d5e6f"
+        resource_type: "AWS::S3::Bucket"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:15:00Z"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+      - logical_resource_id: "MySecurityGroup"
+        physical_resource_id: "sg-0123456789abcdef0"
+        resource_type: "AWS::EC2::SecurityGroup"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:13:45Z"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+      - logical_resource_id: "MyInstance"
+        physical_resource_id: "i-0123456789abcdef0"
+        resource_type: "AWS::EC2::Instance"
+        resource_status: "CREATE_COMPLETE"
+        timestamp: "2025-06-17T11:14:30Z"
+        stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012"
+        stack_name: "test-stack"
+
+expected_outputs:
+  interactive:
+    stdout: |
+
+      Command Metadata:
+       CFN Operation:        create-stack
+       iidy Environment:     test
+       Region:               us-east-1
+       CLI Arguments:        region=us-east-1, profile=test-profile, argsfile=stack-args.yaml
+       IAM Service Role:     arn:aws:iam::123456789012:role/CloudFormationRole
+       Current IAM Principal: arn:aws:iam::123456789012:user/test-user
+       iidy Version:         0.1.0
+       Primary Token:        test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
+       Derived Tokens:       1 tokens
+         [1] test-token-a1b2c3d4 (derived from test-token-12345678-abcd-efgh-ijkl-123456789012 at create-stack)
+
+      Stack Details:
+       Name:                 test-stack
+       Description:          Test stack for iidy development and testing
+       Status:               CREATE_COMPLETE
+       Capabilities:         CAPABILITY_IAM
+       Service Role:         arn:aws:iam::123456789012:role/CloudFormationRole
+       Tags:                 environment=test, project=iidy-test, owner=development-team
+       Parameters:           InstanceType=t3.micro, Environment=test
+       DisableRollback:      false
+       TerminationProtection: false
+       Creation Time:        2025-06-17 10:30:00 UTC
+       Last Update Time:     2025-06-17 11:15:30 UTC
+       Timeout In Minutes:   10
+       NotificationARNs:     None
+       ARN:                  arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012
+       Console URL:          https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stack/detail?stackId=arn%3Aaws%3Acloudformation%3Aus-east-1%3A123456789012%3Astack%2Ftest-stack%2F12345678-1234-1234-1234-123456789012
+
+      Previous Stack Events (max 10):
+       Timestamp            Status              ResourceId           Type / Reason
+       -------------------- ------------------- -------------------- --------------------
+       2025-06-17 11:15:30  CREATE_COMPLETE     test-stack           AWS::CloudFormation::Stack
+         Duration: 300s
+         Reason: Stack creation completed successfully
+         Physical ID: arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012
+       2025-06-17 11:15:00  CREATE_COMPLETE     MyBucket             AWS::S3::Bucket
+         Duration: 45s
+         Physical ID: test-stack-mybucket-1a2b3c4d5e6f
+       2025-06-17 11:14:15  CREATE_IN_PROGRESS  MyBucket             AWS::S3::Bucket
+         Reason: Resource creation initiated
+         Physical ID: test-stack-mybucket-1a2b3c4d5e6f
+       2025-06-17 11:13:45  CREATE_COMPLETE     MySecurityGroup      AWS::EC2::SecurityGroup
+         Duration: 20s
+         Physical ID: sg-0123456789abcdef0
+       4 of 8 total events shown
+
+      Stack Resources:
+       MyBucket             AWS::S3::Bucket                test-stack-mybucket-1a2b3c4d5e6f
+       MySecurityGroup      AWS::EC2::SecurityGroup        sg-0123456789abcdef0
+       MyInstance           AWS::EC2::Instance              i-0123456789abcdef0
+
+      Stack Outputs:
+       BucketName           test-stack-mybucket-1a2b3c4d5e6f
+       InstanceId           i-0123456789abcdef0
+
+      Stack Exports:
+       test-stack-bucket-name test-stack-mybucket-1a2b3c4d5e6f
+
+      Current Stack Status: CREATE_COMPLETE Stack creation completed successfully
+
+      Command Result: SUCCESS (347s)
+      Exit Code: 0
+    exit_code: 0
+
+  plain:
+    stdout: |
+      Command Metadata:
+       CFN Operation:        create-stack
+       iidy Environment:     test
+       Region:               us-east-1
+       CLI Arguments:        region=us-east-1, profile=test-profile, argsfile=stack-args.yaml
+       IAM Service Role:     arn:aws:iam::123456789012:role/CloudFormationRole
+       Current IAM Principal: arn:aws:iam::123456789012:user/test-user
+       iidy Version:         0.1.0
+       Primary Token:        test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
+       Derived Tokens:       1 tokens
+         [1] test-token-a1b2c3d4 (derived from test-token-12345678-abcd-efgh-ijkl-123456789012 at create-stack)
+
+      Stack Details:
+       Name:                 test-stack
+       Description:          Test stack for iidy development and testing
+       Status:               CREATE_COMPLETE
+       Capabilities:         CAPABILITY_IAM
+       Service Role:         arn:aws:iam::123456789012:role/CloudFormationRole
+       Tags:                 environment=test, project=iidy-test, owner=development-team
+       Parameters:           InstanceType=t3.micro, Environment=test
+       DisableRollback:      false
+       TerminationProtection: false
+       Creation Time:        2025-06-17 10:30:00 UTC
+       Last Update Time:     2025-06-17 11:15:30 UTC
+       Timeout In Minutes:   10
+       NotificationARNs:     None
+       ARN:                  arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012
+       Console URL:          https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stack/detail?stackId=arn%3Aaws%3Acloudformation%3Aus-east-1%3A123456789012%3Astack%2Ftest-stack%2F12345678-1234-1234-1234-123456789012
+
+      Previous Stack Events (max 10):
+       Timestamp            Status              ResourceId           Type / Reason
+       -------------------- ------------------- -------------------- --------------------
+       2025-06-17 11:15:30  CREATE_COMPLETE     test-stack           AWS::CloudFormation::Stack
+         Duration: 300s
+         Reason: Stack creation completed successfully
+         Physical ID: arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012
+       2025-06-17 11:15:00  CREATE_COMPLETE     MyBucket             AWS::S3::Bucket
+         Duration: 45s
+         Physical ID: test-stack-mybucket-1a2b3c4d5e6f
+       2025-06-17 11:14:15  CREATE_IN_PROGRESS  MyBucket             AWS::S3::Bucket
+         Reason: Resource creation initiated
+         Physical ID: test-stack-mybucket-1a2b3c4d5e6f
+       2025-06-17 11:13:45  CREATE_COMPLETE     MySecurityGroup      AWS::EC2::SecurityGroup
+         Duration: 20s
+         Physical ID: sg-0123456789abcdef0
+       4 of 8 total events shown
+
+      Stack Resources:
+       MyBucket             AWS::S3::Bucket                test-stack-mybucket-1a2b3c4d5e6f
+       MySecurityGroup      AWS::EC2::SecurityGroup        sg-0123456789abcdef0
+       MyInstance           AWS::EC2::Instance              i-0123456789abcdef0
+
+      Stack Outputs:
+       BucketName           test-stack-mybucket-1a2b3c4d5e6f
+       InstanceId           i-0123456789abcdef0
+
+      Stack Exports:
+       test-stack-bucket-name test-stack-mybucket-1a2b3c4d5e6f
+
+      Current Stack Status: CREATE_COMPLETE Stack creation completed successfully
+
+      Command Result: SUCCESS (347s)
+      Exit Code: 0
+    exit_code: 0
+
+  json:
+    stdout: |
+      {"type":"command_metadata","timestamp":"2025-06-17T10:30:00Z","data":{"cfn_operation":"create-stack","iidy_environment":"test","region":"us-east-1","profile":"test-profile","cli_arguments":{"region":"us-east-1","profile":"test-profile","argsfile":"stack-args.yaml"},"iam_service_role":"arn:aws:iam::123456789012:role/CloudFormationRole","current_iam_principal":"arn:aws:iam::123456789012:user/test-user","iidy_version":"0.1.0","primary_token":{"value":"test-token-12345678-abcd-efgh-ijkl-123456789012","source":"AutoGenerated","operation_id":"op-001"},"derived_tokens":[{"value":"test-token-a1b2c3d4","source":{"Derived":{"from":"test-token-12345678-abcd-efgh-ijkl-123456789012","step":"create-stack"}},"operation_id":"op-001-cs"}]}}
+      {"type":"stack_definition","timestamp":"2025-06-17T10:30:00Z","data":{"name":"test-stack","stackset_name":null,"description":"Test stack for iidy development and testing","status":"CREATE_COMPLETE","capabilities":["CAPABILITY_IAM"],"service_role":"arn:aws:iam::123456789012:role/CloudFormationRole","tags":{"environment":"test","project":"iidy-test","owner":"development-team"},"parameters":{"InstanceType":"t3.micro","Environment":"test"},"disable_rollback":false,"termination_protection":false,"creation_time":"2025-06-17T10:30:00Z","last_updated_time":"2025-06-17T11:15:30Z","timeout_in_minutes":10,"notification_arns":[],"stack_policy":null,"arn":"arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/12345678-1234-1234-1234-123456789012","console_url":"https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stack/detail?stackId=arn%3Aaws%3Acloudformation%3Aus-east-1%3A123456789012%3Astack%2Ftest-stack%2F12345678-1234-1234-1234-123456789012","region":"us-east-1"},"show_times":true}
+      {"type":"command_result","timestamp":"2025-06-17T11:15:30Z","data":{"success":true,"elapsed_seconds":347,"message":"Stack creation completed successfully","exit_code":0}}
+    exit_code: 0

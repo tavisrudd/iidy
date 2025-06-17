@@ -84,6 +84,9 @@ pub struct GlobalOpts {
     #[arg(long, value_enum, global = true, default_value_t = Theme::Auto, help = "Color theme to use for output")]
     pub theme: Theme,
 
+    #[arg(long = "output-mode", value_enum, global = true, help = "Output mode for console display")]
+    pub output_mode: Option<crate::output::OutputMode>,
+
     #[arg(
         long,
         global = true,
@@ -99,6 +102,13 @@ pub struct GlobalOpts {
         help = "Log full error information to stderr."
     )]
     pub log_full_error: bool,
+}
+
+impl GlobalOpts {
+    /// Get the effective output mode, using default_for_environment if not specified
+    pub fn effective_output_mode(&self) -> crate::output::OutputMode {
+        self.output_mode.unwrap_or_else(crate::output::OutputMode::default_for_environment)
+    }
 }
 
 #[derive(Debug, Args)]
@@ -183,14 +193,14 @@ impl AwsOpts {
     }
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum ColorChoice {
     Auto,
     Always,
     Never,
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum Theme {
     Auto,
     Light,

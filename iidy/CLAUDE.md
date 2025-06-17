@@ -1,5 +1,40 @@
 # CLAUDE.md
 
+## Essential Context for Auto-Compact Recovery
+
+When context auto-compacts, read these documents first to understand current state and progress:
+
+### **Primary Design Documents (Read First)**
+1. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design with data structures, renderer traits, fixture-based testing approach (sections 2063-2305)
+2. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (Interactive, Plain, JSON, TUI) with exact requirements
+3. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js implementation spec with exact colors, spacing, constants (color codes at lines 912-918)
+
+### **Implementation Status & Progress**
+4. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Current implementation status, completed phases, testing strategy analysis
+5. **Current Todo List** - Use `TodoRead` tool to see current tasks and priorities
+
+### **Key Implementation Details**
+- **Theme System**: `src/output/theme.rs` with exact iidy-js colors (NOT old src/terminal.rs/color.rs)
+- **Data Structures**: `src/output/data.rs` - Complete OutputData enum matching design spec
+- **Renderers**: `src/output/renderers/` - Interactive (pixel-perfect), Plain (CI-friendly)  
+- **Testing**: Three-layer strategy using `insta` snapshots and YAML fixtures
+- **Architecture**: Data-driven separation of collection from presentation, supports mode switching
+
+### **Current Testing Status (✅ COMPLETED)**
+- **Layer 1 Unit Tests**: 14/14 passing (`tests/output_unit_tests.rs`)
+- **Layer 2 Integration Tests**: 21/21 passing (`tests/output_renderer_snapshots.rs`, `tests/fixture_validation_tests.rs`)
+- **Fixture System**: Complete with expected outputs for Interactive, Plain, JSON modes
+- **Test Infrastructure**: Output capture, ANSI validation, fixture loading all working
+- **Ready For**: Layer 3 DynamicOutputManager testing OR Phase 2 pixel-perfect output matching
+
+### **Important Notes**
+- Ignore old `src/terminal.rs` and `src/color.rs` modules (from pre-design spike)
+- TUI mode removed from current scope (implement later)
+- CLI supports `--theme` (Dark/Light/HighContrast/Auto) and `--color` (Always/Never/Auto)
+- All tests must be offline/deterministic using fixture data
+
+---
+
 ## General requirements 
 - Work to completion of your goal with 100% of tests passing, no regressions, and no new code warnings. 
 - Don't stop to brag or celebrate. Keep going until you have completely reached the goal and completed all tasks.

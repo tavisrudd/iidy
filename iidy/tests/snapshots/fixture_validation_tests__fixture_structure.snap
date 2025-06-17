@@ -1,0 +1,6 @@
+---
+source: tests/fixture_validation_tests.rs
+description: Fixture structure validation
+expression: fixture_summary
+---
+{"aws_responses":{"has_describe_stack_events":true,"has_describe_stack_resources":true,"has_describe_stacks":true},"description":"Successful stack creation with all standard sections","expected_outputs":{"has_interactive":true,"has_json":true,"has_plain":true,"interactive_length":3084,"json_length":1929,"plain_length":3083},"name":"create-stack-happy-path","tokens":{"derived_count":1,"primary":47}}

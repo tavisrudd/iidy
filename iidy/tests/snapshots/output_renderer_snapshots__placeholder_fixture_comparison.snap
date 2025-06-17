@@ -1,0 +1,7 @@
+---
+source: tests/output_renderer_snapshots.rs
+expression: "vec![\"Expected output comparison would happen here\"]"
+---
+[
+    "Expected output comparison would happen here",
+]

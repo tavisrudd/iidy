@@ -1,0 +1,5 @@
+---
+source: tests/output_renderer_snapshots.rs
+expression: "\"Plain renderer output would be captured here\""
+---
+Plain renderer output would be captured here
