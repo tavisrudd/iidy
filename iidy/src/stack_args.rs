@@ -384,11 +384,9 @@ async fn apply_sns_notification_global_configuration(
         .await
     {
         Ok(_) => {
-            // Topic exists, add it to notification ARNs
+            // Topic exists, add it to notification ARNs (matching iidy-js concat behavior)
             let notification_arns = args.notification_arns.get_or_insert_with(Vec::new);
-            if !notification_arns.contains(&topic_arn.to_string()) {
-                notification_arns.push(topic_arn.to_string());
-            }
+            notification_arns.push(topic_arn.to_string());
         }
         Err(_) => {
             eprintln!("iidy's default NotificationARN set in this region is invalid: {}", topic_arn);
@@ -438,9 +436,10 @@ fn process_commands_before(
     // Add iidy namespace
     let mut iidy_values = BTreeMap::new();
     iidy_values.insert("stackArgs".to_string(), serde_yaml::to_value(stack_args)?);
-    iidy_values.insert("stackName".to_string(), Value::String(
-        stack_args.stack_name.clone().unwrap_or_default()
-    ));
+    // Use stack name from stack args, but this could be overridden by CLI later
+    if let Some(stack_name) = &stack_args.stack_name {
+        iidy_values.insert("stackName".to_string(), Value::String(stack_name.clone()));
+    }
     iidy_values.insert("command".to_string(), Value::String(command.join(" ")));
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
@@ -514,11 +513,24 @@ fn process_commands_before(
         command.arg("-c").arg(&expanded_command);
         command.current_dir(cwd);
         
-        // Set environment variables
+        // Set environment variables matching iidy-js
         command.env("iidy_profile", profile.unwrap_or(""));
         command.env("iidy_region", region);
         command.env("iidy_environment", environment.unwrap_or(""));
         command.env("PKG_SKIP_EXECPATH_PATCH", "yes");
+        
+        // Add bash functions matching iidy-js
+        command.env("BASH_FUNC_iidy_filehash%%", "() {   shasum -p -a 256 \"$1\" | cut -f 1 -d ' '; }");
+        command.env("BASH_FUNC_iidy_filehash_base64%%", "() { shasum -p -a 256 \"$1\" | cut -f 1 -d ' ' | xxd -r -p | base64; }");
+        command.env("BASH_FUNC_iidy_s3_upload%%", r#"() {
+  echo '>> NOTE: iidy_s3_upload is an experimental addition to iidy. It might be removed in future versions.'
+  FILE=$1
+  BUCKET=$2
+  S3_KEY=$3
+  aws --profile "$iidy_profile" --region "$iidy_region" s3api head-object --bucket "$BUCKET" --key "$S3_KEY" 2>&1 >/dev/null || \
+        aws --profile "$iidy_profile" --region "$iidy_region" s3 cp "$FILE" "s3://$BUCKET/$S3_KEY";
+
+ }"#);
         
         // Execute command
         let output = command.output()

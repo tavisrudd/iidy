@@ -685,7 +685,7 @@ When this context window gets compacted, the new instance should:
 3. ✅ **Add aws-sdk-sns dependency** - Added and working for SNS topic validation
 4. ✅ **Clean up redundant code** - Removed unused `stack_args_new.rs` file
 
-**Current Status:** From "completely broken" to "99% functional, COMPLETE iidy-js feature parity!" 🎉
+**Current Status:** From "completely broken" to "85% functional, stack args complete but template loading needs work!" ⚠️
 
 **🎉 PRODUCTION READY MILESTONE ACHIEVED:** Core stack args loading now fully functional with complete iidy-js parity on ALL critical features!
 
@@ -713,8 +713,40 @@ When this context window gets compacted, the new instance should:
 - Error handling with proper exit code checking
 - All 567 tests passing with new functionality
 
-**NEXT PRIORITIES (Medium Priority):**
-1. **Add integration tests** - Comprehensive fixture-based testing (offline)
-2. **Enhance error handling** - User-friendly error messages throughout
+**CRITICAL GAPS DISCOVERED DURING CODE REVIEW:**
+
+### 🚨 Template Loading Not Implemented Properly
+Our current implementation just reads templates as local files, but iidy-js has sophisticated template handling:
+
+1. **`render:` prefix support** - Templates prefixed with `render:` need YAML preprocessing
+2. **S3 URL support** - Templates can be loaded from S3 via `s3://` or `https://` URLs
+3. **HTTP URL support** - Templates can be loaded from any HTTP URL
+4. **Template size limits** - 51KB for inline templates, 1MB for S3 templates
+5. **Auto-signing S3 URLs** - Cross-region S3 access with pre-signed URLs
+6. **Error detection** - Warns if template uses `$imports:` without `render:` prefix
+
+**Current Impact:** Templates using preprocessing, S3/HTTP URLs, or exceeding size limits will fail.
+
+### 🚨 Stack Policy Loading Not Implemented
+Similar to templates, stack policies need sophisticated handling:
+1. **`render:` prefix support** - Policies can be preprocessed
+2. **S3/HTTP URL support** - Load policies from remote locations
+3. **Object support** - Policies can be inline objects in stack-args.yaml
+4. **JSON serialization** - Objects and rendered policies need JSON conversion
+
+**Current Impact:** Stack policies are completely ignored in our implementation.
+
+### Other Gaps Found:
+1. **Missing handlebars helpers** - `filehash` and `filehashBase64` for CommandsBefore
+2. **AWS SDK differences**:
+   - No MFA token support (interactive prompting)
+   - No explicit ProcessCredentials support
+   - Different retry configuration (we use defaults, iidy-js uses 10)
+
+**NEXT PRIORITIES (High Priority):**
+1. **Implement proper template loading** - Support render:, S3/HTTP URLs, size limits
+2. **Add missing handlebars helpers** - filehash/filehashBase64 for CommandsBefore
+3. **Add integration tests** - Comprehensive fixture-based testing (offline)
+4. **Enhance error handling** - User-friendly error messages throughout
 
 **ARCHITECTURE NOTE:** All stack args functionality is now consolidated in `src/stack_args.rs` with complete iidy-js feature parity for ALL production features including CommandsBefore.
