@@ -186,7 +186,7 @@ pub struct StatusUpdate {
     pub level: StatusLevel,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum StatusLevel {
     Info,
     Warning,
@@ -246,6 +246,32 @@ pub struct ErrorInfo {
     pub suggestions: Vec<String>,
 }
 
+
+/// Stack drift information
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StackDrift {
+    pub drifted_resources: Vec<DriftedResource>,
+}
+
+/// Individual drifted resource
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DriftedResource {
+    pub logical_resource_id: String,
+    pub physical_resource_id: String,
+    pub resource_type: String,
+    pub drift_status: String,
+    pub property_differences: Vec<PropertyDifference>,
+}
+
+/// Property difference for drift detection
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PropertyDifference {
+    pub property_path: String,
+    pub expected_value: Option<String>,
+    pub actual_value: Option<String>,
+    pub difference_type: Option<String>,
+}
+
 /// Main output data enum for the manager
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum OutputData {
@@ -257,6 +283,7 @@ pub enum OutputData {
     CommandResult(CommandResult),
     StackList(StackListDisplay),
     ChangeSetResult(ChangeSetCreationResult),
+    StackDrift(StackDrift),
     Error(ErrorInfo),
 }
 
@@ -272,6 +299,7 @@ impl OutputData {
             OutputData::CommandResult(_) => "command_result",
             OutputData::StackList(_) => "stack_list",
             OutputData::ChangeSetResult(_) => "changeset_result",
+            OutputData::StackDrift(_) => "stack_drift",
             OutputData::Error(_) => "error",
         }
     }

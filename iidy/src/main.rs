@@ -19,14 +19,14 @@ fn handle_command(cli: Cli) {
     match cli.command {
         Commands::CreateStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args, &cli.global_opts)) {
                 eprintln!("error creating stack: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::UpdateStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args, &cli.global_opts)) {
                 eprintln!("error updating stack: {e:?}");
                 std::process::exit(1);
             }
@@ -36,6 +36,7 @@ fn handle_command(cli: Cli) {
             if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(
                 &normalized_opts,
                 &args,
+                &cli.global_opts,
             )) {
                 eprintln!("error creating or updating stack: {e:?}");
                 std::process::exit(1);
@@ -43,7 +44,7 @@ fn handle_command(cli: Cli) {
         }
         Commands::EstimateCost(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args))
+            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&normalized_opts, &args, &cli.global_opts))
             {
                 eprintln!("error estimating cost: {e:?}");
                 std::process::exit(1);
@@ -55,6 +56,7 @@ fn handle_command(cli: Cli) {
             if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(
                 &normalized_opts,
                 &args,
+                &cli.global_opts,
             )) {
                 eprintln!("error creating change set: {e:?}");
                 std::process::exit(1);
@@ -63,7 +65,7 @@ fn handle_command(cli: Cli) {
         Commands::ExecChangeset(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) =
-                rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args))
+                rt.block_on(cfn::exec_changeset::exec_changeset(&normalized_opts, &args, &cli.global_opts))
             {
                 eprintln!("error executing change set: {e:?}");
                 std::process::exit(1);
@@ -73,7 +75,7 @@ fn handle_command(cli: Cli) {
         Commands::DescribeStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) =
-                rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args))
+                rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args, &cli.global_opts))
             {
                 eprintln!("error describing stack: {e:?}");
                 std::process::exit(1);
@@ -84,6 +86,7 @@ fn handle_command(cli: Cli) {
             if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(
                 &cli.aws_opts,
                 &args,
+                &cli.global_opts,
             )) {
                 eprintln!("error describing stack drift: {e:?}");
                 std::process::exit(1);
@@ -91,22 +94,23 @@ fn handle_command(cli: Cli) {
         }
         Commands::WatchStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&normalized_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&normalized_opts, &args, &cli.global_opts)) {
                 eprintln!("error watching stack: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::DeleteStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args)) {
+            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args, &cli.global_opts)) {
                 eprintln!("error deleting stack: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::GetStackTemplate(args) => {
-            match rt.block_on(cfn::get_stack_template::get_stack_template(
+            match rt.block_on(cfn::get_stack_template::get_stack_template_with_output(
                 &cli.aws_opts,
                 &args,
+                &cli.global_opts,
             )) {
                 Ok(out) => {
                     for line in out.stderr_lines {
@@ -124,13 +128,15 @@ fn handle_command(cli: Cli) {
             if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(
                 &cli.aws_opts,
                 &args,
+                &cli.global_opts,
             )) {
                 eprintln!("error getting stack instances: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::ListStacks(args) => {
-            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli.aws_opts, &args)) {
+            let normalized_opts = cli.aws_opts.normalize();
+            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&normalized_opts, &args, &cli.global_opts)) {
                 eprintln!("error listing stacks: {e:?}");
                 std::process::exit(1);
             }

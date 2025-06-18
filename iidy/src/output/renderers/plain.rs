@@ -509,6 +509,35 @@ impl OutputRenderer for PlainTextRenderer {
         Ok(())
     }
 
+    async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()> {
+        println!();
+        if data.drifted_resources.is_empty() {
+            println!("No drift detected. Stack resources are in sync with template.");
+        } else {
+            println!("Drifted Resources:");
+            for drift in &data.drifted_resources {
+                println!("{} {} {}", drift.logical_resource_id, drift.resource_type, drift.physical_resource_id);
+                println!("  {}", drift.drift_status);
+                
+                if !drift.property_differences.is_empty() {
+                    for diff in &drift.property_differences {
+                        println!("   - property_path: {}", diff.property_path);
+                        if let Some(expected) = &diff.expected_value {
+                            println!("     expected_value: {}", expected);
+                        }
+                        if let Some(actual) = &diff.actual_value {
+                            println!("     actual_value: {}", actual);
+                        }
+                        if let Some(diff_type) = &diff.difference_type {
+                            println!("     difference_type: {}", diff_type);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
         println!();
         println!("ERROR [{}]: {}", data.error_type, data.message);

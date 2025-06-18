@@ -296,7 +296,7 @@ pub enum Commands {
     /// download the template of a live stack
     GetStackTemplate(GetTemplateArgs),
     /// list the ec2 instances of a live stack
-    GetStackInstances(StackNameArg),
+    GetStackInstances(GetStackInstancesArgs),
     /// list all stacks within a region
     ListStacks(ListArgs),
     #[clap(name = "\u{2800}\u{2800}\u{2800}")]
@@ -431,6 +431,13 @@ pub struct GetTemplateArgs {
 #[derive(Args, Debug)]
 pub struct StackNameArg {
     pub stackname: String,
+}
+
+#[derive(Args, Debug)]
+pub struct GetStackInstancesArgs {
+    pub stackname: String,
+    #[arg(long, help = "Show only DNS names/IP addresses")]
+    pub short: bool,
 }
 
 #[derive(Args, Debug)]

@@ -1,6 +1,6 @@
 use crate::{
     aws,
-    cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg},
+    cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg, GlobalOpts},
 };
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
@@ -106,6 +106,21 @@ pub async fn get_stack_template(
         .await?;
 
     format_template(output, args.stage.clone(), args.format.clone())
+}
+
+/// Retrieve a stack template with data-driven output wrapper.
+/// 
+/// This is a read-only operation that follows the iidy-js pattern:
+/// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
+/// - stdout: Template content in requested format
+/// - No progress messages or command metadata
+pub async fn get_stack_template_with_output(
+    opts: &AwsOpts,
+    args: &GetTemplateArgs,
+    _global_opts: &GlobalOpts,
+) -> Result<FormattedTemplate> {
+    // Direct call without unnecessary progress messages
+    get_stack_template(opts, args).await
 }
 
 #[cfg(test)]

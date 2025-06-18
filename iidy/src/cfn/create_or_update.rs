@@ -1,18 +1,29 @@
 use anyhow::Result;
 use std::path::Path;
+use std::time::Instant;
 
 use crate::{
-    cfn::{CfnContext, CfnRequestBuilder, ConsoleReporter, create_context},
-    cli::{NormalizedAwsOpts, UpdateStackArgs},
+    cfn::{CfnContext, CfnRequestBuilder, create_context},
+    cli::{NormalizedAwsOpts, UpdateStackArgs, GlobalOpts},
+    output::{
+        DynamicOutputManager, manager::OutputOptions,
+        aws_conversion::{progress_message, success_message, warning_message, create_command_result},
+    },
     stack_args::load_stack_args_file,
 };
 
-/// Create or update a CloudFormation stack using intelligent detection.
-///
-/// This function checks if the stack exists and automatically chooses between
-/// create or update operations. It supports both direct operations and
-/// changeset-based workflows with proper token management.
-pub async fn create_or_update(opts: &NormalizedAwsOpts, args: &UpdateStackArgs) -> Result<()> {
+/// Create or update a CloudFormation stack using intelligent detection with data-driven output.
+pub async fn create_or_update(
+    opts: &NormalizedAwsOpts, 
+    args: &UpdateStackArgs, 
+    global_opts: &GlobalOpts
+) -> Result<()> {
+    let start_time = Instant::now();
+    let output_options = OutputOptions::default();
+    let mut output_manager = DynamicOutputManager::new(
+        global_opts.effective_output_mode(),
+        output_options
+    ).await?;
     // Load stack configuration
     let stack_args = load_stack_args_file(Path::new(&args.base.argsfile), None)?;
 
@@ -33,9 +44,7 @@ pub async fn create_or_update(opts: &NormalizedAwsOpts, args: &UpdateStackArgs) 
     // Setup AWS client and context
     let context = create_context(opts).await?;
 
-    // Setup console reporter
-    let reporter = ConsoleReporter::new("create-or-update");
-    reporter.show_primary_token(&context.primary_token());
+    output_manager.render(progress_message(&format!("Primary operation token: {}", context.primary_token().value))).await?;
 
     let stack_name = final_stack_args
         .stack_name
@@ -43,33 +52,45 @@ pub async fn create_or_update(opts: &NormalizedAwsOpts, args: &UpdateStackArgs) 
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     // Check if stack exists
-    reporter.show_progress(&format!("Checking if stack '{}' exists...", stack_name));
+    output_manager.render(progress_message(&format!("Checking if stack '{}' exists...", stack_name))).await?;
 
     let stack_exists = check_stack_exists(&context, stack_name).await?;
 
-    if stack_exists {
-        reporter.show_progress(&format!("Stack '{}' exists, performing update", stack_name));
+    let result = if stack_exists {
+        output_manager.render(progress_message(&format!("Stack '{}' exists, performing update", stack_name))).await?;
 
         // Use the existing update_stack logic
         if args.changeset {
-            update_stack_with_changeset(opts, args, &final_stack_args).await
+            update_stack_with_changeset_data(opts, args, &final_stack_args, &mut output_manager).await
         } else {
-            update_stack_direct(opts, args, &final_stack_args).await
+            update_stack_direct_data(opts, args, &final_stack_args, &mut output_manager).await
         }
     } else {
-        reporter.show_progress(&format!(
+        output_manager.render(progress_message(&format!(
             "Stack '{}' does not exist, performing create",
             stack_name
-        ));
+        ))).await?;
 
         // Create stack (changesets not typically used for new stacks)
         if args.changeset {
-            reporter
-                .show_warning("Changeset mode not recommended for new stacks, creating directly");
+            output_manager.render(warning_message("Changeset mode not recommended for new stacks, creating directly")).await?;
         }
 
-        create_stack_direct(opts, &final_stack_args).await
+        create_stack_direct_data(opts, &final_stack_args, &mut output_manager).await
+    };
+
+    // Show final result
+    let elapsed = start_time.elapsed().as_secs() as i64;
+    match result {
+        Ok(_) => {
+            output_manager.render(create_command_result(true, elapsed, Some("Create or update operation completed".to_string()))).await?;
+        }
+        Err(ref e) => {
+            output_manager.render(create_command_result(false, elapsed, Some(format!("Create or update operation failed: {}", e)))).await?;
+        }
     }
+
+    result
 }
 
 /// Check if a CloudFormation stack exists.
@@ -92,91 +113,77 @@ async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bo
     }
 }
 
-/// Create a new stack directly (reusing create_stack logic).
-async fn create_stack_direct(
+/// Create a new stack directly with data-driven output.
+async fn create_stack_direct_data(
     opts: &NormalizedAwsOpts,
     stack_args: &crate::stack_args::StackArgs,
+    output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
     // Setup context and builder
     let context = create_context(opts).await?;
-
-    let reporter = ConsoleReporter::new("create-stack");
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the CreateStack request
     let (create_request, token) = builder.build_create_stack("create-stack");
-    reporter.show_step_token("create-stack", &token);
+    output_manager.render(progress_message(&format!("Create stack token: {}", token.value))).await?;
 
     let stack_name = stack_args
         .stack_name
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-    reporter.show_progress(&format!("Creating stack: {}", stack_name));
+    output_manager.render(progress_message(&format!("Creating stack: {}", stack_name))).await?;
 
     let response = create_request.send().await?;
 
     if let Some(stack_id) = response.stack_id() {
-        reporter.show_success(&format!("Stack creation initiated: {}", stack_id));
-        println!("Stack ID: {}", stack_id);
+        output_manager.render(success_message(&format!("Stack creation initiated: {}", stack_id))).await?;
     } else {
-        reporter.show_success("Stack creation initiated");
+        output_manager.render(success_message("Stack creation initiated")).await?;
     }
-
-    // Show operation summary
-    reporter.show_operation_summary(&context);
 
     Ok(())
 }
 
-/// Update stack directly (reusing update_stack logic).
-async fn update_stack_direct(
+/// Update stack directly with data-driven output.
+async fn update_stack_direct_data(
     opts: &NormalizedAwsOpts,
     _args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
+    output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
     // Setup context and builder
     let context = create_context(opts).await?;
-
-    let reporter = ConsoleReporter::new("update-stack");
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the UpdateStack request
     let (update_request, token) = builder.build_update_stack("update-stack");
-    reporter.show_step_token("update-stack", &token);
+    output_manager.render(progress_message(&format!("Update stack token: {}", token.value))).await?;
 
     let stack_name = stack_args
         .stack_name
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-    reporter.show_progress(&format!("Updating stack: {}", stack_name));
+    output_manager.render(progress_message(&format!("Updating stack: {}", stack_name))).await?;
 
     let response = update_request.send().await?;
 
     if let Some(stack_id) = response.stack_id() {
-        reporter.show_success(&format!("Stack update initiated: {}", stack_id));
-        println!("Stack ID: {}", stack_id);
+        output_manager.render(success_message(&format!("Stack update initiated: {}", stack_id))).await?;
     } else {
-        reporter.show_success("Stack update initiated");
+        output_manager.render(success_message("Stack update initiated")).await?;
     }
-
-    // Show operation summary
-    reporter.show_operation_summary(&context);
 
     Ok(())
 }
 
-/// Update stack with changeset (reusing update_stack logic).
-async fn update_stack_with_changeset(
+/// Update stack with changeset using data-driven output.
+async fn update_stack_with_changeset_data(
     opts: &NormalizedAwsOpts,
     args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
+    output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
-    // Reuse the existing changeset workflow from update_stack
-    // This demonstrates code reuse while maintaining token correlation
-
     let context = create_context(opts).await?;
-
-    let reporter = ConsoleReporter::new("create-or-update --changeset");
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Step 1: Create changeset
@@ -186,81 +193,58 @@ async fn update_stack_with_changeset(
     );
     let (create_request, create_token) =
         builder.build_create_changeset(&changeset_name, "create-changeset");
-    reporter.show_step_token("create-changeset", &create_token);
+    output_manager.render(progress_message(&format!("Create changeset token: {}", create_token.value))).await?;
 
-    reporter.show_progress(&format!(
+    output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",
         changeset_name,
         stack_args.stack_name.as_ref().unwrap()
-    ));
+    ))).await?;
 
     let create_response = create_request.send().await?;
 
     if let Some(changeset_id) = create_response.id() {
-        reporter.show_success(&format!("Changeset created: {}", changeset_id));
+        output_manager.render(success_message(&format!("Changeset created: {}", changeset_id))).await?;
     } else {
-        reporter.show_success("Changeset created");
+        output_manager.render(success_message("Changeset created")).await?;
     }
 
     // Ask for confirmation unless --yes is specified
+    // TODO: Implement interactive prompts in data-driven output system
     if !args.yes {
-        println!();
-        println!("Review the changeset in the AWS Console if needed.");
-        println!("Do you want to execute this changeset? (y/N)");
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_lowercase();
-
-        if input != "y" && input != "yes" {
-            reporter.show_warning("Changeset execution cancelled by user");
-            println!(
-                "Changeset '{}' has been created but not executed.",
-                changeset_name
-            );
-            println!("You can execute it later with:");
-            println!(
-                "  iidy exec-changeset {} {}",
-                args.base.argsfile, changeset_name
-            );
-            reporter.show_operation_summary(&context);
-            return Ok(());
-        }
+        output_manager.render(warning_message("Interactive confirmation not yet implemented in data-driven output. Use --yes to proceed automatically.")).await?;
+        return Ok(());
     }
 
     // Step 2: Execute changeset
     let (execute_request, execute_token) =
         builder.build_execute_changeset(&changeset_name, "execute-changeset");
-    reporter.show_step_token("execute-changeset", &execute_token);
+    output_manager.render(progress_message(&format!("Execute changeset token: {}", execute_token.value))).await?;
 
-    reporter.show_progress("Executing changeset...");
+    output_manager.render(progress_message("Executing changeset...")).await?;
 
     let _execute_response = execute_request.send().await?;
 
-    reporter.show_success("Changeset execution initiated");
+    output_manager.render(success_message("Changeset execution initiated")).await?;
 
     // Step 3: Watch stack progress
-    use super::watch_stack::watch_stack_with_context;
-    reporter.show_progress("Watching stack operation progress...");
+    use super::watch_stack::watch_stack_with_data_output;
+    output_manager.render(progress_message("Watching stack operation progress...")).await?;
 
-    if let Err(e) = watch_stack_with_context(
+    if let Err(e) = watch_stack_with_data_output(
         &context,
         stack_args.stack_name.as_ref().unwrap(),
+        output_manager,
         std::time::Duration::from_secs(5),
     )
     .await
     {
-        reporter.show_warning(&format!("Error watching stack progress: {}", e));
-        println!(
-            "The changeset execution was initiated, but there was an error watching progress."
-        );
-        println!("You can check the stack status manually in the AWS Console.");
+        output_manager.render(warning_message(&format!("Error watching stack progress: {}", e))).await?;
+        output_manager.render(warning_message("The changeset execution was initiated, but there was an error watching progress.")).await?;
+        output_manager.render(warning_message("You can check the stack status manually in the AWS Console.")).await?;
     } else {
-        reporter.show_success("Stack operation completed successfully");
+        output_manager.render(success_message("Stack operation completed successfully")).await?;
     }
-
-    // Show operation summary
-    reporter.show_operation_summary(&context);
 
     Ok(())
 }

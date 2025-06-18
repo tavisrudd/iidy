@@ -2,20 +2,32 @@ use anyhow::Result;
 use aws_sdk_cloudformation::Client;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::{
     aws,
-    cfn::{CfnContext, CfnRequestBuilder, ConsoleReporter},
-    cli::{CreateChangeSetArgs, NormalizedAwsOpts},
+    cfn::{CfnContext, CfnRequestBuilder},
+    cli::{CreateChangeSetArgs, NormalizedAwsOpts, GlobalOpts},
+    output::{
+        DynamicOutputManager, manager::OutputOptions,
+        aws_conversion::{progress_message, success_message, create_command_result},
+    },
     stack_args::load_stack_args_file,
     timing::{ReliableTimeProvider, TimeProvider},
 };
 
-/// Create a CloudFormation changeset using the request builder pattern.
-///
-/// This function creates a changeset with proper token derivation and console feedback.
-/// The changeset can then be reviewed and executed separately.
-pub async fn create_changeset(opts: &NormalizedAwsOpts, args: &CreateChangeSetArgs) -> Result<()> {
+/// Create a CloudFormation changeset with data-driven output.
+pub async fn create_changeset(
+    opts: &NormalizedAwsOpts, 
+    args: &CreateChangeSetArgs,
+    global_opts: &GlobalOpts
+) -> Result<()> {
+    let start_time = Instant::now();
+    let output_options = OutputOptions::default();
+    let mut output_manager = DynamicOutputManager::new(
+        global_opts.effective_output_mode(),
+        output_options
+    ).await?;
     // Load stack configuration
     let stack_args = load_stack_args_file(Path::new(&args.argsfile), None)?;
 
@@ -39,12 +51,11 @@ pub async fn create_changeset(opts: &NormalizedAwsOpts, args: &CreateChangeSetAr
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
     let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
 
-    // Setup console reporter and request builder
-    let reporter = ConsoleReporter::new("create-changeset");
+    // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
     // Show primary token
-    reporter.show_primary_token(&context.primary_token());
+    output_manager.render(progress_message(&format!("Primary operation token: {}", context.primary_token().value))).await?;
 
     // Determine changeset name
     let default_changeset_name = format!("iidy-{}", &context.primary_token().value[..8]);
@@ -56,34 +67,47 @@ pub async fn create_changeset(opts: &NormalizedAwsOpts, args: &CreateChangeSetAr
     // Build and execute the CreateChangeSet request
     let (create_request, token) =
         builder.build_create_changeset(changeset_name, "create-changeset");
-    reporter.show_step_token("create-changeset", &token);
+    output_manager.render(progress_message(&format!("Create changeset token: {}", token.value))).await?;
 
-    reporter.show_progress(&format!(
+    output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",
         changeset_name,
         final_stack_args.stack_name.as_ref().unwrap()
-    ));
+    ))).await?;
 
-    let response = create_request.send().await?;
+    let result = match create_request.send().await {
+        Ok(response) => {
+            if let Some(changeset_id) = response.id() {
+                output_manager.render(success_message(&format!("Changeset created: {}", changeset_id))).await?;
 
-    if let Some(changeset_id) = response.id() {
-        reporter.show_success(&format!("Changeset created: {}", changeset_id));
-        println!("Changeset ID: {}", changeset_id);
+                if let Some(stack_id) = response.stack_id() {
+                    output_manager.render(success_message(&format!("Stack ID: {}", stack_id))).await?;
+                }
+            } else {
+                output_manager.render(success_message("Changeset created")).await?;
+            }
 
-        if let Some(stack_id) = response.stack_id() {
-            println!("Stack ID: {}", stack_id);
+            // Show execution instructions
+            output_manager.render(success_message(&format!(
+                "To execute this changeset, run: iidy exec-changeset {} {}",
+                args.argsfile, changeset_name
+            ))).await?;
+
+            Ok(())
         }
-    } else {
-        reporter.show_success("Changeset created");
+        Err(e) => Err(e.into())
+    };
+
+    // Show final result
+    let elapsed = start_time.elapsed().as_secs() as i64;
+    match result {
+        Ok(_) => {
+            output_manager.render(create_command_result(true, elapsed, Some("Changeset creation completed".to_string()))).await?;
+        }
+        Err(ref e) => {
+            output_manager.render(create_command_result(false, elapsed, Some(format!("Changeset creation failed: {}", e)))).await?;
+        }
     }
 
-    // Show execution instructions
-    println!();
-    println!("To execute this changeset, run:");
-    println!("  iidy exec-changeset {} {}", args.argsfile, changeset_name);
-
-    // Show operation summary
-    reporter.show_operation_summary(&context);
-
-    Ok(())
+    result
 }

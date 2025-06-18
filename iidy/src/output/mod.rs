@@ -10,6 +10,8 @@ pub mod renderers;
 pub mod manager;
 pub mod fixtures;
 pub mod theme;
+pub mod keyboard;
+pub mod aws_conversion;
 
 // Re-exports for convenience
 pub use data::*;
@@ -17,3 +19,5 @@ pub use renderer::{OutputRenderer, OutputMode};
 pub use renderers::*;
 pub use manager::DynamicOutputManager;
 pub use fixtures::FixtureLoader;
+pub use keyboard::{KeyboardListener, KeyboardCommand, KeyboardConfig, is_tty_environment, create_for_environment, handle_keyboard_commands};
+pub use aws_conversion::*;

@@ -19,6 +19,7 @@ pub trait OutputRenderer: Send + Sync {
     async fn render_command_result(&mut self, data: &CommandResult) -> Result<()>;
     async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()>;
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()>;
+    async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()>;
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()>;
     
     // Control methods

@@ -270,7 +270,7 @@ impl OutputRenderer for InteractiveRenderer {
             self.format_token_source(&data.primary_token.source)
         ))?;
         
-        // Derived Tokens (following iidy-js pattern)
+        // Derived Tokens (following iidy-js pattern) - only show if present
         if !data.derived_tokens.is_empty() {
             self.print_section_entry("Derived Tokens:", &format!("{} tokens", data.derived_tokens.len()))?;
             for (i, token) in data.derived_tokens.iter().enumerate() {
@@ -736,6 +736,57 @@ impl OutputRenderer for InteractiveRenderer {
         
         println!("{}", status_text);
         
+        Ok(())
+    }
+    
+    /// Render stack drift (exact iidy-js implementation)
+    async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()> {
+        println!();
+        if data.drifted_resources.is_empty() {
+            println!("No drift detected. Stack resources are in sync with template.");
+        } else {
+            println!("{}", "Drifted Resources:".color(self.theme.section_heading));
+            println!();
+            
+            // Calculate padding for aligned output (similar to iidy-js calcPadding)
+            let id_padding = data.drifted_resources.iter()
+                .map(|d| d.logical_resource_id.len())
+                .max()
+                .unwrap_or(0);
+            let type_padding = data.drifted_resources.iter()
+                .map(|d| d.resource_type.len())
+                .max()
+                .unwrap_or(0);
+                
+            for drift in &data.drifted_resources {
+                // Following iidy-js formatting pattern 
+                println!(" {:<width1$} {:<width2$} {}", 
+                    drift.logical_resource_id.color(self.theme.resource_id),
+                    drift.resource_type.color(self.theme.muted),
+                    drift.physical_resource_id.color(self.theme.muted),
+                    width1 = id_padding,
+                    width2 = type_padding
+                );
+                println!("  {}", drift.drift_status.color(self.theme.error));
+                
+                if !drift.property_differences.is_empty() {
+                    // Format as YAML with indentation (matching iidy-js pattern)
+                    for diff in &drift.property_differences {
+                        println!("   - property_path: {}", diff.property_path);
+                        if let Some(expected) = &diff.expected_value {
+                            println!("     expected_value: {}", expected);
+                        }
+                        if let Some(actual) = &diff.actual_value {
+                            println!("     actual_value: {}", actual);
+                        }
+                        if let Some(diff_type) = &diff.difference_type {
+                            println!("     difference_type: {}", diff_type);
+                        }
+                    }
+                }
+            }
+        }
+        println!();
         Ok(())
     }
     

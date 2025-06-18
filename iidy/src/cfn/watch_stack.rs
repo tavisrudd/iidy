@@ -9,7 +9,10 @@ use std::time::Duration;
 
 use crate::{
     aws,
-    cli::{NormalizedAwsOpts, WatchArgs},
+    cli::{NormalizedAwsOpts, WatchArgs, GlobalOpts},
+    output::{
+        DynamicOutputManager, manager::OutputOptions,
+    },
     timing::{ReliableTimeProvider, TimeProvider},
 };
 
@@ -180,10 +183,283 @@ pub async fn watch_stack_with_context(
     Ok(())
 }
 
-/// Watch a CloudFormation stack for changes.
+/// Watch a CloudFormation stack for changes with DynamicOutputManager.
+/// 
+/// This is a read-only operation that follows the iidy-js pattern:
+/// 1. Show stack definition
+/// 2. Show previous stack events (max 10)  
+/// 3. Show live stack events with polling
+/// 4. Show stack contents at the end
+/// No command metadata is shown (read-only operation).
+pub async fn watch_stack(
+    opts: &NormalizedAwsOpts, 
+    args: &WatchArgs, 
+    global_opts: &GlobalOpts
+) -> Result<()> {
+    let output_options = OutputOptions::default();
+    let mut output_manager = DynamicOutputManager::new(
+        global_opts.effective_output_mode(),
+        output_options
+    ).await?;
+
+    let config = aws::config_from_normalized_opts(opts).await?;
+    let client = Client::new(&config);
+
+    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+
+    // 1. Show stack definition (following iidy-js pattern)
+    let stack_resp = ctx.client
+        .describe_stacks()
+        .stack_name(&args.stackname)
+        .send()
+        .await?;
+    
+    let stack = stack_resp
+        .stacks
+        .and_then(|mut s| s.pop())
+        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
+    
+    let stack_definition = crate::output::convert_stack_to_definition(&stack, true);
+    output_manager.render(stack_definition).await?;
+
+    // 2. Show previous stack events (max 10, following iidy-js)
+    let events_resp = ctx.client
+        .describe_stack_events()
+        .stack_name(&args.stackname)
+        .send()
+        .await?;
+    
+    let events = events_resp.stack_events.unwrap_or_default();
+    let previous_events = crate::output::StackEventsDisplay {
+        title: "Previous Stack Events (max 10):".to_string(),
+        events: events.into_iter().take(10).map(|e| crate::output::StackEventWithTiming {
+            event: crate::output::StackEvent {
+                event_id: e.event_id().unwrap_or_default().to_string(),
+                stack_id: e.stack_id().unwrap_or_default().to_string(),
+                stack_name: e.stack_name().unwrap_or_default().to_string(),
+                logical_resource_id: e.logical_resource_id().unwrap_or_default().to_string(),
+                physical_resource_id: e.physical_resource_id().map(|s| s.to_string()),
+                resource_type: e.resource_type().unwrap_or_default().to_string(),
+                timestamp: e.timestamp().and_then(|ts| {
+                    chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+                }),
+                resource_status: e.resource_status().map(|s| s.as_str().to_string()).unwrap_or_default(),
+                resource_status_reason: e.resource_status_reason().map(|s| s.to_string()),
+                resource_properties: None, // Not typically shown in event listings
+                client_request_token: e.client_request_token().map(|s| s.to_string()),
+            },
+            duration_seconds: None, // Will be calculated by renderer if needed
+        }).collect(),
+        truncated: None, // We're explicitly taking 10, so this would be calculated if needed
+    };
+    output_manager.render(crate::output::OutputData::StackEvents(previous_events)).await?;
+
+    // 3. Show live stack events with polling
+    watch_stack_live_events(&ctx, &args.stackname, &mut output_manager, Duration::from_secs(2)).await?;
+    
+    // 4. Show stack contents at the end (following iidy-js pattern)
+    let stack_contents = collect_stack_contents(&ctx, &args.stackname).await?;
+    output_manager.render(crate::output::OutputData::StackContents(stack_contents)).await?;
+    
+    Ok(())
+}
+
+/// Poll for live stack events and send them as structured data (controller pattern)
+async fn watch_stack_live_events(
+    ctx: &CfnContext,
+    stack_name: &str,
+    output_manager: &mut DynamicOutputManager,
+    poll_interval: Duration,
+) -> Result<()> {
+    let mut seen = HashSet::new();
+    
+    // Send initial section heading for live events
+    let initial_live_events = crate::output::StackEventsDisplay {
+        title: format!("Live Stack Events ({}s poll):", poll_interval.as_secs()),
+        events: vec![],
+        truncated: None,
+    };
+    output_manager.render(crate::output::OutputData::StackEvents(initial_live_events)).await?;
+
+    loop {
+        let events = fetch_events(&ctx.client, stack_name).await?;
+        
+        // Filter to only new events after start time
+        let new_events: Vec<StackEvent> = events
+            .into_iter()
+            .filter(|event| {
+                if let Some(id) = event.event_id() {
+                    if seen.insert(id.to_string()) {
+                        // Check if event is after start time
+                        if let Some(start_time) = ctx.start_time {
+                            event
+                                .timestamp()
+                                .and_then(|ts| aws_timestamp_to_chrono(ts))
+                                .map(|event_time| event_time > start_time)
+                                .unwrap_or(false)
+                        } else {
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            })
+            .collect();
+        
+        // Send new events as structured data (one at a time following iidy-js pattern)
+        for event in &new_events {
+            let event_with_timing = crate::output::StackEventWithTiming {
+                event: crate::output::StackEvent {
+                    event_id: event.event_id().unwrap_or_default().to_string(),
+                    stack_id: event.stack_id().unwrap_or_default().to_string(),
+                    stack_name: event.stack_name().unwrap_or_default().to_string(),
+                    logical_resource_id: event.logical_resource_id().unwrap_or_default().to_string(),
+                    physical_resource_id: event.physical_resource_id().map(|s| s.to_string()),
+                    resource_type: event.resource_type().unwrap_or_default().to_string(),
+                    timestamp: event.timestamp().and_then(|ts| {
+                        chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+                    }),
+                    resource_status: event.resource_status().map(|s| s.as_str().to_string()).unwrap_or_default(),
+                    resource_status_reason: event.resource_status_reason().map(|s| s.to_string()),
+                    resource_properties: None,
+                    client_request_token: event.client_request_token().map(|s| s.to_string()),
+                },
+                duration_seconds: None, // Individual events don't need duration for live display
+            };
+            
+            let single_event = crate::output::StackEventsDisplay {
+                title: String::new(), // No section heading for individual events
+                events: vec![event_with_timing],
+                truncated: None,
+            };
+            output_manager.render(crate::output::OutputData::StackEvents(single_event)).await?;
+            
+            // Check if this event indicates terminal state
+            if event_indicates_terminal(event, stack_name) {
+                // Send elapsed time as status update (following iidy-js pattern)
+                if let Some(start_time) = ctx.start_time {
+                    if let Ok(current_time) = ctx.time_provider.now().await {
+                        let elapsed = (current_time - start_time).num_seconds();
+                        let elapsed_update = crate::output::StatusUpdate {
+                            message: format!(" {} seconds elapsed total.", elapsed),
+                            timestamp: chrono::Utc::now(),
+                            level: crate::output::StatusLevel::Info,
+                        };
+                        output_manager.render(crate::output::OutputData::StatusUpdate(elapsed_update)).await?;
+                    }
+                }
+                return Ok(());
+            }
+        }
+        
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+/// Collect stack contents data (controller pattern - no display logic)
+async fn collect_stack_contents(
+    ctx: &CfnContext,
+    stack_name: &str,
+) -> Result<crate::output::StackContents> {
+    // Get stack resources
+    let resources_resp = ctx.client
+        .describe_stack_resources()
+        .stack_name(stack_name)
+        .send()
+        .await?;
+    
+    let resources: Vec<crate::output::StackResourceInfo> = resources_resp
+        .stack_resources
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| crate::output::StackResourceInfo {
+            logical_resource_id: r.logical_resource_id.unwrap_or_default(),
+            physical_resource_id: r.physical_resource_id,
+            resource_type: r.resource_type.unwrap_or_default(),
+            resource_status: r.resource_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
+            resource_status_reason: r.resource_status_reason,
+            last_updated_timestamp: r.timestamp.and_then(|ts| {
+                chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+            }),
+        })
+        .collect();
+
+    // Get stack description for outputs
+    let stack_resp = ctx.client
+        .describe_stacks()
+        .stack_name(stack_name)
+        .send()
+        .await?;
+    
+    let stack = stack_resp
+        .stacks
+        .and_then(|mut s| s.pop())
+        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
+
+    // Extract outputs from stack
+    let outputs: Vec<crate::output::StackOutputInfo> = stack
+        .outputs
+        .unwrap_or_default()
+        .into_iter()
+        .map(|o| crate::output::StackOutputInfo {
+            output_key: o.output_key.unwrap_or_default(),
+            output_value: o.output_value.unwrap_or_default(),
+            description: o.description,
+            export_name: o.export_name,
+        })
+        .collect();
+
+    // Get exports if any outputs have export names
+    let mut exports: Vec<crate::output::StackExportInfo> = vec![];
+    for output in &outputs {
+        if let Some(export_name) = &output.export_name {
+            exports.push(crate::output::StackExportInfo {
+                name: export_name.clone(),
+                value: output.output_value.clone(),
+                exporting_stack_id: stack.stack_id.clone().unwrap_or_default(),
+                importing_stacks: vec![], // Would need separate query to find importers
+            });
+        }
+    }
+
+    // Current status
+    let current_status = crate::output::StackStatusInfo {
+        status: stack.stack_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
+        status_reason: stack.stack_status_reason,
+        timestamp: stack.last_updated_time.or(stack.creation_time).and_then(|ts| {
+            chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+        }),
+    };
+
+    Ok(crate::output::StackContents {
+        resources,
+        outputs,
+        exports,
+        current_status,
+        pending_changesets: vec![], // Would need separate query
+    })
+}
+
+/// Compatibility function for other command handlers that need to watch stack progress
+/// This maintains the old interface while using the new data-driven architecture internally
+pub async fn watch_stack_with_data_output(
+    ctx: &CfnContext,
+    stack_name: &str,
+    output_manager: &mut DynamicOutputManager,
+    poll_interval: Duration,
+) -> Result<()> {
+    // Delegate to the new implementation
+    watch_stack_live_events(ctx, stack_name, output_manager, poll_interval).await
+}
+
+/// Watch a CloudFormation stack for changes (legacy function).
 ///
 /// This function creates its own timing context with proper token management.
-pub async fn watch_stack(opts: &NormalizedAwsOpts, args: &WatchArgs) -> Result<()> {
+pub async fn watch_stack_legacy(opts: &NormalizedAwsOpts, args: &WatchArgs) -> Result<()> {
     let config = aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
 

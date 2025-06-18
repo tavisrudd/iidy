@@ -139,6 +139,9 @@ impl DynamicOutputManager {
             OutputData::ChangeSetResult(result) => {
                 self.current_renderer.render_changeset_result(result).await
             }
+            OutputData::StackDrift(drift) => {
+                self.current_renderer.render_stack_drift(drift).await
+            }
             OutputData::Error(error) => {
                 self.current_renderer.render_error(error).await
             }

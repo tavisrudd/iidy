@@ -27,8 +27,8 @@ pub async fn run_output_demo() -> Result<()> {
     
     // Create PlainTextRenderer via OutputManager
     let options = OutputOptions {
-        color_enabled: false,
-        theme: crate::terminal::Theme::Auto,
+        color_choice: crate::cli::ColorChoice::Never,
+        theme: crate::cli::Theme::Auto,
         terminal_width: Some(120),
         buffer_limit: 100,
     };

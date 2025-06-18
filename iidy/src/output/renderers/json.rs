@@ -128,6 +128,10 @@ impl OutputRenderer for JsonRenderer {
         self.output_json("changeset_result", data)
     }
     
+    async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()> {
+        self.output_json("stack_drift", data)
+    }
+    
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
         self.output_json("error", data)
     }
