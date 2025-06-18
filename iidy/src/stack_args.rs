@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Result, bail};
-use serde::Deserialize;
+use anyhow::{Result, bail, Context};
+use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 
 use crate::{cli::YamlSpec, yaml::preprocess_yaml, cli_context::CliContext, aws::AwsSettings};
 
 #[allow(dead_code)]
-#[derive(Debug, Deserialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct StackArgs {
     #[serde(rename = "StackName")]
     pub stack_name: Option<String>,
@@ -166,6 +166,47 @@ pub async fn load_stack_args_with_context(
         merged_aws_settings.profile.as_deref(),
     );
     inject_env_values(&mut value, env_values);
+    
+    // Handle CommandsBefore if present and command supports it
+    if let Some(commands_before) = value.get("CommandsBefore").cloned() {
+        if should_process_commands_before(command) {
+            // Two-pass processing for CommandsBefore
+            // Pass 1: Process without CommandsBefore to get full context for handlebars
+            let mut value_pass1 = value.clone();
+            if let Value::Mapping(map) = &mut value_pass1 {
+                map.remove(&Value::String("CommandsBefore".to_string()));
+            }
+            
+            // Process pass 1 to get complete context
+            let pass1_yaml = serde_yaml::to_string(&value_pass1)?;
+            let pass1_value = preprocess_yaml(&pass1_yaml, &base_location, &yaml_spec).await?;
+            let stack_args_pass1: StackArgs = serde_yaml::from_value(pass1_value)?;
+            
+            // Execute CommandsBefore with full context
+            let processed_commands = process_commands_before(
+                commands_before,
+                &stack_args_pass1,
+                environment,
+                command,
+                current_region,
+                merged_aws_settings.profile.as_deref(),
+                path,
+            )?;
+            
+            // Update value with processed commands
+            if let Value::Mapping(map) = &mut value {
+                map.insert(
+                    Value::String("CommandsBefore".to_string()),
+                    Value::Sequence(processed_commands.into_iter().map(Value::String).collect()),
+                );
+            }
+        } else {
+            // Remove CommandsBefore for operations that don't support it
+            if let Value::Mapping(map) = &mut value {
+                map.remove(&Value::String("CommandsBefore".to_string()));
+            }
+        }
+    }
     
     // Final preprocessing pass with AWS config available
     let final_value = preprocess_yaml(
@@ -355,6 +396,157 @@ async fn apply_sns_notification_global_configuration(
     }
     
     Ok(())
+}
+
+/// Check if CommandsBefore should be processed for the given command
+fn should_process_commands_before(command: &[String]) -> bool {
+    if command.is_empty() {
+        return false;
+    }
+    matches!(
+        command[0].as_str(),
+        "create-stack" | "update-stack" | "create-changeset" | "create-or-update"
+    )
+}
+
+/// Process CommandsBefore with handlebars templating and command execution
+fn process_commands_before(
+    commands: Value,
+    stack_args: &StackArgs,
+    environment: Option<&str>,
+    command: &[String],
+    region: &str,
+    profile: Option<&str>,
+    argsfile_path: &Path,
+) -> Result<Vec<String>> {
+    use std::process::Command;
+    use crate::yaml::handlebars::interpolate_handlebars_string;
+    
+    // Extract commands as strings
+    let commands = match commands {
+        Value::Sequence(seq) => {
+            seq.into_iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect::<Vec<_>>()
+        }
+        _ => bail!("CommandsBefore must be an array of strings"),
+    };
+    
+    // Build handlebars context with full iidy namespace
+    let mut handlebars_env = BTreeMap::new();
+    
+    // Add iidy namespace
+    let mut iidy_values = BTreeMap::new();
+    iidy_values.insert("stackArgs".to_string(), serde_yaml::to_value(stack_args)?);
+    iidy_values.insert("stackName".to_string(), Value::String(
+        stack_args.stack_name.clone().unwrap_or_default()
+    ));
+    iidy_values.insert("command".to_string(), Value::String(command.join(" ")));
+    if let Some(env) = environment {
+        iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
+    }
+    iidy_values.insert("region".to_string(), Value::String(region.to_string()));
+    if let Some(p) = profile {
+        iidy_values.insert("profile".to_string(), Value::String(p.to_string()));
+    }
+    
+    handlebars_env.insert("iidy".to_string(), Value::Mapping(
+        iidy_values.into_iter()
+            .map(|(k, v)| (Value::String(k), v))
+            .collect()
+    ));
+    
+    // Add legacy values
+    handlebars_env.insert("region".to_string(), Value::String(region.to_string()));
+    if let Some(env) = environment {
+        handlebars_env.insert("environment".to_string(), Value::String(env.to_string()));
+    }
+    
+    let handlebars_value = Value::Mapping(
+        handlebars_env.into_iter()
+            .map(|(k, v)| (Value::String(k), v))
+            .collect()
+    );
+    
+    // Get working directory from argsfile path
+    let cwd = argsfile_path.parent()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine working directory from argsfile path"))?;
+    
+    println!("== Executing CommandsBefore from argsfile {}", "=".repeat(28));
+    
+    let mut expanded_commands = Vec::new();
+    
+    // Convert serde_yaml::Value to HashMap<String, serde_json::Value> for handlebars
+    let handlebars_map = if let Value::Mapping(map) = &handlebars_value {
+        let mut json_map = std::collections::HashMap::new();
+        for (k, v) in map {
+            if let Value::String(key) = k {
+                // Convert serde_yaml::Value to serde_json::Value
+                let json_value = serde_json::to_value(v)
+                    .with_context(|| format!("Failed to convert YAML value to JSON for key: {}", key))?;
+                json_map.insert(key.clone(), json_value);
+            }
+        }
+        json_map
+    } else {
+        bail!("Handlebars environment must be a mapping");
+    };
+    
+    for (index, cmd) in commands.iter().enumerate() {
+        // Process handlebars templates in command
+        let expanded_command = interpolate_handlebars_string(cmd, &handlebars_map, "CommandsBefore")?;
+        expanded_commands.push(expanded_command.clone());
+        
+        println!("\n-- Command {} {}", index + 1, "-".repeat(50));
+        if expanded_command != *cmd {
+            println!("# raw command before processing handlebars variables:");
+            println!("{}", cmd);
+            println!("# command after processing handlebars variables:");
+            println!("{}", expanded_command);
+        } else {
+            println!("{}", cmd);
+        }
+        
+        println!("-- Command {} Output {}", index + 1, "-".repeat(25));
+        
+        // Execute command with environment variables
+        let mut command = Command::new("/bin/bash");
+        command.arg("-c").arg(&expanded_command);
+        command.current_dir(cwd);
+        
+        // Set environment variables
+        command.env("iidy_profile", profile.unwrap_or(""));
+        command.env("iidy_region", region);
+        command.env("iidy_environment", environment.unwrap_or(""));
+        command.env("PKG_SKIP_EXECPATH_PATCH", "yes");
+        
+        // Execute command
+        let output = command.output()
+            .with_context(|| format!("Failed to execute command: {}", expanded_command))?;
+        
+        // Print output
+        if !output.stdout.is_empty() {
+            print!("{}", String::from_utf8_lossy(&output.stdout));
+        }
+        if !output.stderr.is_empty() {
+            eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        }
+        
+        // Check exit status
+        if !output.status.success() {
+            bail!(
+                "Error running command (exit code {}):\n{}",
+                output.status.code().unwrap_or(-1),
+                cmd
+            );
+        }
+    }
+    
+    println!();
+    println!("== End CommandsBefore {}", "=".repeat(48));
+    println!();
+    
+    Ok(expanded_commands)
 }
 
 #[cfg(test)]
