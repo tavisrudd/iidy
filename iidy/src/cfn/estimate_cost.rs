@@ -26,7 +26,7 @@ pub async fn estimate_cost(
         output_options
     ).await?;
 
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), None)?;
+    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
     let context = create_context(opts).await?;
 
     // Determine stack name from args or stack-args.yaml (not needed for estimate cost, but validate it exists)

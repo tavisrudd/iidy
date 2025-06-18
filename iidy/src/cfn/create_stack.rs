@@ -22,8 +22,8 @@ pub async fn create_stack(
     args: &StackFileArgs, 
     global_opts: &GlobalOpts
 ) -> Result<()> {
-    // Load stack configuration
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), None)?;
+    // Load stack configuration with environment
+    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
 
     // Override stack name if provided via CLI
     let mut final_stack_args = stack_args;

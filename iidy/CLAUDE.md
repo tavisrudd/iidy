@@ -1,17 +1,21 @@
 # CLAUDE.md
 
-## Essential Context for Auto-Compact Recovery
+## 🚨 CRITICAL CONTEXT FOR AUTO-COMPACT RECOVERY
 
-When context auto-compacts, read these documents first to understand current state and progress:
+**EMERGENCY STATUS:** Major foundational issue discovered in stack args loading system.
 
-### **Primary Design Documents (Read First)**
-1. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design with data structures, renderer traits, fixture-based testing approach (sections 2063-2305)
-2. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (Interactive, Plain, JSON, TUI) with exact requirements
-3. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js implementation spec with exact colors, spacing, constants (color codes at lines 912-918)
+### **MANDATORY FIRST READS (Critical Issue)**
+1. **`notes/2025-06-18-context-window-recovery-instructions.md`** - 🚨 CRITICAL recovery instructions and situation awareness
+2. **`notes/2025-06-18-critical-stack-args-implementation-plan.md`** - 🚨 Complete analysis and implementation plan for broken stack args system
+3. **`notes/2025-06-18-stack-args-loading-analysis.md`** - 🚨 Detailed requirements gap analysis vs iidy-js
+4. **`@iidy-js-for-reference/src/cfn/loadStackArgs.ts`** - 🚨 THE authoritative reference implementation
+5. **Current Todo List** - Use `TodoRead` tool to see critical implementation priorities
 
-### **Implementation Status & Progress**
-4. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Current implementation status, completed phases, testing strategy analysis
-5. **Current Todo List** - Use `TodoRead` tool to see current tasks and priorities
+### **Architecture Documents (After Critical Issue)**
+6. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design (✅ COMPLETED)
+7. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (✅ COMPLETED)
+8. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec (✅ COMPLETED)
+9. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Implementation status (✅ COMPLETED)
 
 ### **Key Implementation Details**
 - **Theme System**: `src/output/theme.rs` with exact iidy-js colors (NOT old src/terminal.rs/color.rs)

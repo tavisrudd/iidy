@@ -66,7 +66,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Clone)]
 #[clap(next_help_heading = "Global Options")]
 pub struct GlobalOpts {
     #[arg(
@@ -111,7 +111,7 @@ impl GlobalOpts {
     }
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Args, Clone)]
 pub struct AwsOpts {
     #[arg(
         long,

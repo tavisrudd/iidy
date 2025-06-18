@@ -6,7 +6,7 @@ use anyhow::{Result, bail};
 use serde::Deserialize;
 use serde_yaml::{Mapping, Value};
 
-use crate::{cli::YamlSpec, yaml::preprocess_yaml};
+use crate::{cli::YamlSpec, yaml::preprocess_yaml, cli_context::CliContext};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone, Default)]
@@ -91,6 +91,24 @@ fn ensure_environment_tag(root: &mut Mapping, env: &str) {
 pub fn load_stack_args_file(path: &Path, environment: Option<&str>) -> Result<StackArgs> {
     let contents = fs::read_to_string(path)?;
     load_stack_args_str(&contents, path, environment)
+}
+
+/// Load stack args with full CLI context (new iidy-js compatible interface)
+pub async fn load_stack_args_from_context(
+    cli_context: &CliContext,
+    _filter_keys: Vec<String>,
+) -> Result<StackArgs> {
+    let path = Path::new(&cli_context.argsfile);
+    let environment = Some(cli_context.environment());
+    
+    // For now, delegate to the existing implementation
+    // TODO: Implement full iidy-js compatibility with:
+    // - AWS credential configuration
+    // - $envValues injection  
+    // - Global configuration via SSM
+    // - CommandsBefore processing
+    // - Multi-pass preprocessing
+    load_stack_args_file(path, environment)
 }
 
 pub fn load_stack_args_str(

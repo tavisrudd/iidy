@@ -29,7 +29,7 @@ pub async fn exec_changeset(
         output_options
     ).await?;
     // Load stack configuration
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), None)?;
+    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
 
     // Override stack name if provided via CLI
     let mut final_stack_args = stack_args;
