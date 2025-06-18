@@ -1,11 +1,11 @@
 use anyhow::Result;
-use std::path::Path;
 use std::time::Instant;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context},
     cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
-    stack_args::load_stack_args_file,
+    stack_args::load_stack_args_with_context,
+    aws::AwsSettings,
     output::{
         DynamicOutputManager, OutputData, create_command_metadata, 
         progress_message, success_message, create_command_result
@@ -22,8 +22,15 @@ pub async fn create_stack(
     args: &StackFileArgs, 
     global_opts: &GlobalOpts
 ) -> Result<()> {
-    // Load stack configuration with environment
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
+    // Load stack configuration with full context (AWS credential merging + $envValues injection)
+    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let command = vec!["create-stack".to_string()];
+    let stack_args = load_stack_args_with_context(
+        &args.argsfile,
+        Some(&global_opts.environment),
+        &command,
+        &cli_aws_settings,
+    ).await?;
 
     // Override stack name if provided via CLI
     let mut final_stack_args = stack_args;

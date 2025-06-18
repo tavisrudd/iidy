@@ -8,7 +8,8 @@ use crate::{
         DynamicOutputManager, manager::OutputOptions,
         OutputData, StatusUpdate, StatusLevel
     },
-    stack_args::load_stack_args_file,
+    stack_args::load_stack_args_with_context,
+    aws::AwsSettings,
 };
 
 /// Estimate stack cost using CloudFormation's estimateTemplateCost API.
@@ -26,7 +27,15 @@ pub async fn estimate_cost(
         output_options
     ).await?;
 
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
+    // Load stack configuration with full context (AWS credential merging + $envValues injection)
+    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let command = vec!["estimate-cost".to_string()];
+    let stack_args = load_stack_args_with_context(
+        &args.argsfile,
+        Some(&global_opts.environment),
+        &command,
+        &cli_aws_settings,
+    ).await?;
     let context = create_context(opts).await?;
 
     // Determine stack name from args or stack-args.yaml (not needed for estimate cost, but validate it exists)

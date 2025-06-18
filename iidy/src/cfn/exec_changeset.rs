@@ -1,6 +1,5 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::Client;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -12,7 +11,8 @@ use crate::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, warning_message, create_command_result},
     },
-    stack_args::load_stack_args_file,
+    stack_args::load_stack_args_with_context,
+    aws::AwsSettings,
     timing::{ReliableTimeProvider, TimeProvider},
 };
 
@@ -29,7 +29,15 @@ pub async fn exec_changeset(
         output_options
     ).await?;
     // Load stack configuration
-    let stack_args = load_stack_args_file(Path::new(&args.argsfile), Some(&global_opts.environment))?;
+    // Load stack configuration with full context (AWS credential merging + $envValues injection)
+    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let command = vec!["execute-changeset".to_string()];
+    let stack_args = load_stack_args_with_context(
+        &args.argsfile,
+        Some(&global_opts.environment),
+        &command,
+        &cli_aws_settings,
+    ).await?;
 
     // Override stack name if provided via CLI
     let mut final_stack_args = stack_args;
