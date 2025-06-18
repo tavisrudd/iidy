@@ -59,13 +59,17 @@ pub async fn exec_changeset(
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
-    // Show primary token
-    output_manager.render(progress_message(&format!("Primary operation token: {}", context.primary_token().value))).await?;
+    // Pass primary token to output manager for conditional display
+    let primary_token = crate::output::aws_conversion::convert_token_info(&context.primary_token());
+    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
 
     // Build and execute the ExecuteChangeSet request
     let (execute_request, token) =
         builder.build_execute_changeset(&args.changeset_name, "execute-changeset");
-    output_manager.render(progress_message(&format!("Execute changeset token: {}", token.value))).await?;
+    
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Executing changeset '{}' for stack: {}",

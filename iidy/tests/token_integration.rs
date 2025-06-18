@@ -103,7 +103,7 @@ async fn test_token_management_integration() {
     let builder = CfnRequestBuilder::new(&context, &mock_stack_args);
 
     // Test request building with token injection
-    let (_create_request, create_token) = builder.build_create_stack("test-create");
+    let (_create_request, create_token) = builder.build_create_stack("test-create", "test-stack-args.yaml", Some("test")).await.unwrap();
     let (_update_request, update_token) = builder.build_update_stack("test-update");
     let (_changeset_request, changeset_token) =
         builder.build_create_changeset("test-changeset", "test-changeset");

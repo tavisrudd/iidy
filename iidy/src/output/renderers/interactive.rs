@@ -47,6 +47,7 @@ pub struct InteractiveRenderer {
     theme: IidyTheme,
     #[allow(dead_code)] // Will be used for text wrapping in future
     terminal_width: usize,
+    has_rendered_content: bool,
 }
 
 impl InteractiveRenderer {
@@ -58,6 +59,7 @@ impl InteractiveRenderer {
             options,
             theme,
             terminal_width,
+            has_rendered_content: false,
         }
     }
     
@@ -68,11 +70,32 @@ impl InteractiveRenderer {
     
     /// Format section heading (exact iidy-js implementation)
     fn format_section_heading(&self, text: &str) -> String {
+        // Remove trailing colon if present to avoid double colons
+        let clean_text = text.trim_end_matches(':');
+        
         if self.colors_enabled() {
-            format!("{}:", text.white())
+            format!("{}:", clean_text.color(self.theme.section_heading).bold())
         } else {
-            format!("{}:", text)
+            format!("{}:", clean_text)
         }
+    }
+    
+    /// Print section heading with appropriate spacing
+    fn print_section_heading(&mut self, text: &str) {
+        // Add blank line before section if content has already been rendered
+        if self.has_rendered_content {
+            println!();
+        }
+        println!("{}", self.format_section_heading(text));
+        self.has_rendered_content = true;
+    }
+    
+    /// Add appropriate spacing before content if needed
+    fn add_content_spacing(&mut self) {
+        if self.has_rendered_content {
+            println!();
+        }
+        self.has_rendered_content = true;
     }
     
     /// Format section label (exact iidy-js implementation) 
@@ -117,9 +140,14 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Render timestamp in iidy-js format
+    /// Render timestamp in iidy-js format (canonical format for all timestamps)
     fn render_timestamp(&self, dt: &DateTime<Utc>) -> String {
-        dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
+        dt.format("%a %b %d %Y %H:%M:%S").to_string()
+    }
+    
+    /// Render timestamp for stack events in iidy-js format
+    fn render_event_timestamp(&self, dt: &DateTime<Utc>) -> String {
+        self.render_timestamp(dt)
     }
     
     /// Colorize resource status (exact iidy-js implementation)
@@ -242,8 +270,7 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render command metadata (exact iidy-js showCommandSummary implementation)
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
-        println!(); // blank line
-        println!("{}", self.format_section_heading("Command Metadata"));
+        self.print_section_heading("Command Metadata");
         
         self.print_section_entry("CFN Operation:", &data.cfn_operation.color(self.theme.primary).to_string())?;
         self.print_section_entry("iidy Environment:", &data.iidy_environment.color(self.theme.primary).to_string())?;
@@ -288,7 +315,7 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack definition (exact iidy-js summarizeStackDefinition implementation)
     async fn render_stack_definition(&mut self, data: &StackDefinition, show_times: bool) -> Result<()> {
-        println!("{}", self.format_section_heading("Stack Details"));
+        self.print_section_heading("Stack Details");
         
         // Handle StackSet name display
         if let Some(stackset_name) = data.tags.get("StackSetName") {
@@ -387,26 +414,51 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack events (exact iidy-js implementation)
     async fn render_stack_events(&mut self, data: &StackEventsDisplay) -> Result<()> {
-        println!("{}", self.format_section_heading(&data.title));
+        self.print_section_heading(&data.title);
         
         if data.events.is_empty() {
             println!(" {}", "No events found".color(self.theme.muted));
             return Ok(());
         }
         
-        // Calculate padding
-        let logical_id_padding = self.calc_padding(&data.events, |e| &e.event.logical_resource_id);
-        let resource_type_padding = std::cmp::min(RESOURCE_TYPE_PADDING, MAX_PADDING);
+        // Sort events and apply limiting using the helper method
+        let (events_to_show, truncation_info) = data.get_sorted_limited_events();
         
-        for event_with_timing in &data.events {
+        // Calculate padding for status and resource type columns
+        let status_padding = self.calc_padding(&events_to_show, |e| &e.event.resource_status);
+        let resource_type_padding = self.calc_padding(&events_to_show, |e| &e.event.resource_type);
+        
+        for event_with_timing in &events_to_show {
             let event = &event_with_timing.event;
             
-            // Format timestamp
+            // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
             let timestamp = if let Some(ts) = &event.timestamp {
-                self.format_timestamp(&self.render_timestamp(ts))
+                self.format_timestamp(&self.render_event_timestamp(ts))
             } else {
-                self.format_timestamp("                        ")
+                self.format_timestamp("                         ")
             };
+            
+            // Format status with padding (apply padding before coloring to avoid ANSI length issues)
+            let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
+            let status = if self.colors_enabled() {
+                self.colorize_resource_status(&status_padded, None)
+            } else {
+                status_padded
+            };
+            
+            // Format resource type with padding (plain white for events, not muted)
+            let resource_type_padded = format!("{:<width$}", 
+                event.resource_type, 
+                width = resource_type_padding
+            );
+            let resource_type = if self.colors_enabled() {
+                resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
+            } else {
+                resource_type_padded
+            };
+            
+            // Format logical ID (no padding needed as it's the last column before duration)
+            let logical_id = self.format_logical_id(&event.logical_resource_id);
             
             // Format duration if available
             let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
@@ -415,36 +467,18 @@ impl OutputRenderer for InteractiveRenderer {
                 String::new()
             };
             
-            // Format logical ID with padding
-            let logical_id = self.format_logical_id(&format!(" {:<width$}", 
-                event.logical_resource_id, 
-                width = logical_id_padding
-            ));
-            
-            // Format resource type with padding
-            let resource_type = format!("{:<width$}", 
-                event.resource_type, 
-                width = resource_type_padding
-            );
-            
-            // Format status
-            let status = self.colorize_resource_status(&event.resource_status, None);
-            
-            // Status reason
-            let status_reason = event.resource_status_reason.as_deref().unwrap_or("");
-            
-            println!("{} {} {} {} {}{}",
+            // iidy-js column order: timestamp status resource_type logical_id duration
+            println!(" {} {} {} {}{}",
                 timestamp,
-                logical_id,
-                resource_type.color(self.theme.muted),
                 status,
-                status_reason.color(self.theme.muted),
+                resource_type,
+                logical_id,
                 duration_text.color(self.theme.muted)
             );
         }
         
         // Show truncation info if present
-        if let Some(truncation) = &data.truncated {
+        if let Some(truncation) = &truncation_info {
             println!("  {}", format!(
                 "showing {} of {} events", 
                 truncation.shown, 
@@ -459,7 +493,7 @@ impl OutputRenderer for InteractiveRenderer {
     async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()> {
         // Stack Resources
         if !data.resources.is_empty() {
-            println!("{}", self.format_section_heading("Stack Resources"));
+            self.print_section_heading("Stack Resources");
             let id_padding = self.calc_padding(&data.resources, |r| &r.logical_resource_id);
             let resource_type_padding = self.calc_padding(&data.resources, |r| &r.resource_type);
             
@@ -478,14 +512,11 @@ impl OutputRenderer for InteractiveRenderer {
             }
         }
         
-        println!();
-        
         // Stack Outputs
-        print!("{}", self.format_section_heading("Stack Outputs"));
+        self.print_section_heading("Stack Outputs");
         if data.outputs.is_empty() {
             println!(" {}", "None".color(self.theme.muted));
         } else {
-            println!();
             let output_key_padding = self.calc_padding(&data.outputs, |o| &o.output_key);
             
             for output in &data.outputs {
@@ -501,8 +532,7 @@ impl OutputRenderer for InteractiveRenderer {
         
         // Stack Exports
         if !data.exports.is_empty() {
-            println!();
-            println!("{}", self.format_section_heading("Stack Exports"));
+            self.print_section_heading("Stack Exports");
             let export_name_padding = self.calc_padding(&data.exports, |ex| &ex.name);
             
             for export in &data.exports {
@@ -521,19 +551,16 @@ impl OutputRenderer for InteractiveRenderer {
             }
         }
         
-        println!();
-        
         // Current Stack Status
-        println!("{} {} {}",
-            self.format_section_heading(&format!("{:<width$}", "Current Stack Status", width = COLUMN2_START)),
+        self.print_section_heading("Current Stack Status");
+        println!(" {} {}",
             self.colorize_resource_status(&data.current_status.status, None),
             data.current_status.status_reason.as_deref().unwrap_or("").color(self.theme.muted)
         );
         
         // Pending Changesets
         if !data.pending_changesets.is_empty() {
-            println!();
-            println!("{}", self.format_section_heading("Pending Changesets"));
+            self.print_section_heading("Pending Changesets");
             
             for changeset in &data.pending_changesets {
                 self.print_section_entry(
@@ -606,13 +633,14 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render command result (exact iidy-js implementation)
     async fn render_command_result(&mut self, data: &CommandResult) -> Result<()> {
+        self.add_content_spacing();
+        
         let status_text = if data.success {
             self.format_section_heading("SUCCESS")
         } else {
-            "FAILURE".color(self.theme.error).to_string()
+            format!("{}:", "FAILURE".color(self.theme.error))
         };
         
-        println!();
         println!("{} ({}s)", status_text, data.elapsed_seconds);
         
         if let Some(message) = &data.message {
@@ -637,8 +665,7 @@ impl OutputRenderer for InteractiveRenderer {
         };
         println!("{}", header.color(self.theme.muted));
         
-        // Calculate padding
-        let time_padding = 24;
+        // Calculate padding for status column
         let status_padding = self.calc_padding(&data.stacks, |s| &s.stack_status);
         
         for stack in &data.stacks {
@@ -677,11 +704,11 @@ impl OutputRenderer for InteractiveRenderer {
             
             let stack_name = self.color_by_environment(&base_stack_name, env_name);
             
-            // Main line output
+            // Format timestamp in iidy-js format for list-stacks
             let timestamp = if let Some(time) = &stack.last_updated_time {
-                self.render_timestamp(time)
+                self.render_event_timestamp(time) // Use event timestamp format
             } else if let Some(time) = &stack.creation_time {
-                self.render_timestamp(time)
+                self.render_event_timestamp(time) // Use event timestamp format
             } else {
                 "Unknown".to_string()
             };
@@ -692,9 +719,17 @@ impl OutputRenderer for InteractiveRenderer {
                 String::new()
             };
             
+            // Format status with proper padding (avoid ANSI color issues)
+            let status_padded = format!("{:<width$}", stack.stack_status, width = status_padding);
+            let status_colored = if self.colors_enabled() {
+                self.colorize_resource_status(&status_padded, None)
+            } else {
+                status_padded
+            };
+            
             println!("{} {} {}{}{}",
-                self.format_timestamp(&format!("{:>width$}", timestamp, width = time_padding)),
-                self.colorize_resource_status(&stack.stack_status, Some(status_padding)),
+                self.format_timestamp(&timestamp),
+                status_colored,
                 lifecycle_icon.color(self.theme.muted),
                 stack_name,
                 tags_display
@@ -715,7 +750,7 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render changeset result (exact iidy-js implementation)
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()> {
-        println!();
+        self.add_content_spacing();
         
         // Show AWS Console URL
         println!("AWS Console URL for full changeset review: {}",
@@ -741,12 +776,10 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack drift (exact iidy-js implementation)
     async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()> {
-        println!();
         if data.drifted_resources.is_empty() {
             println!("No drift detected. Stack resources are in sync with template.");
         } else {
-            println!("{}", "Drifted Resources:".color(self.theme.section_heading));
-            println!();
+            self.print_section_heading("Drifted Resources");
             
             // Calculate padding for aligned output (similar to iidy-js calcPadding)
             let id_padding = data.drifted_resources.iter()
@@ -801,6 +834,15 @@ impl OutputRenderer for InteractiveRenderer {
             eprintln!("{}", details.color(self.theme.muted));
         }
         
+        Ok(())
+    }
+    
+    /// Render token info - typically only shown in debug/verbose modes
+    async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
+        // In interactive mode, only show tokens in debug scenarios
+        // For now, we'll keep it simple and not display by default
+        // TODO: Add verbosity/debug flag checking
+        let _ = data; // Suppress unused parameter warning
         Ok(())
     }
 }

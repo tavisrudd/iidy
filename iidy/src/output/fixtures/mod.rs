@@ -8,6 +8,9 @@ use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Default number of previous events for fixtures
+const DEFAULT_FIXTURE_EVENTS_COUNT: usize = 10;
+
 /// Test fixture structure matching the design spec
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestFixture {
@@ -230,8 +233,9 @@ impl FixtureLoader {
         };
         
         Ok(StackEventsDisplay {
-            title: "Previous Stack Events (max 10):".to_string(),
+            title: format!("Previous Stack Events (max {}):", DEFAULT_FIXTURE_EVENTS_COUNT),
             events: events_vec,
+            max_events: Some(DEFAULT_FIXTURE_EVENTS_COUNT),
             truncated: Some(TruncationInfo {
                 shown: 4,
                 total: 8,

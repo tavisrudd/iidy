@@ -21,6 +21,7 @@ pub trait OutputRenderer: Send + Sync {
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()>;
     async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()>;
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()>;
+    async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()>;
     
     // Control methods
     async fn init(&mut self) -> Result<()>;

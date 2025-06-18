@@ -2,7 +2,7 @@ use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
 use crate::{stack_args::StackArgs, timing::TokenInfo};
 
-use super::CfnContext;
+use super::{CfnContext, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
 
 /// Builder pattern for constructing CloudFormation API requests with proper token injection.
 ///
@@ -32,16 +32,20 @@ impl<'a> CfnRequestBuilder<'a> {
     ///
     /// # Arguments
     /// * `step_name` - The operation step name for token derivation (e.g., "create-stack")
+    /// * `argsfile_path` - Path to the stack-args.yaml file (for template base location)
+    /// * `environment` - Environment name for template processing
     ///
     /// # Returns
     /// A tuple containing the prepared CreateStack fluent builder and the token used
-    pub fn build_create_stack(
+    pub async fn build_create_stack(
         &self,
         step_name: &str,
-    ) -> (
+        argsfile_path: &str,
+        environment: Option<&str>,
+    ) -> anyhow::Result<(
         aws_sdk_cloudformation::operation::create_stack::builders::CreateStackFluentBuilder,
         TokenInfo,
-    ) {
+    )> {
         let token = self.context.derive_token_for_step(step_name);
 
         let mut builder = self
@@ -55,9 +59,20 @@ impl<'a> CfnRequestBuilder<'a> {
             builder = builder.stack_name(stack_name);
         }
 
-        // Apply template body
-        if let Some(ref template) = self.stack_args.template {
-            builder = builder.template_body(template);
+        // Load and apply template using template loader
+        if let Some(ref template_location) = self.stack_args.template {
+            let template_result = load_cfn_template(
+                Some(template_location),
+                argsfile_path,
+                environment,
+                TEMPLATE_MAX_BYTES,
+            ).await?;
+
+            if let Some(template_body) = template_result.template_body {
+                builder = builder.template_body(template_body);
+            } else if let Some(template_url) = template_result.template_url {
+                builder = builder.template_url(template_url);
+            }
         }
 
         // Apply capabilities
@@ -142,7 +157,18 @@ impl<'a> CfnRequestBuilder<'a> {
             builder = builder.set_resource_types(Some(resource_types.clone()));
         }
 
-        (builder, token)
+        // Load and apply stack policy if present
+        if let Some(ref stack_policy) = self.stack_args.stack_policy {
+            let policy_result = load_cfn_stack_policy(Some(stack_policy), argsfile_path).await?;
+
+            if let Some(policy_body) = policy_result.stack_policy_body {
+                builder = builder.stack_policy_body(policy_body);
+            } else if let Some(policy_url) = policy_result.stack_policy_url {
+                builder = builder.stack_policy_url(policy_url);
+            }
+        }
+
+        Ok((builder, token))
     }
 
     /// Build an UpdateStack request with token injection and StackArgs integration.
@@ -427,13 +453,13 @@ mod tests {
         assert_eq!(builder.stack_args.stack_name.as_deref(), Some("test-stack"));
     }
 
-    #[test]
-    fn build_create_stack_derives_token_and_applies_stack_args() {
+    #[tokio::test]
+    async fn build_create_stack_derives_token_and_applies_stack_args() {
         let context = mock_context();
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_create_builder, token) = builder.build_create_stack("create-stack");
+        let (_create_builder, token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
 
         // Token should be derived from primary token
         assert!(token.is_derived());
@@ -446,8 +472,8 @@ mod tests {
         assert!(used_tokens.iter().any(|t| t.value == token.value));
     }
 
-    #[test]
-    fn build_update_stack_handles_use_previous_template() {
+    #[tokio::test]
+    async fn build_update_stack_handles_use_previous_template() {
         let context = mock_context();
         let mut stack_args = mock_stack_args();
         stack_args.use_previous_template = Some(true);
@@ -460,7 +486,7 @@ mod tests {
         assert_ne!(token.value, context.primary_token().value);
 
         // Different step should produce different token
-        let (_create_builder, create_token) = builder.build_create_stack("create-stack");
+        let (_create_builder, create_token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
         assert_ne!(token.value, create_token.value);
     }
 
@@ -505,8 +531,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn builder_handles_minimal_stack_args() {
+    #[tokio::test]
+    async fn builder_handles_minimal_stack_args() {
         let context = mock_context();
         let minimal_args = StackArgs {
             stack_name: Some("minimal-stack".to_string()),
@@ -515,15 +541,15 @@ mod tests {
         };
 
         let builder = CfnRequestBuilder::new(&context, &minimal_args);
-        let (_create_builder, token) = builder.build_create_stack("create-stack");
+        let (_create_builder, token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
 
         // Should work with minimal configuration
         assert!(token.is_derived());
         assert_eq!(minimal_args.stack_name.as_deref(), Some("minimal-stack"));
     }
 
-    #[test]
-    fn token_derivation_is_deterministic_across_builders() {
+    #[tokio::test]
+    async fn token_derivation_is_deterministic_across_builders() {
         let context = mock_context();
         let stack_args = mock_stack_args();
 
@@ -532,20 +558,20 @@ mod tests {
         let builder2 = CfnRequestBuilder::new(&context, &stack_args);
 
         // Same step should produce same derived token
-        let (_, token1) = builder1.build_create_stack("create-stack");
-        let (_, token2) = builder2.build_create_stack("create-stack");
+        let (_, token1) = builder1.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, token2) = builder2.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
 
         assert_eq!(token1.value, token2.value);
         assert_eq!(token1.source, token2.source);
     }
 
-    #[test]
-    fn different_steps_produce_different_tokens() {
+    #[tokio::test]
+    async fn different_steps_produce_different_tokens() {
         let context = mock_context();
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_, create_token) = builder.build_create_stack("create-stack");
+        let (_, create_token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
         let (_, update_token) = builder.build_update_stack("update-stack");
         let (_, changeset_token) =
             builder.build_create_changeset("test-changeset", "create-changeset");

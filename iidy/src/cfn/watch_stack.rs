@@ -7,6 +7,9 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
+// Default number of previous events to show when watching a stack
+const DEFAULT_PREVIOUS_EVENTS_COUNT: usize = 10;
+
 use crate::{
     aws,
     cli::{NormalizedAwsOpts, WatchArgs, GlobalOpts},
@@ -208,32 +211,44 @@ pub async fn watch_stack(
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
     let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
 
-    // 1. Show stack definition (following iidy-js pattern)
-    let stack_resp = ctx.client
-        .describe_stacks()
-        .stack_name(&args.stackname)
-        .send()
-        .await?;
+    // Execute initial API calls in parallel for better performance
+    let (stack_resp, events_resp) = tokio::try_join!(
+        // 1. Get stack definition
+        async {
+            ctx.client
+                .describe_stacks()
+                .stack_name(&args.stackname)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        
+        // 2. Get previous stack events
+        async {
+            ctx.client
+                .describe_stack_events()
+                .stack_name(&args.stackname)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    )?;
     
     let stack = stack_resp
         .stacks
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
     
+    // 1. Show stack definition (following iidy-js pattern)
     let stack_definition = crate::output::convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
 
     // 2. Show previous stack events (max 10, following iidy-js)
-    let events_resp = ctx.client
-        .describe_stack_events()
-        .stack_name(&args.stackname)
-        .send()
-        .await?;
-    
     let events = events_resp.stack_events.unwrap_or_default();
     let previous_events = crate::output::StackEventsDisplay {
-        title: "Previous Stack Events (max 10):".to_string(),
-        events: events.into_iter().take(10).map(|e| crate::output::StackEventWithTiming {
+        title: format!("Previous Stack Events (max {}):", DEFAULT_PREVIOUS_EVENTS_COUNT),
+        max_events: Some(DEFAULT_PREVIOUS_EVENTS_COUNT),
+        events: events.into_iter().take(DEFAULT_PREVIOUS_EVENTS_COUNT).map(|e| crate::output::StackEventWithTiming {
             event: crate::output::StackEvent {
                 event_id: e.event_id().unwrap_or_default().to_string(),
                 stack_id: e.stack_id().unwrap_or_default().to_string(),
@@ -278,6 +293,7 @@ async fn watch_stack_live_events(
     let initial_live_events = crate::output::StackEventsDisplay {
         title: format!("Live Stack Events ({}s poll):", poll_interval.as_secs()),
         events: vec![],
+        max_events: None, // No limit for live events
         truncated: None,
     };
     output_manager.render(crate::output::OutputData::StackEvents(initial_live_events)).await?;
@@ -334,6 +350,7 @@ async fn watch_stack_live_events(
             let single_event = crate::output::StackEventsDisplay {
                 title: String::new(), // No section heading for individual events
                 events: vec![event_with_timing],
+                max_events: None, // Single event, no limiting needed
                 truncated: None,
             };
             output_manager.render(crate::output::OutputData::StackEvents(single_event)).await?;
@@ -365,12 +382,28 @@ async fn collect_stack_contents(
     ctx: &CfnContext,
     stack_name: &str,
 ) -> Result<crate::output::StackContents> {
-    // Get stack resources
-    let resources_resp = ctx.client
-        .describe_stack_resources()
-        .stack_name(stack_name)
-        .send()
-        .await?;
+    // Execute parallel API calls for better performance
+    let (resources_resp, stack_resp) = tokio::try_join!(
+        // Get stack resources
+        async {
+            ctx.client
+                .describe_stack_resources()
+                .stack_name(stack_name)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        
+        // Get stack description for outputs
+        async {
+            ctx.client
+                .describe_stacks()
+                .stack_name(stack_name)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    )?;
     
     let resources: Vec<crate::output::StackResourceInfo> = resources_resp
         .stack_resources
@@ -388,13 +421,6 @@ async fn collect_stack_contents(
         })
         .collect();
 
-    // Get stack description for outputs
-    let stack_resp = ctx.client
-        .describe_stacks()
-        .stack_name(stack_name)
-        .send()
-        .await?;
-    
     let stack = stack_resp
         .stacks
         .and_then(|mut s| s.pop())

@@ -22,8 +22,12 @@ async fn delete_stack_with_data_output(
 ) -> Result<()> {
     // Derive a token for the delete operation
     let token = ctx.derive_token_for_step("delete-stack");
+    
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
-    output_manager.render(progress_message(&format!("Deleting stack: {} (token: {})", stack_name, token.value))).await?;
+    output_manager.render(progress_message(&format!("Deleting stack: {}", stack_name))).await?;
 
     // Check if stack exists first
     match ctx.client.describe_stacks().stack_name(stack_name).send().await {
@@ -91,8 +95,9 @@ pub async fn delete_stack(
     // Create CloudFormation context
     let ctx = create_context(opts).await?;
 
-    // Show primary token
-    output_manager.render(progress_message(&format!("Primary operation token: {}", ctx.primary_token().value))).await?;
+    // Pass primary token to output manager for conditional display
+    let primary_token = crate::output::aws_conversion::convert_token_info(&ctx.primary_token());
+    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
 
     // Check if need to load stack args for confirmation
     let stack_name = &args.stackname;

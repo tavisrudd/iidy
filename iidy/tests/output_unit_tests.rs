@@ -102,6 +102,7 @@ fn test_stack_events_display_structure() {
     let display = StackEventsDisplay {
         title: "Previous Stack Events (max 10):".to_string(),
         events: vec![event_with_timing],
+        max_events: Some(10),
         truncated: Some(TruncationInfo {
             shown: 1,
             total: 5,

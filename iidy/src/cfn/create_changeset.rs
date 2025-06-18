@@ -61,8 +61,9 @@ pub async fn create_changeset(
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
-    // Show primary token
-    output_manager.render(progress_message(&format!("Primary operation token: {}", context.primary_token().value))).await?;
+    // Pass primary token to output manager for conditional display
+    let primary_token = crate::output::aws_conversion::convert_token_info(&context.primary_token());
+    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
 
     // Determine changeset name
     let default_changeset_name = format!("iidy-{}", &context.primary_token().value[..8]);
@@ -74,7 +75,10 @@ pub async fn create_changeset(
     // Build and execute the CreateChangeSet request
     let (create_request, token) =
         builder.build_create_changeset(changeset_name, "create-changeset");
-    output_manager.render(progress_message(&format!("Create changeset token: {}", token.value))).await?;
+    
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",

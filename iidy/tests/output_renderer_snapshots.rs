@@ -167,6 +167,7 @@ async fn test_plain_renderer_stack_events() {
     let events_display = StackEventsDisplay {
         title: "Previous Stack Events (max 10):".to_string(),
         events,
+        max_events: Some(10),
         truncated: Some(TruncationInfo {
             shown: 2,
             total: 8,

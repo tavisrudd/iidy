@@ -145,6 +145,9 @@ impl DynamicOutputManager {
             OutputData::Error(error) => {
                 self.current_renderer.render_error(error).await
             }
+            OutputData::TokenInfo(token) => {
+                self.current_renderer.render_token_info(token).await
+            }
         }
     }
 }

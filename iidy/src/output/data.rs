@@ -72,7 +72,45 @@ pub struct TruncationInfo {
 pub struct StackEventsDisplay {
     pub title: String, // "Previous Stack Events (max 10):" or "Live Stack Events (2s poll):"
     pub events: Vec<StackEventWithTiming>,
+    pub max_events: Option<usize>, // Maximum events to display (renderer will sort and limit)
     pub truncated: Option<TruncationInfo>,
+}
+
+impl StackEventsDisplay {
+    /// Sort events by timestamp and apply max_events limit (newest events last)
+    /// Returns (sorted_and_limited_events, truncation_info)
+    pub fn get_sorted_limited_events(&self) -> (Vec<StackEventWithTiming>, Option<TruncationInfo>) {
+        if self.events.is_empty() {
+            return (vec![], None);
+        }
+        
+        // Sort events by timestamp (oldest first, so newest events are shown last)
+        let mut sorted_events = self.events.clone();
+        sorted_events.sort_by(|a, b| {
+            let time_a = a.event.timestamp.map(|t| t.timestamp()).unwrap_or(0);
+            let time_b = b.event.timestamp.map(|t| t.timestamp()).unwrap_or(0);
+            time_a.cmp(&time_b)
+        });
+        
+        // Apply event limit if specified (keep most recent events)
+        let total_events = sorted_events.len();
+        if let Some(max_events) = self.max_events {
+            if sorted_events.len() > max_events {
+                // Take the most recent events (end of sorted list)
+                let start_idx = sorted_events.len() - max_events;
+                let limited = sorted_events.drain(start_idx..).collect::<Vec<_>>();
+                let truncation = Some(TruncationInfo {
+                    shown: max_events,
+                    total: total_events,
+                });
+                (limited, truncation)
+            } else {
+                (sorted_events, None)
+            }
+        } else {
+            (sorted_events, None)
+        }
+    }
 }
 
 /// Stack definition details (from summarizeStackDefinition)
@@ -285,6 +323,7 @@ pub enum OutputData {
     ChangeSetResult(ChangeSetCreationResult),
     StackDrift(StackDrift),
     Error(ErrorInfo),
+    TokenInfo(TokenInfo),
 }
 
 impl OutputData {
@@ -301,6 +340,7 @@ impl OutputData {
             OutputData::ChangeSetResult(_) => "changeset_result",
             OutputData::StackDrift(_) => "stack_drift",
             OutputData::Error(_) => "error",
+            OutputData::TokenInfo(_) => "token_info",
         }
     }
 }

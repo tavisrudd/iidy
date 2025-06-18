@@ -5,7 +5,7 @@ use crate::{
     cli::{DescribeArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,
-        convert_stack_events_to_display, StackContents, StackResourceInfo,
+        StackContents, StackResourceInfo,
         StackOutputInfo, StackExportInfo, StackStatusInfo
     },
 };
@@ -41,15 +41,46 @@ pub async fn describe_stack(
 
     // Don't show command metadata or progress messages for describe operations
 
-    // Fetch stack information
-    let resp = context
-        .client
-        .describe_stacks()
-        .stack_name(args.stackname.clone())
-        .send()
-        .await?;
+    // Execute AWS API calls in parallel for better performance
+    let event_count = args.events as usize;
+    
+    // Start all parallel requests - get the core stack data we need
+    let (stack_resp, resources_resp, first_events_resp) = tokio::try_join!(
+        // 1. Get stack information
+        async {
+            context
+                .client
+                .describe_stacks()
+                .stack_name(args.stackname.clone())
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        
+        // 2. Get stack resources 
+        async {
+            context
+                .client
+                .describe_stack_resources()
+                .stack_name(&args.stackname)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        },
+            
+        // 3. Get first page of stack events
+        async {
+            context
+                .client
+                .describe_stack_events()
+                .stack_name(&args.stackname)
+                .send()
+                .await
+                .map_err(anyhow::Error::from)
+        }
+    )?;
 
-    let stack = resp
+    let stack = stack_resp
         .stacks
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow!("stack not found"))?;
@@ -58,30 +89,33 @@ pub async fn describe_stack(
     let stack_definition = convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
 
-    // 2. Show stack events (previous stack events, max 50 by default)
-    let event_count = args.events as usize;
-    let events_resp = context
-        .client
-        .describe_stack_events()
-        .stack_name(&args.stackname)
-        .send()
-        .await?;
+    // 2. Continue fetching stack events if needed (pagination)
+    let mut all_events = first_events_resp.stack_events.unwrap_or_default();
+    let mut next_token = first_events_resp.next_token;
     
-    let events = events_resp.stack_events.unwrap_or_default();
-    let events_display = convert_stack_events_to_display(
-        events.into_iter().take(event_count).collect(),
+    // Fetch additional pages if needed
+    while next_token.is_some() && all_events.len() < event_count * 2 {
+        let events_resp = context
+            .client
+            .describe_stack_events()
+            .stack_name(&args.stackname)
+            .set_next_token(next_token)
+            .send()
+            .await?;
+            
+        let mut page_events = events_resp.stack_events.unwrap_or_default();
+        all_events.append(&mut page_events);
+        next_token = events_resp.next_token;
+    }
+    
+    let events_display = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
+        all_events,
         &format!("Previous Stack Events (max {}):", event_count),
+        Some(event_count),
     );
     output_manager.render(events_display).await?;
 
-    // 3. Show stack contents (resources, outputs, exports)
-    // Get stack resources
-    let resources_resp = context
-        .client
-        .describe_stack_resources()
-        .stack_name(&args.stackname)
-        .send()
-        .await?;
+    // 3. Process stack contents (we already have resources from parallel call)
     
     let resources: Vec<StackResourceInfo> = resources_resp
         .stack_resources

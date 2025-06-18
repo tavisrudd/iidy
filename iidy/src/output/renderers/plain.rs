@@ -8,10 +8,20 @@ use crate::output::renderer::OutputRenderer;
 use async_trait::async_trait;
 use anyhow::Result;
 
+// Display formatting constants
+const TIMESTAMP_WIDTH: usize = 20; // "YYYY-MM-DD HH:MM:SS"
+const MIN_STATUS_WIDTH: usize = 15;
+const MIN_RESOURCE_ID_WIDTH: usize = 20;
+const MIN_RESOURCE_TYPE_WIDTH: usize = 30;
+const MIN_OUTPUT_KEY_WIDTH: usize = 20;
+const MIN_EXPORT_NAME_WIDTH: usize = 20;
+const DEFAULT_MAX_LINE_WIDTH: usize = 120;
+
 /// Plain text renderer - no colors, no spinners, CI-friendly
 pub struct PlainTextRenderer {
     /// Configuration options
     options: PlainTextOptions,
+    has_rendered_content: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -24,22 +34,44 @@ impl Default for PlainTextOptions {
     fn default() -> Self {
         Self {
             show_timestamps: true,
-            max_line_width: Some(120),
+            max_line_width: Some(DEFAULT_MAX_LINE_WIDTH),
         }
     }
 }
 
 impl PlainTextRenderer {
     pub fn new(options: PlainTextOptions) -> Self {
-        Self { options }
+        Self { 
+            options,
+            has_rendered_content: false,
+        }
+    }
+    
+    /// Print section heading with appropriate spacing
+    fn print_section_heading(&mut self, text: &str) {
+        // Add blank line before section if content has already been rendered
+        if self.has_rendered_content {
+            println!();
+        }
+        // Remove trailing colon if present to avoid double colons, then add one
+        let clean_text = text.trim_end_matches(':');
+        println!("{}:", clean_text);
+        self.has_rendered_content = true;
+    }
+    
+    /// Add appropriate spacing before content if needed
+    fn add_content_spacing(&mut self) {
+        if self.has_rendered_content {
+            println!();
+        }
+        self.has_rendered_content = true;
     }
 }
 
 #[async_trait]
 impl OutputRenderer for PlainTextRenderer {
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
-        println!();
-        println!("Command Metadata:");
+        self.print_section_heading("Command Metadata");
         println!(" CFN Operation:        {}", data.cfn_operation);
         println!(" iidy Environment:     {}", data.iidy_environment);
         println!(" Region:               {}", data.region);
@@ -85,7 +117,7 @@ impl OutputRenderer for PlainTextRenderer {
     }
 
     async fn render_stack_definition(&mut self, data: &StackDefinition, show_times: bool) -> Result<()> {
-        println!("Stack Details:");
+        self.print_section_heading("Stack Details");
         
         // Handle StackSet name display
         if let Some(stackset_name) = &data.stackset_name {
@@ -179,60 +211,66 @@ impl OutputRenderer for PlainTextRenderer {
     }
 
     async fn render_stack_events(&mut self, data: &StackEventsDisplay) -> Result<()> {
-        println!("{}", data.title);
+        self.print_section_heading(&data.title);
         
         if data.events.is_empty() {
             println!(" No events to display");
             return Ok(());
         }
         
-        // Calculate column widths for alignment
-        let time_width = 20; // "YYYY-MM-DD HH:MM:SS"
-        let status_width = data.events.iter()
+        // Sort events and apply limiting using the helper method
+        let (events_to_show, truncation_info) = data.get_sorted_limited_events();
+        
+        // Calculate column widths for alignment (iidy-js order: timestamp status resource_type logical_id)
+        let time_width = TIMESTAMP_WIDTH;
+        let status_width = events_to_show.iter()
             .map(|e| e.event.resource_status.len())
             .max()
-            .unwrap_or(15)
-            .max(15);
-        let resource_id_width = data.events.iter()
-            .map(|e| e.event.logical_resource_id.len())
+            .unwrap_or(MIN_STATUS_WIDTH)
+            .max(MIN_STATUS_WIDTH);
+        let resource_type_width = events_to_show.iter()
+            .map(|e| e.event.resource_type.len())
             .max()
-            .unwrap_or(20)
-            .max(20);
+            .unwrap_or(MIN_RESOURCE_TYPE_WIDTH)
+            .max(MIN_RESOURCE_TYPE_WIDTH);
         
-        // Header
-        println!(" {:<time_width$} {:<status_width$} {:<resource_id_width$} Type / Reason", 
-            "Timestamp", "Status", "ResourceId",
+        // Header (matching iidy-js column order)
+        println!(" {:<time_width$} {:<status_width$} {:<type_width$} LogicalId", 
+            "Timestamp", "Status", "ResourceType",
             time_width = time_width,
             status_width = status_width,
-            resource_id_width = resource_id_width
+            type_width = resource_type_width
         );
-        println!(" {}", "-".repeat(time_width + status_width + resource_id_width + 20));
+        println!(" {}", "-".repeat(time_width + status_width + resource_type_width + 20));
         
-        for event_with_timing in &data.events {
+        for event_with_timing in &events_to_show {
             let event = &event_with_timing.event;
             
-            // Format timestamp
+            // Format timestamp (plain format for CI)
             let timestamp_str = if let Some(timestamp) = &event.timestamp {
                 timestamp.format("%Y-%m-%d %H:%M:%S").to_string()
             } else {
                 "N/A".to_string()
             };
             
-            // Main event line
-            println!(" {:<time_width$} {:<status_width$} {:<resource_id_width$} {}", 
+            // Format duration if available
+            let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
+                format!(" ({}s)", duration)
+            } else {
+                String::new()
+            };
+            
+            // Main event line (iidy-js column order: timestamp status resource_type logical_id duration)
+            println!(" {:<time_width$} {:<status_width$} {:<type_width$} {}{}", 
                 timestamp_str,
                 event.resource_status,
-                event.logical_resource_id,
                 event.resource_type,
+                event.logical_resource_id,
+                duration_text,
                 time_width = time_width,
                 status_width = status_width,
-                resource_id_width = resource_id_width
+                type_width = resource_type_width
             );
-            
-            // Show duration if available
-            if let Some(duration) = event_with_timing.duration_seconds {
-                println!("   Duration: {}s", duration);
-            }
             
             // Show reason if available
             if let Some(reason) = &event.resource_status_reason {
@@ -250,7 +288,7 @@ impl OutputRenderer for PlainTextRenderer {
         }
         
         // Show truncation message
-        if let Some(truncation) = &data.truncated {
+        if let Some(truncation) = &truncation_info {
             println!(" {} of {} total events shown", truncation.shown, truncation.total);
         }
         
@@ -261,18 +299,18 @@ impl OutputRenderer for PlainTextRenderer {
     async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()> {
         // Stack Resources
         if !data.resources.is_empty() {
-            println!("Stack Resources:");
+            self.print_section_heading("Stack Resources");
             
             let id_width = data.resources.iter()
                 .map(|r| r.logical_resource_id.len())
                 .max()
-                .unwrap_or(20)
-                .max(20);
+                .unwrap_or(MIN_RESOURCE_ID_WIDTH)
+                .max(MIN_RESOURCE_ID_WIDTH);
             let type_width = data.resources.iter()
                 .map(|r| r.resource_type.len())
                 .max()
-                .unwrap_or(30)
-                .max(30);
+                .unwrap_or(MIN_RESOURCE_TYPE_WIDTH)
+                .max(MIN_RESOURCE_TYPE_WIDTH);
             
             for resource in &data.resources {
                 println!(" {:<id_width$} {:<type_width$} {}", 
@@ -287,15 +325,15 @@ impl OutputRenderer for PlainTextRenderer {
         }
         
         // Stack Outputs
-        println!("Stack Outputs:");
+        self.print_section_heading("Stack Outputs");
         if data.outputs.is_empty() {
             println!(" None");
         } else {
             let key_width = data.outputs.iter()
                 .map(|o| o.output_key.len())
                 .max()
-                .unwrap_or(20)
-                .max(20);
+                .unwrap_or(MIN_OUTPUT_KEY_WIDTH)
+                .max(MIN_OUTPUT_KEY_WIDTH);
             
             for output in &data.outputs {
                 println!(" {:<width$} {}", 
@@ -309,12 +347,12 @@ impl OutputRenderer for PlainTextRenderer {
         
         // Stack Exports
         if !data.exports.is_empty() {
-            println!("Stack Exports:");
+            self.print_section_heading("Stack Exports");
             let name_width = data.exports.iter()
                 .map(|e| e.name.len())
                 .max()
-                .unwrap_or(20)
-                .max(20);
+                .unwrap_or(MIN_EXPORT_NAME_WIDTH)
+                .max(MIN_EXPORT_NAME_WIDTH);
             
             for export in &data.exports {
                 println!(" {:<width$} {}", 
@@ -339,8 +377,7 @@ impl OutputRenderer for PlainTextRenderer {
         
         // Pending Changesets
         if !data.pending_changesets.is_empty() {
-            println!();
-            println!("Pending Changesets:");
+            self.print_section_heading("Pending Changesets");
             for changeset in &data.pending_changesets {
                 if let Some(creation_time) = &changeset.creation_time {
                     println!(" {} {} {} {}", 
@@ -391,8 +428,8 @@ impl OutputRenderer for PlainTextRenderer {
     }
 
     async fn render_command_result(&mut self, data: &CommandResult) -> Result<()> {
+        self.add_content_spacing();
         let status = if data.success { "SUCCESS" } else { "FAILED" };
-        println!();
         println!("Command Result: {} ({}s)", status, data.elapsed_seconds);
         
         if let Some(message) = &data.message {
@@ -419,12 +456,12 @@ impl OutputRenderer for PlainTextRenderer {
         println!("{}", header);
         
         // Calculate column widths
-        let time_width = 20;
+        let time_width = TIMESTAMP_WIDTH;
         let status_width = data.stacks.iter()
             .map(|s| s.stack_status.len())
             .max()
-            .unwrap_or(15)
-            .max(15);
+            .unwrap_or(MIN_STATUS_WIDTH)
+            .max(MIN_STATUS_WIDTH);
         
         for stack in &data.stacks {
             // Format creation/update time
@@ -480,7 +517,7 @@ impl OutputRenderer for PlainTextRenderer {
     }
 
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()> {
-        println!();
+        self.add_content_spacing();
         println!("Changeset Creation Result:");
         println!(" Changeset Name:       {}", data.changeset_name);
         println!(" Stack Name:           {}", data.stack_name);
@@ -539,7 +576,7 @@ impl OutputRenderer for PlainTextRenderer {
     }
 
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
-        println!();
+        self.add_content_spacing();
         println!("ERROR [{}]: {}", data.error_type, data.message);
         
         if let Some(details) = &data.details {
@@ -555,6 +592,13 @@ impl OutputRenderer for PlainTextRenderer {
         }
         
         println!();
+        Ok(())
+    }
+
+    async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
+        // In plain mode, show token info in a simple format
+        // This is useful for CI/debugging scenarios
+        println!("Token: {} ({})", data.value, data.operation_id);
         Ok(())
     }
 

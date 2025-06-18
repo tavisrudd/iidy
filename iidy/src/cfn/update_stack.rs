@@ -84,7 +84,11 @@ async fn update_stack_direct(
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the UpdateStack request
-    let (update_request, _token) = builder.build_update_stack("update-stack");
+    let (update_request, token) = builder.build_update_stack("update-stack");
+    
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -149,8 +153,12 @@ async fn update_stack_with_changeset(
 
     // Step 1: Create changeset
     let changeset_name = format!("iidy-update-{}", &context.primary_token().value[..8]);
-    let (create_request, _create_token) =
+    let (create_request, create_token) =
         builder.build_create_changeset(&changeset_name, "create-changeset");
+    
+    // Pass create token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&create_token);
+    output_manager.render(crate::output::OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -198,8 +206,12 @@ async fn update_stack_with_changeset(
     }
 
     // Step 2: Execute changeset
-    let (execute_request, _execute_token) =
+    let (execute_request, execute_token) =
         builder.build_execute_changeset(&changeset_name, "execute-changeset");
+    
+    // Pass execute token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&execute_token);
+    output_manager.render(crate::output::OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message("Executing changeset...")).await?;
 

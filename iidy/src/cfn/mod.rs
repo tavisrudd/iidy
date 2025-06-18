@@ -21,12 +21,14 @@ pub mod get_stack_template;
 pub mod is_terminal_status;
 pub mod list_stacks;
 pub mod request_builder;
+pub mod template_loader;
 pub mod update_stack;
 pub mod watch_stack;
 
 // Re-exports
 pub use console::ConsoleReporter;
 pub use request_builder::CfnRequestBuilder;
+pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
 /// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
 ///

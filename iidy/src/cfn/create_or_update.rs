@@ -51,8 +51,6 @@ pub async fn create_or_update(
     // Setup AWS client and context
     let context = create_context(opts).await?;
 
-    output_manager.render(progress_message(&format!("Primary operation token: {}", context.primary_token().value))).await?;
-
     let stack_name = final_stack_args
         .stack_name
         .as_ref()
@@ -83,7 +81,7 @@ pub async fn create_or_update(
             output_manager.render(warning_message("Changeset mode not recommended for new stacks, creating directly")).await?;
         }
 
-        create_stack_direct_data(opts, &final_stack_args, &mut output_manager).await
+        create_stack_direct_data(opts, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await
     };
 
     // Show final result
@@ -124,6 +122,8 @@ async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bo
 async fn create_stack_direct_data(
     opts: &NormalizedAwsOpts,
     stack_args: &crate::stack_args::StackArgs,
+    argsfile: &str,
+    environment: &str,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
     // Setup context and builder
@@ -131,8 +131,14 @@ async fn create_stack_direct_data(
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the CreateStack request
-    let (create_request, token) = builder.build_create_stack("create-stack");
-    output_manager.render(progress_message(&format!("Create stack token: {}", token.value))).await?;
+    let (create_request, token) = builder.build_create_stack(
+        "create-or-update",
+        argsfile,
+        Some(environment),
+    ).await?;
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -162,9 +168,11 @@ async fn update_stack_direct_data(
     let context = create_context(opts).await?;
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
-    // Build and execute the UpdateStack request
-    let (update_request, token) = builder.build_update_stack("update-stack");
-    output_manager.render(progress_message(&format!("Update stack token: {}", token.value))).await?;
+    // Build and execute the UpdateStack request  
+    let (update_request, token) = builder.build_update_stack("create-or-update");
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -200,7 +208,9 @@ async fn update_stack_with_changeset_data(
     );
     let (create_request, create_token) =
         builder.build_create_changeset(&changeset_name, "create-changeset");
-    output_manager.render(progress_message(&format!("Create changeset token: {}", create_token.value))).await?;
+    // Pass create_token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&create_token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",
@@ -226,7 +236,9 @@ async fn update_stack_with_changeset_data(
     // Step 2: Execute changeset
     let (execute_request, execute_token) =
         builder.build_execute_changeset(&changeset_name, "execute-changeset");
-    output_manager.render(progress_message(&format!("Execute changeset token: {}", execute_token.value))).await?;
+    // Pass execute_token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&execute_token);
+    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message("Executing changeset...")).await?;
 

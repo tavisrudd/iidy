@@ -135,6 +135,10 @@ impl OutputRenderer for JsonRenderer {
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
         self.output_json("error", data)
     }
+    
+    async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
+        self.output_json("token_info", data)
+    }
 }
 
 #[cfg(test)]

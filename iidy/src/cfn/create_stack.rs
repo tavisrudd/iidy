@@ -71,7 +71,15 @@ pub async fn create_stack(
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
     // Build and execute the CreateStack request
-    let (create_request, _token) = builder.build_create_stack("create-stack");
+    let (create_request, token) = builder.build_create_stack(
+        "create-stack",
+        &args.argsfile,
+        Some(&global_opts.environment),
+    ).await?;
+    
+    // Pass token to output manager for conditional display
+    let output_token = crate::output::aws_conversion::convert_token_info(&token);
+    output_manager.render(crate::output::OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = final_stack_args
         .stack_name
