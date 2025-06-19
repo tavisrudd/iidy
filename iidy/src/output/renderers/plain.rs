@@ -412,6 +412,10 @@ impl OutputRenderer for PlainTextRenderer {
             StatusLevel::Warning => "[WARN]",
             StatusLevel::Error => "[ERROR]",
             StatusLevel::Success => "[SUCCESS]",
+            StatusLevel::OperationInProgress => "[PROGRESS]",
+            StatusLevel::OperationUpdate => "[UPDATE]",
+            StatusLevel::OperationComplete => "[COMPLETE]",
+            StatusLevel::OperationFailed => "[FAILED]",
         };
         
         if self.options.show_timestamps {
@@ -601,6 +605,7 @@ impl OutputRenderer for PlainTextRenderer {
         println!("Token: {} ({})", data.value, data.operation_id);
         Ok(())
     }
+    
 
     async fn init(&mut self) -> Result<()> {
         // Plain text renderer needs no initialization

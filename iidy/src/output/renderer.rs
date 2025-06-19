@@ -23,6 +23,7 @@ pub trait OutputRenderer: Send + Sync {
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()>;
     async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()>;
     
+    
     // Control methods
     async fn init(&mut self) -> Result<()>;
     async fn cleanup(&mut self) -> Result<()>;

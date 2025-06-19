@@ -139,6 +139,7 @@ impl OutputRenderer for JsonRenderer {
     async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
         self.output_json("token_info", data)
     }
+    
 }
 
 #[cfg(test)]

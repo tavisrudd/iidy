@@ -8,6 +8,7 @@ use crate::output::data::*;
 use crate::output::renderer::{OutputRenderer, OutputMode};
 use anyhow::Result;
 use std::collections::VecDeque;
+use std::time::Instant;
 
 /// Options for configuring output behavior
 #[derive(Debug, Clone)]
@@ -29,12 +30,20 @@ impl Default for OutputOptions {
     }
 }
 
+/// Information about an active operation
+#[derive(Debug, Clone)]
+struct ActiveOperation {
+    name: String,
+    start_time: Instant,
+}
+
 /// Dynamic output manager that handles mode switching and event replay
 pub struct DynamicOutputManager {
     current_mode: OutputMode,
     current_renderer: Box<dyn OutputRenderer>,
     event_buffer: VecDeque<OutputData>,
     options: OutputOptions,
+    operation_stack: Vec<ActiveOperation>,
 }
 
 impl DynamicOutputManager {
@@ -48,6 +57,7 @@ impl DynamicOutputManager {
             current_renderer: renderer,
             event_buffer: VecDeque::with_capacity(options.buffer_limit),
             options,
+            operation_stack: Vec::new(),
         })
     }
     
@@ -149,6 +159,73 @@ impl DynamicOutputManager {
                 self.current_renderer.render_token_info(token).await
             }
         }
+    }
+    
+    /// Start a new operation with spinner (if interactive mode)
+    pub async fn start_operation(&mut self, operation_name: &str) -> Result<()> {
+        let operation = ActiveOperation {
+            name: operation_name.to_string(),
+            start_time: Instant::now(),
+        };
+        
+        // Start the operation - interactive renderer will show spinner, others will show status
+        let status = StatusUpdate {
+            message: format!("{}...", operation_name),
+            timestamp: chrono::Utc::now(),
+            level: StatusLevel::OperationInProgress,
+        };
+        self.render_data(&OutputData::StatusUpdate(status)).await?;
+        
+        self.operation_stack.push(operation);
+        Ok(())
+    }
+    
+    /// Update the current operation's progress
+    pub async fn update_operation(&mut self, new_message: &str) -> Result<()> {
+        if let Some(operation) = self.operation_stack.last_mut() {
+            operation.name = new_message.to_string();
+            
+            let status = StatusUpdate {
+                message: new_message.to_string(),
+                timestamp: chrono::Utc::now(),
+                level: StatusLevel::OperationUpdate,
+            };
+            self.render_data(&OutputData::StatusUpdate(status)).await?;
+        }
+        Ok(())
+    }
+    
+    /// End the current operation with success
+    pub async fn end_operation_success(&mut self, completion_message: &str) -> Result<()> {
+        if let Some(operation) = self.operation_stack.pop() {
+            let elapsed = operation.start_time.elapsed().as_secs();
+            let message = if elapsed > 0 {
+                format!("{} ({}s)", completion_message, elapsed)
+            } else {
+                completion_message.to_string()
+            };
+            
+            let status = StatusUpdate {
+                message,
+                timestamp: chrono::Utc::now(),
+                level: StatusLevel::OperationComplete,
+            };
+            self.render_data(&OutputData::StatusUpdate(status)).await?;
+        }
+        Ok(())
+    }
+    
+    /// End the current operation with failure
+    pub async fn end_operation_failure(&mut self, error_message: &str) -> Result<()> {
+        if let Some(_operation) = self.operation_stack.pop() {
+            let status = StatusUpdate {
+                message: format!("Failed: {}", error_message),
+                timestamp: chrono::Utc::now(),
+                level: StatusLevel::OperationFailed,
+            };
+            self.render_data(&OutputData::StatusUpdate(status)).await?;
+        }
+        Ok(())
     }
 }
 

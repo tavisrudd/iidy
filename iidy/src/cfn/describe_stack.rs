@@ -41,55 +41,66 @@ pub async fn describe_stack(
 
     // Don't show command metadata or progress messages for describe operations
 
+    // Start operation with spinner for better UX
+    output_manager.start_operation("Loading stack description").await?;
+
     // Execute AWS API calls in parallel for better performance
     let event_count = args.events as usize;
     
-    // Start all parallel requests - get the core stack data we need
-    let (stack_resp, resources_resp, first_events_resp) = tokio::try_join!(
-        // 1. Get stack information
-        async {
-            context
-                .client
-                .describe_stacks()
-                .stack_name(args.stackname.clone())
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        },
-        
-        // 2. Get stack resources 
-        async {
-            context
-                .client
-                .describe_stack_resources()
-                .stack_name(&args.stackname)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        },
-            
-        // 3. Get first page of stack events
-        async {
-            context
-                .client
-                .describe_stack_events()
-                .stack_name(&args.stackname)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        }
-    )?;
+    // Streaming approach: Start all API calls in parallel but show results
+    // as soon as they're ready, maintaining logical display order:
+    // 1. Stack Definition (fast, users expect this first)
+    // 2. Stack Events (medium speed, logical to show after definition)  
+    // 3. Stack Contents (slower, contains resource details)
+    let stack_future = async {
+        context
+            .client
+            .describe_stacks()
+            .stack_name(args.stackname.clone())
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
+    
+    let resources_future = async {
+        context
+            .client
+            .describe_stack_resources()
+            .stack_name(&args.stackname)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
+    
+    let events_future = async {
+        context
+            .client
+            .describe_stack_events()
+            .stack_name(&args.stackname)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
 
+    // 1. Get and show stack definition first (usually fastest)
+    let stack_resp = stack_future.await?;
     let stack = stack_resp
         .stacks
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow!("stack not found"))?;
 
-    // 1. Show stack definition (show times by default)
+    // Clear spinner and show stack definition immediately
+    output_manager.end_operation_success("Stack info loaded").await?;
+    
     let stack_definition = convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
 
-    // 2. Continue fetching stack events if needed (pagination)
+    // 2. Start new operation for events loading
+    output_manager.start_operation("Loading stack events").await?;
+    
+    let first_events_resp = events_future.await?;
+    
+    // Continue fetching stack events if needed (pagination)
     let mut all_events = first_events_resp.stack_events.unwrap_or_default();
     let mut next_token = first_events_resp.next_token;
     
@@ -108,6 +119,9 @@ pub async fn describe_stack(
         next_token = events_resp.next_token;
     }
     
+    // Clear spinner and show events
+    output_manager.end_operation_success("Stack events loaded").await?;
+    
     let events_display = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
         all_events,
         &format!("Previous Stack Events (max {}):", event_count),
@@ -115,7 +129,11 @@ pub async fn describe_stack(
     );
     output_manager.render(events_display).await?;
 
-    // 3. Process stack contents (we already have resources from parallel call)
+    // 3. Get and show stack contents (resources are likely ready by now)
+    let resources_resp = resources_future.await?;
+    
+    // Update progress - all data ready
+    output_manager.update_operation("Loading stack description... all data ready").await?;
     
     let resources: Vec<StackResourceInfo> = resources_resp
         .stack_resources
@@ -133,7 +151,7 @@ pub async fn describe_stack(
         })
         .collect();
 
-    // Extract outputs from stack
+    // Extract outputs from stack (we already have this from the first call)
     let outputs: Vec<StackOutputInfo> = stack
         .outputs
         .unwrap_or_default()
@@ -178,7 +196,11 @@ pub async fn describe_stack(
         pending_changesets: vec![], // Would need separate query
     };
 
+    // Show stack contents as soon as resources are ready
     output_manager.render(OutputData::StackContents(stack_contents)).await?;
+
+    // Complete the operation successfully
+    output_manager.end_operation_success("Stack description loaded").await?;
 
     Ok(())
 }

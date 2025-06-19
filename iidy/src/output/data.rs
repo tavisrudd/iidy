@@ -230,6 +230,14 @@ pub enum StatusLevel {
     Warning,
     Error,
     Success,
+    /// Special status for starting operations - interactive renderer will use spinners
+    OperationInProgress,
+    /// Special status for updating ongoing operations - interactive renderer will update spinner text
+    OperationUpdate,
+    /// Special status for operation completion - interactive renderer will show success with timing
+    OperationComplete,
+    /// Special status for operation failure - interactive renderer will show failure
+    OperationFailed,
 }
 
 /// Command execution result

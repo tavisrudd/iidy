@@ -211,39 +211,38 @@ pub async fn watch_stack(
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
     let ctx = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
 
-    // Execute initial API calls in parallel for better performance
-    let (stack_resp, events_resp) = tokio::try_join!(
-        // 1. Get stack definition
-        async {
-            ctx.client
-                .describe_stacks()
-                .stack_name(&args.stackname)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        },
-        
-        // 2. Get previous stack events
-        async {
-            ctx.client
-                .describe_stack_events()
-                .stack_name(&args.stackname)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        }
-    )?;
+    // Start both API calls in parallel but don't wait for both to complete
+    let stack_future = async {
+        ctx.client
+            .describe_stacks()
+            .stack_name(&args.stackname)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
     
+    let events_future = async {
+        ctx.client
+            .describe_stack_events()
+            .stack_name(&args.stackname)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
+
+    // 1. Get and show stack definition first (usually fastest)
+    let stack_resp = stack_future.await?;
     let stack = stack_resp
         .stacks
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
     
-    // 1. Show stack definition (following iidy-js pattern)
+    // Show stack definition immediately
     let stack_definition = crate::output::convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
 
-    // 2. Show previous stack events (max 10, following iidy-js)
+    // 2. Get and show previous stack events (while user sees stack definition)
+    let events_resp = events_future.await?;
     let events = events_resp.stack_events.unwrap_or_default();
     let previous_events = crate::output::StackEventsDisplay {
         title: format!("Previous Stack Events (max {}):", DEFAULT_PREVIOUS_EVENTS_COUNT),
@@ -382,29 +381,34 @@ async fn collect_stack_contents(
     ctx: &CfnContext,
     stack_name: &str,
 ) -> Result<crate::output::StackContents> {
-    // Execute parallel API calls for better performance
-    let (resources_resp, stack_resp) = tokio::try_join!(
-        // Get stack resources
-        async {
-            ctx.client
-                .describe_stack_resources()
-                .stack_name(stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        },
-        
-        // Get stack description for outputs
-        async {
-            ctx.client
-                .describe_stacks()
-                .stack_name(stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)
-        }
-    )?;
+    // Start both API calls in parallel - we'll await them as needed
+    let resources_future = async {
+        ctx.client
+            .describe_stack_resources()
+            .stack_name(stack_name)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
     
+    let stack_future = async {
+        ctx.client
+            .describe_stacks()
+            .stack_name(stack_name)
+            .send()
+            .await
+            .map_err(anyhow::Error::from)
+    };
+
+    // We need the stack info for outputs, so get that first
+    let stack_resp = stack_future.await?;
+    let stack = stack_resp
+        .stacks
+        .and_then(|mut s| s.pop())
+        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
+    
+    // Get resources (this might still be loading)
+    let resources_resp = resources_future.await?;
     let resources: Vec<crate::output::StackResourceInfo> = resources_resp
         .stack_resources
         .unwrap_or_default()
@@ -420,11 +424,6 @@ async fn collect_stack_contents(
             }),
         })
         .collect();
-
-    let stack = stack_resp
-        .stacks
-        .and_then(|mut s| s.pop())
-        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
 
     // Extract outputs from stack
     let outputs: Vec<crate::output::StackOutputInfo> = stack
