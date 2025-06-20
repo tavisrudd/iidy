@@ -5,8 +5,7 @@ use crate::{
     cli::{Cli, ToArgMap, Commands},
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,
-        StackContents, StackResourceInfo,
-        StackOutputInfo, StackExportInfo, StackStatusInfo, CfnOperation,
+        StackContents, StackStatusInfo, CfnOperation,
     },
 };
 
@@ -163,34 +162,14 @@ pub async fn describe_stack(cli: &Cli) -> Result<()> {
                 .and_then(|mut s| s.pop())
                 .ok_or_else(|| anyhow!("stack not found"))?;
         
-            let resources: Vec<StackResourceInfo> = resources_resp
-                .stack_resources
-                .unwrap_or_default()
-                .into_iter()
-                .map(|r| StackResourceInfo {
-                    logical_resource_id: r.logical_resource_id.unwrap_or_default(),
-                    physical_resource_id: r.physical_resource_id,
-                    resource_type: r.resource_type.unwrap_or_default(),
-                    resource_status: r.resource_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
-                    resource_status_reason: r.resource_status_reason,
-                    last_updated_timestamp: r.timestamp.and_then(|ts| {
-                        chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-                    }),
-                })
-                .collect();
+            let resources = crate::output::aws_conversion::convert_stack_resources(
+                resources_resp.stack_resources.unwrap_or_default()
+            );
 
             // Extract outputs from stack
-            let outputs: Vec<StackOutputInfo> = stack
-                .outputs
-                .unwrap_or_default()
-                .into_iter()
-                .map(|o| StackOutputInfo {
-                    output_key: o.output_key.unwrap_or_default(),
-                    output_value: o.output_value.unwrap_or_default(),
-                    description: o.description,
-                    export_name: o.export_name,
-                })
-                .collect();
+            let outputs = crate::output::aws_conversion::convert_stack_outputs(
+                stack.outputs.unwrap_or_default()
+            );
 
             // Get exports if any outputs have export names and query for importing stacks in parallel
             let exports_with_names: Vec<_> = outputs.iter()
@@ -228,16 +207,16 @@ pub async fn describe_stack(cli: &Cli) -> Result<()> {
                     }
                 }
                 
-                // Combine outputs with import results
+                // Combine outputs with import results using conversion helper
+                let stack_id = stack.stack_id.clone().unwrap_or_default();
                 exports_with_names.iter()
                     .zip(import_results.iter())
-                    .map(|((output, export_name), importing_stacks)| {
-                        StackExportInfo {
-                            name: (*export_name).clone(),
-                            value: output.output_value.clone(),
-                            exporting_stack_id: stack.stack_id.clone().unwrap_or_default(),
-                            importing_stacks: importing_stacks.clone(),
-                        }
+                    .filter_map(|((output, _), importing_stacks)| {
+                        crate::output::aws_conversion::create_stack_export(
+                            output, 
+                            &stack_id, 
+                            importing_stacks.clone()
+                        )
                     })
                     .collect()
             } else {

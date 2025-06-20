@@ -8,7 +8,7 @@ use std::time::Duration;
 const DEFAULT_PREVIOUS_EVENTS_COUNT: usize = 10;
 
 // Default poll interval for watch operations (seconds)
-const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
+pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 // Very long timeout for effectively infinite waiting (1 year in seconds)
 const INFINITE_TIMEOUT_SECS: u64 = 86400 * 365;
@@ -244,11 +244,11 @@ pub async fn watch_stack(
     Ok(())
 }
 
-/// Output trait for live events - allows using either DynamicOutputManager or sender
-trait LiveEventsOutput {
-    async fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> Result<()>;
-    async fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> Result<()>;
-    async fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> Result<()>;
+/// Output trait for live events - allows using either DynamicOutputManager or sender (public for use by other operations)
+pub trait LiveEventsOutput {
+    fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
 /// Implementation for DynamicOutputManager
@@ -257,43 +257,43 @@ struct ManagerOutput<'a> {
 }
 
 impl<'a> LiveEventsOutput for ManagerOutput<'a> {
-    async fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> Result<()> {
-        self.manager.render(OutputData::NewStackEvents(events)).await
+    fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> impl std::future::Future<Output = Result<()>> + Send {
+        self.manager.render(OutputData::NewStackEvents(events))
     }
     
-    async fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> Result<()> {
-        self.manager.render(OutputData::OperationComplete(info)).await
+    fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> impl std::future::Future<Output = Result<()>> + Send {
+        self.manager.render(OutputData::OperationComplete(info))
     }
     
-    async fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> Result<()> {
-        self.manager.render(OutputData::InactivityTimeout(info)).await
+    fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> impl std::future::Future<Output = Result<()>> + Send {
+        self.manager.render(OutputData::InactivityTimeout(info))
     }
 }
 
-/// Implementation for direct sender
-struct SenderOutput {
-    sender: tokio::sync::mpsc::UnboundedSender<OutputData>,
+/// Implementation for direct sender (public for use by other operations)
+pub struct SenderOutput {
+    pub sender: tokio::sync::mpsc::UnboundedSender<OutputData>,
 }
 
 impl LiveEventsOutput for SenderOutput {
-    async fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> Result<()> {
+    fn send_new_events(&mut self, events: Vec<StackEventWithTiming>) -> impl std::future::Future<Output = Result<()>> + Send {
         let _ = self.sender.send(OutputData::NewStackEvents(events));
-        Ok(())
+        async { Ok(()) }
     }
     
-    async fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> Result<()> {
+    fn send_operation_complete(&mut self, info: OperationCompleteInfo) -> impl std::future::Future<Output = Result<()>> + Send {
         let _ = self.sender.send(OutputData::OperationComplete(info));
-        Ok(())
+        async { Ok(()) }
     }
     
-    async fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> Result<()> {
+    fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> impl std::future::Future<Output = Result<()>> + Send {
         let _ = self.sender.send(OutputData::InactivityTimeout(info));
-        Ok(())
+        async { Ok(()) }
     }
 }
 
-/// Live events polling function with pre-fetched events marked as seen
-async fn watch_stack_live_events_with_seen_events(
+/// Live events polling function with pre-fetched events marked as seen (public for use by other operations)
+pub async fn watch_stack_live_events_with_seen_events(
     client: &Client,
     start_time: Option<DateTime<Utc>>,
     stack_name: &str,
@@ -468,8 +468,8 @@ async fn watch_stack_live_events_unified(
 
 // Removed duplicated helper functions - using existing functions from aws_conversion.rs and timing module
 
-/// Collect stack contents data (controller pattern - no display logic)
-async fn collect_stack_contents(
+/// Collect stack contents data (controller pattern - no display logic, public for use by other operations)
+pub async fn collect_stack_contents(
     ctx: &CfnContext,
     stack_name: &str,
 ) -> Result<crate::output::StackContents> {
@@ -501,47 +501,18 @@ async fn collect_stack_contents(
     
     // Get resources (this might still be loading)
     let resources_resp = resources_future.await?;
-    let resources: Vec<crate::output::StackResourceInfo> = resources_resp
-        .stack_resources
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| crate::output::StackResourceInfo {
-            logical_resource_id: r.logical_resource_id.unwrap_or_default(),
-            physical_resource_id: r.physical_resource_id,
-            resource_type: r.resource_type.unwrap_or_default(),
-            resource_status: r.resource_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
-            resource_status_reason: r.resource_status_reason,
-            last_updated_timestamp: r.timestamp.and_then(|ts| {
-                chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-            }),
-        })
-        .collect();
+    let resources = crate::output::aws_conversion::convert_stack_resources(
+        resources_resp.stack_resources.unwrap_or_default()
+    );
 
     // Extract outputs from stack
-    let outputs: Vec<crate::output::StackOutputInfo> = stack
-        .outputs
-        .unwrap_or_default()
-        .into_iter()
-        .map(|o| crate::output::StackOutputInfo {
-            output_key: o.output_key.unwrap_or_default(),
-            output_value: o.output_value.unwrap_or_default(),
-            description: o.description,
-            export_name: o.export_name,
-        })
-        .collect();
+    let outputs = crate::output::aws_conversion::convert_stack_outputs(
+        stack.outputs.unwrap_or_default()
+    );
 
     // Get exports if any outputs have export names
-    let mut exports: Vec<crate::output::StackExportInfo> = vec![];
-    for output in &outputs {
-        if let Some(export_name) = &output.export_name {
-            exports.push(crate::output::StackExportInfo {
-                name: export_name.clone(),
-                value: output.output_value.clone(),
-                exporting_stack_id: stack.stack_id.clone().unwrap_or_default(),
-                importing_stacks: vec![], // Would need separate query to find importers
-            });
-        }
-    }
+    let stack_id = stack.stack_id.clone().unwrap_or_default();
+    let exports = crate::output::aws_conversion::convert_outputs_to_exports(&outputs, &stack_id);
 
     // Current status
     let current_status = crate::output::StackStatusInfo {

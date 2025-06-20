@@ -9,14 +9,15 @@ use crate::{
         CommandMetadata, CommandResult, StatusUpdate, StatusLevel, OutputData,
         TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
         StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
-        StackEventsDisplay, StackEvent, StackEventWithTiming
+        StackEventsDisplay, StackEvent, StackEventWithTiming,
+        StackResourceInfo, StackOutputInfo, StackExportInfo
     },
     cli::NormalizedAwsOpts,
     stack_args::StackArgs,
     timing::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
 };
-use aws_sdk_cloudformation::types::{Stack, StackEvent as AwsStackEvent};
-use chrono::Utc;
+use aws_sdk_cloudformation::types::{Stack, StackEvent as AwsStackEvent, StackResource, Output};
+use chrono::{Utc, DateTime};
 use std::collections::HashMap;
 
 /// Convert timing::TokenInfo to output::TokenInfo
@@ -363,6 +364,68 @@ fn calculate_event_durations(mut events: Vec<StackEvent>) -> Vec<StackEventWithT
     }
     
     result
+}
+
+/// Convert AWS SDK StackResource to StackResourceInfo
+pub fn convert_stack_resource(aws_resource: &StackResource) -> StackResourceInfo {
+    StackResourceInfo {
+        logical_resource_id: aws_resource.logical_resource_id.clone().unwrap_or_default(),
+        physical_resource_id: aws_resource.physical_resource_id.clone(),
+        resource_type: aws_resource.resource_type.clone().unwrap_or_default(),
+        resource_status: aws_resource.resource_status.as_ref()
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_default(),
+        resource_status_reason: aws_resource.resource_status_reason.clone(),
+        last_updated_timestamp: aws_resource.timestamp.as_ref().and_then(|ts| {
+            DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+        }),
+    }
+}
+
+/// Convert multiple AWS SDK StackResources to Vec<StackResourceInfo>
+pub fn convert_stack_resources(aws_resources: Vec<StackResource>) -> Vec<StackResourceInfo> {
+    aws_resources.iter().map(convert_stack_resource).collect()
+}
+
+/// Convert AWS SDK Output to StackOutputInfo
+pub fn convert_stack_output(aws_output: &Output) -> StackOutputInfo {
+    StackOutputInfo {
+        output_key: aws_output.output_key.clone().unwrap_or_default(),
+        output_value: aws_output.output_value.clone().unwrap_or_default(),
+        description: aws_output.description.clone(),
+        export_name: aws_output.export_name.clone(),
+    }
+}
+
+/// Convert multiple AWS SDK Outputs to Vec<StackOutputInfo>
+pub fn convert_stack_outputs(aws_outputs: Vec<Output>) -> Vec<StackOutputInfo> {
+    aws_outputs.iter().map(convert_stack_output).collect()
+}
+
+/// Create StackExportInfo from StackOutputInfo (for outputs with export names)
+pub fn create_stack_export(
+    output: &StackOutputInfo, 
+    stack_id: &str, 
+    importing_stacks: Vec<String>
+) -> Option<StackExportInfo> {
+    output.export_name.as_ref().map(|export_name| {
+        StackExportInfo {
+            name: export_name.clone(),
+            value: output.output_value.clone(),
+            exporting_stack_id: stack_id.to_string(),
+            importing_stacks,
+        }
+    })
+}
+
+/// Convert stack outputs to exports (only outputs with export_name)
+pub fn convert_outputs_to_exports(
+    outputs: &[StackOutputInfo], 
+    stack_id: &str
+) -> Vec<StackExportInfo> {
+    outputs.iter()
+        .filter_map(|output| create_stack_export(output, stack_id, vec![]))
+        .collect()
 }
 
 #[cfg(test)]
