@@ -1,21 +1,37 @@
 # CLAUDE.md
 
-## 🚨 CRITICAL CONTEXT FOR AUTO-COMPACT RECOVERY
+## 🔧 CURRENT WORK CONTEXT
 
-**EMERGENCY STATUS:** Major foundational issue discovered in stack args loading system.
+**Current Task**: Available for new tasks
 
-### **MANDATORY FIRST READS (Critical Issue)**
-1. **`notes/2025-06-18-context-window-recovery-instructions.md`** - 🚨 CRITICAL recovery instructions and situation awareness
-2. **`notes/2025-06-18-critical-stack-args-implementation-plan.md`** - 🚨 Complete analysis and implementation plan for broken stack args system
-3. **`notes/2025-06-18-stack-args-loading-analysis.md`** - 🚨 Detailed requirements gap analysis vs iidy-js
-4. **`@iidy-js-for-reference/src/cfn/loadStackArgs.ts`** - 🚨 THE authoritative reference implementation
-5. **Current Todo List** - Use `TodoRead` tool to see critical implementation priorities
+### **RECENTLY COMPLETED (Major Milestone)**
+**Commit 3b140df**: Comprehensive infrastructure and UX improvements
+- ✅ **Live Events Timing** - iidy-js-compatible spinner with 1-second updates
+- ✅ **S3 Auto-Signing** - Cross-region template URL signing capability  
+- ✅ **YAML Helpers** - sha256File, base64, and file hashing capabilities
+- ✅ **Data-Driven Architecture** - Multiple cfn handlers refactored for compliance
+- ✅ **Output Rendering** - Enhanced interactive/JSON renderers with consistent styling
+- ✅ **Test Coverage** - Template loading, plain mode ordering, stack events tests
 
-### **Architecture Documents (After Critical Issue)**
-6. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design (✅ COMPLETED)
-7. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (✅ COMPLETED)
-8. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec (✅ COMPLETED)
-9. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Implementation status (✅ COMPLETED)
+### **COMPLETED INFRASTRUCTURE (Reference)**
+1. **`notes/2025-06-20-s3-url-auto-signing-implementation.md`** - ✅ S3 URL signing
+2. **`notes/2025-06-20-plain-renderer-race-condition-fix.md`** - ✅ Race condition fixes
+3. **`notes/2025-06-20-stack-events-title-configuration.md`** - ✅ Events display
+4. **`notes/2025-06-20-list-stacks-json-query-implementation.md`** - ✅ JSON query support
+5. **`tests/template_loading_integration_tests.rs`** - ✅ Template loading tests
+6. **`tests/plain_mode_ordering_test.rs`** - ✅ Plain mode tests
+7. **`tests/stack_events_title_test.rs`** - ✅ Stack events tests
+
+### **RECOVERY CONTEXT (If Auto-Compact)**
+8. **`notes/2025-06-18-context-window-recovery-instructions.md`** - 🚨 Recovery instructions
+9. **`notes/2025-06-18-critical-stack-args-implementation-plan.md`** - 🚨 Stack args system
+10. **`notes/2025-06-18-stack-args-loading-analysis.md`** - 🚨 Requirements gap analysis
+
+### **ARCHITECTURE FOUNDATION (Reference)**
+11. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design (✅ COMPLETED)
+12. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (✅ COMPLETED)
+13. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec (✅ COMPLETED)
+14. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Implementation status (✅ COMPLETED)
 
 ### **Key Implementation Details**
 - **Theme System**: `src/output/theme.rs` with exact iidy-js colors (NOT old src/terminal.rs/color.rs)
@@ -29,6 +45,7 @@
 - TUI mode removed from current scope (implement later)
 - CLI supports `--theme` (Dark/Light/HighContrast/Auto) and `--color` (Always/Never/Auto)
 - All tests must be offline/deterministic using fixture data
+- **ALWAYS review `notes/2025-06-17-data-driven-output-architecture.md` when working on `src/cfn/` command handlers**
 
 ---
 
