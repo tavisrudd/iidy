@@ -22,10 +22,86 @@ pub enum TokenSource {
     Derived { from: String, step: String },
 }
 
+/// CloudFormation operation type
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CfnOperation {
+    CreateStack,
+    UpdateStack,
+    DeleteStack,
+    DescribeStack,
+    CreateOrUpdate,
+    CreateChangeset,
+    ExecuteChangeset,
+    EstimateCost,
+    ListStacks,
+    WatchStack,
+    GetStackTemplate,
+    GetStackInstances,
+    DescribeStackDrift,
+}
+
+impl CfnOperation {
+    /// Convert from string (for backward compatibility)
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "create-stack" => Some(Self::CreateStack),
+            "update-stack" => Some(Self::UpdateStack),
+            "delete-stack" => Some(Self::DeleteStack),
+            "describe-stack" => Some(Self::DescribeStack),
+            "create-or-update" => Some(Self::CreateOrUpdate),
+            "create-changeset" => Some(Self::CreateChangeset),
+            "execute-changeset" => Some(Self::ExecuteChangeset),
+            "estimate-cost" => Some(Self::EstimateCost),
+            "list-stacks" => Some(Self::ListStacks),
+            "watch-stack" => Some(Self::WatchStack),
+            "get-stack-template" => Some(Self::GetStackTemplate),
+            "get-stack-instances" => Some(Self::GetStackInstances),
+            "describe-stack-drift" => Some(Self::DescribeStackDrift),
+            _ => None,
+        }
+    }
+
+    /// Convert to string for display
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CreateStack => "create-stack",
+            Self::UpdateStack => "update-stack",
+            Self::DeleteStack => "delete-stack",
+            Self::DescribeStack => "describe-stack",
+            Self::CreateOrUpdate => "create-or-update",
+            Self::CreateChangeset => "create-changeset",
+            Self::ExecuteChangeset => "execute-changeset",
+            Self::EstimateCost => "estimate-cost",
+            Self::ListStacks => "list-stacks",
+            Self::WatchStack => "watch-stack",
+            Self::GetStackTemplate => "get-stack-template",
+            Self::GetStackInstances => "get-stack-instances",
+            Self::DescribeStackDrift => "describe-stack-drift",
+        }
+    }
+
+    /// Check if this operation is read-only (doesn't modify AWS resources)
+    pub fn is_read_only(&self) -> bool {
+        matches!(self, 
+            Self::DescribeStack | 
+            Self::EstimateCost | 
+            Self::ListStacks | 
+            Self::GetStackTemplate | 
+            Self::GetStackInstances | 
+            Self::DescribeStackDrift
+        )
+    }
+}
+
+impl std::fmt::Display for CfnOperation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 /// Command metadata shown at start of create/update operations
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommandMetadata {
-    pub cfn_operation: String,
     pub iidy_environment: String,
     pub region: String,
     pub profile: Option<String>,
@@ -230,14 +306,6 @@ pub enum StatusLevel {
     Warning,
     Error,
     Success,
-    /// Special status for starting operations - interactive renderer will use spinners
-    OperationInProgress,
-    /// Special status for updating ongoing operations - interactive renderer will update spinner text
-    OperationUpdate,
-    /// Special status for operation completion - interactive renderer will show success with timing
-    OperationComplete,
-    /// Special status for operation failure - interactive renderer will show failure
-    OperationFailed,
 }
 
 /// Command execution result
@@ -351,4 +419,6 @@ impl OutputData {
             OutputData::TokenInfo(_) => "token_info",
         }
     }
+    
 }
+

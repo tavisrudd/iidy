@@ -22,6 +22,9 @@ fn create_pixel_perfect_interactive_options() -> InteractiveOptions {
         theme: Theme::Dark,               // Use dark theme (default for iidy-js)
         terminal_width: Some(130),        // Fixed width matching iidy-js default
         show_timestamps: true,            // Enable timestamps
+        enable_spinners: false,           // Disable for testing
+        enable_ansi_features: true,       // Enable ANSI features for testing
+        cli_context: None,                // No CLI context needed for tests
     }
 }
 
@@ -66,7 +69,7 @@ async fn test_interactive_command_metadata_pixel_perfect() {
     // For now, test that the renderer executes without error
     // TODO: Implement actual output capture when we have stdout redirection
     renderer.init().await.expect("Should initialize");
-    renderer.render_command_metadata(command_metadata).await.expect("Should render");
+    renderer.render_output_data(OutputData::CommandMetadata(command_metadata.clone()), None).await.expect("Should render");
     renderer.cleanup().await.expect("Should cleanup");
     
     // Verify the expected output has the key elements we're rendering
@@ -106,7 +109,7 @@ async fn test_plain_command_metadata_pixel_perfect() {
     
     // Test that the renderer executes without error
     renderer.init().await.expect("Should initialize");
-    renderer.render_command_metadata(command_metadata).await.expect("Should render");
+    renderer.render_output_data(OutputData::CommandMetadata(command_metadata.clone()), None).await.expect("Should render");
     renderer.cleanup().await.expect("Should cleanup");
     
     // Verify the expected output structure
@@ -141,7 +144,7 @@ async fn test_interactive_stack_definition_pixel_perfect() {
     
     // Test rendering
     renderer.init().await.expect("Should initialize");
-    renderer.render_stack_definition(stack_definition, show_times).await.expect("Should render");
+    renderer.render_output_data(OutputData::StackDefinition(stack_definition.clone(), show_times), None).await.expect("Should render");
     renderer.cleanup().await.expect("Should cleanup");
     
     // Verify expected content in fixture
@@ -180,7 +183,7 @@ async fn test_interactive_stack_events_pixel_perfect() {
     
     // Test rendering
     renderer.init().await.expect("Should initialize");
-    renderer.render_stack_events(stack_events).await.expect("Should render");
+    renderer.render_output_data(OutputData::StackEvents(stack_events.clone()), None).await.expect("Should render");
     renderer.cleanup().await.expect("Should cleanup");
     
     // Verify expected content in fixture

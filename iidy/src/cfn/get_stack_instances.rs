@@ -21,7 +21,7 @@ pub async fn get_stack_instances(
     global_opts: &GlobalOpts
 ) -> Result<()> {
     let start_time = Instant::now();
-    let output_options = OutputOptions::default();
+    let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options

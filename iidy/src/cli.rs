@@ -2,6 +2,12 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
 use std::io::IsTerminal;
+use std::collections::HashMap;
+
+/// Trait for converting CLI args to HashMap for metadata display
+pub trait ToArgMap {
+    fn to_arg_map(&self) -> HashMap<String, String>;
+}
 
 const AWS_REGIONS: [&str; 26] = [
     "us-east-1",
@@ -44,7 +50,7 @@ fn styles() -> Styles {
     }
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     name = "iidy-rs",
     bin_name = "iidy-rs",
@@ -164,6 +170,22 @@ pub struct NormalizedAwsOpts {
     pub fixture_set: Option<String>,
 }
 
+impl ToArgMap for NormalizedAwsOpts {
+    fn to_arg_map(&self) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        if let Some(ref region) = self.region {
+            map.insert("region".to_string(), region.clone());
+        }
+        if let Some(ref profile) = self.profile {
+            map.insert("profile".to_string(), profile.clone());
+        }
+        if let Some(ref role) = self.assume_role_arn {
+            map.insert("assume-role-arn".to_string(), role.clone());
+        }
+        map
+    }
+}
+
 impl AwsOpts {
     /// Normalize AwsOpts by ensuring a client request token is always present.
     ///
@@ -267,7 +289,7 @@ impl std::fmt::Display for YamlSpec {
     }
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// create a cfn stack based on stack-args.yaml
     CreateStack(StackFileArgs),
@@ -338,14 +360,36 @@ pub enum Commands {
     },
 }
 
-#[derive(Args, Debug)]
+impl Commands {
+    /// Extract the CloudFormation operation from the command
+    pub fn to_cfn_operation(&self) -> crate::output::CfnOperation {
+        match self {
+            Commands::CreateStack(_) => crate::output::CfnOperation::CreateStack,
+            Commands::UpdateStack(_) => crate::output::CfnOperation::UpdateStack,
+            Commands::CreateOrUpdate(_) => crate::output::CfnOperation::CreateOrUpdate,
+            Commands::EstimateCost(_) => crate::output::CfnOperation::EstimateCost,
+            Commands::CreateChangeset(_) => crate::output::CfnOperation::CreateChangeset,
+            Commands::ExecChangeset(_) => crate::output::CfnOperation::ExecuteChangeset,
+            Commands::DescribeStack(_) => crate::output::CfnOperation::DescribeStack,
+            Commands::WatchStack(_) => crate::output::CfnOperation::WatchStack,
+            Commands::DescribeStackDrift(_) => crate::output::CfnOperation::DescribeStackDrift,
+            Commands::GetStackTemplate(_) => crate::output::CfnOperation::GetStackTemplate,
+            Commands::GetStackInstances(_) => crate::output::CfnOperation::GetStackInstances,
+            Commands::ListStacks(_) => crate::output::CfnOperation::ListStacks,
+            // For non-CFN commands, default to a reasonable operation
+            _ => crate::output::CfnOperation::DescribeStack,
+        }
+    }
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct StackFileArgs {
     pub argsfile: String,
     #[arg(long = "stack-name")]
     pub stack_name: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct UpdateStackArgs {
     #[command(flatten)]
     pub base: StackFileArgs,
@@ -361,7 +405,7 @@ pub struct UpdateStackArgs {
     pub stack_policy_during_update: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct CreateChangeSetArgs {
     pub argsfile: String,
     pub changeset_name: Option<String>,
@@ -375,7 +419,7 @@ pub struct CreateChangeSetArgs {
     pub stack_name: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ExecChangeSetArgs {
     pub argsfile: String,
     pub changeset_name: String,
@@ -383,7 +427,7 @@ pub struct ExecChangeSetArgs {
     pub stack_name: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct DescribeArgs {
     pub stackname: String,
     #[arg(long, default_value_t = 50)]
@@ -392,21 +436,33 @@ pub struct DescribeArgs {
     pub query: Option<String>,
 }
 
-#[derive(Args, Debug)]
+impl ToArgMap for DescribeArgs {
+    fn to_arg_map(&self) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+        map.insert("stackname".to_string(), self.stackname.clone());
+        map.insert("events".to_string(), self.events.to_string());
+        if let Some(ref query) = self.query {
+            map.insert("query".to_string(), query.clone());
+        }
+        map
+    }
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct WatchArgs {
     pub stackname: String,
     #[arg(long = "inactivity-timeout", default_value_t = 180)]
     pub inactivity_timeout: u32,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct DriftArgs {
     pub stackname: String,
     #[arg(long = "drift-cache", default_value_t = 300)]
     pub drift_cache: u32,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct DeleteArgs {
     pub stackname: String,
     #[arg(long = "role-arn")]
@@ -419,7 +475,7 @@ pub struct DeleteArgs {
     pub fail_if_absent: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct GetTemplateArgs {
     pub stackname: String,
     #[arg(long, value_enum, default_value_t = TemplateFormat::Original)]
@@ -428,19 +484,19 @@ pub struct GetTemplateArgs {
     pub stage: TemplateStageArg,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct StackNameArg {
     pub stackname: String,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct GetStackInstancesArgs {
     pub stackname: String,
     #[arg(long, help = "Show only DNS names/IP addresses")]
     pub short: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ListArgs {
     #[arg(long = "tag-filter")]
     pub tag_filter: Vec<String>,
@@ -452,7 +508,7 @@ pub struct ListArgs {
     pub tags: bool,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ParamCommands {
     /// set a parameter value
     Set(ParamSetArgs),
@@ -466,12 +522,12 @@ pub enum ParamCommands {
     GetHistory(ParamGetArgs),
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ParamPathArg {
     pub path: String,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ParamSetArgs {
     pub path: String,
     pub value: String,
@@ -485,7 +541,7 @@ pub struct ParamSetArgs {
     pub r#type: String,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ParamGetArgs {
     pub path: String,
     #[arg(long, default_value_t = true)]
@@ -494,7 +550,7 @@ pub struct ParamGetArgs {
     pub format: String,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ParamGetByPathArgs {
     pub path: String,
     #[arg(long, default_value_t = true)]
@@ -505,7 +561,7 @@ pub struct ParamGetByPathArgs {
     pub recursive: bool,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum ApprovalCommands {
     /// request template approval
     Request(ApprovalRequestArgs),
@@ -513,7 +569,7 @@ pub enum ApprovalCommands {
     Review(ApprovalReviewArgs),
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ApprovalRequestArgs {
     pub argsfile: String,
     #[arg(long = "lint-template", default_value_t = true)]
@@ -522,14 +578,14 @@ pub struct ApprovalRequestArgs {
     pub lint_using_parameters: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ApprovalReviewArgs {
     pub url: String,
     #[arg(long, default_value_t = 100)]
     pub context: u32,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct RenderArgs {
     #[arg(help = "Template file path or '-' to read from stdin")]
     pub template: String,
@@ -554,7 +610,7 @@ pub struct RenderArgs {
     pub yaml_spec: YamlSpec,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct GetImportArgs {
     pub import: String,
     #[arg(long, default_value = "yaml")]
@@ -563,21 +619,21 @@ pub struct GetImportArgs {
     pub query: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct DemoArgs {
     pub demoscript: String,
     #[arg(long, default_value_t = 1)]
     pub timescaling: u32,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct LintTemplateArgs {
     pub argsfile: String,
     #[arg(long = "use-parameters")]
     pub use_parameters: bool,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ConvertArgs {
     pub stackname: String,
     pub output_dir: String,
@@ -589,7 +645,7 @@ pub struct ConvertArgs {
     pub project: Option<String>,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct InitStackArgs {
     #[arg(long)]
     pub force: bool,

@@ -30,23 +30,23 @@ async fn test_json_renderer_with_fixture_data() {
     for data in &output_data {
         match data {
             OutputData::CommandMetadata(metadata) => {
-                renderer.render_command_metadata(metadata).await
+                renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await
                     .expect("Should render CommandMetadata as JSON");
             },
             OutputData::StackDefinition(def, show_times) => {
-                renderer.render_stack_definition(def, *show_times).await
+                renderer.render_output_data(OutputData::StackDefinition(def.clone(), *show_times), None).await
                     .expect("Should render StackDefinition as JSON");
             },
             OutputData::StackEvents(events) => {
-                renderer.render_stack_events(events).await
+                renderer.render_output_data(OutputData::StackEvents(events.clone()), None).await
                     .expect("Should render StackEvents as JSON");
             },
             OutputData::StackContents(contents) => {
-                renderer.render_stack_contents(contents).await
+                renderer.render_output_data(OutputData::StackContents(contents.clone()), None).await
                     .expect("Should render StackContents as JSON");
             },
             OutputData::CommandResult(result) => {
-                renderer.render_command_result(result).await
+                renderer.render_output_data(OutputData::CommandResult(result.clone()), None).await
                     .expect("Should render CommandResult as JSON");
             },
             _ => {
@@ -66,7 +66,6 @@ async fn test_json_output_structure() {
     
     // Create sample data
     let metadata = CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),
@@ -86,7 +85,7 @@ async fn test_json_output_structure() {
     
     // Note: In a real test environment, we would capture stdout to validate
     // the JSON structure. For now, we test that rendering doesn't error.
-    renderer.render_command_metadata(&metadata).await
+    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await
         .expect("Should render command metadata without error");
 }
 
@@ -108,7 +107,7 @@ async fn test_json_options_configurations() {
         level: StatusLevel::Info,
     };
     
-    renderer.render_status_update(&status).await
+    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
         .expect("Should render without timestamps");
     
     // Test with pretty printing
@@ -119,7 +118,7 @@ async fn test_json_options_configurations() {
     };
     let mut renderer = JsonRenderer::new(options);
     
-    renderer.render_status_update(&status).await
+    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
         .expect("Should render with pretty printing");
     
     // Test without type information
@@ -130,7 +129,7 @@ async fn test_json_options_configurations() {
     };
     let mut renderer = JsonRenderer::new(options);
     
-    renderer.render_status_update(&status).await
+    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
         .expect("Should render without type information");
 }
 
@@ -184,7 +183,7 @@ async fn test_json_renderer_with_complex_data() {
         pending_changesets: vec![],
     };
     
-    renderer.render_stack_contents(&stack_contents).await
+    renderer.render_output_data(OutputData::StackContents(stack_contents.clone()), None).await
         .expect("Should render complex stack contents as JSON");
 }
 
@@ -205,7 +204,7 @@ async fn test_json_renderer_error_handling() {
         ],
     };
     
-    renderer.render_error(&error_info).await
+    renderer.render_output_data(OutputData::Error(error_info.clone()), None).await
         .expect("Should render error information as JSON");
 }
 
@@ -215,7 +214,6 @@ async fn test_json_serialization_compatibility() {
     // This validates that serde annotations are correct
     
     let metadata = CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),

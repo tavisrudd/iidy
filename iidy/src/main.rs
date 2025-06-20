@@ -72,10 +72,9 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::DummySpacer2 => {}
-        Commands::DescribeStack(args) => {
-            let normalized_opts = cli.aws_opts.normalize();
+        Commands::DescribeStack(ref _args) => {
             if let Err(e) =
-                rt.block_on(cfn::describe_stack::describe_stack(&normalized_opts, &args, &cli.global_opts))
+                rt.block_on(cfn::describe_stack::describe_stack(&cli))
             {
                 eprintln!("error describing stack: {e:?}");
                 std::process::exit(1);
@@ -134,9 +133,8 @@ fn handle_command(cli: Cli) {
                 std::process::exit(1);
             }
         }
-        Commands::ListStacks(args) => {
-            let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&normalized_opts, &args, &cli.global_opts)) {
+        Commands::ListStacks(ref _args) => {
+            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli)) {
                 eprintln!("error listing stacks: {e:?}");
                 std::process::exit(1);
             }

@@ -287,8 +287,8 @@ impl ProgressManager {
         use std::time::Duration;
 
         let (tick_chars, template) = match style {
-            SpinnerStyle::Dots => ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "{spinner:.cyan} {msg}"),
-            SpinnerStyle::Dots12 => ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋⠙", "{spinner:.blue} {msg}"),
+            SpinnerStyle::Dots => ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏", "{spinner:.cyan.bold} {msg}"),
+            SpinnerStyle::Dots12 => ("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⠋⠙", "{spinner:.cyan.bold} {msg}"),
             SpinnerStyle::Line => ("⠂⠄⠅⠇⡇⣇⣧⣷⣿⣸⣰⣠⣀", "{spinner:.yellow} {msg}"),
             SpinnerStyle::Arrow => ("←↖↑↗→↘↓↙", "{spinner:.magenta} {msg}"),
             SpinnerStyle::Pulse => ("⚫⚪", "{spinner:.green} {msg}"),

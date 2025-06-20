@@ -66,7 +66,7 @@ fn sample_output_data() -> Vec<OutputData> {
 
     vec![
         OutputData::CommandMetadata(CommandMetadata {
-            cfn_operation: "create-stack".to_string(),
+            cfn_operation: CfnOperation::CreateStack,
             iidy_environment: "development".to_string(),
             region: "us-east-1".to_string(),
             profile: Some("dev-profile".to_string()),

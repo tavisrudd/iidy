@@ -91,6 +91,25 @@ impl OutputRenderer for JsonRenderer {
         Ok(())
     }
     
+    /// Render OutputData as JSON (ignores buffer for ordering)
+    async fn render_output_data(&mut self, data: OutputData, _buffer: Option<&std::collections::VecDeque<crate::output::data::OutputData>>) -> Result<()> {
+        match data {
+            OutputData::CommandMetadata(ref metadata) => self.render_command_metadata(metadata).await,
+            OutputData::StackDefinition(ref def, show_times) => self.render_stack_definition(def, show_times).await,
+            OutputData::StackEvents(ref events) => self.render_stack_events(events).await,
+            OutputData::StackContents(ref contents) => self.render_stack_contents(contents).await,
+            OutputData::StatusUpdate(ref update) => self.render_status_update(update).await,
+            OutputData::CommandResult(ref result) => self.render_command_result(result).await,
+            OutputData::StackList(ref list) => self.render_stack_list(list).await,
+            OutputData::ChangeSetResult(ref result) => self.render_changeset_result(result).await,
+            OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
+            OutputData::Error(ref error) => self.render_error(error).await,
+            OutputData::TokenInfo(ref token) => self.render_token_info(token).await,
+        }
+    }
+}
+
+impl JsonRenderer {
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
         self.output_json("command_metadata", data)
     }
@@ -150,7 +169,6 @@ mod tests {
 
     fn create_sample_command_metadata() -> CommandMetadata {
         CommandMetadata {
-            cfn_operation: "create-stack".to_string(),
             iidy_environment: "test".to_string(),
             region: "us-east-1".to_string(),
             profile: Some("test-profile".to_string()),

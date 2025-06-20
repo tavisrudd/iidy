@@ -15,7 +15,7 @@ pub fn sample_command_metadata() -> CommandMetadata {
     cli_arguments.insert("argsfile".to_string(), "stack-args.yaml".to_string());
 
     CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
+        cfn_operation: CfnOperation::CreateStack,
         iidy_environment: "development".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("dev-profile".to_string()),

@@ -42,7 +42,6 @@ pub async fn create_command_metadata(
     context: &CfnContext,
     opts: &NormalizedAwsOpts,
     stack_args: &StackArgs,
-    cfn_operation: &str,
     environment: &str,
 ) -> Result<CommandMetadata, anyhow::Error> {
     let mut cli_arguments = HashMap::new();
@@ -70,7 +69,6 @@ pub async fn create_command_metadata(
     let current_iam_principal = get_current_iam_principal(context).await?;
 
     Ok(CommandMetadata {
-        cfn_operation: cfn_operation.to_string(),
         iidy_environment: environment.to_string(),
         region: opts.region.clone().unwrap_or_else(|| "us-east-1".to_string()),
         profile: opts.profile.clone(),
@@ -405,9 +403,9 @@ mod tests {
             ..Default::default()
         };
 
-        let metadata = create_command_metadata(&context, &opts, &stack_args, "create-stack", "test-env").await.unwrap();
+        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env").await.unwrap();
 
-        assert_eq!(metadata.cfn_operation, "create-stack");
+        // cfn_operation is now derived from CLI context, not stored in metadata
         assert_eq!(metadata.iidy_environment, "test-env");
         assert_eq!(metadata.region, "us-west-2");
         assert_eq!(metadata.profile, Some("test-profile".to_string()));

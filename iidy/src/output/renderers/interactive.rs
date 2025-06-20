@@ -14,7 +14,8 @@ use chrono::{DateTime, Utc};
 use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::io::{self, Write, IsTerminal};
-use std::time::Instant;
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 // Core constants matching iidy-js exactly (from complete implementation spec)
 pub const COLUMN2_START: usize = 25;
@@ -24,12 +25,15 @@ pub const MAX_PADDING: usize = 60;
 pub const RESOURCE_TYPE_PADDING: usize = 40;
 
 /// Configuration options for interactive rendering
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct InteractiveOptions {
     pub theme: Theme,
     pub color_choice: ColorChoice,
     pub terminal_width: Option<usize>,
     pub show_timestamps: bool,
+    pub enable_spinners: bool,
+    pub enable_ansi_features: bool,
+    pub cli_context: Option<Arc<crate::cli::Cli>>,
 }
 
 impl Default for InteractiveOptions {
@@ -39,6 +43,24 @@ impl Default for InteractiveOptions {
             color_choice: ColorChoice::Auto,
             terminal_width: None, // Will auto-detect
             show_timestamps: true,
+            enable_spinners: true,
+            enable_ansi_features: true,
+            cli_context: None,
+        }
+    }
+}
+
+impl InteractiveOptions {
+    /// Create options for plain text mode (no colors, spinners, or ANSI features)
+    pub fn plain() -> Self {
+        Self {
+            theme: Theme::Auto, // Doesn't matter since colors are disabled
+            color_choice: ColorChoice::Never,
+            terminal_width: None,
+            show_timestamps: true,
+            enable_spinners: false,
+            enable_ansi_features: false,
+            cli_context: None,
         }
     }
 }
@@ -50,21 +72,48 @@ pub struct InteractiveRenderer {
     #[allow(dead_code)] // Will be used for text wrapping in future
     terminal_width: usize,
     has_rendered_content: bool,
-    current_operation_spinner: Option<ProgressManager>,
+    // Async ordering state
+    current_operation: Option<String>,
+    expected_sections: Vec<&'static str>,
+    pending_sections: std::collections::HashMap<&'static str, OutputData>,
+    current_spinner: Option<ProgressManager>,
+    next_section_index: usize,
+    suppress_main_heading: bool,
+    printed_sections: Vec<String>, // Track which section titles have been printed
+    cli_context: Option<Arc<crate::cli::Cli>>,
+    // Section titles configured during construction
+    section_titles: HashMap<&'static str, String>,
 }
 
 impl InteractiveRenderer {
     pub fn new(options: InteractiveOptions) -> Self {
         let theme = IidyTheme::new(options.theme, options.color_choice);
         let terminal_width = options.terminal_width.unwrap_or_else(get_terminal_width);
+        let cli_context = options.cli_context.clone();
         
-        Self { 
+        let mut renderer = Self { 
             options,
             theme,
             terminal_width,
             has_rendered_content: false,
-            current_operation_spinner: None,
+            current_operation: None,
+            expected_sections: Vec::new(),
+            pending_sections: std::collections::HashMap::new(),
+            current_spinner: None,
+            next_section_index: 0,
+            suppress_main_heading: false,
+            printed_sections: Vec::new(),
+            cli_context: cli_context.clone(),
+            section_titles: HashMap::new(),
+        };
+        
+        // Set up operation context if CLI context is available
+        if let Some(ref cli) = cli_context {
+            let operation = cli.command.to_cfn_operation();
+            renderer.setup_operation(&operation, cli);
         }
+        
+        renderer
     }
     
     /// Check if colors are enabled
@@ -84,14 +133,21 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Print section heading with appropriate spacing
+    /// Print section heading with appropriate spacing (without trailing newline)
     fn print_section_heading(&mut self, text: &str) {
-        // Add blank line before section if content has already been rendered
-        if self.has_rendered_content {
+        // Add blank line before section if other sections have been printed
+        if !self.printed_sections.is_empty() {
             println!();
         }
-        println!("{}", self.format_section_heading(text));
-        self.has_rendered_content = true;
+        print!("{}", self.format_section_heading(text));
+        self.printed_sections.push(text.to_string());
+        self.has_rendered_content = true; // Keep this for other spacing logic
+    }
+    
+    /// Print section heading with newline (for sections that need content on separate lines)
+    fn print_section_heading_with_newline(&mut self, text: &str) {
+        self.print_section_heading(text);
+        println!();
     }
     
     /// Add appropriate spacing before content if needed
@@ -258,12 +314,12 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Create spinner for API waiting periods (iidy-js style) - only in TTY
+    /// Create spinner for API waiting periods (iidy-js style) - only in TTY and if enabled
     fn create_api_spinner(&self, message: &str) -> Option<ProgressManager> {
-        if self.colors_enabled() && io::stdout().is_terminal() {
+        if self.options.enable_spinners && self.colors_enabled() && io::stdout().is_terminal() {
             Some(ProgressManager::with_style(SpinnerStyle::Dots12, message))
         } else {
-            // Non-TTY or colors disabled: just print the message
+            // Spinners disabled, non-TTY, or colors disabled: just print the message
             println!("{}", message);
             None
         }
@@ -271,60 +327,10 @@ impl InteractiveRenderer {
     
 }
 
-impl InteractiveRenderer {
-    /// Execute an async operation with spinner indication (iidy-js style)
-    /// 
-    /// This method provides the ora-like spinner functionality from iidy-js:
-    /// - Shows spinning animation during operation (TTY only) 
-    /// - Displays success/failure message with elapsed time
-    /// - Falls back to simple status messages in non-TTY environments
-    /// 
-    /// Usage example:
-    /// ```ignore
-    /// let result = renderer.with_spinner("Loading stack data", async {
-    ///     // Your async operation here
-    ///     fetch_stack_data().await
-    /// }).await?;
-    /// ```
-    /// 
-    /// This method is available specifically for the interactive renderer
-    pub async fn with_spinner<F, T>(&self, operation_name: &str, future: F) -> Result<T>
-    where
-        F: std::future::Future<Output = Result<T>> + Send,
-        T: Send,
-    {
-        let start_time = Instant::now();
-        let spinner = self.create_api_spinner(&format!("{}...", operation_name));
-        
-        // Execute the operation
-        let result = future.await;
-        
-        match result {
-            Ok(value) => {
-                if let Some(spinner) = spinner {
-                    let elapsed = start_time.elapsed().as_secs();
-                    if elapsed > 0 {
-                        spinner.succeed(&format!("{} completed in {}s", operation_name, elapsed));
-                    } else {
-                        spinner.succeed(&format!("{} completed", operation_name));
-                    }
-                }
-                Ok(value)
-            }
-            Err(error) => {
-                if let Some(spinner) = spinner {
-                    spinner.fail(&format!("{} failed", operation_name));
-                }
-                Err(error)
-            }
-        }
-    }
-}
-
 #[async_trait]
 impl OutputRenderer for InteractiveRenderer {
     async fn init(&mut self) -> Result<()> {
-        // Interactive renderer doesn't need initialization
+        // Operation setup already done in new()
         Ok(())
     }
     
@@ -334,11 +340,253 @@ impl OutputRenderer for InteractiveRenderer {
         Ok(())
     }
     
+    /// Render OutputData with ordering logic for parallel operations
+    async fn render_output_data(&mut self, data: OutputData, buffer: Option<&VecDeque<OutputData>>) -> Result<()> {
+        // Check if this is CommandMetadata to set up operation context
+        if let OutputData::CommandMetadata(ref metadata) = data {
+            // Get operation from CLI context
+            if let Some(ref cli) = self.cli_context {
+                // TODO move this check to init.
+                let operation = cli.command.to_cfn_operation();
+                if self.should_show_command_metadata(&operation) {
+                    self.render_command_metadata(metadata).await?;
+                }
+            }
+            return Ok(());
+        }
+        
+        // If we have an active operation with expected sections, handle ordering
+        if !self.expected_sections.is_empty() {
+            return self.render_with_ordering(data, buffer).await;
+        }
+        
+        // No operation context, render immediately
+        self.render_data_immediately(data).await
+    }
+}
+
+impl InteractiveRenderer {
+    /// Determine if command metadata should be shown for this operation
+    fn should_show_command_metadata(&self, operation: &CfnOperation) -> bool {
+        !operation.is_read_only()
+    }
+    
+    /// Setup operation context and configure section titles based on CLI arguments
+    fn setup_operation(&mut self, operation: &CfnOperation, cli: &crate::cli::Cli) {
+        self.current_operation = Some(operation.to_string());
+        
+        // Configure section titles based on operation and CLI arguments
+        self.configure_section_titles(operation, cli);
+        
+        // Define expected sections based on operation for async ordering
+        self.expected_sections = match operation {
+            // Read-only operations - focus on data display
+            CfnOperation::DescribeStack => vec!["stack_definition", "stack_events", "stack_contents"],
+            CfnOperation::ListStacks => vec!["stack_list"],
+            CfnOperation::WatchStack => vec!["stack_definition", "stack_events"],
+            CfnOperation::GetStackTemplate => vec![], // Just returns template content
+            CfnOperation::DescribeStackDrift => vec!["stack_drift"],
+            
+            // Modification operations - may have different ordering needs
+            CfnOperation::CreateStack | 
+            CfnOperation::UpdateStack | 
+            CfnOperation::DeleteStack => vec![], // Real-time progress, no predefined sections
+            CfnOperation::CreateChangeset => vec!["changeset_result"],
+            CfnOperation::ExecuteChangeset => vec![], // Real-time progress
+            CfnOperation::CreateOrUpdate => vec![], // Real-time progress
+            
+            // Other operations
+            CfnOperation::EstimateCost => vec![],
+            CfnOperation::GetStackInstances => vec![],
+        };
+        
+        // Start the first section for describe-stack (show title immediately, spinner if enabled)
+        if *operation == CfnOperation::DescribeStack {
+            self.start_next_section();
+        }
+    }
+    
+    /// Start the next section (show title immediately, spinner if enabled)
+    fn start_next_section(&mut self) -> () {
+        if self.next_section_index < self.expected_sections.len() {
+            let section_key = self.expected_sections[self.next_section_index];
+            let title = self.get_section_title(section_key).to_string();
+            
+            // Show section heading immediately (with newline if section is always multi-line)
+            if self.section_is_always_multiline(section_key) {
+                self.print_section_heading_with_newline(&title);
+            } else {
+                self.print_section_heading(&title);
+            }
+            
+            if self.options.enable_spinners {
+                // Always put spinner on the line after the heading
+                if !self.section_is_always_multiline(section_key) {
+                    println!(); // Add newline after inline heading for spinner
+                }
+                self.current_spinner = self.create_api_spinner(&format!("Loading {}...", title.to_lowercase()));
+            }
+        }
+    }
+    
+    /// Configure section titles based on operation and CLI arguments
+    fn configure_section_titles(&mut self, operation: &CfnOperation, cli: &crate::cli::Cli) {
+        use crate::cli::Commands;
+        
+        // Default titles
+        self.section_titles.insert("stack_definition", "Stack Details".to_string());
+        self.section_titles.insert("stack_list", "Stack List".to_string());
+        self.section_titles.insert("stack_drift", "Stack Drift".to_string());
+        self.section_titles.insert("changeset_result", "Changeset Result".to_string());
+        self.section_titles.insert("stack_contents", "Stack Resources".to_string()); // First title for multi-section
+        
+        // Configure stack events title based on operation
+        match operation {
+            CfnOperation::DescribeStack => {
+                if let Commands::DescribeStack(args) = &cli.command {
+                    self.section_titles.insert("stack_events", 
+                        format!("Previous Stack Events (max {}):", args.events));
+                }
+            }
+            CfnOperation::WatchStack => {
+                self.section_titles.insert("stack_events", "Live Stack Events:".to_string());
+            }
+            _ => {
+                self.section_titles.insert("stack_events", "Stack Events:".to_string());
+            }
+        }
+    }
+    
+    /// Get the section title for display
+    fn get_section_title(&self, section_key: &str) -> &str {
+        self.section_titles.get(section_key).map(|s| s.as_str()).unwrap_or("Loading")
+    }
+    
+    /// Check if a section should always be multi-line (needs newline after heading)
+    fn section_is_always_multiline(&self, section_key: &str) -> bool {
+        match section_key {
+            "stack_definition" => true,  // Stack Details is always multi-line
+            "stack_contents" => true,    // Stack Resources is always multi-line
+            "stack_events" => true,      // Stack Events is always multi-line
+            _ => false,
+        }
+    }
+    
+    /// Render data with ordering logic for parallel operations
+    async fn render_with_ordering(&mut self, data: OutputData, _buffer: Option<&VecDeque<OutputData>>) -> Result<()> {
+        let section_key = self.get_section_key(&data);
+        
+        // Store the data for this section
+        if let Some(key) = section_key {
+            self.pending_sections.insert(key, data);
+            
+            // Render sections in expected order as they become available
+            self.render_available_sections().await?;
+        } else {
+            // Not a section we're tracking, render immediately
+            self.render_data_immediately(data).await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Render all available sections in expected order
+    async fn render_available_sections(&mut self) -> Result<()> {
+        // Render sections starting from the current position
+        while self.next_section_index < self.expected_sections.len() {
+            let section_key = self.expected_sections[self.next_section_index];
+            
+            if let Some(data) = self.pending_sections.remove(section_key) {
+                // Clear current spinner completely (remove from screen)
+                if let Some(spinner) = self.current_spinner.take() {
+                    spinner.clear();
+                }
+                
+                // Set flag to suppress main section heading (already shown)
+                self.suppress_main_heading = true;
+                
+                // Render content (main heading will be suppressed)
+                self.render_data_immediately(data).await?;
+                
+                // Reset flag
+                self.suppress_main_heading = false;
+                
+                // Move to next section
+                self.next_section_index += 1;
+                
+                // Start next section (title + spinner if enabled)
+                self.start_next_section();
+            } else {
+                // Data not ready for this section yet, stop here
+                break;
+            }
+        }
+        
+        // Check if we're done with the operation
+        if self.next_section_index >= self.expected_sections.len() {
+            self.cleanup_operation();
+        }
+        
+        Ok(())
+    }
+    
+    /// Get section key for OutputData type
+    fn get_section_key(&self, data: &OutputData) -> Option<&'static str> {
+        match data {
+            OutputData::StackDefinition(..) => Some("stack_definition"),
+            OutputData::StackEvents(..) => Some("stack_events"),
+            OutputData::StackContents(..) => Some("stack_contents"),
+            OutputData::StackList(..) => Some("stack_list"),
+            OutputData::StackDrift(..) => Some("stack_drift"),
+            OutputData::ChangeSetResult(..) => Some("changeset_result"),
+            _ => None,
+        }
+    }
+    
+    /// Clean up operation state
+    fn cleanup_operation(&mut self) -> () {
+        // Clear any remaining spinner
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        self.current_operation = None;
+        self.expected_sections.clear();
+        self.pending_sections.clear();
+        self.next_section_index = 0;
+        self.suppress_main_heading = false;
+        self.printed_sections.clear();
+    }
+    
+    /// Render data immediately without ordering logic
+    async fn render_data_immediately(&mut self, data: OutputData) -> Result<()> {
+        match data {
+            OutputData::StackDefinition(ref def, show_times) => self.render_stack_definition(def, show_times).await,
+            OutputData::StackEvents(ref events) => self.render_stack_events(events).await,
+            OutputData::StackContents(ref contents) => self.render_stack_contents(contents).await,
+            OutputData::StatusUpdate(ref update) => self.render_status_update(update).await,
+            OutputData::CommandResult(ref result) => self.render_command_result(result).await,
+            OutputData::StackList(ref list) => self.render_stack_list(list).await,
+            OutputData::ChangeSetResult(ref result) => self.render_changeset_result(result).await,
+            OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
+            OutputData::Error(ref error) => self.render_error(error).await,
+            OutputData::TokenInfo(ref token) => self.render_token_info(token).await,
+            _ => Ok(()), // CommandMetadata handled elsewhere
+        }
+    }
+    
+}
+
+impl InteractiveRenderer {
     /// Render command metadata (exact iidy-js showCommandSummary implementation)
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
-        self.print_section_heading("Command Metadata");
+        self.print_section_heading_with_newline("Command Metadata");
         
-        self.print_section_entry("CFN Operation:", &data.cfn_operation.color(self.theme.primary).to_string())?;
+        // Get CFN operation from CLI context
+        if let Some(ref cli) = self.cli_context {
+            let operation = cli.command.to_cfn_operation();
+            self.print_section_entry("CFN Operation:", &operation.to_string().color(self.theme.primary).to_string())?;
+        }
         self.print_section_entry("iidy Environment:", &data.iidy_environment.color(self.theme.primary).to_string())?;
         self.print_section_entry("Region:", &data.region.color(self.theme.primary).to_string())?;
         
@@ -381,7 +629,11 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack definition (exact iidy-js summarizeStackDefinition implementation)
     async fn render_stack_definition(&mut self, data: &StackDefinition, show_times: bool) -> Result<()> {
-        self.print_section_heading("Stack Details");
+        if !self.suppress_main_heading {
+            self.print_section_heading_with_newline("Stack Details");
+        }
+        // Note: When suppress_main_heading is true, the heading was already printed with newline
+        // by the spinner logic since Stack Details is always multi-line
         
         // Handle StackSet name display
         if let Some(stackset_name) = data.tags.get("StackSetName") {
@@ -480,7 +732,8 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack events (exact iidy-js implementation)
     async fn render_stack_events(&mut self, data: &StackEventsDisplay) -> Result<()> {
-        self.print_section_heading(&data.title);
+        // Section heading already shown with correct title during start_next_section()
+        // No need to rewrite it with ANSI escapes
         
         if data.events.is_empty() {
             println!(" {}", "No events found".color(self.theme.muted));
@@ -557,9 +810,15 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render stack contents (exact iidy-js summarizeStackContents implementation)
     async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()> {
+        // TODO fix the handling of titles in here.
         // Stack Resources
         if !data.resources.is_empty() {
-            self.print_section_heading("Stack Resources");
+            // Only show heading if not suppressed (i.e., not called from ordering logic)
+            if !self.suppress_main_heading {
+                self.print_section_heading_with_newline("Stack Resources");
+            }
+            // Note: When suppress_main_heading is true, the heading was already printed with newline
+            // by the spinner logic since Stack Resources is always multi-line
             let id_padding = self.calc_padding(&data.resources, |r| &r.logical_resource_id);
             let resource_type_padding = self.calc_padding(&data.resources, |r| &r.resource_type);
             
@@ -579,10 +838,11 @@ impl OutputRenderer for InteractiveRenderer {
         }
         
         // Stack Outputs
-        self.print_section_heading("Stack Outputs");
         if data.outputs.is_empty() {
+            self.print_section_heading("Stack Outputs");
             println!(" {}", "None".color(self.theme.muted));
         } else {
+            self.print_section_heading_with_newline("Stack Outputs");
             let output_key_padding = self.calc_padding(&data.outputs, |o| &o.output_key);
             
             for output in &data.outputs {
@@ -598,7 +858,16 @@ impl OutputRenderer for InteractiveRenderer {
         
         // Stack Exports
         if !data.exports.is_empty() {
-            self.print_section_heading("Stack Exports");
+            // Check if we have importing stacks or multiple exports - if so, use multi-line
+            let has_imports = data.exports.iter().any(|export| !export.importing_stacks.is_empty());
+            let is_complex = data.exports.len() > 1 || has_imports;
+            
+            if is_complex {
+                self.print_section_heading_with_newline("Stack Exports");
+            } else {
+                self.print_section_heading("Stack Exports");
+            }
+            
             let export_name_padding = self.calc_padding(&data.exports, |ex| &ex.name);
             
             for export in &data.exports {
@@ -626,7 +895,7 @@ impl OutputRenderer for InteractiveRenderer {
         
         // Pending Changesets
         if !data.pending_changesets.is_empty() {
-            self.print_section_heading("Pending Changesets");
+            self.print_section_heading_with_newline("Pending Changesets");
             
             for changeset in &data.pending_changesets {
                 self.print_section_entry(
@@ -675,72 +944,24 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render status update (exact iidy-js implementation)
     async fn render_status_update(&mut self, data: &StatusUpdate) -> Result<()> {
-        match data.level {
-            StatusLevel::OperationInProgress => {
-                // If there's already an active spinner, clear it first
-                if let Some(old_spinner) = self.current_operation_spinner.take() {
-                    old_spinner.clear(); // Clear the old spinner
-                }
-                
-                // Start new spinner for the operation
-                self.current_operation_spinner = self.create_api_spinner(&data.message);
-            }
-            StatusLevel::OperationUpdate => {
-                // Update existing spinner text (don't start a new one)
-                if let Some(spinner) = &self.current_operation_spinner {
-                    spinner.set_text(&data.message);
-                    // TODO, flash and delay
-                    spinner.clear();
-                } else {
-                    // Fallback: if no spinner is active, just print the update
-                    //println!("{}", data.message);
-                }
-            }
-            StatusLevel::OperationComplete => {
-                // End spinner with success
-                if let Some(spinner) = self.current_operation_spinner.take() {
-                    spinner.succeed(&data.message);
-                    // TODO, flash and delay
-                    spinner.clear();
-                } else {
-                    // Fallback if no spinner was active
-                    //println!("✓ {}", data.message.color(self.theme.success));
-                }
-            }
-            StatusLevel::OperationFailed => {
-                // End spinner with failure
-                if let Some(spinner) = self.current_operation_spinner.take() {
-                    // TODO review
-                    spinner.fail(&data.message);
-                } else {
-                    // Fallback if no spinner was active
-                    //println!("✗ {}", data.message.color(self.theme.error));
-                }
-            }
-            _ => {
-                // Handle regular status updates (non-operation)
-                let timestamp = if self.options.show_timestamps {
-                    format!("{} ", self.format_timestamp(&self.render_timestamp(&data.timestamp)))
-                } else {
-                    String::new()
-                };
-                
-                let message = match data.level {
-                    StatusLevel::Error => data.message.color(self.theme.error).to_string(),
-                    StatusLevel::Warning => if self.colors_enabled() { 
-                        data.message.color(self.theme.warning).to_string()
-                    } else { 
-                        data.message.to_string() 
-                    },
-                    StatusLevel::Info => data.message.to_string(),
-                    StatusLevel::Success => data.message.color(self.theme.success).to_string(),
-                    _ => data.message.to_string(), // This shouldn't happen for the operation types
-                };
-                
-                println!("{}{}", timestamp, message);
-            }
-        }
+        let timestamp = if self.options.show_timestamps {
+            format!("{} ", self.format_timestamp(&self.render_timestamp(&data.timestamp)))
+        } else {
+            String::new()
+        };
         
+        let message = match data.level {
+            StatusLevel::Error => data.message.color(self.theme.error).to_string(),
+            StatusLevel::Warning => if self.colors_enabled() { 
+                data.message.color(self.theme.warning).to_string()
+            } else { 
+                data.message.to_string() 
+            },
+            StatusLevel::Info => data.message.to_string(),
+            StatusLevel::Success => data.message.color(self.theme.success).to_string(),
+        };
+        
+        println!("{}{}", timestamp, message);
         Ok(())
     }
     
@@ -892,7 +1113,7 @@ impl OutputRenderer for InteractiveRenderer {
         if data.drifted_resources.is_empty() {
             println!("No drift detected. Stack resources are in sync with template.");
         } else {
-            self.print_section_heading("Drifted Resources");
+            self.print_section_heading_with_newline("Drifted Resources");
             
             // Calculate padding for aligned output (similar to iidy-js calcPadding)
             let id_padding = data.drifted_resources.iter()

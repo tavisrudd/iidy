@@ -19,7 +19,7 @@ pub async fn create_or_update(
     global_opts: &GlobalOpts
 ) -> Result<()> {
     let start_time = Instant::now();
-    let output_options = OutputOptions::default();
+    let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -49,7 +49,7 @@ pub async fn create_or_update(
     }
 
     // Setup AWS client and context
-    let context = create_context(opts).await?;
+    let context = create_context(opts, true).await?; // Write operation, needs NTP for precise timing
 
     let stack_name = final_stack_args
         .stack_name
@@ -66,9 +66,9 @@ pub async fn create_or_update(
 
         // Use the existing update_stack logic
         if args.changeset {
-            update_stack_with_changeset_data(opts, args, &final_stack_args, &mut output_manager).await
+            update_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager).await
         } else {
-            update_stack_direct_data(opts, args, &final_stack_args, &mut output_manager).await
+            update_stack_direct_data(&context, args, &final_stack_args, &mut output_manager).await
         }
     } else {
         output_manager.render(progress_message(&format!(
@@ -81,7 +81,7 @@ pub async fn create_or_update(
             output_manager.render(warning_message("Changeset mode not recommended for new stacks, creating directly")).await?;
         }
 
-        create_stack_direct_data(opts, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await
+        create_stack_direct_data(&context, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await
     };
 
     // Show final result
@@ -120,14 +120,13 @@ async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bo
 
 /// Create a new stack directly with data-driven output.
 async fn create_stack_direct_data(
-    opts: &NormalizedAwsOpts,
+    context: &CfnContext,
     stack_args: &crate::stack_args::StackArgs,
     argsfile: &str,
     environment: &str,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
-    // Setup context and builder
-    let context = create_context(opts).await?;
+    // Use provided context
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the CreateStack request
@@ -159,13 +158,12 @@ async fn create_stack_direct_data(
 
 /// Update stack directly with data-driven output.
 async fn update_stack_direct_data(
-    opts: &NormalizedAwsOpts,
+    context: &CfnContext,
     _args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
-    // Setup context and builder
-    let context = create_context(opts).await?;
+    // Use provided context
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the UpdateStack request  
@@ -193,12 +191,12 @@ async fn update_stack_direct_data(
 
 /// Update stack with changeset using data-driven output.
 async fn update_stack_with_changeset_data(
-    opts: &NormalizedAwsOpts,
+    context: &CfnContext,
     args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<()> {
-    let context = create_context(opts).await?;
+    // Use provided context
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Step 1: Create changeset

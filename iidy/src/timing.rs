@@ -113,6 +113,31 @@ impl TimeProvider for ReliableTimeProvider {
     }
 }
 
+/// System time provider for read-only operations.
+///
+/// Uses system time without network synchronization for fast initialization.
+/// Suitable for operations that don't require precise timing like describe-stack.
+pub struct SystemTimeProvider;
+
+impl SystemTimeProvider {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for SystemTimeProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait::async_trait]
+impl TimeProvider for SystemTimeProvider {
+    async fn now(&self) -> Result<DateTime<Utc>> {
+        Ok(Utc::now())
+    }
+}
+
 /// Mock time provider for testing.
 ///
 /// Provides deterministic time values for reproducible tests

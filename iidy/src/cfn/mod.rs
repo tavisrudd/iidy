@@ -30,6 +30,29 @@ pub use console::ConsoleReporter;
 pub use request_builder::CfnRequestBuilder;
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
+/// Create a CfnContext from NormalizedAwsOpts with operation-aware time provider selection.
+///
+/// This helper function centralizes the common pattern of creating AWS config,
+/// client, time provider, and context that appears in most CloudFormation operations.
+/// Automatically uses system time for read-only operations and NTP for write operations.
+///
+/// # Arguments
+/// * `opts` - The normalized AWS options containing region and token info
+/// * `operation` - The CloudFormation operation to determine time provider needs
+///
+/// # Returns
+/// A fully initialized CfnContext ready for CloudFormation operations
+pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: crate::output::CfnOperation) -> Result<CfnContext> {
+    let config = crate::aws::config_from_normalized_opts(opts).await?;
+    let client = Client::new(&config);
+    let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
+        Arc::new(crate::timing::SystemTimeProvider::new())
+    } else {
+        Arc::new(ReliableTimeProvider::new())
+    };
+    CfnContext::new(client, time_provider, opts.client_request_token.clone()).await
+}
+
 /// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
 ///
 /// This helper function centralizes the common pattern of creating AWS config,
@@ -37,13 +60,18 @@ pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResu
 ///
 /// # Arguments
 /// * `opts` - The normalized AWS options containing region and token info
+/// * `need_ntp_sync` - Whether to use NTP time sync (true for write operations, false for read-only)
 ///
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
-pub async fn create_context(opts: &NormalizedAwsOpts) -> Result<CfnContext> {
+pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Result<CfnContext> {
     let config = crate::aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
+    let time_provider: Arc<dyn TimeProvider> = if need_ntp_sync {
+        Arc::new(ReliableTimeProvider::new())
+    } else {
+        Arc::new(crate::timing::SystemTimeProvider::new())
+    };
     CfnContext::new(client, time_provider, opts.client_request_token.clone()).await
 }
 

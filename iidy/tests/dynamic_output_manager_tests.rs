@@ -4,7 +4,6 @@
 //! including event buffering, mode switching, event replay, and end-to-end
 //! scenarios that simulate real CloudFormation operations.
 
-use iidy::cli::{Theme, ColorChoice};
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
 use iidy::output::manager::{DynamicOutputManager, OutputOptions};
@@ -15,18 +14,12 @@ use tokio;
 
 /// Helper function to create test output options
 fn create_test_output_options() -> OutputOptions {
-    OutputOptions {
-        color_choice: ColorChoice::Always,
-        theme: Theme::Dark,
-        terminal_width: Some(120),
-        buffer_limit: 10, // Small buffer for testing buffer management
-    }
+    OutputOptions::minimal()
 }
 
 /// Helper function to create sample command metadata
 fn create_sample_command_metadata() -> CommandMetadata {
     CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),

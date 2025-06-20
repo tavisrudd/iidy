@@ -7,26 +7,17 @@ use crate::output::data::*;
 use async_trait::async_trait;
 use anyhow::Result;
 use clap::ValueEnum;
+use std::collections::VecDeque;
 
 /// Main trait for rendering output data in different modes
 #[async_trait]
 pub trait OutputRenderer: Send + Sync {
-    async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()>;
-    async fn render_stack_definition(&mut self, data: &StackDefinition, show_times: bool) -> Result<()>;
-    async fn render_stack_events(&mut self, data: &StackEventsDisplay) -> Result<()>;
-    async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()>;
-    async fn render_status_update(&mut self, data: &StatusUpdate) -> Result<()>;
-    async fn render_command_result(&mut self, data: &CommandResult) -> Result<()>;
-    async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()>;
-    async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()>;
-    async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()>;
-    async fn render_error(&mut self, data: &ErrorInfo) -> Result<()>;
-    async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()>;
-    
-    
     // Control methods
     async fn init(&mut self) -> Result<()>;
     async fn cleanup(&mut self) -> Result<()>;
+    
+    /// Render OutputData with optional buffer access for ordering logic
+    async fn render_output_data(&mut self, data: OutputData, buffer: Option<&VecDeque<OutputData>>) -> Result<()>;
 }
 
 /// Output mode selection

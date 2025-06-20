@@ -6,9 +6,11 @@
 
 use crate::output::data::*;
 use crate::output::renderer::{OutputRenderer, OutputMode};
+use crate::cli::Cli;
 use anyhow::Result;
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::sync::Arc;
+use tokio::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 
 /// Options for configuring output behavior
 #[derive(Debug, Clone)]
@@ -17,24 +19,48 @@ pub struct OutputOptions {
     pub theme: crate::cli::Theme,
     pub terminal_width: Option<usize>,
     pub buffer_limit: usize,
+    pub cli_context: Arc<Cli>,
 }
 
-impl Default for OutputOptions {
-    fn default() -> Self {
+impl OutputOptions {
+    /// Create new output options with required CLI context
+    pub fn new(cli_context: Cli) -> Self {
         Self {
-            color_choice: crate::cli::ColorChoice::Auto,
-            theme: crate::cli::Theme::Auto,
+            color_choice: cli_context.global_opts.color,
+            theme: cli_context.global_opts.theme,
             terminal_width: None,
             buffer_limit: 1000, // Keep last 1000 events for mode switching
+            cli_context: Arc::new(cli_context),
         }
     }
-}
-
-/// Information about an active operation
-#[derive(Debug, Clone)]
-struct ActiveOperation {
-    name: String,
-    start_time: Instant,
+    
+    /// Create minimal options for stub/incomplete implementations
+    /// TODO: Remove this once all command handlers are updated to pass full CLI context
+    pub fn minimal() -> Self {
+        use crate::cli::{Commands, DescribeArgs, GlobalOpts, AwsOpts, ColorChoice, Theme};
+        let cli = Cli {
+            global_opts: GlobalOpts {
+                environment: "development".to_string(),
+                color: ColorChoice::Auto,
+                theme: Theme::Auto,
+                output_mode: None,
+                debug: false,
+                log_full_error: false,
+            },
+            aws_opts: AwsOpts {
+                region: None,
+                profile: None,
+                assume_role_arn: None,
+                client_request_token: None,
+            },
+            command: Commands::DescribeStack(DescribeArgs {
+                stackname: "stub".to_string(),
+                events: 50,
+                query: None,
+            }),
+        };
+        Self::new(cli)
+    }
 }
 
 /// Dynamic output manager that handles mode switching and event replay
@@ -42,8 +68,9 @@ pub struct DynamicOutputManager {
     current_mode: OutputMode,
     current_renderer: Box<dyn OutputRenderer>,
     event_buffer: VecDeque<OutputData>,
-    options: OutputOptions,
-    operation_stack: Vec<ActiveOperation>,
+    buffer_limit: usize,
+    // Parallel rendering channel
+    parallel_receiver: Option<UnboundedReceiver<OutputData>>,
 }
 
 impl DynamicOutputManager {
@@ -56,21 +83,21 @@ impl DynamicOutputManager {
             current_mode: mode,
             current_renderer: renderer,
             event_buffer: VecDeque::with_capacity(options.buffer_limit),
-            options,
-            operation_stack: Vec::new(),
+            buffer_limit: options.buffer_limit,
+            parallel_receiver: None,
         })
     }
     
     /// Render data with the current renderer and buffer for mode switching
     pub async fn render(&mut self, data: OutputData) -> Result<()> {
-        // Buffer the data for mode switching replay
-        if self.event_buffer.len() >= self.options.buffer_limit {
+        // Buffer the data for mode switching replay (arrival order)
+        if self.event_buffer.len() >= self.buffer_limit {
             self.event_buffer.pop_front();
         }
         self.event_buffer.push_back(data.clone());
         
-        // Render with current mode
-        self.render_data(&data).await
+        // Render with current mode, passing buffer reference for ordering
+        self.current_renderer.render_output_data(data, Some(&self.event_buffer)).await
     }
     
     /// Switch to a different output mode
@@ -84,14 +111,16 @@ impl DynamicOutputManager {
         
         // Clear screen logic will be added when TUI is implemented
         
-        // Create new renderer
-        self.current_renderer = create_renderer(new_mode, &self.options)?;
+        // Create new renderer  
+        // TODO: We need to store options to recreate renderer. For now, create with minimal options.
+        let temp_options = OutputOptions::minimal();
+        self.current_renderer = create_renderer(new_mode, &temp_options)?;
         self.current_renderer.init().await?;
         
         // Re-render all buffered data in new mode
         let buffered_data: Vec<OutputData> = self.event_buffer.iter().cloned().collect();
         for data in buffered_data {
-            self.render_data(&data).await?;
+            self.current_renderer.render_output_data(data, Some(&self.event_buffer)).await?;
         }
         
         self.current_mode = new_mode;
@@ -102,7 +131,7 @@ impl DynamicOutputManager {
             timestamp: chrono::Utc::now(),
             level: crate::output::data::StatusLevel::Info,
         };
-        self.render_data(&OutputData::StatusUpdate(switch_msg)).await?;
+        self.current_renderer.render_output_data(OutputData::StatusUpdate(switch_msg), Some(&self.event_buffer)).await?;
         
         Ok(())
     }
@@ -122,122 +151,49 @@ impl DynamicOutputManager {
         self.event_buffer.len()
     }
     
-    /// Internal method to render a single data item
-    async fn render_data(&mut self, data: &OutputData) -> Result<()> {
-        match data {
-            OutputData::CommandMetadata(metadata) => {
-                self.current_renderer.render_command_metadata(metadata).await
-            }
-            OutputData::StackDefinition(def, show_times) => {
-                self.current_renderer.render_stack_definition(def, *show_times).await
-            }
-            OutputData::StackEvents(events) => {
-                self.current_renderer.render_stack_events(events).await
-            }
-            OutputData::StackContents(contents) => {
-                self.current_renderer.render_stack_contents(contents).await
-            }
-            OutputData::StatusUpdate(update) => {
-                self.current_renderer.render_status_update(update).await
-            }
-            OutputData::CommandResult(result) => {
-                self.current_renderer.render_command_result(result).await
-            }
-            OutputData::StackList(list) => {
-                self.current_renderer.render_stack_list(list).await
-            }
-            OutputData::ChangeSetResult(result) => {
-                self.current_renderer.render_changeset_result(result).await
-            }
-            OutputData::StackDrift(drift) => {
-                self.current_renderer.render_stack_drift(drift).await
-            }
-            OutputData::Error(error) => {
-                self.current_renderer.render_error(error).await
-            }
-            OutputData::TokenInfo(token) => {
-                self.current_renderer.render_token_info(token).await
-            }
-        }
+    /// Start parallel rendering mode and return a sender for OutputData
+    /// 
+    /// The caller should:
+    /// 1. Spawn tasks that send OutputData through the channel
+    /// 2. Drop the sender when done spawning
+    /// 3. Call `stop()` to process and render all data
+    pub fn start(&mut self) -> UnboundedSender<OutputData> {
+        let (tx, rx) = mpsc::unbounded_channel::<OutputData>();
+        self.parallel_receiver = Some(rx);
+        tx
     }
     
-    /// Start a new operation with spinner (if interactive mode)
-    pub async fn start_operation(&mut self, operation_name: &str) -> Result<()> {
-        let operation = ActiveOperation {
-            name: operation_name.to_string(),
-            start_time: Instant::now(),
-        };
-        
-        // Start the operation - interactive renderer will show spinner, others will show status
-        let status = StatusUpdate {
-            message: format!("{}...", operation_name),
-            timestamp: chrono::Utc::now(),
-            level: StatusLevel::OperationInProgress,
-        };
-        self.render_data(&OutputData::StatusUpdate(status)).await?;
-        
-        self.operation_stack.push(operation);
-        Ok(())
-    }
-    
-    /// Update the current operation's progress
-    pub async fn update_operation(&mut self, new_message: &str) -> Result<()> {
-        if let Some(operation) = self.operation_stack.last_mut() {
-            operation.name = new_message.to_string();
-            
-            let status = StatusUpdate {
-                message: new_message.to_string(),
-                timestamp: chrono::Utc::now(),
-                level: StatusLevel::OperationUpdate,
-            };
-            self.render_data(&OutputData::StatusUpdate(status)).await?;
+    /// Process and render all data from parallel operations
+    /// 
+    /// Collects all parallel data and renders in arrival order.
+    /// Renderers can handle their own ordering logic if needed.
+    pub async fn stop(&mut self) -> Result<()> {
+        if let Some(mut rx) = self.parallel_receiver.take() {
+            // Render data as it arrives (arrival order)
+            while let Some(data) = rx.recv().await {
+                self.render(data).await?;
+            }
         }
         Ok(())
     }
     
-    /// End the current operation with success
-    pub async fn end_operation_success(&mut self, completion_message: &str) -> Result<()> {
-        if let Some(operation) = self.operation_stack.pop() {
-            let elapsed = operation.start_time.elapsed().as_secs();
-            let message = if elapsed > 0 {
-                format!("{} ({}s)", completion_message, elapsed)
-            } else {
-                completion_message.to_string()
-            };
-            
-            let status = StatusUpdate {
-                message,
-                timestamp: chrono::Utc::now(),
-                level: StatusLevel::OperationComplete,
-            };
-            self.render_data(&OutputData::StatusUpdate(status)).await?;
-        }
-        Ok(())
-    }
-    
-    /// End the current operation with failure
-    pub async fn end_operation_failure(&mut self, error_message: &str) -> Result<()> {
-        if let Some(_operation) = self.operation_stack.pop() {
-            let status = StatusUpdate {
-                message: format!("Failed: {}", error_message),
-                timestamp: chrono::Utc::now(),
-                level: StatusLevel::OperationFailed,
-            };
-            self.render_data(&OutputData::StatusUpdate(status)).await?;
-        }
-        Ok(())
-    }
 }
 
 /// Create a renderer for the specified mode
 fn create_renderer(mode: OutputMode, options: &OutputOptions) -> Result<Box<dyn OutputRenderer>> {
     match mode {
         OutputMode::Plain => {
-            let plain_options = crate::output::renderers::plain::PlainTextOptions {
+            // Use InteractiveRenderer with plain configuration
+            let interactive_options = crate::output::renderers::interactive::InteractiveOptions {
+                theme: options.theme, // Theme doesn't matter since colors are disabled
+                color_choice: crate::cli::ColorChoice::Never, // Force no colors
+                terminal_width: options.terminal_width,
                 show_timestamps: true,
-                max_line_width: options.terminal_width,
+                enable_spinners: false, // No spinners in plain mode
+                enable_ansi_features: false, // No ANSI features in plain mode
+                cli_context: Some(options.cli_context.clone()), // Pass CLI context for proper ordering
             };
-            Ok(Box::new(crate::output::renderers::plain::PlainTextRenderer::new(plain_options)))
+            Ok(Box::new(crate::output::renderers::interactive::InteractiveRenderer::new(interactive_options)))
         }
         OutputMode::Interactive => {
             let interactive_options = crate::output::renderers::interactive::InteractiveOptions {
@@ -245,6 +201,9 @@ fn create_renderer(mode: OutputMode, options: &OutputOptions) -> Result<Box<dyn 
                 color_choice: options.color_choice,
                 terminal_width: options.terminal_width,
                 show_timestamps: true,
+                enable_spinners: true,
+                enable_ansi_features: true,
+                cli_context: Some(options.cli_context.clone()),
             };
             Ok(Box::new(crate::output::renderers::interactive::InteractiveRenderer::new(interactive_options)))
         }

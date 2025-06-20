@@ -86,14 +86,14 @@ pub async fn delete_stack(
     global_opts: &GlobalOpts
 ) -> Result<()> {
     let start_time = Instant::now();
-    let output_options = OutputOptions::default();
+    let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
     ).await?;
 
     // Create CloudFormation context
-    let ctx = create_context(opts).await?;
+    let ctx = create_context(opts, true).await?; // Write operation, needs NTP for precise timing
 
     // Pass primary token to output manager for conditional display
     let primary_token = crate::output::aws_conversion::convert_token_info(&ctx.primary_token());

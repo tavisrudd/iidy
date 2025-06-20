@@ -65,6 +65,9 @@ fn create_interactive_options() -> InteractiveOptions {
         theme: Theme::Dark,
         terminal_width: Some(120),
         show_timestamps: true,
+        enable_spinners: false, // Disable for testing
+        enable_ansi_features: true,
+        cli_context: None, // No CLI context needed for tests
     }
 }
 
@@ -104,30 +107,30 @@ async fn test_plain_renderer_against_fixture_expected_output() {
     for data in &output_data {
         match data {
             OutputData::CommandMetadata(metadata) => {
-                renderer.render_command_metadata(metadata).await.expect("Should render metadata");
+                renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata");
                 // Verify metadata content
-                assert_eq!(metadata.cfn_operation, "create-stack");
+                // cfn_operation is now derived from CLI context, not stored in metadata
                 assert_eq!(metadata.region, "us-east-1");
             },
             OutputData::StackDefinition(def, show_times) => {
-                renderer.render_stack_definition(def, *show_times).await.expect("Should render stack definition");
+                renderer.render_output_data(OutputData::StackDefinition(def.clone(), *show_times), None).await.expect("Should render stack definition");
                 // Verify stack definition content
                 assert_eq!(def.name, "test-stack");
                 assert_eq!(def.status, "CREATE_COMPLETE");
             },
             OutputData::StackEvents(events) => {
-                renderer.render_stack_events(events).await.expect("Should render stack events");
+                renderer.render_output_data(OutputData::StackEvents(events.clone()), None).await.expect("Should render stack events");
                 // Verify events content
                 assert!(!events.events.is_empty());
                 assert!(events.title.contains("Events"));
             },
             OutputData::StackContents(contents) => {
-                renderer.render_stack_contents(contents).await.expect("Should render stack contents");
+                renderer.render_output_data(OutputData::StackContents(contents.clone()), None).await.expect("Should render stack contents");
                 // Verify contents structure
                 assert!(!contents.resources.is_empty());
             },
             OutputData::CommandResult(result) => {
-                renderer.render_command_result(result).await.expect("Should render command result");
+                renderer.render_output_data(OutputData::CommandResult(result.clone()), None).await.expect("Should render command result");
                 // Verify result content
                 assert!(result.success);
                 assert_eq!(result.exit_code, 0);
@@ -172,20 +175,20 @@ async fn test_interactive_renderer_against_fixture_expected_output() {
     for data in &output_data {
         match data {
             OutputData::CommandMetadata(metadata) => {
-                renderer.render_command_metadata(metadata).await.expect("Should render colored metadata");
+                renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render colored metadata");
                 // Interactive renderer should include colors and formatting
             },
             OutputData::StackDefinition(def, show_times) => {
-                renderer.render_stack_definition(def, *show_times).await.expect("Should render colored stack definition");
+                renderer.render_output_data(OutputData::StackDefinition(def.clone(), *show_times), None).await.expect("Should render colored stack definition");
             },
             OutputData::StackEvents(events) => {
-                renderer.render_stack_events(events).await.expect("Should render colored stack events");
+                renderer.render_output_data(OutputData::StackEvents(events.clone()), None).await.expect("Should render colored stack events");
             },
             OutputData::StackContents(contents) => {
-                renderer.render_stack_contents(contents).await.expect("Should render colored stack contents");
+                renderer.render_output_data(OutputData::StackContents(contents.clone()), None).await.expect("Should render colored stack contents");
             },
             OutputData::CommandResult(result) => {
-                renderer.render_command_result(result).await.expect("Should render colored command result");
+                renderer.render_output_data(OutputData::CommandResult(result.clone()), None).await.expect("Should render colored command result");
             },
             _ => {
                 // Handle other types as needed

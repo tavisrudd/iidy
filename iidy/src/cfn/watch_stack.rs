@@ -199,7 +199,7 @@ pub async fn watch_stack(
     args: &WatchArgs, 
     global_opts: &GlobalOpts
 ) -> Result<()> {
-    let output_options = OutputOptions::default();
+    let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options

@@ -33,6 +33,9 @@ fn create_test_interactive_options() -> InteractiveOptions {
         theme: Theme::Dark,
         terminal_width: Some(120),
         show_timestamps: true,
+        enable_spinners: false, // Disable for testing
+        enable_ansi_features: true,
+        cli_context: None, // No CLI context needed for tests
     }
 }
 
@@ -44,7 +47,6 @@ async fn test_plain_renderer_command_metadata() {
     let mut renderer = PlainTextRenderer::new(options);
     
     let metadata = CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
         iidy_environment: "development".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("dev-profile".to_string()),
@@ -65,13 +67,13 @@ async fn test_plain_renderer_command_metadata() {
     
     // Test command metadata rendering
     renderer.init().await.expect("Should initialize");
-    renderer.render_command_metadata(&metadata).await.expect("Should render metadata");
+    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata");
     
     // Note: For now we're testing that the render method executes without error
     // In the full implementation, we'll capture actual output and snapshot it
     
     // Verify data structure is properly formed
-    assert_eq!(metadata.cfn_operation, "create-stack");
+    // cfn_operation is now derived from CLI context, not stored in metadata
     assert_eq!(metadata.region, "us-east-1");
     assert!(metadata.profile.is_some());
     assert_eq!(metadata.cli_arguments.len(), 2);
@@ -112,7 +114,7 @@ async fn test_plain_renderer_stack_definition() {
     };
     
     renderer.init().await.expect("Should initialize");
-    renderer.render_stack_definition(&stack_def, true).await.expect("Should render stack definition");
+    renderer.render_output_data(OutputData::StackDefinition(stack_def.clone(), true), None).await.expect("Should render stack definition");
     
     // Verify data structure
     assert_eq!(stack_def.name, "development-infrastructure");
@@ -175,7 +177,7 @@ async fn test_plain_renderer_stack_events() {
     };
     
     renderer.init().await.expect("Should initialize");
-    renderer.render_stack_events(&events_display).await.expect("Should render stack events");
+    renderer.render_output_data(OutputData::StackEvents(events_display.clone()), None).await.expect("Should render stack events");
     
     // Verify data structure
     assert_eq!(events_display.events.len(), 2);
@@ -190,7 +192,6 @@ async fn test_interactive_renderer_command_metadata_colors() {
     let mut renderer = InteractiveRenderer::new(options);
     
     let metadata = CommandMetadata {
-        cfn_operation: "update-stack".to_string(),
         iidy_environment: "production".to_string(),
         region: "us-west-2".to_string(),
         profile: Some("prod-profile".to_string()),
@@ -218,7 +219,7 @@ async fn test_interactive_renderer_command_metadata_colors() {
     };
     
     renderer.init().await.expect("Should initialize");
-    renderer.render_command_metadata(&metadata).await.expect("Should render metadata with colors");
+    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata with colors");
     
     // Verify data structure including derived tokens
     assert_eq!(metadata.derived_tokens.len(), 1);
@@ -283,13 +284,13 @@ async fn test_status_update_rendering() {
     // Test plain renderer
     plain_renderer.init().await.expect("Should initialize");
     for status in &status_updates {
-        plain_renderer.render_status_update(status).await.expect("Should render status");
+        plain_renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
     }
     
     // Test interactive renderer
     interactive_renderer.init().await.expect("Should initialize");
     for status in &status_updates {
-        interactive_renderer.render_status_update(status).await.expect("Should render status");
+        interactive_renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
     }
     
     // Verify data structures
@@ -322,14 +323,14 @@ async fn test_command_result_rendering() {
     
     // Test both renderers with success
     plain_renderer.init().await.expect("Should initialize");
-    plain_renderer.render_command_result(&success_result).await.expect("Should render success");
+    plain_renderer.render_output_data(OutputData::CommandResult(success_result.clone()), None).await.expect("Should render success");
     
     interactive_renderer.init().await.expect("Should initialize");
-    interactive_renderer.render_command_result(&success_result).await.expect("Should render success");
+    interactive_renderer.render_output_data(OutputData::CommandResult(success_result.clone()), None).await.expect("Should render success");
     
     // Test both renderers with failure
-    plain_renderer.render_command_result(&failure_result).await.expect("Should render failure");
-    interactive_renderer.render_command_result(&failure_result).await.expect("Should render failure");
+    plain_renderer.render_output_data(OutputData::CommandResult(failure_result.clone()), None).await.expect("Should render failure");
+    interactive_renderer.render_output_data(OutputData::CommandResult(failure_result.clone()), None).await.expect("Should render failure");
     
     // Verify data structures
     assert!(success_result.success);
@@ -358,10 +359,10 @@ async fn test_error_info_rendering() {
     
     // Test both renderers
     plain_renderer.init().await.expect("Should initialize");
-    plain_renderer.render_error(&error_info).await.expect("Should render error");
+    plain_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
     
     interactive_renderer.init().await.expect("Should initialize");
-    interactive_renderer.render_error(&error_info).await.expect("Should render error");
+    interactive_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
     
     // Verify data structure
     assert_eq!(error_info.error_type, "InvalidParameterValue");
@@ -379,7 +380,6 @@ async fn test_renderer_lifecycle() {
     
     // Test multiple render operations
     let metadata = CommandMetadata {
-        cfn_operation: "describe-stacks".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: None,
@@ -395,7 +395,7 @@ async fn test_renderer_lifecycle() {
         derived_tokens: vec![],
     };
     
-    renderer.render_command_metadata(&metadata).await.expect("Should render metadata");
+    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata");
     
     let status = StatusUpdate {
         message: "Operation in progress".to_string(),
@@ -403,7 +403,7 @@ async fn test_renderer_lifecycle() {
         level: StatusLevel::Info,
     };
     
-    renderer.render_status_update(&status).await.expect("Should render status");
+    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
     
     // Test cleanup
     renderer.cleanup().await.expect("Should cleanup successfully");
@@ -433,7 +433,8 @@ async fn test_fixture_integration() {
         _ => panic!("First item should be CommandMetadata"),
     };
     
-    assert!(!metadata.cfn_operation.is_empty());
+    // Verify operation is valid (enum variants can't be empty)
+    // cfn_operation is now derived from CLI context, not stored in metadata
     assert!(!metadata.region.is_empty());
     
     // Test with renderer
@@ -441,7 +442,7 @@ async fn test_fixture_integration() {
     let mut renderer = PlainTextRenderer::new(options);
     
     renderer.init().await.expect("Should initialize");
-    renderer.render_command_metadata(&metadata).await.expect("Should render from fixture");
+    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render from fixture");
 }
 
 // Placeholder tests for future snapshot validation

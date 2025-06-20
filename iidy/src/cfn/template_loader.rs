@@ -50,6 +50,12 @@ pub async fn load_cfn_template(
     // Auto-sign S3 URLs for cross-region access (equivalent to maybeSignS3HttpUrl)
     let processed_location = maybe_sign_s3_http_url(actual_location).await;
 
+    // Check if this looks like inline template content (JSON or YAML)
+    let is_inline_content = processed_location.trim().starts_with('{') || 
+                           processed_location.trim().starts_with('[') ||
+                           processed_location.contains('\n') ||
+                           (processed_location.len() < 260 && !processed_location.contains('/') && !processed_location.contains('\\'));
+    
     // Handle different location types
     if !should_render && processed_location.starts_with("s3:") {
         bail!("Use https:// S3 path-based urls when using a plain (non-rendered) Template from S3: {}", processed_location);
@@ -59,73 +65,90 @@ pub async fn load_cfn_template(
             template_body: None,
             template_url: Some(processed_location.to_string()),
         });
+    }
+    
+    // Load the template content
+    let import_data = if is_inline_content {
+        // Inline template content - use directly
+        processed_location.to_string()
     } else {
         // Local file or S3/HTTP that needs processing
         let import_result = load_file_import(&processed_location, base_location).await
             .with_context(|| format!("Failed to load template from: {}", processed_location))?;
-        let import_data = import_result.data;
+        import_result.data
+    };
 
-        // Check for preprocessing syntax without render: prefix
-        if import_data.contains("$imports:") && !should_render {
-            bail!(
+    // Check for preprocessing syntax without render: prefix
+    if import_data.contains("$imports:") && !should_render {
+        let msg = if is_inline_content {
+            "Your inline cloudformation Template appears to use iidy's yaml pre-processor syntax.\n\
+             You need to prefix the template with \"render:\"."
+        } else {
+            &format!(
                 "Your cloudformation Template from {} appears to use iidy's yaml pre-processor syntax.\n\
                  You need to prefix the template location with \"render:\".\n\
                  e.g.   Template: \"render:{}\"",
                 processed_location, processed_location
-            );
-        }
+            )
+        };
+        bail!("{}", msg);
+    }
 
-        let body = if should_render {
-            // Parse YAML and add environment values
-            let mut doc: Value = serde_yaml::from_str(&import_data)
-                .with_context(|| format!("Failed to parse YAML template: {}", processed_location))?;
-
-            // Inject environment values for preprocessing
-            if let Value::Mapping(map) = &mut doc {
-                let mut env_values = serde_yaml::Mapping::new();
-                if let Some(env) = environment {
-                    env_values.insert(
-                        Value::String("environment".to_string()),
-                        Value::String(env.to_string()),
-                    );
+    let body = if should_render {
+        // Parse YAML and add environment values
+        let mut doc: Value = serde_yaml::from_str(&import_data)
+            .with_context(|| {
+                if is_inline_content {
+                    "Failed to parse YAML template".to_string()
+                } else {
+                    format!("Failed to parse YAML template: {}", processed_location)
                 }
-                // Add region from AWS context if available
-                // TODO: Pass AWS config to get actual region
-                
-                map.insert(
-                    Value::String("$envValues".to_string()),
-                    Value::Mapping(env_values),
+            })?;
+
+        // Inject environment values for preprocessing
+        if let Value::Mapping(map) = &mut doc {
+            let mut env_values = serde_yaml::Mapping::new();
+            if let Some(env) = environment {
+                env_values.insert(
+                    Value::String("environment".to_string()),
+                    Value::String(env.to_string()),
                 );
             }
-
-            // Process with YAML preprocessing
-            let yaml_spec = YamlSpec::V11;
-            let processed_value = preprocess_yaml(
-                &serde_yaml::to_string(&doc)?,
-                &processed_location,
-                &yaml_spec,
-            ).await?;
-
-            serde_yaml::to_string(&processed_value)?
-        } else {
-            // Use raw template data
-            import_data
-        };
-
-        // Check size limits
-        if body.len() >= max_size {
-            bail!(
-                "Your cloudformation template is larger than the max allowed size ({} bytes). \
-                 You need to upload it to S3 and reference it from there.",
-                max_size
+            // Add region from AWS context if available
+            // TODO: Pass AWS config to get actual region
+            
+            map.insert(
+                Value::String("$envValues".to_string()),
+                Value::Mapping(env_values),
             );
         }
 
-        Ok(TemplateResult {
-            template_body: Some(body),
-            template_url: None,
-        })
+        // Process with YAML preprocessing
+        let yaml_spec = YamlSpec::V11;
+        let processed_value = preprocess_yaml(
+            &serde_yaml::to_string(&doc)?,
+            &processed_location,
+            &yaml_spec,
+        ).await?;
+
+        serde_yaml::to_string(&processed_value)?
+    } else {
+        import_data
+    };
+
+    // Check size limits
+    if body.len() >= max_size {
+        bail!(
+            "Your cloudformation template is larger than the max allowed size ({} bytes). \
+             You need to upload it to S3 and reference it from there.",
+            max_size
+        );
     }
+
+    Ok(TemplateResult {
+        template_body: Some(body),
+        template_url: None,
+    })
 }
 
 #[cfg(test)]
@@ -188,60 +211,56 @@ pub async fn load_cfn_stack_policy(
             } else {
                 location
             };
-
-            // Auto-sign S3 URLs for cross-region access
+            
+            // Auto-sign S3 URLs
             let processed_location = maybe_sign_s3_http_url(actual_location).await;
-
-            // Handle different location types
+            
+            // Check if URL (S3 or HTTP)
             if !should_render && processed_location.starts_with("s3:") {
-                bail!("Use https:// urls when using a plain (non-rendered) StackPolicy from S3: {}", processed_location);
+                bail!("Use https:// S3 path-based urls when using a plain (non-rendered) StackPolicy from S3: {}", processed_location);
             } else if !should_render && processed_location.starts_with("http") {
                 // HTTP URL - use as StackPolicyURL
                 return Ok(StackPolicyResult {
                     stack_policy_body: None,
-                    stack_policy_url: Some(processed_location),
+                    stack_policy_url: Some(processed_location.to_string()),
                 });
-            } else {
-                // Local file or S3/HTTP that needs processing
-                let import_result = load_file_import(&processed_location, base_location).await
-                    .with_context(|| format!("Failed to load stack policy from: {}", processed_location))?;
-                let import_data = import_result.data;
-
-                let body = if should_render {
-                    // Process with YAML preprocessing and convert to JSON
-                    let yaml_spec = YamlSpec::V11;
-                    let processed_value = preprocess_yaml(
-                        &import_data,
-                        &processed_location,
-                        &yaml_spec,
-                    ).await?;
-
-                    serde_json::to_string_pretty(&processed_value)?
-                } else {
-                    // Use raw policy data
-                    import_data
-                };
-
-                Ok(StackPolicyResult {
-                    stack_policy_body: Some(body),
-                    stack_policy_url: None,
-                })
             }
-        },
-        Value::Mapping(_) | Value::Sequence(_) => {
-            // Object policy - serialize to JSON
-            let json_policy = serde_json::to_string_pretty(&policy)?;
+            
+            // Load from file
+            let import_result = load_file_import(&processed_location, base_location).await
+                .with_context(|| format!("Failed to load stack policy from: {}", processed_location))?;
+            
+            let body = if should_render {
+                // Parse YAML and process
+                let doc: Value = serde_yaml::from_str(&import_result.data)
+                    .with_context(|| format!("Failed to parse YAML stack policy: {}", processed_location))?;
+                
+                let yaml_spec = YamlSpec::V11;
+                let processed_value = preprocess_yaml(
+                    &serde_yaml::to_string(&doc)?,
+                    &processed_location,
+                    &yaml_spec,
+                ).await?;
+                
+                serde_yaml::to_string(&processed_value)?
+            } else {
+                import_result.data
+            };
+            
             Ok(StackPolicyResult {
-                stack_policy_body: Some(json_policy),
+                stack_policy_body: Some(body),
                 stack_policy_url: None,
             })
-        },
+        }
         _ => {
-            // Other types (null, bool, number) - return empty
+            // Direct YAML value - serialize to JSON
+            let body = serde_json::to_string(policy)
+                .context("Failed to serialize stack policy to JSON")?;
+            
             Ok(StackPolicyResult {
-                stack_policy_body: None,
+                stack_policy_body: Some(body),
                 stack_policy_url: None,
             })
-        },
+        }
     }
 }

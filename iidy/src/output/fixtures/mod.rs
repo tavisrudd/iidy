@@ -69,7 +69,6 @@ impl FixtureLoader {
         
         // Create command metadata from fixture
         let command_metadata = CommandMetadata {
-            cfn_operation: "create-stack".to_string(),
             iidy_environment: "test".to_string(),
             region: "us-east-1".to_string(),
             profile: Some("test-profile".to_string()),

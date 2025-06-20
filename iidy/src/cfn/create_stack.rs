@@ -49,22 +49,17 @@ pub async fn create_stack(
     let start_time = Instant::now();
 
     // Setup AWS client and context
-    let context = create_context(opts).await?;
+    let context = create_context(opts, true).await?; // Write operation, needs NTP for precise timing
 
     // Setup data-driven output manager
-    let output_options = crate::output::manager::OutputOptions {
-        color_choice: global_opts.color,
-        theme: global_opts.theme,
-        terminal_width: None, // Will auto-detect
-        buffer_limit: 100,
-    };
+    let output_options = crate::output::manager::OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
     ).await?;
 
     // Show command metadata
-    let command_metadata = create_command_metadata(&context, opts, &final_stack_args, "create-stack", &global_opts.environment).await?;
+    let command_metadata = create_command_metadata(&context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     // Setup request builder

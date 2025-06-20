@@ -16,7 +16,6 @@ use std::collections::HashMap;
 #[test]
 fn test_command_metadata_serialization() {
     let metadata = CommandMetadata {
-        cfn_operation: "create-stack".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),
@@ -39,7 +38,7 @@ fn test_command_metadata_serialization() {
     
     // Test deserialization
     let deserialized: CommandMetadata = serde_json::from_str(&json).expect("Should deserialize from JSON");
-    assert_eq!(deserialized.cfn_operation, metadata.cfn_operation);
+    // cfn_operation field removed from CommandMetadata
     assert_eq!(deserialized.profile, metadata.profile);
 }
 
@@ -122,7 +121,6 @@ fn test_stack_events_display_structure() {
 #[test]
 fn test_output_data_enum_variants() {
     let metadata = CommandMetadata {
-        cfn_operation: "test".to_string(),
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: None,

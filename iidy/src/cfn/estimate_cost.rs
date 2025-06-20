@@ -21,7 +21,7 @@ pub async fn estimate_cost(
     args: &StackFileArgs,
     global_opts: &GlobalOpts
 ) -> Result<()> {
-    let output_options = OutputOptions::default();
+    let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -36,7 +36,7 @@ pub async fn estimate_cost(
         &command,
         &cli_aws_settings,
     ).await?;
-    let context = create_context(opts).await?;
+    let context = create_context(opts, false).await?; // Read-only operation, no NTP needed
 
     // Determine stack name from args or stack-args.yaml (not needed for estimate cost, but validate it exists)
     let _stack_name = args.stack_name.as_ref()
