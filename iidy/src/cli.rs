@@ -506,6 +506,8 @@ pub struct ListArgs {
     pub query: Option<String>,
     #[arg(long)]
     pub tags: bool,
+    #[arg(long, help = "Specify custom columns to display (comma-separated)")]
+    pub columns: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]

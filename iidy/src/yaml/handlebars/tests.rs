@@ -425,4 +425,83 @@ mod tests {
             "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
         );
     }
+
+    #[test]
+    fn test_filehash_helper() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Create a temporary directory and file for testing
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_file.txt");
+        fs::write(&file_path, "hello world").unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("filepath".to_string(), json!(file_path.to_str().unwrap()));
+
+        let result = interpolate_handlebars_string("{{filehash filepath}}", &env, "test").unwrap();
+        
+        // Expected hash for "hello world"
+        assert_eq!(
+            result,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+    }
+
+    #[test]
+    fn test_filehash_base64_helper() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Create a temporary directory and file for testing
+        let temp_dir = tempdir().unwrap();
+        let file_path = temp_dir.path().join("test_file.txt");
+        fs::write(&file_path, "hello world").unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("filepath".to_string(), json!(file_path.to_str().unwrap()));
+
+        let result = interpolate_handlebars_string("{{filehashBase64 filepath}}", &env, "test").unwrap();
+        
+        // Expected base64 hash for "hello world"
+        // Hex: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
+        // Base64: uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=
+        assert_eq!(result, "uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=");
+    }
+
+    #[test]
+    fn test_filehash_directory() {
+        use std::fs;
+        use tempfile::tempdir;
+
+        // Create a temporary directory with multiple files
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path().join("test_dir");
+        fs::create_dir(&dir_path).unwrap();
+        
+        // Create two files with known content
+        fs::write(dir_path.join("file1.txt"), "content1").unwrap();
+        fs::write(dir_path.join("file2.txt"), "content2").unwrap();
+
+        let mut env = HashMap::new();
+        env.insert("dirpath".to_string(), json!(dir_path.to_str().unwrap()));
+
+        let result = interpolate_handlebars_string("{{filehash dirpath}}", &env, "test").unwrap();
+        
+        // The result should be deterministic for the same directory contents
+        // We can't easily predict the exact hash without knowing the sort order
+        // But we can verify it's a valid hex string of the correct length
+        assert_eq!(result.len(), 64); // SHA256 hex is 64 characters
+        assert!(result.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_filehash_nonexistent_file() {
+        let mut env = HashMap::new();
+        env.insert("filepath".to_string(), json!("/nonexistent/path"));
+
+        let result = interpolate_handlebars_string("{{filehash filepath}}", &env, "test");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid path"));
+    }
 }

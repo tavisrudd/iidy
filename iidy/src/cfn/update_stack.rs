@@ -171,9 +171,10 @@ async fn update_stack_with_changeset(
 
     // Ask for confirmation unless --yes is specified
     if !args.yes {
-        println!();
-        println!("Review the changeset in the AWS Console if needed.");
-        println!("Do you want to execute this changeset? (y/N)");
+        // Use data-driven output for user interaction prompts
+        output_manager.render(progress_message("")).await?; // Empty line
+        output_manager.render(progress_message("Review the changeset in the AWS Console if needed.")).await?;
+        output_manager.render(progress_message("Do you want to execute this changeset? (y/N)")).await?;
 
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
@@ -181,12 +182,13 @@ async fn update_stack_with_changeset(
 
         if input != "y" && input != "yes" {
             output_manager.render(warning_message("Changeset execution cancelled by user")).await?;
-            println!(
-                "Changeset '{}' has been created but not executed.",
-                changeset_name
-            );
-            println!("You can execute it later with:");
-            println!("  iidy exec-changeset stack-args.yaml {}", changeset_name);
+            output_manager.render(progress_message(
+                &format!("Changeset '{}' has been created but not executed.", changeset_name)
+            )).await?;
+            output_manager.render(progress_message("You can execute it later with:")).await?;
+            output_manager.render(progress_message(
+                &format!("  iidy exec-changeset stack-args.yaml {}", changeset_name)
+            )).await?;
             
             let elapsed = start_time.elapsed().as_secs() as i64;
             let command_result = create_command_result(true, elapsed, Some("Changeset created (not executed)".to_string()));
@@ -210,11 +212,11 @@ async fn update_stack_with_changeset(
     output_manager.render(success_message("Changeset execution initiated")).await?;
 
     // Step 3: Watch stack progress
-    use super::watch_stack::watch_stack_with_context;
+    use super::watch_stack::watch_stack_with_data_output;
     output_manager.render(progress_message("Watching stack operation progress...")).await?;
 
     // Use the stack_name we already validated
-    let watch_result = watch_stack_with_context(&context, stack_name, std::time::Duration::from_secs(5)).await;
+    let watch_result = watch_stack_with_data_output(&context, stack_name, &mut output_manager, std::time::Duration::from_secs(5)).await;
     
     let (success, final_message) = match watch_result {
         Ok(_) => {
@@ -223,10 +225,10 @@ async fn update_stack_with_changeset(
         }
         Err(e) => {
             output_manager.render(warning_message(&format!("Error watching stack progress: {}", e))).await?;
-            println!(
+            output_manager.render(warning_message(
                 "The changeset execution was initiated, but there was an error watching progress."
-            );
-            println!("You can check the stack status manually in the AWS Console.");
+            )).await?;
+            output_manager.render(progress_message("You can check the stack status manually in the AWS Console.")).await?;
             (true, "Changeset executed (watch failed)".to_string()) // Still successful - just watching failed
         }
     };

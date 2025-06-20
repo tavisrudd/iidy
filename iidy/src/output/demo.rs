@@ -26,12 +26,7 @@ pub async fn run_output_demo() -> Result<()> {
     println!("📊 Generated {} output data items\n", output_data.len());
     
     // Create PlainTextRenderer via OutputManager
-    let options = OutputOptions {
-        color_choice: crate::cli::ColorChoice::Never,
-        theme: crate::cli::Theme::Auto,
-        terminal_width: Some(120),
-        buffer_limit: 100,
-    };
+    let options = OutputOptions::minimal();
     
     let mut output_manager = DynamicOutputManager::new(OutputMode::Plain, options).await?;
     

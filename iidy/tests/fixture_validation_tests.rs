@@ -6,7 +6,6 @@
 
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
-use iidy::output::renderers::plain::{PlainTextRenderer, PlainTextOptions};
 use iidy::output::renderers::interactive::{InteractiveRenderer, InteractiveOptions};
 use iidy::output::renderer::OutputRenderer;
 use iidy::cli::{Theme, ColorChoice};
@@ -51,10 +50,15 @@ fn extract_ansi_codes(output: &str) -> Vec<String> {
 }
 
 /// Test helper to create plain text renderer options
-fn create_plain_options() -> PlainTextOptions {
-    PlainTextOptions {
+fn create_plain_options() -> InteractiveOptions {
+    InteractiveOptions {
+        color_choice: ColorChoice::Never, // No colors for plain mode
+        theme: Theme::Auto, // Doesn't matter since colors are disabled
+        terminal_width: Some(120),
         show_timestamps: true,
-        max_line_width: Some(120),
+        enable_spinners: false, // No spinners in plain mode
+        enable_ansi_features: false, // No ANSI features in plain mode
+        cli_context: None, // No CLI context needed for tests
     }
 }
 
@@ -84,7 +88,7 @@ async fn test_plain_renderer_against_fixture_expected_output() {
     
     // Create renderer with captured output
     let options = create_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     // Initialize renderer
     renderer.init().await.expect("Should initialize");

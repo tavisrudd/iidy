@@ -43,8 +43,17 @@ impl JsonRenderer {
         Self { options }
     }
     
+    /// Output raw JSON data without metadata wrapping
+    fn output_raw_json(&self, data: &(impl serde::Serialize + ?Sized)) -> Result<()> {
+        let json_output = serde_json::to_string_pretty(data)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize data: {}", e))?;
+        println!("{}", json_output);
+        io::stdout().flush()?;
+        Ok(())
+    }
+    
     /// Output a JSON object for the given data
-    fn output_json(&self, type_name: &str, data: &impl serde::Serialize) -> Result<()> {
+    fn output_json(&self, type_name: &str, data: &(impl serde::Serialize + ?Sized)) -> Result<()> {
         let json_obj = if self.options.include_timestamps && self.options.include_type {
             json!({
                 "type": type_name,
@@ -105,6 +114,9 @@ impl OutputRenderer for JsonRenderer {
             OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
             OutputData::Error(ref error) => self.render_error(error).await,
             OutputData::TokenInfo(ref token) => self.render_token_info(token).await,
+            OutputData::NewStackEvents(ref events) => self.render_new_stack_events(events).await,
+            OutputData::OperationComplete(ref info) => self.render_operation_complete(info).await,
+            OutputData::InactivityTimeout(ref info) => self.render_inactivity_timeout(info).await,
         }
     }
 }
@@ -140,7 +152,13 @@ impl JsonRenderer {
     }
     
     async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()> {
-        self.output_json("stack_list", data)
+        if data.query_mode {
+            // For query mode, output raw JSON array of stacks (matching --query behavior)
+            self.output_raw_json(&data.stacks)
+        } else {
+            // Normal structured output
+            self.output_json("stack_list", data)
+        }
     }
     
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()> {
@@ -158,6 +176,19 @@ impl JsonRenderer {
     async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
         self.output_json("token_info", data)
     }
+    
+    async fn render_new_stack_events(&mut self, events: &[crate::output::data::StackEventWithTiming]) -> Result<()> {
+        self.output_json("new_stack_events", events)
+    }
+    
+    async fn render_operation_complete(&mut self, info: &crate::output::data::OperationCompleteInfo) -> Result<()> {
+        self.output_json("operation_complete", info)
+    }
+    
+    async fn render_inactivity_timeout(&mut self, info: &crate::output::data::InactivityTimeoutInfo) -> Result<()> {
+        self.output_json("inactivity_timeout", info)
+    }
+    
     
 }
 

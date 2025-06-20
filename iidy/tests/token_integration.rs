@@ -78,7 +78,7 @@ async fn test_token_management_integration() {
         "integration-test".to_string(),
     );
 
-    let context = CfnContext::new_without_start_time(client, time_provider, token_info.clone());
+    let context = CfnContext::new_without_start_time(client, config, time_provider, token_info.clone());
 
     // Verify context setup
     assert_eq!(context.primary_token().value, "integration-test-token");

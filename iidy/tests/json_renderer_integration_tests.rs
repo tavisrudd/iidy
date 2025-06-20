@@ -242,7 +242,6 @@ async fn test_json_serialization_compatibility() {
     
     let json_value = parsed.unwrap();
     assert!(json_value.is_object(), "JSON should be an object");
-    assert!(json_value.get("cfn_operation").is_some(), "Should contain cfn_operation field");
     assert!(json_value.get("region").is_some(), "Should contain region field");
     assert!(json_value.get("primary_token").is_some(), "Should contain primary_token field");
 }

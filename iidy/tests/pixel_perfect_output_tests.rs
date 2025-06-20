@@ -7,7 +7,6 @@ use iidy::cli::{Theme, ColorChoice};
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
 use iidy::output::renderers::interactive::{InteractiveRenderer, InteractiveOptions};
-use iidy::output::renderers::plain::{PlainTextRenderer, PlainTextOptions};
 use iidy::output::renderer::OutputRenderer;
 // Note: Additional imports for future output capture implementation
 use insta::{assert_snapshot, with_settings};
@@ -29,10 +28,15 @@ fn create_pixel_perfect_interactive_options() -> InteractiveOptions {
 }
 
 /// Test helper to create plain renderer options
-fn create_pixel_perfect_plain_options() -> PlainTextOptions {
-    PlainTextOptions {
-        show_timestamps: true,
-        max_line_width: Some(130),
+fn create_pixel_perfect_plain_options() -> InteractiveOptions {
+    InteractiveOptions {
+        color_choice: ColorChoice::Never, // No colors for plain mode
+        theme: Theme::Auto, // Doesn't matter since colors are disabled
+        terminal_width: Some(130), // Fixed width matching iidy-js default
+        show_timestamps: true, // Enable timestamps
+        enable_spinners: false, // No spinners in plain mode
+        enable_ansi_features: false, // No ANSI features in plain mode
+        cli_context: None, // No CLI context needed for tests
     }
 }
 
@@ -105,7 +109,7 @@ async fn test_plain_command_metadata_pixel_perfect() {
     
     // Create plain renderer
     let options = create_pixel_perfect_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     // Test that the renderer executes without error
     renderer.init().await.expect("Should initialize");

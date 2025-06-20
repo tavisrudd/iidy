@@ -9,6 +9,7 @@
 
 use anyhow::{Result, bail, Context};
 use serde_yaml::Value;
+use aws_sdk_s3::Client as S3Client;
 
 use crate::yaml::{preprocess_yaml, imports::loaders::load_file_import};
 use crate::cli::YamlSpec;
@@ -30,6 +31,7 @@ pub async fn load_cfn_template(
     base_location: &str,
     environment: Option<&str>,
     max_size: usize,
+    s3_client: Option<&S3Client>,
 ) -> Result<TemplateResult> {
     let location = match location {
         Some(loc) if !loc.trim().is_empty() => loc.trim(),
@@ -48,7 +50,7 @@ pub async fn load_cfn_template(
     };
 
     // Auto-sign S3 URLs for cross-region access (equivalent to maybeSignS3HttpUrl)
-    let processed_location = maybe_sign_s3_http_url(actual_location).await;
+    let processed_location = maybe_sign_s3_http_url(actual_location, s3_client).await?;
 
     // Check if this looks like inline template content (JSON or YAML)
     let is_inline_content = processed_location.trim().starts_with('{') || 
@@ -170,14 +172,166 @@ mod tests {
         assert_eq!(TEMPLATE_MAX_BYTES, 51199);
         assert_eq!(S3_TEMPLATE_MAX_BYTES, 999999);
     }
+
+    #[test]
+    fn test_parse_s3_http_url_path_style() {
+        // Test path-style URL: https://s3.us-west-2.amazonaws.com/bucket/path/to/key
+        let url = "https://s3.us-west-2.amazonaws.com/mybucket/path/to/template.yaml";
+        let (bucket, key) = parse_s3_http_url(url).unwrap();
+        
+        assert_eq!(bucket, "mybucket");
+        assert_eq!(key, "path/to/template.yaml");
+    }
+
+    #[test]
+    fn test_parse_s3_http_url_virtual_hosted_style() {
+        // Test virtual-hosted style URL: https://bucket.s3.us-west-2.amazonaws.com/path/to/key
+        let url = "https://mybucket.s3.us-west-2.amazonaws.com/path/to/template.yaml";
+        let (bucket, key) = parse_s3_http_url(url).unwrap();
+        
+        assert_eq!(bucket, "mybucket");
+        assert_eq!(key, "path/to/template.yaml");
+    }
+
+    #[test]
+    fn test_parse_s3_http_url_us_east_1() {
+        // Test US East 1 (default region) URL: https://s3.amazonaws.com/bucket/key
+        let url = "https://s3.amazonaws.com/mybucket/template.yaml";
+        let (bucket, key) = parse_s3_http_url(url).unwrap();
+        
+        assert_eq!(bucket, "mybucket");
+        assert_eq!(key, "template.yaml");
+    }
+
+    #[test]
+    fn test_parse_s3_http_url_virtual_hosted_us_east_1() {
+        // Test virtual-hosted US East 1: https://bucket.s3.amazonaws.com/key
+        let url = "https://mybucket.s3.amazonaws.com/template.yaml";
+        let (bucket, key) = parse_s3_http_url(url).unwrap();
+        
+        assert_eq!(bucket, "mybucket");
+        assert_eq!(key, "template.yaml");
+    }
+
+    #[test]
+    fn test_parse_s3_http_url_encoded_key() {
+        // Test URL with encoded characters in key
+        let url = "https://s3.us-west-2.amazonaws.com/mybucket/path%20with%20spaces/template.yaml";
+        let (bucket, key) = parse_s3_http_url(url).unwrap();
+        
+        assert_eq!(bucket, "mybucket");
+        assert_eq!(key, "path with spaces/template.yaml");
+    }
+
+    #[test]
+    fn test_parse_s3_http_url_invalid() {
+        // Test invalid URL (not S3)
+        let url = "https://example.com/not-s3";
+        let result = parse_s3_http_url(url);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not a well-formed S3 URL"));
+    }
+
+    #[tokio::test]
+    async fn test_maybe_sign_s3_http_url_non_s3() {
+        // Test non-S3 URL (should pass through unchanged)
+        let url = "https://example.com/template.yaml";
+        let result = maybe_sign_s3_http_url(url, None).await.unwrap();
+        assert_eq!(result, url);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_sign_s3_http_url_already_signed() {
+        // Test already signed S3 URL (should pass through unchanged)
+        let url = "https://s3.us-west-2.amazonaws.com/bucket/key?Signature=abc123";
+        let result = maybe_sign_s3_http_url(url, None).await.unwrap();
+        assert_eq!(result, url);
+    }
+
+    #[tokio::test]
+    async fn test_maybe_sign_s3_http_url_no_client() {
+        // Test S3 URL without client (should pass through unchanged)
+        let url = "https://s3.us-west-2.amazonaws.com/bucket/template.yaml";
+        let result = maybe_sign_s3_http_url(url, None).await.unwrap();
+        assert_eq!(result, url);
+    }
+}
+
+/// Extract bucket and key from an S3 HTTP URL
+fn parse_s3_http_url(input: &str) -> Result<(String, String)> {
+    // Basic validation that this looks like an S3 URL
+    if !input.contains("s3") || !input.contains("amazonaws.com") {
+        bail!("HTTP URL '{}' is not a well-formed S3 URL", input);
+    }
+
+    let url = url::Url::parse(input)
+        .with_context(|| format!("Failed to parse URL: {}", input))?;
+
+    let hostname = url.host_str()
+        .ok_or_else(|| anyhow::anyhow!("No hostname in URL: {}", input))?;
+    
+    let path = url.path();
+
+    // Handle different S3 URL formats
+    let (bucket, key) = if hostname.starts_with("s3.") || hostname.starts_with("s3-") {
+        // Path-style: s3.region.amazonaws.com/bucket/key
+        let path_parts: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+        if path_parts.len() < 2 || path_parts[0].is_empty() {
+            bail!("HTTP URL '{}' is not a well-formed S3 URL", input);
+        }
+        let bucket = path_parts[0].to_string();
+        let key = path_parts[1..].join("/");
+        (bucket, key)
+    } else if hostname.contains(".s3.") || hostname.contains(".s3-") {
+        // Virtual-hosted: bucket.s3.region.amazonaws.com/key
+        let bucket = hostname.split('.').next()
+            .ok_or_else(|| anyhow::anyhow!("Cannot extract bucket from hostname: {}", hostname))?
+            .to_string();
+        let key = path.trim_start_matches('/').to_string();
+        (bucket, key)
+    } else {
+        bail!("HTTP URL '{}' is not a well-formed S3 URL", input);
+    };
+
+    // URL decode the key
+    let key = urlencoding::decode(&key)?.into_owned();
+
+    Ok((bucket, key))
 }
 
 /// Auto-sign S3 HTTP URLs for cross-region access (maybeSignS3HttpUrl equivalent)
-async fn maybe_sign_s3_http_url(location: &str) -> String {
-    // For now, return the location as-is
-    // TODO: Implement S3 URL signing when we have AWS client context
-    // This would convert s3:// URLs to signed HTTPS URLs for cross-region access
-    location.to_string()
+async fn maybe_sign_s3_http_url(location: &str, s3_client: Option<&S3Client>) -> Result<String> {
+    // Check if this is an unsigned S3 HTTP URL
+    let is_unsigned_s3_http_url = location.starts_with("http") && 
+                                 location.contains("s3") && 
+                                 location.contains("amazonaws.com") &&
+                                 !location.contains("Signature=");
+    
+    if is_unsigned_s3_http_url {
+        if let Some(client) = s3_client {
+            let (bucket, key) = parse_s3_http_url(location)?;
+            
+            // Generate presigned URL for GetObject
+            let presigning_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
+                std::time::Duration::from_secs(3600) // 1 hour expiration
+            )?;
+            
+            let presigned_request = client
+                .get_object()
+                .bucket(&bucket)
+                .key(&key)
+                .presigned(presigning_config)
+                .await?;
+            
+            Ok(presigned_request.uri().to_string())
+        } else {
+            // No S3 client available, return location as-is
+            // This allows graceful fallback when S3 client is not available
+            Ok(location.to_string())
+        }
+    } else {
+        Ok(location.to_string())
+    }
 }
 
 /// Result of stack policy loading
@@ -191,6 +345,7 @@ pub struct StackPolicyResult {
 pub async fn load_cfn_stack_policy(
     policy: Option<&Value>,
     base_location: &str,
+    s3_client: Option<&S3Client>,
 ) -> Result<StackPolicyResult> {
     let policy = match policy {
         Some(p) => p,
@@ -213,7 +368,7 @@ pub async fn load_cfn_stack_policy(
             };
             
             // Auto-sign S3 URLs
-            let processed_location = maybe_sign_s3_http_url(actual_location).await;
+            let processed_location = maybe_sign_s3_http_url(actual_location, s3_client).await?;
             
             // Check if URL (S3 or HTTP)
             if !should_render && processed_location.starts_with("s3:") {

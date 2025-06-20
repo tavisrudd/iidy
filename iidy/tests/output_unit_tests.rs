@@ -330,6 +330,8 @@ fn test_stack_list_entry_with_lifecycle_tags() {
         stacks: vec![stack_entry],
         show_tags: true,
         filters_applied: vec!["lifetime=protected".to_string()],
+        columns: StackListColumn::default_columns(),
+        query_mode: false,
     };
     
     assert_eq!(stack_list.stacks.len(), 1);

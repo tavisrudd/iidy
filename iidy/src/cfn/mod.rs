@@ -1,5 +1,6 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::Client;
+use aws_sdk_s3::Client as S3Client;
 use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 
@@ -7,7 +8,7 @@ use crate::cli::NormalizedAwsOpts;
 use crate::timing::{ReliableTimeProvider, TimeProvider, TokenInfo};
 
 // CloudFormation operation modules
-pub mod console;
+// pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;
@@ -26,7 +27,7 @@ pub mod update_stack;
 pub mod watch_stack;
 
 // Re-exports
-pub use console::ConsoleReporter;
+// pub use console::ConsoleReporter; // REMOVED: Legacy direct output
 pub use request_builder::CfnRequestBuilder;
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
@@ -50,7 +51,7 @@ pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: c
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
-    CfnContext::new(client, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await
 }
 
 /// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
@@ -72,7 +73,7 @@ pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Re
     } else {
         Arc::new(crate::timing::SystemTimeProvider::new())
     };
-    CfnContext::new(client, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await
 }
 
 /// Context object that carries shared state for CloudFormation operations.
@@ -82,6 +83,7 @@ pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Re
 /// multi-step operations with idempotency support.
 pub struct CfnContext {
     pub client: Client,
+    pub aws_config: aws_config::SdkConfig,
     pub time_provider: Arc<dyn TimeProvider>,
     pub start_time: Option<DateTime<Utc>>,
     pub token_info: TokenInfo,
@@ -89,12 +91,22 @@ pub struct CfnContext {
 }
 
 impl CfnContext {
+    /// Create an S3 client on demand using the stored AWS config
+    pub fn create_s3_client(&self) -> S3Client {
+        S3Client::from_conf(
+            aws_sdk_s3::Config::from(&self.aws_config)
+                .to_builder()
+                .behavior_version_latest()
+                .build()
+        )
+    }
     /// Create a new CFN context with the given client, time provider, and token info.
     ///
     /// The start time is automatically set using the time provider's start_time() method.
     /// The primary token is automatically added to the used_tokens tracking.
     pub async fn new(
         client: Client,
+        aws_config: aws_config::SdkConfig,
         time_provider: Arc<dyn TimeProvider>,
         token_info: TokenInfo,
     ) -> Result<Self> {
@@ -103,6 +115,7 @@ impl CfnContext {
 
         Ok(CfnContext {
             client,
+            aws_config,
             time_provider,
             start_time,
             token_info,
@@ -110,12 +123,14 @@ impl CfnContext {
         })
     }
 
+
     /// Create a new CFN context without setting a start time.
     ///
     /// Useful for operations that don't need event filtering.
     /// The primary token is automatically added to the used_tokens tracking.
     pub fn new_without_start_time(
         client: Client,
+        aws_config: aws_config::SdkConfig,
         time_provider: Arc<dyn TimeProvider>,
         token_info: TokenInfo,
     ) -> Self {
@@ -123,12 +138,14 @@ impl CfnContext {
 
         CfnContext {
             client,
+            aws_config,
             time_provider,
             start_time: None,
             token_info,
             used_tokens,
         }
     }
+
 
     /// Get the start time for this context, or current time if not set.
     pub async fn get_start_time(&self) -> Result<DateTime<Utc>> {
@@ -214,14 +231,17 @@ mod tests {
     use crate::timing::{MockTimeProvider, TokenInfo};
     use chrono::TimeZone;
 
+    fn create_test_aws_config() -> aws_config::SdkConfig {
+        aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build()
+    }
+
     fn mock_client() -> Client {
         // Create a mock client for testing
         // In real tests, you'd use a proper mock or test configuration
-        let config = aws_config::SdkConfig::builder()
-            .region(aws_types::region::Region::new("us-east-1"))
-            .behavior_version(aws_config::BehaviorVersion::latest())
-            .build();
-        Client::new(&config)
+        Client::new(&create_test_aws_config())
     }
 
     fn mock_token_info() -> TokenInfo {
@@ -235,7 +255,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, time_provider, token_info)
+        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info)
             .await
             .unwrap();
 
@@ -251,7 +271,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let mut ctx = CfnContext::new(client, time_provider.clone(), token_info)
+        let mut ctx = CfnContext::new(client, create_test_aws_config(), time_provider.clone(), token_info)
             .await
             .unwrap();
 
@@ -270,7 +290,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, time_provider, token_info.clone())
+        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info.clone())
             .await
             .unwrap();
 
@@ -294,7 +314,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new_without_start_time(client, time_provider, token_info);
+        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
 
         // Derive tokens for different steps
         let create_token = ctx.derive_token_for_step("create-changeset");
@@ -330,7 +350,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new_without_start_time(client, time_provider, token_info);
+        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
 
         // Derive the same token multiple times
         let token1 = ctx.derive_token_for_step("test-step");
@@ -353,7 +373,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new_without_start_time(client, time_provider, token_info.clone());
+        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info.clone());
 
         // Should not have start time set
         assert!(ctx.start_time.is_none());

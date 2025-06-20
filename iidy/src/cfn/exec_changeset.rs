@@ -54,7 +54,7 @@ pub async fn exec_changeset(
     let config = aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, time_provider, opts.client_request_token.clone()).await?;
+    let context = CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await?;
 
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);

@@ -378,6 +378,12 @@ impl ProgressManager {
             spinner.finish_and_clear();
         }
     }
+    
+    /// Get a reference to the underlying ProgressBar for background tasks
+    /// (indicatif::ProgressBar is thread-safe and designed to be cloned)
+    pub fn get_spinner_ref(&self) -> Option<indicatif::ProgressBar> {
+        self.spinner.clone()
+    }
 
     /// Change the spinner style dynamically
     pub fn set_spinner_style(&self, style: SpinnerStyle) {

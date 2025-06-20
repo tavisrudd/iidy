@@ -317,12 +317,45 @@ pub struct CommandResult {
     pub exit_code: i32,
 }
 
+/// Available columns for stack list display
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum StackListColumn {
+    Name,
+    Status, 
+    Time,
+    Tags,
+    StatusReason,
+    TerminationProtection,
+    Environment,
+}
+
+impl StackListColumn {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "name" => Some(Self::Name),
+            "status" => Some(Self::Status),
+            "time" | "creation_time" | "last_updated_time" => Some(Self::Time),
+            "tags" => Some(Self::Tags),
+            "status_reason" | "reason" => Some(Self::StatusReason),
+            "termination_protection" | "protection" => Some(Self::TerminationProtection),
+            "environment" | "env" => Some(Self::Environment),
+            _ => None,
+        }
+    }
+    
+    pub fn default_columns() -> Vec<Self> {
+        vec![Self::Time, Self::Status, Self::Name, Self::Tags]
+    }
+}
+
 /// Stack list display information
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StackListDisplay {
     pub stacks: Vec<StackListEntry>,
     pub show_tags: bool,
     pub filters_applied: Vec<String>,
+    pub columns: Vec<StackListColumn>,
+    pub query_mode: bool, // True for raw JSON array output (--query flag)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -360,6 +393,21 @@ pub struct ErrorInfo {
     pub suggestions: Vec<String>,
 }
 
+/// Operation completion information for live operations
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperationCompleteInfo {
+    pub elapsed_seconds: i64,
+    pub operation_start_time: DateTime<Utc>,
+}
+
+/// Inactivity timeout information for live operations
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InactivityTimeoutInfo {
+    pub timeout_seconds: u64,
+    pub elapsed_seconds: i64,
+    pub operation_start_time: DateTime<Utc>,
+}
+
 
 /// Stack drift information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -386,6 +434,7 @@ pub struct PropertyDifference {
     pub difference_type: Option<String>,
 }
 
+
 /// Main output data enum for the manager
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum OutputData {
@@ -400,6 +449,9 @@ pub enum OutputData {
     StackDrift(StackDrift),
     Error(ErrorInfo),
     TokenInfo(TokenInfo),
+    NewStackEvents(Vec<StackEventWithTiming>), // Batch of new events for live watch (no title/header)
+    OperationComplete(OperationCompleteInfo), // Signal that live operation finished successfully
+    InactivityTimeout(InactivityTimeoutInfo), // Signal that operation timed out due to inactivity
 }
 
 impl OutputData {
@@ -417,6 +469,9 @@ impl OutputData {
             OutputData::StackDrift(_) => "stack_drift",
             OutputData::Error(_) => "error",
             OutputData::TokenInfo(_) => "token_info",
+            OutputData::NewStackEvents(_) => "new_stack_events",
+            OutputData::OperationComplete(_) => "operation_complete",
+            OutputData::InactivityTimeout(_) => "inactivity_timeout",
         }
     }
     

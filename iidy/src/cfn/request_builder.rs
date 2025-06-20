@@ -66,6 +66,7 @@ impl<'a> CfnRequestBuilder<'a> {
                 argsfile_path,
                 environment,
                 TEMPLATE_MAX_BYTES,
+                Some(&self.context.create_s3_client()),
             ).await?;
 
             if let Some(template_body) = template_result.template_body {
@@ -159,7 +160,7 @@ impl<'a> CfnRequestBuilder<'a> {
 
         // Load and apply stack policy if present
         if let Some(ref stack_policy) = self.stack_args.stack_policy {
-            let policy_result = load_cfn_stack_policy(Some(stack_policy), argsfile_path).await?;
+            let policy_result = load_cfn_stack_policy(Some(stack_policy), argsfile_path, Some(&self.context.create_s3_client())).await?;
 
             if let Some(policy_body) = policy_result.stack_policy_body {
                 builder = builder.stack_policy_body(policy_body);
@@ -410,7 +411,11 @@ mod tests {
         let token_info =
             TokenInfo::user_provided("test-token-123".to_string(), "test-op-1".to_string());
 
-        CfnContext::new_without_start_time(client, time_provider, token_info)
+        let aws_config = aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build();
+        CfnContext::new_without_start_time(client, aws_config, time_provider, token_info)
     }
 
     fn mock_stack_args() -> StackArgs {

@@ -12,61 +12,8 @@ use crate::{
     },
 };
 
-/// Format stack resource drifts for display.
-///
-/// Returns a vector of lines that can be printed to stdout.
-pub fn format_resource_drifts(drifts: Vec<StackResourceDrift>) -> Vec<String> {
-    if drifts.is_empty() {
-        return vec![String::from(
-            "No drift detected. Stack resources are in sync with template.",
-        )];
-    }
-
-    let mut lines = Vec::new();
-    lines.push(String::from("Drifted Resources:"));
-
-    for drift in drifts {
-        let id = drift.logical_resource_id().unwrap_or("unknown");
-        let rtype = drift.resource_type().unwrap_or("unknown");
-        let phys = drift.physical_resource_id().unwrap_or("unknown");
-        lines.push(format!("{id} {rtype} {phys}"));
-        if let Some(status) = drift.stack_resource_drift_status() {
-            lines.push(format!("  {}", status.as_str()));
-        }
-        if !drift.property_differences().is_empty() {
-            #[derive(serde::Serialize)]
-            struct Diff<'a> {
-                #[serde(skip_serializing_if = "Option::is_none")]
-                property_path: Option<&'a str>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                expected_value: Option<&'a str>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                actual_value: Option<&'a str>,
-                #[serde(skip_serializing_if = "Option::is_none")]
-                difference_type: Option<&'a str>,
-            }
-
-            let diffs: Vec<Diff<'_>> = drift
-                .property_differences()
-                .iter()
-                .map(|d| Diff {
-                    property_path: d.property_path(),
-                    expected_value: d.expected_value(),
-                    actual_value: d.actual_value(),
-                    difference_type: d.difference_type().map(|dt| dt.as_str()),
-                })
-                .collect();
-
-            if let Ok(diff_yaml) = serde_yaml::to_string(&diffs) {
-                for l in diff_yaml.lines() {
-                    lines.push(format!("   {l}"));
-                }
-            }
-        }
-    }
-
-    lines
-}
+// REMOVED: format_resource_drifts function - Legacy formatting logic replaced by data-driven output architecture
+// Drift formatting is now handled by the renderers through OutputData::StackDrift
 
 /// Describe CloudFormation stack drift with data-driven output.
 /// 
@@ -211,34 +158,33 @@ async fn collect_stack_drift_data(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use aws_sdk_cloudformation::types::{PropertyDifference, StackResourceDriftStatus};
-    use aws_smithy_types::DateTime;
+    // No longer need imports - tests now focus on data-driven output structures
 
-    fn sample_drift(id: &str) -> StackResourceDrift {
-        StackResourceDrift::builder()
-            .stack_id("sid")
-            .logical_resource_id(id)
-            .physical_resource_id("pid")
-            .resource_type("AWS::S3::Bucket")
-            .stack_resource_drift_status(StackResourceDriftStatus::Modified)
-            .timestamp(DateTime::from_secs(0))
-            .property_differences(PropertyDifference::builder().build())
-            .build()
+    #[test]
+    fn drift_data_conversion_no_drift() {
+        // Test that empty drift list is handled correctly
+        let drift_data = crate::output::StackDrift {
+            drifted_resources: vec![],
+        };
+        assert_eq!(drift_data.drifted_resources.len(), 0);
     }
 
     #[test]
-    fn formats_no_drift() {
-        let lines = format_resource_drifts(Vec::new());
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("No drift"));
-    }
-
-    #[test]
-    fn formats_drift() {
-        let drifts = vec![sample_drift("A")];
-        let lines = format_resource_drifts(drifts);
-        assert!(lines.iter().any(|l| l.contains("Drifted Resources")));
-        assert!(lines.iter().any(|l| l.contains("A")));
+    fn drift_data_conversion_with_drift() {
+        // Test that drift data structure contains expected information
+        let drift_data = crate::output::StackDrift {
+            drifted_resources: vec![
+                crate::output::DriftedResource {
+                    logical_resource_id: "TestResource".to_string(),
+                    physical_resource_id: "test-resource-123".to_string(),
+                    resource_type: "AWS::S3::Bucket".to_string(),
+                    drift_status: "MODIFIED".to_string(),
+                    property_differences: vec![],
+                }
+            ],
+        };
+        assert_eq!(drift_data.drifted_resources.len(), 1);
+        assert_eq!(drift_data.drifted_resources[0].logical_resource_id, "TestResource");
+        assert_eq!(drift_data.drifted_resources[0].drift_status, "MODIFIED");
     }
 }

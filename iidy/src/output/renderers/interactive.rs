@@ -15,7 +15,8 @@ use owo_colors::OwoColorize;
 use std::collections::HashMap;
 use std::io::{self, Write, IsTerminal};
 use std::collections::VecDeque;
-use std::sync::Arc;
+use std::time::Duration;
+use std::sync::{Arc, Mutex};
 
 // Core constants matching iidy-js exactly (from complete implementation spec)
 pub const COLUMN2_START: usize = 25;
@@ -23,6 +24,10 @@ pub const COLUMN2_START: usize = 25;
 pub const MIN_STATUS_PADDING: usize = 17;
 pub const MAX_PADDING: usize = 60;
 pub const RESOURCE_TYPE_PADDING: usize = 40;
+
+// Live events timing constants
+const LIVE_EVENTS_UPDATE_INTERVAL_SECS: u64 = 1;
+
 
 /// Configuration options for interactive rendering
 #[derive(Debug, Clone)]
@@ -83,6 +88,9 @@ pub struct InteractiveRenderer {
     cli_context: Option<Arc<crate::cli::Cli>>,
     // Section titles configured during construction
     section_titles: HashMap<&'static str, String>,
+    // Live events timing state (local to spinner)
+    timing_task_handle: Option<tokio::task::JoinHandle<()>>,
+    timing_state: Option<Arc<Mutex<(DateTime<Utc>, Option<DateTime<Utc>>)>>>, // (start_time, last_live_event_time)
 }
 
 impl InteractiveRenderer {
@@ -105,6 +113,8 @@ impl InteractiveRenderer {
             printed_sections: Vec::new(),
             cli_context: cli_context.clone(),
             section_titles: HashMap::new(),
+            timing_task_handle: None,
+            timing_state: None,
         };
         
         // Set up operation context if CLI context is available
@@ -252,14 +262,43 @@ impl InteractiveRenderer {
     
     /// Pretty format tags (exact iidy-js implementation)
     fn pretty_format_tags(&self, tags: &HashMap<String, String>) -> String {
+        self.pretty_format_tags_with_truncation(tags, None)
+    }
+    
+    /// Pretty format tags with optional truncation and Environment tag prioritization
+    fn pretty_format_tags_with_truncation(&self, tags: &HashMap<String, String>, max_tags: Option<usize>) -> String {
         if tags.is_empty() {
             return String::new();
         }
         
-        let mut formatted_tags: Vec<String> = tags.iter()
+        let mut formatted_tags = Vec::new();
+        
+        // First, add Environment/environment tag if it exists (case-insensitive)
+        let env_keys = ["Environment", "environment", "ENVIRONMENT", "env", "ENV"];
+        for env_key in &env_keys {
+            if let Some(env_value) = tags.get(*env_key) {
+                formatted_tags.push(format!("{}={}", env_key, env_value));
+                break; // Only add the first match
+            }
+        }
+        
+        // Then add other tags (excluding the environment tag we already added)
+        let mut other_tags: Vec<String> = tags.iter()
+            .filter(|(key, _)| !env_keys.contains(&key.as_str()))
             .map(|(key, value)| format!("{}={}", key, value))
             .collect();
-        formatted_tags.sort();
+        other_tags.sort();
+        
+        // Apply truncation if specified
+        if let Some(max_tags) = max_tags {
+            let remaining_slots = max_tags.saturating_sub(formatted_tags.len());
+            if remaining_slots < other_tags.len() {
+                other_tags.truncate(remaining_slots.saturating_sub(1)); // Leave room for "..."
+                other_tags.push("...".to_string());
+            }
+        }
+        
+        formatted_tags.extend(other_tags);
         formatted_tags.join(", ")
     }
     
@@ -317,12 +356,90 @@ impl InteractiveRenderer {
     /// Create spinner for API waiting periods (iidy-js style) - only in TTY and if enabled
     fn create_api_spinner(&self, message: &str) -> Option<ProgressManager> {
         if self.options.enable_spinners && self.colors_enabled() && io::stdout().is_terminal() {
-            Some(ProgressManager::with_style(SpinnerStyle::Dots12, message))
+            // Style spinner text with muted color (brightblack) like iidy-js
+            let styled_message = self.style_muted_text(message);
+            Some(ProgressManager::with_style(SpinnerStyle::Dots12, &styled_message))
         } else {
             // Spinners disabled, non-TTY, or colors disabled: just print the message
             println!("{}", message);
             None
         }
+    }
+    
+    /// Format timing text for live events (helper method)
+    fn format_timing_text(total_elapsed: i64, last_live_event: Option<DateTime<Utc>>, now: DateTime<Utc>) -> String {
+        if let Some(last_event_time) = last_live_event {
+            let since_last_event = (now - last_event_time).num_seconds();
+            format!("{} seconds elapsed total. {} since last event.", 
+                total_elapsed, since_last_event)
+        } else {
+            format!("{} seconds elapsed total.", total_elapsed)
+        }
+    }
+    
+    /// Apply muted theme styling to text (helper method)
+    fn style_muted_text(&self, text: &str) -> String {
+        text.color(self.theme.muted).to_string()
+    }
+    
+    /// Start live events timing with background updates (like iidy-js setInterval)
+    fn start_live_events_timing(&mut self, start_time: DateTime<Utc>) {
+        // Only start if we have an active spinner and spinners are enabled
+        if let Some(spinner) = &self.current_spinner {
+            if let Some(spinner_ref) = spinner.get_spinner_ref() {
+                // Create shared state for timing info (start_time, last_live_event_time)
+                // Start with None for last_live_event_time since we haven't seen any live events yet
+                let timing_state = Arc::new(Mutex::new((start_time, None)));
+                let timing_ref = Arc::clone(&timing_state);
+                
+                // Get theme color for styling
+                let muted_color = self.theme.muted;
+                
+                // Spawn background task that updates spinner every second
+                let task = tokio::spawn(async move {
+                    let mut interval = tokio::time::interval(Duration::from_secs(LIVE_EVENTS_UPDATE_INTERVAL_SECS));
+                    
+                    loop {
+                        interval.tick().await;
+                        
+                        let timing_guard = timing_ref.lock().unwrap();
+                        let (start, last_live_event): (DateTime<Utc>, Option<DateTime<Utc>>) = *timing_guard;
+                        drop(timing_guard); // Release the lock
+                        
+                        let now = Utc::now();
+                        let total_elapsed = (now - start).num_seconds();
+                        
+                        // Format and style timing text
+                        let timing_text = Self::format_timing_text(total_elapsed, last_live_event, now);
+                        let styled_text = timing_text.color(muted_color).to_string();
+                        
+                        // Update spinner message
+                        spinner_ref.set_message(styled_text);
+                    }
+                });
+                
+                // Store task handle and timing state
+                self.timing_task_handle = Some(task);
+                self.timing_state = Some(timing_state);
+            }
+        }
+    }
+    
+    /// Update last event time when new live events arrive
+    fn update_last_event_time(&mut self, event_time: DateTime<Utc>) {
+        if let Some(timing_state) = &self.timing_state {
+            if let Ok(mut state) = timing_state.lock() {
+                state.1 = Some(event_time); // Update last_live_event_time
+            }
+        }
+    }
+    
+    /// Stop live events timing and clean up
+    fn stop_live_events_timing(&mut self) {
+        if let Some(handle) = self.timing_task_handle.take() {
+            handle.abort();
+        }
+        self.timing_state = None;
     }
     
 }
@@ -383,7 +500,7 @@ impl InteractiveRenderer {
             // Read-only operations - focus on data display
             CfnOperation::DescribeStack => vec!["stack_definition", "stack_events", "stack_contents"],
             CfnOperation::ListStacks => vec!["stack_list"],
-            CfnOperation::WatchStack => vec!["stack_definition", "stack_events"],
+            CfnOperation::WatchStack => vec!["stack_definition", "stack_events", "live_stack_events", "stack_contents"],
             CfnOperation::GetStackTemplate => vec![], // Just returns template content
             CfnOperation::DescribeStackDrift => vec!["stack_drift"],
             
@@ -400,8 +517,8 @@ impl InteractiveRenderer {
             CfnOperation::GetStackInstances => vec![],
         };
         
-        // Start the first section for describe-stack (show title immediately, spinner if enabled)
-        if *operation == CfnOperation::DescribeStack {
+        // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)
+        if matches!(*operation, CfnOperation::DescribeStack | CfnOperation::WatchStack) {
             self.start_next_section();
         }
     }
@@ -425,6 +542,12 @@ impl InteractiveRenderer {
                     println!(); // Add newline after inline heading for spinner
                 }
                 self.current_spinner = self.create_api_spinner(&format!("Loading {}...", title.to_lowercase()));
+                
+                // Special handling for live_stack_events section - start timing immediately
+                if section_key == "live_stack_events" {
+                    let start_time = Utc::now();
+                    self.start_live_events_timing(start_time);
+                }
             }
         }
     }
@@ -449,7 +572,9 @@ impl InteractiveRenderer {
                 }
             }
             CfnOperation::WatchStack => {
-                self.section_titles.insert("stack_events", "Live Stack Events:".to_string());
+                // For watch-stack, we have separate previous and live events sections
+                self.section_titles.insert("stack_events", "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
             }
             _ => {
                 self.section_titles.insert("stack_events", "Stack Events:".to_string());
@@ -465,9 +590,10 @@ impl InteractiveRenderer {
     /// Check if a section should always be multi-line (needs newline after heading)
     fn section_is_always_multiline(&self, section_key: &str) -> bool {
         match section_key {
-            "stack_definition" => true,  // Stack Details is always multi-line
-            "stack_contents" => true,    // Stack Resources is always multi-line
-            "stack_events" => true,      // Stack Events is always multi-line
+            "stack_definition" => true,      // Stack Details is always multi-line
+            "stack_contents" => true,        // Stack Resources is always multi-line
+            "stack_events" => true,          // Previous Stack Events is always multi-line
+            "live_stack_events" => true,     // Live Stack Events is always multi-line
             _ => false,
         }
     }
@@ -539,6 +665,7 @@ impl InteractiveRenderer {
             OutputData::StackList(..) => Some("stack_list"),
             OutputData::StackDrift(..) => Some("stack_drift"),
             OutputData::ChangeSetResult(..) => Some("changeset_result"),
+            OutputData::NewStackEvents(..) => Some("live_stack_events"),
             _ => None,
         }
     }
@@ -571,6 +698,9 @@ impl InteractiveRenderer {
             OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
             OutputData::Error(ref error) => self.render_error(error).await,
             OutputData::TokenInfo(ref token) => self.render_token_info(token).await,
+            OutputData::NewStackEvents(ref events) => self.render_new_stack_events(events).await,
+            OutputData::OperationComplete(ref info) => self.handle_operation_complete(info).await,
+            OutputData::InactivityTimeout(ref info) => self.handle_inactivity_timeout(info).await,
             _ => Ok(()), // CommandMetadata handled elsewhere
         }
     }
@@ -736,7 +866,10 @@ impl InteractiveRenderer {
         // No need to rewrite it with ANSI escapes
         
         if data.events.is_empty() {
-            println!(" {}", "No events found".color(self.theme.muted));
+            // Only show "No events found" for previous events, not for live events title-only display
+            if !data.title.contains("Live Stack Events") {
+                println!(" {}", "No events found".color(self.theme.muted));
+            }
             return Ok(());
         }
         
@@ -991,16 +1124,25 @@ impl InteractiveRenderer {
             return Ok(());
         }
         
-        // Header
+        // Calculate padding for proper column alignment (exact iidy-js constants)
+        const TIME_PADDING: usize = 24; // Fixed padding like iidy-js
+        let status_padding = self.calc_padding(&data.stacks, |s| &s.stack_status);
+        
+        // Header with exact spacing to match column alignment
         let header = if data.show_tags {
-            "Creation/Update Time, Status, Name, Tags"
+            format!("{:<width1$} {:<width2$} Name, Tags", 
+                "Creation/Update Time,", 
+                "Status,",
+                width1 = TIME_PADDING,
+                width2 = status_padding)
         } else {
-            "Creation/Update Time, Status, Name"
+            format!("{:<width1$} {:<width2$} Name", 
+                "Creation/Update Time,", 
+                "Status,",
+                width1 = TIME_PADDING,
+                width2 = status_padding)
         };
         println!("{}", header.color(self.theme.muted));
-        
-        // Calculate padding for status column
-        let status_padding = self.calc_padding(&data.stacks, |s| &s.stack_status);
         
         for stack in &data.stacks {
             // Lifecycle icons
@@ -1038,17 +1180,18 @@ impl InteractiveRenderer {
             
             let stack_name = self.color_by_environment(&base_stack_name, env_name);
             
-            // Format timestamp in iidy-js format for list-stacks
+            // Format timestamp with exact padding (iidy-js format)
             let timestamp = if let Some(time) = &stack.last_updated_time {
-                self.render_event_timestamp(time) // Use event timestamp format
+                format!("{:>width$}", self.render_event_timestamp(time), width = TIME_PADDING)
             } else if let Some(time) = &stack.creation_time {
-                self.render_event_timestamp(time) // Use event timestamp format
+                format!("{:>width$}", self.render_event_timestamp(time), width = TIME_PADDING)
             } else {
-                "Unknown".to_string()
+                format!("{:>width$}", "Unknown", width = TIME_PADDING)
             };
             
             let tags_display = if data.show_tags {
-                format!(" {}", self.pretty_format_tags(&stack.tags).color(self.theme.muted))
+                // Use truncated tags for list view - show Environment tag first and limit to 3 total tags
+                format!(" {}", self.pretty_format_tags_with_truncation(&stack.tags, Some(3)).color(self.theme.muted))
             } else {
                 String::new()
             };
@@ -1179,5 +1322,127 @@ impl InteractiveRenderer {
         let _ = data; // Suppress unused parameter warning
         Ok(())
     }
+    
+    /// Render new stack events (batch of events for live watch - no title/header)
+    async fn render_new_stack_events(&mut self, events: &[StackEventWithTiming]) -> Result<()> {
+        if events.is_empty() {
+            return Ok(());
+        }
+        
+        // Update last event time with the most recent event (timing is already started by start_next_section)
+        if let Some(latest_event) = events.last() {
+            if let Some(event_time) = latest_event.event.timestamp {
+                self.update_last_event_time(event_time);
+            }
+        }
+        
+        // Calculate padding for status and resource type columns (same as stack events)
+        let status_padding = self.calc_padding(events, |e| &e.event.resource_status);
+        let resource_type_padding = self.calc_padding(events, |e| &e.event.resource_type);
+        
+        for event_with_timing in events {
+            let event = &event_with_timing.event;
+            
+            // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
+            let timestamp = if let Some(ts) = &event.timestamp {
+                self.format_timestamp(&self.render_event_timestamp(ts))
+            } else {
+                self.format_timestamp("                         ")
+            };
+            
+            // Format status with padding (apply padding before coloring to avoid ANSI length issues)
+            let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
+            let status = if self.colors_enabled() {
+                self.colorize_resource_status(&status_padded, None)
+            } else {
+                status_padded
+            };
+            
+            // Format resource type with padding (plain white for events, not muted)
+            let resource_type_padded = format!("{:<width$}", 
+                event.resource_type, 
+                width = resource_type_padding
+            );
+            let resource_type = if self.colors_enabled() {
+                resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
+            } else {
+                resource_type_padded
+            };
+            
+            // Format logical ID (no padding needed as it's the last column before duration)
+            let logical_id = self.format_logical_id(&event.logical_resource_id);
+            
+            // Format duration if available
+            let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
+                format!(" ({}s)", duration)
+            } else {
+                String::new()
+            };
+            
+            // iidy-js column order: timestamp status resource_type logical_id duration
+            println!(" {} {} {} {}{}",
+                timestamp,
+                status,
+                resource_type,
+                logical_id,
+                duration_text.color(self.theme.muted)
+            );
+        }
+        
+        Ok(())
+    }
+    
+    /// Handle operation completion (control flow only - no display)
+    async fn handle_operation_complete(&mut self, info: &OperationCompleteInfo) -> Result<()> {
+        // Stop live events timing task
+        self.stop_live_events_timing();
+        
+        // Clear any active spinner (live events spinner)
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        // Show final elapsed time message (like iidy-js line 89)
+        let message = format!(" {} seconds elapsed total.", info.elapsed_seconds);
+        println!("{}", self.style_muted_text(&message));
+        
+        // This signals that live events are done - advance to next section
+        self.advance_to_next_section();
+        
+        Ok(())
+    }
+    
+    /// Handle inactivity timeout (show message and signal completion)
+    async fn handle_inactivity_timeout(&mut self, info: &InactivityTimeoutInfo) -> Result<()> {
+        // Stop live events timing task
+        self.stop_live_events_timing();
+        
+        // Clear any active spinner (live events spinner)
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        // Show timeout message (properly indented like other status messages)
+        let timeout_message = format!(" Inactivity timeout of {} seconds reached. Stopping watch.", 
+            info.timeout_seconds);
+        println!("{}", self.style_muted_text(&timeout_message));
+        
+        // This signals that live events are done - advance to next section
+        self.advance_to_next_section();
+        
+        Ok(())
+    }
+    
+    /// Advance to the next section (non-recursive)
+    fn advance_to_next_section(&mut self) {
+        // Move to next section
+        if self.next_section_index < self.expected_sections.len() {
+            self.next_section_index += 1;
+            
+            // Start next section (title + spinner if enabled)
+            self.start_next_section();
+        }
+    }
+    
     
 }

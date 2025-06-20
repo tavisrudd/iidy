@@ -265,7 +265,11 @@ mod tests {
         let token_info =
             TokenInfo::user_provided("primary-token-123".to_string(), "test-op-1".to_string());
 
-        let context = CfnContext::new_without_start_time(client, time_provider, token_info);
+        let aws_config = aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build();
+        let context = CfnContext::new_without_start_time(client, aws_config, time_provider, token_info);
 
         // Derive some tokens
         let _create_token = context.derive_token_for_step("create-changeset");

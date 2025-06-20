@@ -7,7 +7,6 @@
 use iidy::cli::{Theme, ColorChoice};
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
-use iidy::output::renderers::plain::{PlainTextRenderer, PlainTextOptions};
 use iidy::output::renderers::interactive::{InteractiveRenderer, InteractiveOptions};
 use iidy::output::renderer::OutputRenderer;
 use iidy::output::theme::IidyTheme;
@@ -18,11 +17,16 @@ use tokio;
 
 mod output_capture_utils;
 
-/// Test helper to create consistent options for testing
-fn create_test_plain_options() -> PlainTextOptions {
-    PlainTextOptions {
+/// Test helper to create consistent options for plain mode testing
+fn create_test_plain_options() -> InteractiveOptions {
+    InteractiveOptions {
+        color_choice: ColorChoice::Never, // No colors for plain mode
+        theme: Theme::Auto, // Doesn't matter since colors are disabled
+        terminal_width: Some(120),
         show_timestamps: true,
-        max_line_width: Some(120),
+        enable_spinners: false, // No spinners in plain mode
+        enable_ansi_features: false, // No ANSI features in plain mode
+        cli_context: None, // No CLI context needed for tests
     }
 }
 
@@ -44,7 +48,7 @@ fn create_test_interactive_options() -> InteractiveOptions {
 #[tokio::test]
 async fn test_plain_renderer_command_metadata() {
     let options = create_test_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     let metadata = CommandMetadata {
         iidy_environment: "development".to_string(),
@@ -82,7 +86,7 @@ async fn test_plain_renderer_command_metadata() {
 #[tokio::test]
 async fn test_plain_renderer_stack_definition() {
     let options = create_test_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     let now = Utc::now();
     let stack_def = StackDefinition {
@@ -128,7 +132,7 @@ async fn test_plain_renderer_stack_definition() {
 #[tokio::test]
 async fn test_plain_renderer_stack_events() {
     let options = create_test_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     let now = Utc::now();
     let events = vec![
@@ -255,7 +259,7 @@ async fn test_theme_color_consistency() {
 async fn test_status_update_rendering() {
     let plain_options = create_test_plain_options();
     let interactive_options = create_test_interactive_options();
-    let mut plain_renderer = PlainTextRenderer::new(plain_options);
+    let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
     
     let status_updates = vec![
@@ -304,7 +308,7 @@ async fn test_status_update_rendering() {
 async fn test_command_result_rendering() {
     let plain_options = create_test_plain_options();
     let interactive_options = create_test_interactive_options();
-    let mut plain_renderer = PlainTextRenderer::new(plain_options);
+    let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
     
     let success_result = CommandResult {
@@ -343,7 +347,7 @@ async fn test_command_result_rendering() {
 async fn test_error_info_rendering() {
     let plain_options = create_test_plain_options();
     let interactive_options = create_test_interactive_options();
-    let mut plain_renderer = PlainTextRenderer::new(plain_options);
+    let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
     
     let error_info = ErrorInfo {
@@ -373,7 +377,7 @@ async fn test_error_info_rendering() {
 #[tokio::test]
 async fn test_renderer_lifecycle() {
     let options = create_test_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     // Test init
     renderer.init().await.expect("Should initialize successfully");
@@ -439,7 +443,7 @@ async fn test_fixture_integration() {
     
     // Test with renderer
     let options = create_test_plain_options();
-    let mut renderer = PlainTextRenderer::new(options);
+    let mut renderer = InteractiveRenderer::new(options);
     
     renderer.init().await.expect("Should initialize");
     renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render from fixture");

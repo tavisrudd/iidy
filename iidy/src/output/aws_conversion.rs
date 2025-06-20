@@ -8,7 +8,7 @@ use crate::{
     output::{
         CommandMetadata, CommandResult, StatusUpdate, StatusLevel, OutputData,
         TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
-        StackListDisplay, StackListEntry, StackDefinition,
+        StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
         StackEventsDisplay, StackEvent, StackEventWithTiming
     },
     cli::NormalizedAwsOpts,
@@ -205,6 +205,8 @@ pub fn convert_stacks_to_list_display(stacks: Vec<Stack>, show_tags: bool) -> Ou
         stacks: entries,
         show_tags,
         filters_applied: vec![], // No filters applied by default
+        columns: StackListColumn::default_columns(), // Use default columns
+        query_mode: false, // Normal display mode by default
     })
 }
 
@@ -386,7 +388,11 @@ mod tests {
             .build();
         let client = Client::new(&config);
         let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
-        let context = CfnContext::new_without_start_time(client, time_provider, token_info);
+        let aws_config = aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("us-east-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build();
+        let context = CfnContext::new_without_start_time(client, aws_config, time_provider, token_info);
 
         let opts = NormalizedAwsOpts {
             profile: Some("test-profile".to_string()),

@@ -326,6 +326,8 @@ pub fn sample_stack_list() -> StackListDisplay {
         filters_applied: vec![
             "tag-filter: environment=*".to_string(),
         ],
+        columns: StackListColumn::default_columns(),
+        query_mode: false,
     }
 }
 

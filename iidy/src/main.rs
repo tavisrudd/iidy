@@ -91,9 +91,8 @@ fn handle_command(cli: Cli) {
                 std::process::exit(1);
             }
         }
-        Commands::WatchStack(args) => {
-            let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&normalized_opts, &args, &cli.global_opts)) {
+        Commands::WatchStack(ref _args) => {
+            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&cli)) {
                 eprintln!("error watching stack: {e:?}");
                 std::process::exit(1);
             }
