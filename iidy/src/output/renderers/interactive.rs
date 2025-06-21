@@ -1456,15 +1456,23 @@ impl InteractiveRenderer {
             return Ok(());
         }
         
-        // Clear any active spinner to avoid race conditions with event output
+        // Preserve timing state before clearing spinner
+        let preserved_start_time = if let Some(timing_state) = &self.timing_state {
+            timing_state.lock().ok().map(|state| state.0)
+        } else {
+            None
+        };
+        
+        // Stop timing task and clear spinner for clean event output
+        self.stop_live_events_timing();
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
         
-        // Update last event time with the most recent event (timing is already started by start_next_section)
+        // Update last event time with the most recent event
         if let Some(latest_event) = events.last() {
-            if let Some(event_time) = latest_event.event.timestamp {
-                self.update_last_event_time(event_time);
+            if let Some(_event_time) = latest_event.event.timestamp {
+                // We'll restore timing after creating new spinner, so just track the event time
             }
         }
         
@@ -1521,10 +1529,22 @@ impl InteractiveRenderer {
             );
         }
         
-        // Restart the spinner for continued live events polling (unless we're done)
+        // Restart the spinner AND timing task for continued live events polling
         if self.options.enable_spinners && self.current_spinner.is_none() {
-            // Only restart if we're still in live events mode (not completed)
+            // Create new spinner
             self.current_spinner = self.create_api_spinner("Loading live events...");
+            
+            // Restart timing task with preserved start time
+            if let Some(start_time) = preserved_start_time {
+                self.start_live_events_timing(start_time);
+                
+                // Update last event time with the most recent event from this batch
+                if let Some(latest_event) = events.last() {
+                    if let Some(event_time) = latest_event.event.timestamp {
+                        self.update_last_event_time(event_time);
+                    }
+                }
+            }
         }
         
         Ok(())
