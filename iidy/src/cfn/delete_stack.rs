@@ -1,133 +1,245 @@
 use anyhow::Result;
-use std::time::Instant;
+use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::create_context,
+    cfn::{create_context_for_operation, stack_operations::StackInfoService},
     cli::{DeleteArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
-        DynamicOutputManager, manager::OutputOptions,
-        aws_conversion::{progress_message, success_message, warning_message, error_message, create_command_result, convert_stack_to_definition},
+        DynamicOutputManager, OutputData, CfnOperation,
+        aws_conversion::{create_command_metadata, warning_message, convert_token_info},
     },
 };
 
-use super::{CfnContext, watch_stack::watch_stack_with_data_output};
+use super::CfnContext;
 
-/// Delete a CloudFormation stack with DynamicOutputManager.
-async fn delete_stack_with_data_output(
-    ctx: &CfnContext,
+/// Perform the actual stack deletion operation and return the start time and stack_id for watching
+async fn perform_stack_deletion(
+    context: &CfnContext,
     stack_name: &str,
-    role_arn: Option<&str>,
-    retain_resources: Option<Vec<String>>,
+    args: &DeleteArgs,
     output_manager: &mut DynamicOutputManager,
-) -> Result<()> {
+) -> Result<(String, DateTime<Utc>)> {
     // Derive a token for the delete operation
-    let token = ctx.derive_token_for_step("delete-stack");
+    let token = context.derive_token_for_step("delete-stack");
     
-    // Pass token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    // Show token info
+    let output_token = convert_token_info(&token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
-    output_manager.render(progress_message(&format!("Deleting stack: {}", stack_name))).await?;
+    let start_time = context.start_time.unwrap_or_else(Utc::now);
 
-    // Check if stack exists first
-    match ctx.client.describe_stacks().stack_name(stack_name).send().await {
-        Ok(resp) => {
-            if let Some(stacks) = resp.stacks {
-                if let Some(stack) = stacks.first() {
-                    // Show stack definition before deletion
-                    let stack_def = convert_stack_to_definition(stack, true);
-                    output_manager.render(stack_def).await?;
-                }
-            }
-        }
-        Err(_) => {
-            output_manager.render(warning_message(&format!("Stack {} does not exist or is not accessible", stack_name))).await?;
-            return Ok(());
-        }
-    }
+    // Get stack ID before deletion
+    let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
 
-    // Start the delete operation
-    let mut request = ctx
+    // Build the delete request
+    let mut request = context
         .client
         .delete_stack()
         .stack_name(stack_name)
         .client_request_token(&token.value);
 
-    if let Some(role) = role_arn {
+    if let Some(role) = &args.role_arn {
         request = request.role_arn(role);
-        output_manager.render(progress_message(&format!("Using IAM role: {}", role))).await?;
     }
 
-    if let Some(resources) = retain_resources {
-        request = request.set_retain_resources(Some(resources.clone()));
-        output_manager.render(progress_message(&format!("Retaining {} resources", resources.len()))).await?;
+    if !args.retain_resources.is_empty() {
+        request = request.set_retain_resources(Some(args.retain_resources.clone()));
     }
 
+    // Execute the delete operation
     match request.send().await {
         Ok(_) => {
-            output_manager.render(success_message("Delete operation initiated, watching for completion...")).await?;
-
-            // Watch the stack deletion with data-driven output
-            watch_stack_with_data_output(ctx, stack_name, output_manager, std::time::Duration::from_secs(5)).await?;
+            Ok((stack_id, start_time))
         }
         Err(e) => {
-            output_manager.render(error_message(&format!("Failed to initiate stack deletion: {}", e))).await?;
-            return Err(e.into());
+            let error_msg = format!("Failed to initiate stack deletion: {}", e);
+            output_manager.render(crate::output::aws_conversion::error_message(&error_msg)).await?;
+            Err(e.into())
         }
     }
-
-    Ok(())
 }
 
-/// Delete a CloudFormation stack with data-driven output.
+/// Delete a CloudFormation stack following exact iidy-js pattern.
+///
+/// Implements the complete delete-stack flow:
+/// 1. Command metadata
+/// 2. Stack information and confirmation 
+/// 3. Delete operation
+/// 4. Watch deletion progress with live events
+/// Uses the data-driven output architecture for consistent rendering across output modes.
 pub async fn delete_stack(
     opts: &NormalizedAwsOpts, 
     args: &DeleteArgs, 
     global_opts: &GlobalOpts
-) -> Result<()> {
-    let start_time = Instant::now();
-    let output_options = OutputOptions::minimal();
+) -> Result<i32> {
+    let stack_name = &args.stackname;
+    
+    // Setup AWS context for delete operation
+    let context = create_context_for_operation(opts, CfnOperation::DeleteStack).await?;
+
+    // Setup data-driven output manager with full CLI context
+    let aws_opts = crate::cli::AwsOpts {
+        region: opts.region.clone(),
+        profile: opts.profile.clone(),
+        assume_role_arn: opts.assume_role_arn.clone(),
+        client_request_token: Some(opts.client_request_token.value.clone()),
+    };
+    let cli = crate::cli::Cli {
+        global_opts: global_opts.clone(),
+        aws_opts,
+        command: crate::cli::Commands::DeleteStack(args.clone()),
+    };
+    let output_options = crate::output::manager::OutputOptions::new(cli);
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
     ).await?;
 
-    // Create CloudFormation context
-    let ctx = create_context(opts, true).await?; // Write operation, needs NTP for precise timing
+    // 1. Check if stack exists and get its information
+    let (stack, stack_id) = match StackInfoService::get_stack(&context.client, stack_name).await {
+        Ok(stack) => {
+            let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
+            (stack, stack_id)
+        }
+        Err(_) => {
+            // Stack doesn't exist
+            output_manager.render(warning_message(&format!("Stack {} does not exist or is not accessible", stack_name))).await?;
+            let elapsed_seconds = context.elapsed_seconds().await?;
+            let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+                true, // Mark as success since stack is already deleted (matches iidy-js behavior)
+                elapsed_seconds
+            );
+            output_manager.render(final_command_summary).await?;
+            return Ok(0); // Return exit code 0 for success
+        }
+    };
 
-    // Pass primary token to output manager for conditional display
-    let primary_token = crate::output::aws_conversion::convert_token_info(&ctx.primary_token());
-    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
+    // 2. Prepare command metadata synchronously (doesn't require AWS API calls)
+    let minimal_stack_args = crate::stack_args::StackArgs {
+        stack_name: Some(stack_name.clone()),
+        template: None,
+        region: opts.region.clone(),
+        profile: opts.profile.clone(),
+        ..Default::default()
+    };
+    let command_metadata = create_command_metadata(&context, opts, &minimal_stack_args, &global_opts.environment).await?;
 
-    // Check if need to load stack args for confirmation
-    let stack_name = &args.stackname;
+    // 3. Start parallel data collection and rendering (following predefined sections pattern)
+    let sender = output_manager.start();
     
-    // TODO: Add confirmation prompt support in data-driven output
-    // For now, proceed directly (in iidy-js this would show confirmation dialog)
-
-    let result = delete_stack_with_data_output(
-        &ctx,
-        stack_name,
-        args.role_arn.as_deref(),
-        if args.retain_resources.is_empty() {
-            None
-        } else {
-            Some(args.retain_resources.clone())
-        },
-        &mut output_manager,
-    )
-    .await;
-
-    // Show final result
-    let elapsed = start_time.elapsed().as_secs() as i64;
-    match result {
-        Ok(_) => {
-            output_manager.render(create_command_result(true, elapsed, Some("Stack deletion completed".to_string()))).await?;
-        }
-        Err(ref e) => {
-            output_manager.render(create_command_result(false, elapsed, Some(format!("Stack deletion failed: {}", e)))).await?;
-        }
-    }
-
-    result
+    // Send command metadata immediately (prepared synchronously but sent via channel for ordering)
+    let _ = sender.send(OutputData::CommandMetadata(command_metadata));
+    
+    // Start stack definition task
+    let stack_definition_task = {
+        let tx = sender.clone();
+        let stack_clone = stack.clone();
+        tokio::spawn(async move {
+            let stack_definition = crate::output::aws_conversion::convert_stack_to_definition(&stack_clone, true);
+            let _ = tx.send(stack_definition);
+            Ok::<(), anyhow::Error>(())
+        })
+    };
+    
+    // Start previous events task (max 10 events like watch-stack)
+    let previous_events_task = {
+        let client = context.client.clone();
+        let stack_id = stack_id.clone();
+        let tx = sender.clone();
+        tokio::spawn(async move {
+            let events = crate::cfn::stack_operations::StackEventsService::fetch_events(&client, &stack_id).await?;
+            let events_display = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
+                events,
+                "Previous Stack Events (max 10):",
+                Some(10),
+            );
+            let _ = tx.send(events_display);
+            Ok::<(), anyhow::Error>(())
+        })
+    };
+    
+    // Collect stack contents directly before starting async tasks (since we can't clone context)
+    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
+    
+    // Send stack contents to the output manager
+    let stack_contents_task = {
+        let tx = sender.clone();
+        let stack_contents_clone = stack_contents.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(crate::output::OutputData::StackContents(stack_contents_clone));
+            Ok::<(), anyhow::Error>(())
+        })
+    };
+    
+    // Drop the original sender so the receiver knows when all tasks are done
+    drop(sender);
+    
+    // Process and render all data from parallel operations
+    output_manager.stop().await?;
+    
+    // Wait for all initial tasks to complete before proceeding with deletion
+    let (definition_result, events_result, contents_result) = tokio::join!(
+        stack_definition_task,
+        previous_events_task,
+        stack_contents_task
+    );
+    
+    // Propagate any errors from the spawned tasks
+    definition_result??;
+    events_result??;
+    contents_result??;
+    
+    // 4. TODO: Add confirmation prompt here (not implemented in this architectural update)
+    
+    // 5. Perform deletion and start live events monitoring  
+    let (_, start_time) = perform_stack_deletion(&context, stack_name, args, &mut output_manager).await?;
+    
+    // 6. Start live events monitoring in parallel pattern
+    let sender = output_manager.start();
+    
+    let live_events_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
+        let client = context.client.clone();
+        let stack_id = stack_id.clone();
+        let tx = sender.clone();
+        let live_start_time = context.start_time;
+        
+        tokio::spawn(async move {
+            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
+            let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
+                &client, 
+                live_start_time, 
+                &stack_id, 
+                sender_output, 
+                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
+                std::time::Duration::from_secs(3600), // 1 hour timeout for delete operations
+                vec![] // No previous events for delete operation (they were already shown)
+            ).await?;
+            Ok(final_status)
+        })
+    };
+    
+    // Drop sender and process live events
+    drop(sender);
+    output_manager.stop().await?;
+    
+    // Wait for live events to complete
+    let final_status = live_events_task.await??;
+    
+    // 7. Determine success based on final stack status and show final command summary
+    let elapsed_seconds = (Utc::now() - start_time).num_seconds();
+    
+    // Expected successful terminal states for delete-stack (based on iidy-js spec)
+    let expected_success_states = ["DELETE_COMPLETE"];
+    let success = final_status.as_ref()
+        .map(|status| expected_success_states.contains(&status.as_str()))
+        .unwrap_or(false);
+    
+    let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+        success,
+        elapsed_seconds
+    );
+    output_manager.render(final_command_summary).await?;
+    
+    // Return appropriate exit code
+    Ok(if success { 0 } else { 1 })
 }

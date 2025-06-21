@@ -10,7 +10,7 @@ use crate::{
         TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
         StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
         StackEventsDisplay, StackEvent, StackEventWithTiming,
-        StackResourceInfo, StackOutputInfo, StackExportInfo
+        StackResourceInfo, StackOutputInfo, StackExportInfo,
     },
     cli::NormalizedAwsOpts,
     stack_args::StackArgs,
@@ -121,6 +121,25 @@ pub fn create_command_result(
         elapsed_seconds: elapsed_seconds.max(0) as u64, // Convert to u64, ensuring non-negative
         message,
         exit_code: if success { 0 } else { 1 },
+    })
+}
+
+/// Create a final command summary (exact iidy-js showFinalComandSummary pattern)
+pub fn create_final_command_summary(
+    success: bool,
+    elapsed_seconds: i64,
+) -> OutputData {
+    use crate::output::data::{FinalCommandSummary, CommandSummaryResult};
+    
+    let result = if success {
+        CommandSummaryResult::Success
+    } else {
+        CommandSummaryResult::Failure
+    };
+    
+    OutputData::FinalCommandSummary(FinalCommandSummary {
+        result,
+        elapsed_seconds,
     })
 }
 

@@ -109,6 +109,7 @@ impl OutputRenderer for JsonRenderer {
             OutputData::StackContents(ref contents) => self.render_stack_contents(contents).await,
             OutputData::StatusUpdate(ref update) => self.render_status_update(update).await,
             OutputData::CommandResult(ref result) => self.render_command_result(result).await,
+            OutputData::FinalCommandSummary(ref summary) => self.render_final_command_summary(summary).await,
             OutputData::StackList(ref list) => self.render_stack_list(list).await,
             OutputData::ChangeSetResult(ref result) => self.render_changeset_result(result).await,
             OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
@@ -149,6 +150,10 @@ impl JsonRenderer {
     
     async fn render_command_result(&mut self, data: &CommandResult) -> Result<()> {
         self.output_json("command_result", data)
+    }
+    
+    async fn render_final_command_summary(&mut self, data: &crate::output::data::FinalCommandSummary) -> Result<()> {
+        self.output_json("final_command_summary", data)
     }
     
     async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()> {

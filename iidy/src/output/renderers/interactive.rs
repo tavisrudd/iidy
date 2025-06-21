@@ -91,6 +91,8 @@ pub struct InteractiveRenderer {
     // Live events timing state (local to spinner)
     timing_task_handle: Option<tokio::task::JoinHandle<()>>,
     timing_state: Option<Arc<Mutex<(DateTime<Utc>, Option<DateTime<Utc>>)>>>, // (start_time, last_live_event_time)
+    // Buffer for live events that arrive before we're ready to display them
+    buffered_live_events: Vec<OutputData>,
 }
 
 impl InteractiveRenderer {
@@ -115,6 +117,7 @@ impl InteractiveRenderer {
             section_titles: HashMap::new(),
             timing_task_handle: None,
             timing_state: None,
+            buffered_live_events: Vec::new(),
         };
         
         // Set up operation context if CLI context is available
@@ -145,8 +148,8 @@ impl InteractiveRenderer {
     
     /// Print section heading with appropriate spacing (without trailing newline)
     fn print_section_heading(&mut self, text: &str) {
-        // Add blank line before section if other sections have been printed
-        if !self.printed_sections.is_empty() {
+        // Add blank line before section if any content has been rendered
+        if self.has_rendered_content {
             println!();
         }
         print!("{}", self.format_section_heading(text));
@@ -459,19 +462,6 @@ impl OutputRenderer for InteractiveRenderer {
     
     /// Render OutputData with ordering logic for parallel operations
     async fn render_output_data(&mut self, data: OutputData, buffer: Option<&VecDeque<OutputData>>) -> Result<()> {
-        // Check if this is CommandMetadata to set up operation context
-        if let OutputData::CommandMetadata(ref metadata) = data {
-            // Get operation from CLI context
-            if let Some(ref cli) = self.cli_context {
-                // TODO move this check to init.
-                let operation = cli.command.to_cfn_operation();
-                if self.should_show_command_metadata(&operation) {
-                    self.render_command_metadata(metadata).await?;
-                }
-            }
-            return Ok(());
-        }
-        
         // If we have an active operation with expected sections, handle ordering
         if !self.expected_sections.is_empty() {
             return self.render_with_ordering(data, buffer).await;
@@ -483,11 +473,6 @@ impl OutputRenderer for InteractiveRenderer {
 }
 
 impl InteractiveRenderer {
-    /// Determine if command metadata should be shown for this operation
-    fn should_show_command_metadata(&self, operation: &CfnOperation) -> bool {
-        !operation.is_read_only()
-    }
-    
     /// Setup operation context and configure section titles based on CLI arguments
     fn setup_operation(&mut self, operation: &CfnOperation, cli: &crate::cli::Cli) {
         self.current_operation = Some(operation.to_string());
@@ -504,10 +489,10 @@ impl InteractiveRenderer {
             CfnOperation::GetStackTemplate => vec![], // Just returns template content
             CfnOperation::DescribeStackDrift => vec!["stack_drift"],
             
-            // Modification operations - may have different ordering needs
-            CfnOperation::CreateStack | 
-            CfnOperation::UpdateStack | 
-            CfnOperation::DeleteStack => vec![], // Real-time progress, no predefined sections
+            // Modification operations with monitoring (include command_metadata as first section)
+            CfnOperation::CreateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
+            CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "live_stack_events"],
+            CfnOperation::UpdateStack => vec![], // Real-time progress, no predefined sections
             CfnOperation::CreateChangeset => vec!["changeset_result"],
             CfnOperation::ExecuteChangeset => vec![], // Real-time progress
             CfnOperation::CreateOrUpdate => vec![], // Real-time progress
@@ -518,7 +503,8 @@ impl InteractiveRenderer {
         };
         
         // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)
-        if matches!(*operation, CfnOperation::DescribeStack | CfnOperation::WatchStack) {
+        // Don't start sections for: list-stacks, get-stack-instances, estimate-cost (immediate output operations)
+        if !matches!(*operation, CfnOperation::ListStacks | CfnOperation::GetStackInstances | CfnOperation::EstimateCost) {
             self.start_next_section();
         }
     }
@@ -556,12 +542,15 @@ impl InteractiveRenderer {
     fn configure_section_titles(&mut self, operation: &CfnOperation, cli: &crate::cli::Cli) {
         use crate::cli::Commands;
         
-        // Default titles
+        // Default titles (operation-specific titles will override these)
         self.section_titles.insert("stack_definition", "Stack Details".to_string());
         self.section_titles.insert("stack_list", "Stack List".to_string());
         self.section_titles.insert("stack_drift", "Stack Drift".to_string());
         self.section_titles.insert("changeset_result", "Changeset Result".to_string());
-        self.section_titles.insert("stack_contents", "Stack Resources".to_string()); // First title for multi-section
+        self.section_titles.insert("stack_contents", "Stack Resources".to_string());
+        self.section_titles.insert("stack_events", "Stack Events".to_string());
+        self.section_titles.insert("command_metadata", "Command Metadata".to_string());
+        self.section_titles.insert("live_stack_events", "Live Stack Events".to_string());
         
         // Configure stack events title based on operation
         match operation {
@@ -574,6 +563,21 @@ impl InteractiveRenderer {
             CfnOperation::WatchStack => {
                 // For watch-stack, we have separate previous and live events sections
                 self.section_titles.insert("stack_events", "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
+            }
+            CfnOperation::CreateStack => {
+                // For create-stack, include command metadata and live events
+                self.section_titles.insert("command_metadata", "Command Metadata:".to_string());
+                self.section_titles.insert("stack_definition", "Stack Details".to_string());
+                self.section_titles.insert("stack_contents", "Stack Resources".to_string());
+                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
+            }
+            CfnOperation::DeleteStack => {
+                // For delete-stack, include command metadata, previous events, and live events  
+                self.section_titles.insert("command_metadata", "Command Metadata:".to_string());
+                self.section_titles.insert("stack_definition", "Stack Details".to_string());
+                self.section_titles.insert("stack_events", "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("stack_contents", "Stack Resources".to_string());
                 self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
             }
             _ => {
@@ -590,6 +594,7 @@ impl InteractiveRenderer {
     /// Check if a section should always be multi-line (needs newline after heading)
     fn section_is_always_multiline(&self, section_key: &str) -> bool {
         match section_key {
+            "command_metadata" => true,      // Command Metadata is always multi-line
             "stack_definition" => true,      // Stack Details is always multi-line
             "stack_contents" => true,        // Stack Resources is always multi-line
             "stack_events" => true,          // Previous Stack Events is always multi-line
@@ -602,63 +607,143 @@ impl InteractiveRenderer {
     async fn render_with_ordering(&mut self, data: OutputData, _buffer: Option<&VecDeque<OutputData>>) -> Result<()> {
         let section_key = self.get_section_key(&data);
         
-        // Store the data for this section
         if let Some(key) = section_key {
-            self.pending_sections.insert(key, data);
-            
-            // Render sections in expected order as they become available
-            self.render_available_sections().await?;
+            if key == "live_stack_events" {
+                // Special case: streaming section
+                self.handle_live_events_data(data).await?;
+            } else {
+                // Regular case: static section
+                self.pending_sections.insert(key, data);
+                self.advance_through_ready_sections().await?;
+            }
         } else {
-            // Not a section we're tracking, render immediately
-            self.render_data_immediately(data).await?;
+            // Non-section data (TokenInfo, OperationComplete, etc.)
+            self.handle_non_section_data(data).await?;
         }
         
         Ok(())
     }
     
-    /// Render all available sections in expected order
-    async fn render_available_sections(&mut self) -> Result<()> {
-        // Render sections starting from the current position
+    /// Advance through sections that have data ready
+    async fn advance_through_ready_sections(&mut self) -> Result<()> {
         while self.next_section_index < self.expected_sections.len() {
             let section_key = self.expected_sections[self.next_section_index];
             
             if let Some(data) = self.pending_sections.remove(section_key) {
-                // Clear current spinner completely (remove from screen)
-                if let Some(spinner) = self.current_spinner.take() {
-                    spinner.clear();
+                self.render_section(data).await?;
+                self.next_section_index += 1;
+                self.start_next_section_if_exists();
+            } else {
+                break; // Wait for this section's data
+            }
+        }
+        Ok(())
+    }
+
+    /// Render a single section with its data
+    async fn render_section(&mut self, data: OutputData) -> Result<()> {
+        // Clear current spinner
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        // Set flag to suppress main section heading (already shown)
+        self.suppress_main_heading = true;
+        
+        // Render content (main heading will be suppressed)
+        self.render_data_immediately(data).await?;
+        
+        // Reset flag
+        self.suppress_main_heading = false;
+        
+        Ok(())
+    }
+
+    /// Start next section if it exists
+    fn start_next_section_if_exists(&mut self) {
+        if self.next_section_index < self.expected_sections.len() {
+            self.start_next_section();
+        } else {
+            self.cleanup_operation();
+        }
+    }
+    
+    /// Flush any buffered live events
+    async fn flush_buffered_live_events(&mut self) -> Result<()> {
+        let events_to_render: Vec<OutputData> = self.buffered_live_events.drain(..).collect();
+        for buffered_event in events_to_render {
+            self.render_data_immediately(buffered_event).await?;
+        }
+        Ok(())
+    }
+
+    /// Handle live events data (special streaming section)
+    async fn handle_live_events_data(&mut self, data: OutputData) -> Result<()> {
+        // Advance through any ready sections first
+        self.advance_through_ready_sections().await?;
+        
+        // Find the index of live_stack_events in expected sections
+        let live_events_index = self.expected_sections.iter()
+            .position(|&section| section == "live_stack_events");
+        
+        if let Some(target_index) = live_events_index {
+            // If we haven't reached the live_stack_events section yet, buffer the data
+            if self.next_section_index < target_index {
+                self.buffered_live_events.push(data);
+                return Ok(());
+            }
+            
+            // We're at the live_stack_events section
+            if self.next_section_index == target_index {
+                // Start live_stack_events section if not already started
+                if !self.section_already_started("live_stack_events") {
+                    self.start_next_section();
+                    
+                    // Render any buffered events first
+                    self.flush_buffered_live_events().await?;
                 }
                 
-                // Set flag to suppress main section heading (already shown)
-                self.suppress_main_heading = true;
-                
-                // Render content (main heading will be suppressed)
+                // Render the current event immediately (streaming)
                 self.render_data_immediately(data).await?;
-                
-                // Reset flag
-                self.suppress_main_heading = false;
-                
-                // Move to next section
-                self.next_section_index += 1;
-                
-                // Start next section (title + spinner if enabled)
-                self.start_next_section();
-            } else {
-                // Data not ready for this section yet, stop here
-                break;
             }
         }
         
-        // Check if we're done with the operation
-        if self.next_section_index >= self.expected_sections.len() {
-            self.cleanup_operation();
-        }
-        
         Ok(())
+    }
+
+    /// Handle non-section data
+    async fn handle_non_section_data(&mut self, data: OutputData) -> Result<()> {
+        match data {
+            OutputData::OperationComplete(ref info) => {
+                // Advance past live_stack_events if we're there
+                if self.next_section_index < self.expected_sections.len() && 
+                   self.expected_sections[self.next_section_index] == "live_stack_events" {
+                    self.next_section_index += 1;
+                }
+                
+                if info.skip_remaining_sections {
+                    self.cleanup_operation();
+                } else {
+                    self.advance_through_ready_sections().await?;
+                }
+            },
+            _ => {
+                self.render_data_immediately(data).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if a section has already been started
+    fn section_already_started(&self, section_key: &str) -> bool {
+        let section_title = self.get_section_title(section_key);
+        self.printed_sections.contains(&section_title.to_string())
     }
     
     /// Get section key for OutputData type
     fn get_section_key(&self, data: &OutputData) -> Option<&'static str> {
         match data {
+            OutputData::CommandMetadata(..) => Some("command_metadata"),
             OutputData::StackDefinition(..) => Some("stack_definition"),
             OutputData::StackEvents(..) => Some("stack_events"),
             OutputData::StackContents(..) => Some("stack_contents"),
@@ -666,10 +751,13 @@ impl InteractiveRenderer {
             OutputData::StackDrift(..) => Some("stack_drift"),
             OutputData::ChangeSetResult(..) => Some("changeset_result"),
             OutputData::NewStackEvents(..) => Some("live_stack_events"),
+            // Only non-section data returns None
+            OutputData::TokenInfo(..) | OutputData::OperationComplete(..) | OutputData::InactivityTimeout(..) => None,
             _ => None,
         }
     }
     
+
     /// Clean up operation state
     fn cleanup_operation(&mut self) -> () {
         // Clear any remaining spinner
@@ -680,6 +768,7 @@ impl InteractiveRenderer {
         self.current_operation = None;
         self.expected_sections.clear();
         self.pending_sections.clear();
+        self.buffered_live_events.clear();
         self.next_section_index = 0;
         self.suppress_main_heading = false;
         self.printed_sections.clear();
@@ -688,11 +777,13 @@ impl InteractiveRenderer {
     /// Render data immediately without ordering logic
     async fn render_data_immediately(&mut self, data: OutputData) -> Result<()> {
         match data {
+            OutputData::CommandMetadata(ref metadata) => self.render_command_metadata(metadata).await,
             OutputData::StackDefinition(ref def, show_times) => self.render_stack_definition(def, show_times).await,
             OutputData::StackEvents(ref events) => self.render_stack_events(events).await,
             OutputData::StackContents(ref contents) => self.render_stack_contents(contents).await,
             OutputData::StatusUpdate(ref update) => self.render_status_update(update).await,
             OutputData::CommandResult(ref result) => self.render_command_result(result).await,
+            OutputData::FinalCommandSummary(ref summary) => self.render_final_command_summary(summary).await,
             OutputData::StackList(ref list) => self.render_stack_list(list).await,
             OutputData::ChangeSetResult(ref result) => self.render_changeset_result(result).await,
             OutputData::StackDrift(ref drift) => self.render_stack_drift(drift).await,
@@ -701,7 +792,6 @@ impl InteractiveRenderer {
             OutputData::NewStackEvents(ref events) => self.render_new_stack_events(events).await,
             OutputData::OperationComplete(ref info) => self.handle_operation_complete(info).await,
             OutputData::InactivityTimeout(ref info) => self.handle_inactivity_timeout(info).await,
-            _ => Ok(()), // CommandMetadata handled elsewhere
         }
     }
     
@@ -710,7 +800,10 @@ impl InteractiveRenderer {
 impl InteractiveRenderer {
     /// Render command metadata (exact iidy-js showCommandSummary implementation)
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
-        self.print_section_heading_with_newline("Command Metadata");
+        // Print section heading unless suppressed (section ordering system handles this)
+        if !self.suppress_main_heading {
+            self.print_section_heading_with_newline("Command Metadata:");
+        }
         
         // Get CFN operation from CLI context
         if let Some(ref cli) = self.cli_context {
@@ -735,8 +828,8 @@ impl InteractiveRenderer {
         self.print_section_entry("Current IAM Principal:", &data.current_iam_principal.color(self.theme.muted).to_string())?;
         self.print_section_entry("iidy Version:", &data.iidy_version.color(self.theme.muted).to_string())?;
         
-        // Primary Token (following iidy-js pattern)
-        self.print_section_entry("Primary Token:", &format!("{} ({})", 
+        // Client Request Token (following iidy-js pattern)
+        self.print_section_entry("Client Req Token:", &format!("{} ({})", 
             data.primary_token.value.color(self.theme.muted), 
             self.format_token_source(&data.primary_token.source)
         ))?;
@@ -751,8 +844,6 @@ impl InteractiveRenderer {
                 ))?;
             }
         }
-        
-        println!();
         
         Ok(())
     }
@@ -1117,6 +1208,42 @@ impl InteractiveRenderer {
         Ok(())
     }
     
+    /// Render final command summary (exact iidy-js showFinalComandSummary implementation)
+    async fn render_final_command_summary(&mut self, data: &crate::output::data::FinalCommandSummary) -> Result<()> {
+        use crate::output::data::CommandSummaryResult;
+        
+        // Add spacing before final summary
+        self.add_content_spacing();
+        
+        // Print section heading (exact iidy-js: "Command Summary:" with column2_start padding)
+        let summary_text = match data.result {
+            CommandSummaryResult::Success => {
+                if self.colors_enabled() {
+                    // Success with green background and thumbs up emoji (exact iidy-js pattern)
+                    format!("{} 👍", "Success".on_green().black())
+                } else {
+                    "Success 👍".to_string()
+                }
+            },
+            CommandSummaryResult::Failure => {
+                if self.colors_enabled() {
+                    // Failure with red background and table flip emoji (exact iidy-js pattern)
+                    format!("{} (╯°□°）╯︵ ┻━┻", "Failure".on_red().white())
+                } else {
+                    "Failure (╯°□°）╯︵ ┻━┻".to_string()
+                }
+            }
+        };
+        self.print_section_entry("Command Summary:", &summary_text)?;
+        
+        // Show "Fix and try again" message for failures (exact iidy-js pattern)
+        if matches!(data.result, CommandSummaryResult::Failure) {
+            println!("Fix and try again.");
+        }
+        
+        Ok(())
+    }
+    
     /// Render stack list (exact iidy-js listStacks implementation)
     async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()> {
         if data.stacks.is_empty() {
@@ -1329,6 +1456,11 @@ impl InteractiveRenderer {
             return Ok(());
         }
         
+        // Clear any active spinner to avoid race conditions with event output
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
         // Update last event time with the most recent event (timing is already started by start_next_section)
         if let Some(latest_event) = events.last() {
             if let Some(event_time) = latest_event.event.timestamp {
@@ -1389,6 +1521,12 @@ impl InteractiveRenderer {
             );
         }
         
+        // Restart the spinner for continued live events polling (unless we're done)
+        if self.options.enable_spinners && self.current_spinner.is_none() {
+            // Only restart if we're still in live events mode (not completed)
+            self.current_spinner = self.create_api_spinner("Loading live events...");
+        }
+        
         Ok(())
     }
     
@@ -1406,8 +1544,10 @@ impl InteractiveRenderer {
         let message = format!(" {} seconds elapsed total.", info.elapsed_seconds);
         println!("{}", self.style_muted_text(&message));
         
-        // This signals that live events are done - advance to next section
-        self.advance_to_next_section();
+        // This signals that live events are done - advance to next section (unless we should skip)
+        if !info.skip_remaining_sections {
+            self.advance_to_next_section();
+        }
         
         Ok(())
     }

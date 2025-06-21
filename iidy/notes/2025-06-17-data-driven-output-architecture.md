@@ -7,6 +7,96 @@
 
 Instead of trait methods tied to specific AWS operations, we define data structs that capture exactly what iidy-js displays, then implement rendering traits for each output mode.
 
+**Important Note on iidy-js Reference Implementation:**
+We are only trying to match the external behavior (output format, timing, user experience) of iidy-js. The original iidy-js has a very different, more direct and less abstracted architecture. When reading iidy-js code for reference, we must NOT try to copy it directly. Instead, we need to:
+- Infer what the intent and desired behavior is
+- Understand the user-facing output patterns  
+- Implement equivalent functionality in a way that fits our data-driven, section-based architecture
+- Maintain clean separation between command handlers and renderers
+
+## Core Architectural Principles
+
+### 1. **Command Handlers vs Renderers Separation**
+
+**Command Handlers (src/cfn/*):**
+- Responsible for AWS API call sequencing and data collection
+- Push structured data to `DynamicOutputManager` using `OutputData` enum
+- Handle dependencies between API operations (e.g., get stack ID before deletion)
+- **NEVER** make formatting choices, wording choices, or know about sections/spinners
+- **NEVER** decide section titles, spinner text, or display logic
+- Focus purely on: API calls → data conversion → push to output manager
+
+**Renderers (src/output/renderers/*):**
+- Handle all presentation logic, section management, and spinner coordination
+- Define expected sections for each operation in `get_expected_sections()`
+- Manage spinner lifecycle: start, update, clear on section transitions
+- Handle display coordination issues (spinner cancellation, section ordering)
+- Responsible for titles, formatting, colors, layout
+
+### 2. **Predefined Sections Architecture**
+
+All operations use predefined sections defined in `interactive.rs`:
+```rust
+fn get_expected_sections(&self, operation: &CfnOperation) -> Vec<&'static str> {
+    match operation {
+        CfnOperation::CreateStack => vec!["stack_definition", "live_stack_events", "stack_contents"],
+        CfnOperation::DeleteStack => vec!["stack_definition", "previous_stack_events", "stack_contents", "live_stack_events"],
+        CfnOperation::WatchStack => vec!["stack_definition", "previous_stack_events", "live_stack_events", "stack_contents"],
+        // etc.
+    }
+}
+```
+
+### 3. **Spinner Management**
+
+**Automatic Spinner Lifecycle:**
+- Renderers automatically start spinners for each section
+- Spinners are cleared when:
+  - Moving to next section 
+  - Receiving `OperationComplete` OutputData
+  - Receiving `InactivityTimeout` OutputData
+  - Any terminal condition for live_stack_events section
+
+**Command handlers NEVER:**
+- Start/stop spinners directly
+- Know about spinner state or timing
+- Handle spinner cancellation logic
+
+### 4. **Live Events Coordination**
+
+**Live events async task management:**
+- Renderers handle timing task lifecycle
+- Automatic cleanup on `OperationComplete` or `InactivityTimeout`
+- Command handlers only push `NewStackEvents` data
+- Renderers coordinate spinner updates with live event display
+
+### 5. **Section Cancellation and Skipping**
+
+**Renderer Responsibility:**
+- Skip remaining sections when `OperationComplete` has `skip_remaining_sections: true`
+- Handle stack deletion/rollback cases where some sections become invalid (e.g., skip `stack_contents` if stack was deleted)
+- Cancel spinners and clean up async tasks for skipped sections
+- Decide which sections to skip based on operation outcome
+
+**Command Handler Responsibility:**
+- Avoid making AWS API calls that would fail due to stack state
+- Send `OperationComplete` with appropriate `skip_remaining_sections` flag
+- Stop API polling/monitoring when terminal state reached
+- Focus on AWS API logic, not display coordination
+
+### 6. **Parallel API Calls and Section Ordering**
+
+**Command Handler Optimization:**
+- May make parallel AWS API calls for latency optimization (e.g., concurrent `describe_stack` and `list_stack_events`)
+- Can send section data out of order as API calls complete
+- Should not worry about display order or timing
+
+**Renderer Responsibility:**
+- Handle out-of-order section data arrival
+- Buffer pending sections and render in expected order
+- Wait for required sections before moving to next section
+- Coordinate proper section transitions regardless of API call timing
+
 ## Data Structures
 
 ### Core Display Data

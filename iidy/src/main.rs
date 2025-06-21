@@ -19,9 +19,12 @@ fn handle_command(cli: Cli) {
     match cli.command {
         Commands::CreateStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args, &cli.global_opts)) {
-                eprintln!("error creating stack: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::create_stack::create_stack(&normalized_opts, &args, &cli.global_opts)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error creating stack: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::UpdateStack(args) => {
@@ -99,9 +102,12 @@ fn handle_command(cli: Cli) {
         }
         Commands::DeleteStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args, &cli.global_opts)) {
-                eprintln!("error deleting stack: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::delete_stack::delete_stack(&normalized_opts, &args, &cli.global_opts)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error deleting stack: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::GetStackTemplate(args) => {

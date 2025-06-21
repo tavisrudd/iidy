@@ -317,6 +317,19 @@ pub struct CommandResult {
     pub exit_code: i32,
 }
 
+/// Final command summary result (matches iidy-js showFinalComandSummary)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FinalCommandSummary {
+    pub result: CommandSummaryResult,
+    pub elapsed_seconds: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum CommandSummaryResult {
+    Success,
+    Failure,
+}
+
 /// Available columns for stack list display
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum StackListColumn {
@@ -398,6 +411,7 @@ pub struct ErrorInfo {
 pub struct OperationCompleteInfo {
     pub elapsed_seconds: i64,
     pub operation_start_time: DateTime<Utc>,
+    pub skip_remaining_sections: bool, // For DELETE_COMPLETE or other cases where we don't want stack contents
 }
 
 /// Inactivity timeout information for live operations
@@ -444,6 +458,7 @@ pub enum OutputData {
     StackContents(StackContents),
     StatusUpdate(StatusUpdate),
     CommandResult(CommandResult),
+    FinalCommandSummary(FinalCommandSummary),
     StackList(StackListDisplay),
     ChangeSetResult(ChangeSetCreationResult),
     StackDrift(StackDrift),
@@ -464,6 +479,7 @@ impl OutputData {
             OutputData::StackContents(_) => "stack_contents",
             OutputData::StatusUpdate(_) => "status_update",
             OutputData::CommandResult(_) => "command_result",
+            OutputData::FinalCommandSummary(_) => "final_command_summary",
             OutputData::StackList(_) => "stack_list",
             OutputData::ChangeSetResult(_) => "changeset_result",
             OutputData::StackDrift(_) => "stack_drift",

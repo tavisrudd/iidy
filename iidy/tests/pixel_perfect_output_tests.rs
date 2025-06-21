@@ -80,7 +80,7 @@ async fn test_interactive_command_metadata_pixel_perfect() {
     let expected_output = &expected_interactive.stdout;
     assert!(expected_output.contains("Command Metadata:"), "Expected output should have Command Metadata section");
     assert!(expected_output.contains("CFN Operation:"), "Expected output should have CFN Operation");
-    assert!(expected_output.contains("Primary Token:"), "Expected output should have Primary Token");
+    assert!(expected_output.contains("Client Req Token:"), "Expected output should have Client Req Token");
     assert!(expected_output.contains("Derived Tokens:"), "Expected output should have Derived Tokens");
 }
 

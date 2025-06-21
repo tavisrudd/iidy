@@ -10,8 +10,6 @@ const DEFAULT_PREVIOUS_EVENTS_COUNT: usize = 10;
 // Default poll interval for watch operations (seconds)
 pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
-// Very long timeout for effectively infinite waiting (1 year in seconds)
-const INFINITE_TIMEOUT_SECS: u64 = 86400 * 365;
 
 use crate::{
     cli::Commands,
@@ -22,87 +20,11 @@ use crate::{
     },
 };
 
-use super::{CfnContext, is_terminal_status::is_terminal_resource_status};
+use super::{CfnContext, stack_operations::{StackEventsService, StackInfoService}};
 
 // Removed format_event function - using data-driven output architecture instead
 
-/// Determine if an event indicates the stack has reached a terminal state.
-fn event_indicates_terminal(event: &StackEvent, stack_name: &str) -> bool {
-    if event.resource_type() == Some("AWS::CloudFormation::Stack")
-        && event.logical_resource_id() == Some(stack_name)
-    {
-        if let Some(status) = event.resource_status() {
-            return is_terminal_resource_status(status);
-        }
-    }
-    false
-}
-
-/// Retrieve and sort all events for a stack.
-async fn fetch_events(client: &Client, stack_name: &str) -> Result<Vec<StackEvent>> {
-    let resp = client
-        .describe_stack_events()
-        .stack_name(stack_name)
-        .send()
-        .await?;
-
-    let mut events = resp.stack_events.unwrap_or_default();
-    events.sort_by_key(|e| e.timestamp().map(|t| t.as_nanos()).unwrap_or(0));
-    Ok(events)
-}
-
-/// Convert AWS timestamp to chrono DateTime
-fn aws_timestamp_to_chrono(aws_time: &aws_smithy_types::DateTime) -> Option<DateTime<Utc>> {
-    DateTime::from_timestamp(aws_time.secs(), aws_time.subsec_nanos())
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-/// Filter events to only include those after the given start time
-fn filter_events_after_start_time(
-    events: Vec<StackEvent>,
-    start_time: DateTime<Utc>,
-) -> Vec<StackEvent> {
-    events
-        .into_iter()
-        .filter(|event| {
-            event
-                .timestamp()
-                .and_then(|ts| aws_timestamp_to_chrono(ts))
-                .map(|event_time| event_time > start_time)
-                .unwrap_or(false)
-        })
-        .collect()
-}
-
-/// Filter new events and check for terminal state, using data-driven architecture
-fn process_new_events(
-    events: Vec<StackEvent>,
-    seen: &mut HashSet<String>,
-    stack_name: &str,
-    start_time: Option<DateTime<Utc>>,
-) -> (Vec<StackEvent>, bool) {
-    // Filter events by start time if provided
-    let filtered_events = match start_time {
-        Some(start) => filter_events_after_start_time(events, start),
-        None => events,
-    };
-
-    let mut new_events = Vec::new();
-    let mut done = false;
-    
-    for ev in filtered_events {
-        if let Some(id) = ev.event_id() {
-            if seen.insert(id.to_string()) {
-                if event_indicates_terminal(&ev, stack_name) {
-                    done = true;
-                }
-                new_events.push(ev);
-            }
-        }
-    }
-    
-    (new_events, done)
-}
+// Event-related functions have been moved to stack_operations::StackEventsService
 
 // Removed manual Spinner struct - using data-driven output architecture instead
 
@@ -140,68 +62,39 @@ pub async fn watch_stack(
     // Setup AWS context (no need for command metadata for read-only operation)
     let context = crate::cfn::create_context_for_operation(&opts, crate::output::CfnOperation::WatchStack).await?;
 
-    // Clone values needed for the async tasks
+    // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();
     let stack_name = args.stackname.clone();
     
-    // Start stack definition task
+    // Get stack info and ID using the consolidated service
+    let stack = StackInfoService::get_stack(&client, &stack_name).await?;
+    let stack_id = StackInfoService::get_stack_id(&client, &stack_name).await?;
+    
+    // Start stack definition task (already have the stack data)
     let stack_task = {
-        let client = client.clone();
-        let stack_name = stack_name.clone();
         let tx = sender.clone();
+        let stack_clone = stack.clone();
         tokio::spawn(async move {
-            let stack_resp = client
-                .describe_stacks()
-                .stack_name(&stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)?;
-                
-            let stack = stack_resp
-                .stacks
-                .and_then(|mut s| s.pop())
-                .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
-                
-            let output_data = crate::output::convert_stack_to_definition(&stack, true);
+            let output_data = crate::output::convert_stack_to_definition(&stack_clone, true);
             let _ = tx.send(output_data);
             Ok::<(), anyhow::Error>(())
         })
     };
     
     // Sequential execution: previous events MUST complete before live events start
-    let events_and_live_task = {
+    let events_and_live_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
         let client = client.clone();
-        let stack_name = stack_name.clone();
+        let stack_id = stack_id.clone();
+        let _stack_name = stack_name.clone(); // Keep for display purposes but not used
         let tx = sender.clone();
         let live_start_time = context.start_time;
         let inactivity_timeout = args.inactivity_timeout;
         
         tokio::spawn(async move {
-            // Step 1: Fetch and display previous events
-            let first_events_resp = client
-                .describe_stack_events()
-                .stack_name(&stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)?;
-        
-            // Continue fetching stack events if needed (pagination)
-            let mut all_events = first_events_resp.stack_events.unwrap_or_default();
-            let mut next_token = first_events_resp.next_token;
-            
-            // Fetch additional pages if needed
-            while next_token.is_some() && all_events.len() < event_count * 2 {
-                let events_resp = client
-                    .describe_stack_events()
-                    .stack_name(&stack_name)
-                    .set_next_token(next_token)
-                    .send()
-                    .await?;
-                    
-                let mut page_events = events_resp.stack_events.unwrap_or_default();
-                all_events.append(&mut page_events);
-                next_token = events_resp.next_token;
-            }
+            // Step 1: Fetch and display previous events using stack ID
+            // Note: StackEventsService::fetch_events() handles basic pagination but not our event count limit
+            // For now, use the simple version and enhance the service later if needed
+            let all_events = StackEventsService::fetch_events(&client, &stack_id).await?;
             
             // Create events display for PREVIOUS events (separate from live events)
             let output_data = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
@@ -214,7 +107,8 @@ pub async fn watch_stack(
             
             // Step 2: Now start live events polling with all existing events pre-marked as seen
             let sender_output = SenderOutput { sender: tx };
-            watch_stack_live_events_with_seen_events(&client, live_start_time, &stack_name, sender_output, Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), Duration::from_secs(inactivity_timeout as u64), all_events).await
+            let final_status = watch_stack_live_events_with_seen_events(&client, live_start_time, &stack_id, sender_output, Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), Duration::from_secs(inactivity_timeout as u64), all_events).await?;
+            Ok(final_status)
         })
     };
     
@@ -232,10 +126,20 @@ pub async fn watch_stack(
     
     // Propagate any errors from the spawned tasks
     stack_result??;
-    events_and_live_result??;
+    let final_status = events_and_live_result??;
     
-    // Final step: Show stack contents like iidy-js (restart the output manager)
-    let stack_contents = collect_stack_contents(&context, &stack_name).await?;
+    // Final step: Show stack contents like iidy-js
+    // Skip stack contents if the stack was deleted (DELETE_COMPLETE)
+    if let Some(ref status) = final_status {
+        if status == "DELETE_COMPLETE" {
+            // Stack was deleted, skip stack contents collection as it will fail
+            // No need to show empty stack contents
+            return Ok(());
+        }
+    }
+    
+    // Normal case - show stack contents
+    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
     let sender = output_manager.start();
     let _ = sender.send(OutputData::StackContents(stack_contents));
     drop(sender);
@@ -293,15 +197,16 @@ impl LiveEventsOutput for SenderOutput {
 }
 
 /// Live events polling function with pre-fetched events marked as seen (public for use by other operations)
+/// Returns the final stack status if the stack reached a terminal state
 pub async fn watch_stack_live_events_with_seen_events(
     client: &Client,
     start_time: Option<DateTime<Utc>>,
-    stack_name: &str,
+    stack_identifier: &str,
     mut output: impl LiveEventsOutput,
     poll_interval: Duration,
     inactivity_timeout: Duration,
     previous_events: Vec<StackEvent>,
-) -> Result<()> {
+) -> Result<Option<String>> {
     // Don't send live events title - let renderer handle section transition
     // The renderer will detect when NewStackEvents start coming and show the live section title
 
@@ -314,13 +219,19 @@ pub async fn watch_stack_live_events_with_seen_events(
     }
     
     let mut last_event_time = chrono::Utc::now();
+    let mut final_stack_status = None;
     
     // Main polling loop (pure data collection - no formatting)
     let mut done = false;
     while !done {
         // Poll for new events
-        let events = fetch_events(client, stack_name).await?;
-        let (new_events, terminal_detected) = process_new_events(events, &mut seen, stack_name, start_time);
+        let events = StackEventsService::fetch_events(client, stack_identifier).await?;
+        let (new_events, terminal_detected, terminal_status) = StackEventsService::process_new_events(events, &mut seen, stack_identifier, start_time);
+        
+        // Track the final status if we detected a terminal event
+        if terminal_detected {
+            final_stack_status = terminal_status;
+        }
         
         // Process new events if any
         if !new_events.is_empty() {
@@ -328,9 +239,20 @@ pub async fn watch_stack_live_events_with_seen_events(
             
             // Convert and send new events (renderer handles all formatting)
             let converted_events: Vec<StackEventWithTiming> = new_events.iter()
-                .map(|aws_event| StackEventWithTiming {
-                    event: crate::output::aws_conversion::convert_aws_stack_event(aws_event),
-                    duration_seconds: None,
+                .map(|aws_event| {
+                    let converted_event = crate::output::aws_conversion::convert_aws_stack_event(aws_event);
+                    
+                    // Calculate duration from operation start time if available
+                    let duration_seconds = if let (Some(start), Some(event_time)) = (start_time, &converted_event.timestamp) {
+                        Some((event_time.timestamp() - start.timestamp()).max(0) as u64)
+                    } else {
+                        None
+                    };
+                    
+                    StackEventWithTiming {
+                        event: converted_event,
+                        duration_seconds,
+                    }
                 })
                 .collect();
             
@@ -343,6 +265,7 @@ pub async fn watch_stack_live_events_with_seen_events(
                 let completion_info = OperationCompleteInfo {
                     elapsed_seconds: (chrono::Utc::now() - start_time).num_seconds(),
                     operation_start_time: start_time,
+                    skip_remaining_sections: final_stack_status.as_ref().map_or(false, |s| s == "DELETE_COMPLETE"),
                 };
                 let _ = output.send_operation_complete(completion_info).await;
             }
@@ -366,183 +289,32 @@ pub async fn watch_stack_live_events_with_seen_events(
         }
     }
     
-    Ok(())
+    Ok(final_stack_status)
 }
 
-/// Live events polling function with inactivity timeout (pure data collection)
-async fn watch_stack_live_events_with_timeout(
-    client: &Client,
-    start_time: Option<DateTime<Utc>>,
-    stack_name: &str,
-    mut output: impl LiveEventsOutput,
-    poll_interval: Duration,
-    inactivity_timeout: Duration,
-) -> Result<()> {
-    // Don't send live events title - let renderer handle section transition
-    // The renderer will detect when NewStackEvents start coming and show the live section title
-
-    // Pre-populate seen events to avoid showing previous events as live events
-    // Fetch all current events and mark them as seen
-    let initial_events = fetch_events(client, stack_name).await?;
-    let mut seen: HashSet<String> = HashSet::new();
-    for event in &initial_events {
-        if let Some(id) = event.event_id() {
-            seen.insert(id.to_string());
-        }
-    }
-    
-    let mut last_event_time = chrono::Utc::now();
-    
-    // Main polling loop (pure data collection - no formatting)
-    let mut done = false;
-    while !done {
-        // Poll for new events
-        let events = fetch_events(client, stack_name).await?;
-        let (new_events, terminal_detected) = process_new_events(events, &mut seen, stack_name, start_time);
-        
-        // Process new events if any
-        if !new_events.is_empty() {
-            last_event_time = chrono::Utc::now();
-            
-            // Convert and send new events (renderer handles all formatting)
-            let converted_events: Vec<StackEventWithTiming> = new_events.iter()
-                .map(|aws_event| StackEventWithTiming {
-                    event: crate::output::aws_conversion::convert_aws_stack_event(aws_event),
-                    duration_seconds: None,
-                })
-                .collect();
-            
-            output.send_new_events(converted_events).await?;
-        }
-        
-        // Check for completion (send completion signal to renderer)
-        if terminal_detected {
-            if let Some(start_time) = start_time {
-                let completion_info = OperationCompleteInfo {
-                    elapsed_seconds: (chrono::Utc::now() - start_time).num_seconds(),
-                    operation_start_time: start_time,
-                };
-                let _ = output.send_operation_complete(completion_info).await;
-            }
-            done = true;
-        }
-        // Check for inactivity timeout (send timeout signal to renderer)
-        else if inactivity_timeout.as_secs() > 0 && (chrono::Utc::now() - last_event_time).num_seconds() as u64 > inactivity_timeout.as_secs() {
-            if let Some(start_time) = start_time {
-                let timeout_info = InactivityTimeoutInfo {
-                    timeout_seconds: inactivity_timeout.as_secs(),
-                    elapsed_seconds: (chrono::Utc::now() - start_time).num_seconds(),
-                    operation_start_time: start_time,
-                };
-                let _ = output.send_inactivity_timeout(timeout_info).await;
-            }
-            done = true;
-        }
-        
-        if !done {
-            tokio::time::sleep(poll_interval).await;
-        }
-    }
-    
-    Ok(())
-}
-
-/// Consolidated live events polling function - works with any output method (without timeout)
-async fn watch_stack_live_events_unified(
-    client: &Client,
-    start_time: Option<DateTime<Utc>>,
-    stack_name: &str,
-    output: impl LiveEventsOutput,
-    poll_interval: Duration,
-) -> Result<()> {
-    // Use timeout version with a very long timeout (effectively infinite)
-    watch_stack_live_events_with_timeout(
-        client,
-        start_time,
-        stack_name,
-        output,
-        poll_interval,
-        Duration::from_secs(INFINITE_TIMEOUT_SECS), // 1 year timeout (effectively infinite)
-    ).await
-}
 
 // Removed duplicated helper functions - using existing functions from aws_conversion.rs and timing module
 
-/// Collect stack contents data (controller pattern - no display logic, public for use by other operations)
-pub async fn collect_stack_contents(
-    ctx: &CfnContext,
-    stack_name: &str,
-) -> Result<crate::output::StackContents> {
-    // Start both API calls in parallel - we'll await them as needed
-    let resources_future = async {
-        ctx.client
-            .describe_stack_resources()
-            .stack_name(stack_name)
-            .send()
-            .await
-            .map_err(anyhow::Error::from)
-    };
-    
-    let stack_future = async {
-        ctx.client
-            .describe_stacks()
-            .stack_name(stack_name)
-            .send()
-            .await
-            .map_err(anyhow::Error::from)
-    };
-
-    // We need the stack info for outputs, so get that first
-    let stack_resp = stack_future.await?;
-    let stack = stack_resp
-        .stacks
-        .and_then(|mut s| s.pop())
-        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
-    
-    // Get resources (this might still be loading)
-    let resources_resp = resources_future.await?;
-    let resources = crate::output::aws_conversion::convert_stack_resources(
-        resources_resp.stack_resources.unwrap_or_default()
-    );
-
-    // Extract outputs from stack
-    let outputs = crate::output::aws_conversion::convert_stack_outputs(
-        stack.outputs.unwrap_or_default()
-    );
-
-    // Get exports if any outputs have export names
-    let stack_id = stack.stack_id.clone().unwrap_or_default();
-    let exports = crate::output::aws_conversion::convert_outputs_to_exports(&outputs, &stack_id);
-
-    // Current status
-    let current_status = crate::output::StackStatusInfo {
-        status: stack.stack_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
-        status_reason: stack.stack_status_reason,
-        timestamp: stack.last_updated_time.or(stack.creation_time).and_then(|ts| {
-            chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-        }),
-    };
-
-    Ok(crate::output::StackContents {
-        resources,
-        outputs,
-        exports,
-        current_status,
-        pending_changesets: vec![], // Would need separate query
-    })
-}
 
 /// Compatibility function for other command handlers that need to watch stack progress
 /// This maintains the old interface while using the new data-driven architecture internally
 pub async fn watch_stack_with_data_output(
     ctx: &CfnContext,
-    stack_name: &str,
+    stack_identifier: &str,
     output_manager: &mut DynamicOutputManager,
     poll_interval: Duration,
-) -> Result<()> {
-    // Use the unified implementation with manager output
+) -> Result<Option<String>> {
+    // Use the proper implementation that waits for terminal states
     let manager_output = ManagerOutput { manager: output_manager };
-    watch_stack_live_events_unified(&ctx.client, ctx.start_time, stack_name, manager_output, poll_interval).await
+    watch_stack_live_events_with_seen_events(
+        &ctx.client, 
+        ctx.start_time, 
+        stack_identifier, 
+        manager_output, 
+        poll_interval, 
+        Duration::from_secs(3600), // 1 hour timeout 
+        vec![] // No previous events
+    ).await
 }
 
 
@@ -570,7 +342,7 @@ mod tests {
     #[test]
     fn detect_terminal_event() {
         let ev = sample_event("2", 0, ResourceStatus::CreateComplete);
-        assert!(event_indicates_terminal(&ev, "demo"));
+        assert!(StackEventsService::check_terminal_event(&ev, "demo").is_some());
     }
 
     #[test]
@@ -592,7 +364,7 @@ mod tests {
         );
 
         let events = vec![old_event, new_event];
-        let filtered = filter_events_after_start_time(events, start_time);
+        let filtered = StackEventsService::filter_events_after_start_time(events, start_time);
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].event_id().unwrap(), "2");

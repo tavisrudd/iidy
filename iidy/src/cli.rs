@@ -364,8 +364,10 @@ impl Commands {
     /// Extract the CloudFormation operation from the command
     pub fn to_cfn_operation(&self) -> crate::output::CfnOperation {
         match self {
+            // CloudFormation operations
             Commands::CreateStack(_) => crate::output::CfnOperation::CreateStack,
             Commands::UpdateStack(_) => crate::output::CfnOperation::UpdateStack,
+            Commands::DeleteStack(_) => crate::output::CfnOperation::DeleteStack,
             Commands::CreateOrUpdate(_) => crate::output::CfnOperation::CreateOrUpdate,
             Commands::EstimateCost(_) => crate::output::CfnOperation::EstimateCost,
             Commands::CreateChangeset(_) => crate::output::CfnOperation::CreateChangeset,
@@ -376,8 +378,9 @@ impl Commands {
             Commands::GetStackTemplate(_) => crate::output::CfnOperation::GetStackTemplate,
             Commands::GetStackInstances(_) => crate::output::CfnOperation::GetStackInstances,
             Commands::ListStacks(_) => crate::output::CfnOperation::ListStacks,
-            // For non-CFN commands, default to a reasonable operation
-            _ => crate::output::CfnOperation::DescribeStack,
+            
+            // All other commands should not be calling to_cfn_operation()
+            _ => panic!("Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands", self),
         }
     }
 }

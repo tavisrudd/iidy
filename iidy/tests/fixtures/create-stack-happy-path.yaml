@@ -118,7 +118,7 @@ expected_outputs:
        IAM Service Role:     arn:aws:iam::123456789012:role/CloudFormationRole
        Current IAM Principal: arn:aws:iam::123456789012:user/test-user
        iidy Version:         0.1.0
-       Primary Token:        test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
+       Client Req Token:     test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
        Derived Tokens:       1 tokens
          [1] test-token-a1b2c3d4 (derived from test-token-12345678-abcd-efgh-ijkl-123456789012 at create-stack)
 
@@ -185,7 +185,7 @@ expected_outputs:
        IAM Service Role:     arn:aws:iam::123456789012:role/CloudFormationRole
        Current IAM Principal: arn:aws:iam::123456789012:user/test-user
        iidy Version:         0.1.0
-       Primary Token:        test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
+       Client Req Token:     test-token-12345678-abcd-efgh-ijkl-123456789012 (auto-generated)
        Derived Tokens:       1 tokens
          [1] test-token-a1b2c3d4 (derived from test-token-12345678-abcd-efgh-ijkl-123456789012 at create-stack)
 

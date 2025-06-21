@@ -2,13 +2,13 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService},
     cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
     stack_args::load_stack_args_with_context,
     aws::AwsSettings,
     output::{
         DynamicOutputManager, OutputData, CfnOperation,
-        aws_conversion::{create_command_metadata, progress_message, success_message, create_command_result, convert_token_info}
+        aws_conversion::{create_command_metadata, convert_token_info}
     },
 };
 
@@ -23,7 +23,7 @@ pub async fn create_stack(
     opts: &NormalizedAwsOpts, 
     args: &StackFileArgs, 
     global_opts: &GlobalOpts
-) -> Result<()> {
+) -> Result<i32> {
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
     let command = vec!["create-stack".to_string()];
@@ -48,7 +48,7 @@ pub async fn create_stack(
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let stack_name = final_stack_args
+    let _stack_name = final_stack_args
         .stack_name
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
@@ -57,7 +57,18 @@ pub async fn create_stack(
     let context = create_context_for_operation(opts, CfnOperation::CreateStack).await?;
 
     // Setup data-driven output manager with full CLI context
-    let output_options = crate::output::manager::OutputOptions::minimal();
+    let aws_opts = crate::cli::AwsOpts {
+        region: opts.region.clone(),
+        profile: opts.profile.clone(),
+        assume_role_arn: opts.assume_role_arn.clone(),
+        client_request_token: Some(opts.client_request_token.value.clone()),
+    };
+    let cli = crate::cli::Cli {
+        global_opts: global_opts.clone(),
+        aws_opts,
+        command: crate::cli::Commands::CreateStack(args.clone()),
+    };
+    let output_options = crate::output::manager::OutputOptions::new(cli);
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -68,20 +79,107 @@ pub async fn create_stack(
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     // 2. Stack operation - create the stack
-    let start_time = perform_stack_creation(&context, &final_stack_args, args, global_opts, &mut output_manager).await?;
+    let (start_time, stack_id) = perform_stack_creation(&context, &final_stack_args, args, global_opts, &mut output_manager).await?;
     
-    // 3. Watch and summarize (exact iidy-js pattern)
-    watch_and_summarize_stack(stack_name, start_time, &context, &mut output_manager).await
+    // 3. Start parallel data collection and rendering (like watch-stack pattern)
+    let sender = output_manager.start();
+    
+    // Start stack definition task
+    let stack_task = {
+        let client = context.client.clone();
+        let stack_id = stack_id.clone();
+        let tx = sender.clone();
+        tokio::spawn(async move {
+            let stack = StackInfoService::get_stack(&client, &stack_id).await?;
+            let output_data = crate::output::aws_conversion::convert_stack_to_definition(&stack, true);
+            let _ = tx.send(output_data);
+            Ok::<(), anyhow::Error>(())
+        })
+    };
+    
+    // Start live events task (no previous events for create-stack)
+    let events_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
+        let client = context.client.clone();
+        let stack_id = stack_id.clone();
+        let tx = sender.clone();
+        let live_start_time = context.start_time;
+        
+        tokio::spawn(async move {
+            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
+            let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
+                &client, 
+                live_start_time, 
+                &stack_id, 
+                sender_output, 
+                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
+                std::time::Duration::from_secs(3600), // 1 hour timeout for create operations
+                vec![] // No previous events for brand new stack
+            ).await?;
+            Ok(final_status)
+        })
+    };
+    
+    // Drop the original sender so the receiver knows when all tasks are done
+    drop(sender);
+    
+    // Process and render all data from parallel operations
+    output_manager.stop().await?;
+    
+    // Wait for all tasks to complete and handle any errors
+    let (stack_result, events_result) = tokio::join!(
+        stack_task,
+        events_task
+    );
+    
+    // Propagate any errors from the spawned tasks
+    stack_result??;
+    let final_status = events_result??;
+    
+    // Calculate elapsed time and determine success based on final stack status
+    let elapsed_seconds = (Utc::now() - start_time).num_seconds();
+    
+    // Expected successful terminal states for create-stack (based on iidy-js spec)
+    let expected_success_states = ["CREATE_COMPLETE"];
+    let success = final_status.as_ref()
+        .map(|status| expected_success_states.contains(&status.as_str()))
+        .unwrap_or(false);
+    
+    // Skip stack contents if the stack was deleted (unlikely for create-stack, but handle gracefully)
+    if let Some(ref status) = final_status {
+        if status == "DELETE_COMPLETE" {
+            // Stack was deleted during creation (e.g., OnFailure=DELETE), skip stack contents
+            let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+                false, // Mark as failed since stack was deleted
+                elapsed_seconds
+            );
+            output_manager.render(final_command_summary).await?;
+            return Ok(1); // Return exit code 1 for failure
+        }
+    }
+    
+    // Final step: Show stack contents (for successful or failed stacks that still exist)
+    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
+    output_manager.render(crate::output::OutputData::StackContents(stack_contents)).await?;
+    
+    // Show final command summary
+    let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+        success,
+        elapsed_seconds
+    );
+    output_manager.render(final_command_summary).await?;
+    
+    // Return appropriate exit code
+    Ok(if success { 0 } else { 1 })
 }
 
-/// Perform the actual stack creation operation and return the start time for watching
+/// Perform the actual stack creation operation and return the start time and stack_id for watching
 async fn perform_stack_creation(
     context: &crate::cfn::CfnContext,
     stack_args: &crate::stack_args::StackArgs,
     args: &StackFileArgs,
     global_opts: &GlobalOpts,
     output_manager: &mut DynamicOutputManager,
-) -> Result<DateTime<Utc>> {
+) -> Result<(DateTime<Utc>, String)> {
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
@@ -96,150 +194,20 @@ async fn perform_stack_creation(
     let output_token = convert_token_info(&token);
     output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
-    let stack_name = stack_args
+    let _stack_name = stack_args
         .stack_name
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
     
     // Record start time before the operation
     let start_time = context.start_time.unwrap_or_else(Utc::now);
-    
-    output_manager.render(progress_message(&format!("Creating stack: {}", stack_name))).await?;
 
     let response = create_request.send().await?;
 
-    let success_msg = if let Some(stack_id) = response.stack_id() {
-        format!("Stack creation initiated: {}", stack_id)
-    } else {
-        "Stack creation initiated".to_string()
-    };
-    
-    output_manager.render(success_message(&success_msg)).await?;
+    let stack_id = response.stack_id()
+        .ok_or_else(|| anyhow::anyhow!("Stack creation response did not include stack ID"))?
+        .to_string();
 
-    Ok(start_time)
+    Ok((start_time, stack_id))
 }
 
-/// Watch and summarize stack progress following exact iidy-js pattern
-async fn watch_and_summarize_stack(
-    stack_name: &str,
-    start_time: DateTime<Utc>,
-    context: &crate::cfn::CfnContext,
-    output_manager: &mut DynamicOutputManager,
-) -> Result<()> {
-    // Use parallel data collection and rendering like watch-stack
-    let sender = output_manager.start();
-    
-    // Start stack definition task
-    let stack_task = {
-        let client = context.client.clone();
-        let stack_name = stack_name.to_string();
-        let tx = sender.clone();
-        tokio::spawn(async move {
-            let stack_resp = client
-                .describe_stacks()
-                .stack_name(&stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)?;
-                
-            let stack = stack_resp
-                .stacks
-                .and_then(|mut s| s.pop())
-                .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
-                
-            let output_data = crate::output::aws_conversion::convert_stack_to_definition(&stack, true);
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
-        })
-    };
-    
-    // Sequential execution: previous events MUST complete before live events start
-    let events_and_live_task = {
-        let client = context.client.clone();
-        let stack_name = stack_name.to_string();
-        let tx = sender.clone();
-        let live_start_time = Some(start_time);
-        
-        tokio::spawn(async move {
-            // Step 1: Fetch and display previous events (max 10 for create-stack)
-            let first_events_resp = client
-                .describe_stack_events()
-                .stack_name(&stack_name)
-                .send()
-                .await
-                .map_err(anyhow::Error::from)?;
-        
-            let mut all_events = first_events_resp.stack_events.unwrap_or_default();
-            let mut next_token = first_events_resp.next_token;
-            
-            // Fetch additional pages if needed (limit to reasonable amount)
-            while next_token.is_some() && all_events.len() < 20 {
-                let events_resp = client
-                    .describe_stack_events()
-                    .stack_name(&stack_name)
-                    .set_next_token(next_token)
-                    .send()
-                    .await?;
-                    
-                let mut page_events = events_resp.stack_events.unwrap_or_default();
-                all_events.append(&mut page_events);
-                next_token = events_resp.next_token;
-            }
-            
-            // Show previous events (max 10)
-            let output_data = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
-                all_events.clone(),
-                "Previous Stack Events (max 10):",
-                Some(10),
-            );
-            
-            let _ = tx.send(output_data);
-            
-            // Step 2: Watch live events with timeout
-            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
-            crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
-                &client, 
-                live_start_time, 
-                &stack_name, 
-                sender_output, 
-                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
-                std::time::Duration::from_secs(3600), // 1 hour timeout for create operations
-                all_events
-            ).await
-        })
-    };
-    
-    // Drop the original sender so the receiver knows when all tasks are done
-    drop(sender);
-    
-    // Process and render all data from parallel operations
-    output_manager.stop().await?;
-    
-    // Wait for all tasks to complete and handle any errors
-    let (stack_result, events_and_live_result) = tokio::join!(
-        stack_task,
-        events_and_live_task
-    );
-    
-    // Propagate any errors from the spawned tasks
-    stack_result??;
-    events_and_live_result??;
-    
-    // Final step: Show stack contents
-    let stack_contents = crate::cfn::watch_stack::collect_stack_contents(context, stack_name).await?;
-    let sender = output_manager.start();
-    let _ = sender.send(OutputData::StackContents(stack_contents));
-    drop(sender);
-    output_manager.stop().await?;
-    
-    // Show final command result
-    let elapsed_seconds = (Utc::now() - start_time).num_seconds();
-    let command_result = create_command_result(
-        true, 
-        elapsed_seconds, 
-        Some("Stack creation completed successfully".to_string())
-    );
-    output_manager.render(command_result).await?;
-    
-    Ok(())
-}

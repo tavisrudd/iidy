@@ -56,6 +56,15 @@
 - 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is. 
 - Do not claim that failing tests are edge cases or not important. That is for the user to determine.
 
+## Git Commit Requirements
+- **Green commits only**: All tests must pass (100%) before committing
+- **Accurate commit summaries**: The first line of the commit message must accurately reflect the full scope of changes
+  - Don't list just 2 items if 5+ things were changed
+  - Lead with the most important/impactful changes
+  - Make the summary line broad enough to encompass all significant changes
+  - Be specific about what was fixed/added/refactored
+- **No compiler warnings**: Fix all warnings before committing
+
 ## Development Commands
 - Use the standard cargo stuff. 
 - Do not use `rustc` directly. Use cargo.
