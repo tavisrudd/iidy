@@ -486,25 +486,25 @@ impl InteractiveRenderer {
             CfnOperation::DescribeStack => vec!["stack_definition", "stack_events", "stack_contents"],
             CfnOperation::ListStacks => vec!["stack_list"],
             CfnOperation::WatchStack => vec!["stack_definition", "stack_events", "live_stack_events", "stack_contents"],
-            CfnOperation::GetStackTemplate => vec![], // Just returns template content
+            CfnOperation::GetStackTemplate => vec![], // Exception: doesn't use renderer system
             CfnOperation::DescribeStackDrift => vec!["stack_drift"],
             
             // Modification operations with monitoring (include command_metadata as first section)
             CfnOperation::CreateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
             CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "live_stack_events"],
-            CfnOperation::UpdateStack => vec![], // Real-time progress, no predefined sections
+            CfnOperation::UpdateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
             CfnOperation::CreateChangeset => vec!["changeset_result"],
-            CfnOperation::ExecuteChangeset => vec![], // Real-time progress
-            CfnOperation::CreateOrUpdate => vec![], // Real-time progress
+            CfnOperation::ExecuteChangeset => vec!["command_metadata", "live_stack_events", "stack_contents"],
+            CfnOperation::CreateOrUpdate => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
             
             // Other operations
-            CfnOperation::EstimateCost => vec![],
-            CfnOperation::GetStackInstances => vec![],
+            CfnOperation::EstimateCost => vec!["cost_estimate"],
+            CfnOperation::GetStackInstances => vec!["stack_instances"],
         };
         
         // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)
-        // Don't start sections for: list-stacks, get-stack-instances, estimate-cost (immediate output operations)
-        if !matches!(*operation, CfnOperation::ListStacks | CfnOperation::GetStackInstances | CfnOperation::EstimateCost) {
+        // Exception: GetStackTemplate doesn't use the renderer system
+        if !matches!(*operation, CfnOperation::GetStackTemplate) {
             self.start_next_section();
         }
     }
