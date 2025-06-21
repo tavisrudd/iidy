@@ -29,9 +29,12 @@ fn handle_command(cli: Cli) {
         }
         Commands::UpdateStack(args) => {
             let normalized_opts = cli.aws_opts.normalize();
-            if let Err(e) = rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args, &cli.global_opts)) {
-                eprintln!("error updating stack: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::update_stack::update_stack(&normalized_opts, &args, &cli.global_opts)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error updating stack: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::CreateOrUpdate(args) => {
