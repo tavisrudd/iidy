@@ -1,0 +1,12 @@
+StackName: iidy-demo-hello-world
+Template: ./cfn-template.yaml # details are irrelevant for the demo
+
+Region: us-east-1
+
+Parameters:
+  Name: world
+
+Tags:
+  project: iidy-demo
+  environment: development
+  lifetime: short
