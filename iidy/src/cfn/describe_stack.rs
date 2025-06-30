@@ -21,8 +21,6 @@ pub async fn describe_stack(cli: &Cli) -> Result<()> {
     let Commands::DescribeStack(args) = &cli.command else {
         return Err(anyhow::anyhow!("Invalid command for describe_stack"));
     };
-    
-    // Normalize AWS options 
     let opts = cli.aws_opts.clone().normalize();
 
     // Setup data-driven output manager FIRST to show immediate UI feedback

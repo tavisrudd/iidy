@@ -28,7 +28,6 @@ pub mod update_stack;
 pub mod watch_stack;
 
 // Re-exports
-// pub use console::ConsoleReporter; // REMOVED: Legacy direct output
 pub use request_builder::CfnRequestBuilder;
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
