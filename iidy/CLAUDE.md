@@ -4,34 +4,10 @@
 
 **Current Task**: Available for new tasks
 
-### **RECENTLY COMPLETED (Major Milestone)**
-**Commit 3b140df**: Comprehensive infrastructure and UX improvements
-- ✅ **Live Events Timing** - iidy-js-compatible spinner with 1-second updates
-- ✅ **S3 Auto-Signing** - Cross-region template URL signing capability  
-- ✅ **YAML Helpers** - sha256File, base64, and file hashing capabilities
-- ✅ **Data-Driven Architecture** - Multiple cfn handlers refactored for compliance
-- ✅ **Output Rendering** - Enhanced interactive/JSON renderers with consistent styling
-- ✅ **Test Coverage** - Template loading, plain mode ordering, stack events tests
-
-### **COMPLETED INFRASTRUCTURE (Reference)**
-1. **`notes/2025-06-20-s3-url-auto-signing-implementation.md`** - ✅ S3 URL signing
-2. **`notes/2025-06-20-plain-renderer-race-condition-fix.md`** - ✅ Race condition fixes
-3. **`notes/2025-06-20-stack-events-title-configuration.md`** - ✅ Events display
-4. **`notes/2025-06-20-list-stacks-json-query-implementation.md`** - ✅ JSON query support
-5. **`tests/template_loading_integration_tests.rs`** - ✅ Template loading tests
-6. **`tests/plain_mode_ordering_test.rs`** - ✅ Plain mode tests
-7. **`tests/stack_events_title_test.rs`** - ✅ Stack events tests
-
-### **RECOVERY CONTEXT (If Auto-Compact)**
-8. **`notes/2025-06-18-context-window-recovery-instructions.md`** - 🚨 Recovery instructions
-9. **`notes/2025-06-18-critical-stack-args-implementation-plan.md`** - 🚨 Stack args system
-10. **`notes/2025-06-18-stack-args-loading-analysis.md`** - 🚨 Requirements gap analysis
-
 ### **ARCHITECTURE FOUNDATION (Reference)**
-11. **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design (✅ COMPLETED)
-12. **`notes/2025-06-17-console-output-modes.md`** - Output modes specification (✅ COMPLETED)
-13. **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec (✅ COMPLETED)
-14. **`notes/2025-06-17-data-driven-output-architecture-implementation.md`** - Implementation status (✅ COMPLETED)
+- **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design
+- **`notes/2025-06-17-console-output-modes.md`** - Output modes specification
+- **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec
 
 ### **Key Implementation Details**
 - **Theme System**: `src/output/theme.rs` with exact iidy-js colors (NOT old src/terminal.rs/color.rs)
@@ -42,8 +18,6 @@
 
 ### **Important Notes**
 - Ignore old `src/terminal.rs` and `src/color.rs` modules (from pre-design spike)
-- TUI mode removed from current scope (implement later)
-- CLI supports `--theme` (Dark/Light/HighContrast/Auto) and `--color` (Always/Never/Auto)
 - All tests must be offline/deterministic using fixture data
 - **ALWAYS review `notes/2025-06-17-data-driven-output-architecture.md` when working on `src/cfn/` command handlers**
 
@@ -53,17 +27,32 @@
 - Work to completion of your goal with 100% of tests passing, no regressions, and no new code warnings. 
 - Don't stop to brag or celebrate. Keep going until you have completely reached the goal and completed all tasks.
 - Use your Write tool to write files rather than echo or cat.
-- 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is. 
+- 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is, but without reward hacks. 
 - Do not claim that failing tests are edge cases or not important. That is for the user to determine.
+- Do not create duplicate code.
+- Use the correct existing constructors rather than creating new ones.
+
+## Testing
+- run `cargo check --all` for a fast sanity check
+- **All tests**: `cargo nextest r --color=never --hide-progress-bar`
+- **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
+- Run tests: `cargo test --test example_templates_snapshots`
+- Only the user may accept snapshot changes unless they explicitly tell you to and if valid: `cargo insta accept`, but only if the change is value and not a regression.
+- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure.
+- Do not reward hack by commenting out tests or fudging to make them
+  pass. Our goal is working software not tests that pretend to pass.
 
 ## Git Commit Requirements
-- **Green commits only**: All tests must pass (100%) before committing
+- **Green commits only**: All tests must pass (100%) before committing.
+- **No compiler warnings**: Fix all 'cargo check --all' warnings before committing
 - **Accurate commit summaries**: The first line of the commit message must accurately reflect the full scope of changes
   - Don't list just 2 items if 5+ things were changed
   - Lead with the most important/impactful changes
   - Make the summary line broad enough to encompass all significant changes
   - Be specific about what was fixed/added/refactored
-- **No compiler warnings**: Fix all warnings before committing
+  - Do not mention things like 'all tests passing', 'no cargo check errors'. That is assumed.
+  - Do not claim things like 'production ready' or '98%
+    complete'. Keep it factual without judgements or claims.
 
 ## Development Commands
 - Use the standard cargo stuff. 
@@ -73,34 +62,12 @@
   a backup of the uncommitted changes and asking for user confirmation.
 
 ## Coding Standards
+- Act like a staff/principal engineer not a juniour or intermediate.
 - use meaningful variable and fn names and omit useless comments. If a
   fn's purpose is clear there is no need for comment above it unless
   we are documenting it for the public api.
 - comment only the non-obvious
 - keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
-
-## Testing
-- run `cargo check --lib --tests --bins --benches` for a fast sanity check
-- **All tests**: `cargo nextest r --color=never --hide-progress-bar`
-- **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
-- Run tests: `cargo test --test example_templates_snapshots`
-- Only the user may accept snapshot changes unless they explicitly tell you to and if valid: `cargo insta accept`, but only if the change is value and not a regression.
-- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure.
-- Do not reward hack by commenting out tests or fudging to make them
-  pass. Our goal is working software not tests that pretend to pass.
-
-## Proof of Concepts (POCs)
-- **POCs binary**: `cargo run --bin iidy-pocs <demo-name>`
-- **Available demos**: `theme-demo`, `spinner-demo`, `ratatui-demo`
-- **Location**: All POC code is in `src/pocs/` directory
-- **Purpose**: Demonstrations and experimental features for iidy
-- See `src/pocs/README.md` for detailed documentation
-
-## Coverage Reporting
-- **Quick coverage**: `make coverage-quick`
-- **HTML report**: `make coverage-html` (generates `tarpaulin-report.html`)
-- **CI coverage**: `make coverage-ci` (70% threshold)
-- **Full documentation**: See [docs/COVERAGE.md](docs/COVERAGE.md)
 
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.
@@ -137,21 +104,6 @@ The `src/cfn/` modules implement AWS CloudFormation operations:
 - Change sets: create and execute changesets
 - Monitoring: watch stack progress, describe drift
 - Utilities: estimate costs, get templates, list instances
-
-Some operations are currently stubs (`todo!()`).
-
-### Configuration Files
-
-- **stack-args.yaml**: Primary configuration file for CloudFormation stacks, supporting parameters, tags, capabilities, IAM roles, and other CloudFormation options
-- **Cargo.toml**: Uses AWS SDK v1, clap v4 for CLI, serde for YAML parsing, and tokio for async runtime
-
-### Shell Completion
-
-Generate completions via: `cargo run -- completion <shell>`
-
-## YAML Preprocessing Language Porting Notes
-
-Based on the upstream iidy documentation and implementation, the YAML preprocessing system needs to be ported from TypeScript to Rust.
 
 ## YAML Tag Notes
 - Yaml !Tags can't be nested directly like !Foo !Bar. You must instead do
