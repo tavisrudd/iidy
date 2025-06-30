@@ -93,7 +93,7 @@ pub fn load_stack_args_file(path: &Path, environment: Option<&str>) -> Result<St
     load_stack_args_str(&contents, path, environment)
 }
 
-/// Load stack args with full CLI context (new iidy-js compatible interface)
+/// DEPRECATED; RM
 pub async fn load_stack_args_from_context(
     cli_context: &CliContext,
     _filter_keys: Vec<String>,

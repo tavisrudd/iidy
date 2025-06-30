@@ -1,19 +1,15 @@
 use anyhow::Result;
-use aws_sdk_cloudformation::Client;
-use std::sync::Arc;
 use std::time::Instant;
 
 use crate::{
-    aws,
-    cfn::{CfnContext, CfnRequestBuilder},
+    cfn::{CfnRequestBuilder, create_context_for_operation},
     cli::{CreateChangeSetArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
-        DynamicOutputManager, manager::OutputOptions,
+        DynamicOutputManager, manager::OutputOptions, CfnOperation,
         aws_conversion::{progress_message, success_message, create_command_result},
     },
     stack_args::load_stack_args_with_context,
     aws::AwsSettings,
-    timing::{ReliableTimeProvider, TimeProvider},
 };
 
 /// Create a CloudFormation changeset with data-driven output.
@@ -52,11 +48,8 @@ pub async fn create_changeset(
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    // Setup AWS client and context
-    let config = aws::config_from_normalized_opts(opts).await?;
-    let client = Client::new(&config);
-    let time_provider: Arc<dyn TimeProvider> = Arc::new(ReliableTimeProvider::new());
-    let context = CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await?;
+    // Setup AWS context for changeset creation
+    let context = create_context_for_operation(opts, CfnOperation::CreateChangeset).await?;
 
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);

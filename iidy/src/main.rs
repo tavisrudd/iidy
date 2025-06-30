@@ -88,8 +88,9 @@ fn handle_command(cli: Cli) {
         }
 
         Commands::DescribeStackDrift(args) => {
+            let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(
-                &cli.aws_opts,
+                &normalized_opts,
                 &args,
                 &cli.global_opts,
             )) {
@@ -114,8 +115,9 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::GetStackTemplate(args) => {
+            let normalized_opts = cli.aws_opts.normalize();
             match rt.block_on(cfn::get_stack_template::get_stack_template_with_output(
-                &cli.aws_opts,
+                &normalized_opts,
                 &args,
                 &cli.global_opts,
             )) {
@@ -132,8 +134,9 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::GetStackInstances(args) => {
+            let normalized_opts = cli.aws_opts.normalize();
             if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(
-                &cli.aws_opts,
+                &normalized_opts,
                 &args,
                 &cli.global_opts,
             )) {
@@ -189,6 +192,9 @@ fn main() {
     match Cli::try_parse() {
         Ok(cli) => {
             debug!("CLI options: {:?}", cli);
+
+            // TODO: see if we can get rid of this global color setup.
+            // I think it was introduced when implementing yaml error handling
 
             // Initialize color context early for global access
             let theme = match cli.global_opts.theme {

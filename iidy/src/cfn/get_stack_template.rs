@@ -1,10 +1,11 @@
 use crate::{
-    aws,
-    cli::{AwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg, GlobalOpts},
+    cli::{NormalizedAwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg, GlobalOpts},
+    cfn::create_context_for_operation,
+    output::CfnOperation,
 };
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
-use aws_sdk_cloudformation::{Client, types::TemplateStage};
+use aws_sdk_cloudformation::types::TemplateStage;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 
@@ -87,11 +88,11 @@ pub fn format_template(
 
 /// Retrieve a stack template from CloudFormation and format it for display.
 pub async fn get_stack_template(
-    opts: &AwsOpts,
+    opts: &NormalizedAwsOpts,
     args: &GetTemplateArgs,
 ) -> Result<FormattedTemplate> {
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
+    let context = create_context_for_operation(opts, CfnOperation::GetStackTemplate).await?;
+    let client = &context.client;
 
     let stage = match args.stage {
         TemplateStageArg::Original => TemplateStage::Original,
@@ -115,7 +116,7 @@ pub async fn get_stack_template(
 /// - stdout: Template content in requested format
 /// - No progress messages or command metadata
 pub async fn get_stack_template_with_output(
-    opts: &AwsOpts,
+    opts: &NormalizedAwsOpts,
     args: &GetTemplateArgs,
     _global_opts: &GlobalOpts,
 ) -> Result<FormattedTemplate> {

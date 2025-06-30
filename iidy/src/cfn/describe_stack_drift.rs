@@ -5,10 +5,10 @@ use aws_sdk_cloudformation::{
 };
 
 use crate::{
-    aws,
-    cli::{AwsOpts, DriftArgs, GlobalOpts},
+    cli::{NormalizedAwsOpts, DriftArgs, GlobalOpts},
+    cfn::create_context_for_operation,
     output::{
-        DynamicOutputManager, manager::OutputOptions,
+        DynamicOutputManager, manager::OutputOptions, CfnOperation,
     },
 };
 
@@ -23,7 +23,7 @@ use crate::{
 /// 3. Show drifted resources
 /// No command metadata is shown (read-only operation).
 pub async fn describe_stack_drift(
-    opts: &AwsOpts, 
+    opts: &NormalizedAwsOpts, 
     args: &DriftArgs,
     global_opts: &GlobalOpts
 ) -> Result<()> {
@@ -32,8 +32,8 @@ pub async fn describe_stack_drift(
         global_opts.effective_output_mode(),
         output_options
     ).await?;
-    let config = aws::config_from_opts(opts).await?;
-    let client = Client::new(&config);
+    let context = create_context_for_operation(opts, CfnOperation::DescribeStackDrift).await?;
+    let client = &context.client;
 
     // 1. Show stack definition (following iidy-js pattern)
     let stack_resp = client

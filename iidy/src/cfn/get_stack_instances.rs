@@ -2,12 +2,12 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    aws,
-    cli::{AwsOpts, GetStackInstancesArgs, GlobalOpts},
+    cli::{NormalizedAwsOpts, GetStackInstancesArgs, GlobalOpts},
+    cfn::create_context_for_operation,
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{create_command_result},
-        OutputData, StatusUpdate, StatusLevel
+        OutputData, StatusUpdate, StatusLevel, CfnOperation
     },
 };
 
@@ -16,7 +16,7 @@ use crate::{
 /// Queries EC2 for instances with the stack tag and displays them in either
 /// short format (DNS/IP only) or detailed format with instance details.
 pub async fn get_stack_instances(
-    opts: &AwsOpts, 
+    opts: &NormalizedAwsOpts, 
     args: &GetStackInstancesArgs,
     global_opts: &GlobalOpts
 ) -> Result<()> {
@@ -27,8 +27,8 @@ pub async fn get_stack_instances(
         output_options
     ).await?;
 
-    let config = aws::config_from_opts(opts).await?;
-    let ec2_client = aws_sdk_ec2::Client::new(&config);
+    let context = create_context_for_operation(opts, CfnOperation::GetStackInstances).await?;
+    let ec2_client = aws_sdk_ec2::Client::new(&context.aws_config);
     
     // Query EC2 for instances with the CloudFormation stack tag
     let filter = aws_sdk_ec2::types::Filter::builder()

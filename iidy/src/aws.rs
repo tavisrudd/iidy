@@ -90,20 +90,11 @@ pub async fn config_from_merged_settings(merged_settings: &AwsSettings) -> Resul
     Ok(config)
 }
 
-/// Load AWS SDK configuration using values from [`AwsOpts`].
+/// Load AWS SDK configuration using values from [`NormalizedAwsOpts`].
 ///
 /// This honors the `region`, `profile`, and `assume_role_arn` fields of
 /// `AwsOpts`. The returned [`SdkConfig`] can be used to construct AWS service
 /// clients.
-pub async fn config_from_opts(opts: &AwsOpts) -> Result<SdkConfig> {
-    let settings = AwsSettings::from_cli_opts(opts);
-    config_from_merged_settings(&settings).await
-}
-
-/// Load AWS SDK configuration using values from [`NormalizedAwsOpts`].
-///
-/// This is a convenience function that extracts the relevant AWS configuration
-/// fields from NormalizedAwsOpts and delegates to config_from_merged_settings.
 pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<SdkConfig> {
     let settings = AwsSettings::from_normalized_opts(opts);
     config_from_merged_settings(&settings).await

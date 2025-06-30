@@ -3,10 +3,10 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::{
-    aws,
     cli::{Cli, Commands},
+    cfn::create_context_for_operation,
     output::{
-        DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn
+        DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn, CfnOperation
     },
 };
 
@@ -85,8 +85,9 @@ pub async fn list_stacks(cli: &Cli) -> Result<()> {
     };
     
     // Setup AWS client and retrieve stacks
-    let config = aws::config_from_opts(&cli.aws_opts).await?;
-    let client = aws_sdk_cloudformation::Client::new(&config);
+    let normalized_opts = cli.aws_opts.clone().normalize();
+    let context = create_context_for_operation(&normalized_opts, CfnOperation::ListStacks).await?;
+    let client = &context.client;
 
     // Use the paginator to retrieve all stacks in the region.
     let stacks: Vec<aws_sdk_cloudformation::types::Stack> = client
