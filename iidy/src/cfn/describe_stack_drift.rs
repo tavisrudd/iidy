@@ -6,9 +6,9 @@ use aws_sdk_cloudformation::{
 
 use crate::{
     cli::{NormalizedAwsOpts, DriftArgs, GlobalOpts},
-    cfn::create_context_for_operation,
+    cfn::{create_context_for_operation, CfnOperation},
     output::{
-        DynamicOutputManager, manager::OutputOptions, CfnOperation,
+        DynamicOutputManager, manager::OutputOptions,
     },
 };
 

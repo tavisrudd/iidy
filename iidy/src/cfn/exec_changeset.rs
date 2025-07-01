@@ -2,13 +2,13 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation},
     cli::{ExecChangeSetArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
-        DynamicOutputManager, manager::OutputOptions, CfnOperation,
+        DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, warning_message, create_command_result},
     },
-    stack_args::load_stack_args_with_context,
+    stack_args::load_stack_args,
     aws::AwsSettings,
 };
 
@@ -27,11 +27,11 @@ pub async fn exec_changeset(
     // Load stack configuration
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let command = vec!["execute-changeset".to_string()];
-    let stack_args = load_stack_args_with_context(
+    let operation = CfnOperation::ExecuteChangeset;
+    let stack_args = load_stack_args(
         &args.argsfile,
         Some(&global_opts.environment),
-        &command,
+        &operation,
         &cli_aws_settings,
     ).await?;
 
@@ -58,7 +58,7 @@ pub async fn exec_changeset(
 
     // Build and execute the ExecuteChangeSet request
     let (execute_request, token) =
-        builder.build_execute_changeset(&args.changeset_name, "execute-changeset");
+        builder.build_execute_changeset(&args.changeset_name, &CfnOperation::ExecuteChangeset);
     
     // Pass token to output manager for conditional display
     let output_token = crate::output::aws_conversion::convert_token_info(&token);

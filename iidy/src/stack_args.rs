@@ -6,7 +6,8 @@ use anyhow::{Result, bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 
-use crate::{cli::YamlSpec, yaml::preprocess_yaml, cli_context::CliContext, aws::AwsSettings};
+use crate::{cli::YamlSpec, yaml::preprocess_yaml, aws::AwsSettings, cfn::CfnOperation};
+use crate::aws::config_from_merged_settings;
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -53,9 +54,6 @@ pub struct StackArgs {
     pub use_previous_parameter_values: Option<Vec<String>>,
     #[serde(rename = "CommandsBefore", default)]
     pub commands_before: Option<Vec<String>>,
-
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
 }
 
 fn resolve_env_map(value: &Value, env: &str, key: &str) -> Result<Value> {
@@ -88,38 +86,13 @@ fn ensure_environment_tag(root: &mut Mapping, env: &str) {
     }
 }
 
-pub fn load_stack_args_file(path: &Path, environment: Option<&str>) -> Result<StackArgs> {
-    let contents = fs::read_to_string(path)?;
-    load_stack_args_str(&contents, path, environment)
-}
-
-/// DEPRECATED; RM
-pub async fn load_stack_args_from_context(
-    cli_context: &CliContext,
-    _filter_keys: Vec<String>,
-) -> Result<StackArgs> {
-    let path = Path::new(&cli_context.argsfile);
-    let environment = Some(cli_context.environment());
-    
-    // For now, delegate to the existing implementation
-    // TODO: Implement full iidy-js compatibility with:
-    // - AWS credential configuration
-    // - $envValues injection  
-    // - Global configuration via SSM
-    // - CommandsBefore processing
-    // - Multi-pass preprocessing
-    load_stack_args_file(path, environment)
-}
-
 /// Load stack args with full iidy-js compatibility including AWS credential merging and $envValues injection
-pub async fn load_stack_args_with_context(
+pub async fn load_stack_args(
     argsfile: &str,
     environment: Option<&str>,
-    command: &[String],
+    operation: &CfnOperation,
     cli_aws_settings: &AwsSettings,
-) -> Result<StackArgs> {
-    use crate::aws::config_from_merged_settings;
-    
+) -> Result<StackArgs> {    
     let path = Path::new(argsfile);
     let contents = fs::read_to_string(path)?;
     
@@ -150,8 +123,12 @@ pub async fn load_stack_args_with_context(
     };
     
     // Merge AWS settings (CLI overrides argsfile)
-    let merged_aws_settings = argsfile_aws_settings.merge_with(cli_aws_settings);
-    
+    let merged_aws_settings = AwsSettings {
+        profile: cli_aws_settings.profile.clone().or_else(|| argsfile_aws_settings.profile.clone()),
+        region: cli_aws_settings.region.clone().or_else(|| argsfile_aws_settings.region.clone()),
+        assume_role_arn: cli_aws_settings.assume_role_arn.clone().or_else(|| argsfile_aws_settings.assume_role_arn.clone()),
+        };
+
     // Configure AWS BEFORE preprocessing (enables $imports with AWS calls)
     let aws_config = config_from_merged_settings(&merged_aws_settings).await?;
     let current_region = aws_config.region()
@@ -161,7 +138,7 @@ pub async fn load_stack_args_with_context(
     // Create and inject $envValues
     let env_values = create_env_values(
         environment,
-        command,
+        operation,
         current_region,
         merged_aws_settings.profile.as_deref(),
     );
@@ -169,7 +146,7 @@ pub async fn load_stack_args_with_context(
     
     // Handle CommandsBefore if present and command supports it
     if let Some(commands_before) = value.get("CommandsBefore").cloned() {
-        if should_process_commands_before(command) {
+        if should_process_commands_before(operation) {
             // Two-pass processing for CommandsBefore
             // Pass 1: Process without CommandsBefore to get full context for handlebars
             let mut value_pass1 = value.clone();
@@ -187,7 +164,7 @@ pub async fn load_stack_args_with_context(
                 commands_before,
                 &stack_args_pass1,
                 environment,
-                command,
+                operation,
                 current_region,
                 merged_aws_settings.profile.as_deref(),
                 path,
@@ -219,48 +196,17 @@ pub async fn load_stack_args_with_context(
     let mut stack_args: StackArgs = serde_yaml::from_value(final_value)?;
     
     // Apply global configuration from SSM parameter store
+    // TODO disable behind feature flag
     apply_global_configuration(&mut stack_args, &aws_config).await?;
     
     Ok(stack_args)
 }
 
-pub fn load_stack_args_str(
-    content: &str,
-    path: &Path,
-    environment: Option<&str>,
-) -> Result<StackArgs> {
-    // Create a tokio runtime for async preprocessing
-    let rt = tokio::runtime::Runtime::new()?;
-
-    // Use YAML v1.1 spec for CloudFormation compatibility
-    let yaml_spec = YamlSpec::V11;
-
-    // Get base location from path for relative imports
-    let base_location = path.to_string_lossy();
-
-    // Process the YAML with full preprocessing pipeline
-    let mut value = rt.block_on(preprocess_yaml(content, &base_location, &yaml_spec))?;
-
-    if let (Some(env), Value::Mapping(map)) = (environment, &mut value) {
-        for key in ["Profile", "AssumeRoleARN", "Region"] {
-            let map_key = Value::String(key.to_string());
-            if let Some(v) = map.get_mut(&map_key) {
-                let new_v = resolve_env_map(v, env, key)?;
-                *v = new_v;
-            }
-        }
-        ensure_environment_tag(map, env);
-    }
-
-    // Deserialize to StackArgs
-    let processed: StackArgs = serde_yaml::from_value(value)?;
-    Ok(processed)
-}
 
 /// Create $envValues object matching iidy-js structure for template compatibility
 fn create_env_values(
     environment: Option<&str>,
-    command: &[String],
+    operation: &CfnOperation,
     current_region: &str,
     current_profile: Option<&str>,
 ) -> Value {
@@ -276,7 +222,7 @@ fn create_env_values(
     
     // New namespaced structure (iidy.*)
     let mut iidy_values = BTreeMap::new();
-    iidy_values.insert("command".to_string(), Value::String(command.join(" ")));
+    iidy_values.insert("command".to_string(), Value::String(operation.as_str().to_string()));
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
@@ -327,7 +273,7 @@ fn inject_env_values(argsdata: &mut Value, env_values: Value) {
 }
 
 /// Apply global configuration from SSM parameter store, matching iidy-js applyGlobalConfiguration
-pub async fn apply_global_configuration(
+async fn apply_global_configuration(
     args: &mut StackArgs,
     aws_config: &aws_config::SdkConfig,
 ) -> Result<()> {
@@ -396,14 +342,11 @@ async fn apply_sns_notification_global_configuration(
     Ok(())
 }
 
-/// Check if CommandsBefore should be processed for the given command
-fn should_process_commands_before(command: &[String]) -> bool {
-    if command.is_empty() {
-        return false;
-    }
+/// Check if CommandsBefore should be processed for the given operation
+fn should_process_commands_before(operation: &CfnOperation) -> bool {
     matches!(
-        command[0].as_str(),
-        "create-stack" | "update-stack" | "create-changeset" | "create-or-update"
+        operation,
+        CfnOperation::CreateStack | CfnOperation::UpdateStack | CfnOperation::CreateChangeset | CfnOperation::CreateOrUpdate
     )
 }
 
@@ -412,7 +355,7 @@ fn process_commands_before(
     commands: Value,
     stack_args: &StackArgs,
     environment: Option<&str>,
-    command: &[String],
+    operation: &CfnOperation,
     region: &str,
     profile: Option<&str>,
     argsfile_path: &Path,
@@ -440,7 +383,7 @@ fn process_commands_before(
     if let Some(stack_name) = &stack_args.stack_name {
         iidy_values.insert("stackName".to_string(), Value::String(stack_name.clone()));
     }
-    iidy_values.insert("command".to_string(), Value::String(command.join(" ")));
+    iidy_values.insert("command".to_string(), Value::String(operation.as_str().to_string()));
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
@@ -565,11 +508,28 @@ fn process_commands_before(
 mod tests {
     use super::*;
 
-    #[test]
-    fn parse_basic_args() {
+    #[tokio::test]
+    async fn parse_basic_args() {
+        use std::io::Write;
+        use crate::aws::AwsSettings;
+        
         let yaml = "StackName: test\nTemplate: foo.yaml\n";
-        let result =
-            load_stack_args_str(yaml, Path::new("test.yaml"), Some("dev")).expect("failed to load");
+        
+        // Create temporary file
+        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        let temp_path = temp_file.path().to_str().expect("Invalid path");
+        
+        // Create mock AWS settings
+        let aws_settings = AwsSettings::default();
+        
+        let result = load_stack_args(
+            temp_path, 
+            Some("dev"), 
+            &CfnOperation::CreateStack, 
+            &aws_settings
+        ).await.expect("failed to load");
+        
         assert_eq!(result.stack_name.as_deref(), Some("test"));
         assert_eq!(result.template.as_deref(), Some("foo.yaml"));
         assert_eq!(
@@ -578,8 +538,11 @@ mod tests {
         );
     }
 
-    #[test]
-    fn resolve_environment_map() {
+    #[tokio::test]
+    async fn resolve_environment_map() {
+        use std::io::Write;
+        use crate::aws::AwsSettings;
+        
         let yaml = r#"
 Profile: default
 Region:
@@ -588,20 +551,52 @@ Region:
 StackName: s
 Template: t
 "#;
-        let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod")).unwrap();
+        
+        // Create temporary file
+        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        let temp_path = temp_file.path().to_str().expect("Invalid path");
+        
+        // Create mock AWS settings
+        let aws_settings = AwsSettings::default();
+        
+        let result = load_stack_args(
+            temp_path, 
+            Some("prod"), 
+            &CfnOperation::UpdateStack, 
+            &aws_settings
+        ).await.unwrap();
+        
         assert_eq!(result.region.as_deref(), Some("us-west-2"));
         assert_eq!(result.profile.as_deref(), Some("default"));
     }
 
-    #[test]
-    fn test_yaml_preprocessing_integration() {
+    #[tokio::test]
+    async fn test_yaml_preprocessing_integration() {
+        use std::io::Write;
+        use crate::aws::AwsSettings;
+        
         // Test that our YAML preprocessing system is being used in stack args parsing
         let yaml = r#"
 StackName: !$join ["-", ["my-app", "production"]]
 Template: template.yaml
 Region: us-west-2
 "#;
-        let result = load_stack_args_str(yaml, Path::new("test.yaml"), Some("prod"));
+        
+        // Create temporary file
+        let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
+        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        let temp_path = temp_file.path().to_str().expect("Invalid path");
+        
+        // Create mock AWS settings
+        let aws_settings = AwsSettings::default();
+        
+        let result = load_stack_args(
+            temp_path, 
+            Some("prod"), 
+            &CfnOperation::CreateStack, 
+            &aws_settings
+        ).await;
 
         // Should succeed even with custom tags (currently they get converted to null)
         assert!(
@@ -620,7 +615,7 @@ Region: us-west-2
     fn test_create_env_values() {
         let env_values = create_env_values(
             Some("production"),
-            &["create-stack".to_string()],
+            &CfnOperation::CreateStack,
             "us-west-2",
             Some("prod-profile"),
         );
@@ -660,7 +655,7 @@ Template: template.yaml
 
         let env_values = create_env_values(
             Some("dev"),
-            &["update-stack".to_string()],
+            &CfnOperation::UpdateStack,
             "us-east-1", 
             None,
         );

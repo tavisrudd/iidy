@@ -1,7 +1,6 @@
 use crate::{
     cli::{NormalizedAwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg, GlobalOpts},
-    cfn::create_context_for_operation,
-    output::CfnOperation,
+    cfn::{create_context_for_operation, CfnOperation},
 };
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;

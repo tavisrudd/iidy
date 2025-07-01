@@ -3,11 +3,11 @@ use std::time::Instant;
 
 use crate::{
     cli::{NormalizedAwsOpts, GetStackInstancesArgs, GlobalOpts},
-    cfn::create_context_for_operation,
+    cfn::{create_context_for_operation, CfnOperation},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{create_command_result},
-        OutputData, StatusUpdate, StatusLevel, CfnOperation
+        OutputData, StatusUpdate, StatusLevel
     },
 };
 

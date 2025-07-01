@@ -5,7 +5,7 @@ use aws_config::sts::AssumeRoleProvider;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_types::region::Region;
 
-use crate::cli::{AwsOpts, NormalizedAwsOpts};
+use crate::cli::NormalizedAwsOpts;
 
 /// AWS settings structure for merging CLI and stack-args.yaml settings
 #[derive(Debug, Clone, Default)]
@@ -16,30 +16,12 @@ pub struct AwsSettings {
 }
 
 impl AwsSettings {
-    /// Create AwsSettings from CLI options
-    pub fn from_cli_opts(opts: &AwsOpts) -> Self {
-        Self {
-            profile: opts.profile.clone(),
-            region: opts.region.clone(),
-            assume_role_arn: opts.assume_role_arn.clone(),
-        }
-    }
-
     /// Create AwsSettings from CLI options (normalized)
     pub fn from_normalized_opts(opts: &NormalizedAwsOpts) -> Self {
         Self {
             profile: opts.profile.clone(),
             region: opts.region.clone(),
             assume_role_arn: opts.assume_role_arn.clone(),
-        }
-    }
-
-    /// Merge two AwsSettings, with other taking precedence over self
-    pub fn merge_with(&self, other: &AwsSettings) -> AwsSettings {
-        AwsSettings {
-            profile: other.profile.clone().or_else(|| self.profile.clone()),
-            region: other.region.clone().or_else(|| self.region.clone()),
-            assume_role_arn: other.assume_role_arn.clone().or_else(|| self.assume_role_arn.clone()),
         }
     }
 }

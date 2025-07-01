@@ -2,12 +2,12 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService},
+    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
     cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
-    stack_args::load_stack_args_with_context,
+    stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
-        DynamicOutputManager, OutputData, CfnOperation,
+        DynamicOutputManager, OutputData,
         aws_conversion::{create_command_metadata, convert_token_info}
     },
 };
@@ -26,11 +26,11 @@ pub async fn create_stack(
 ) -> Result<i32> {
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let command = vec!["create-stack".to_string()];
-    let stack_args = load_stack_args_with_context(
+    let operation = CfnOperation::CreateStack;
+    let stack_args = load_stack_args(
         &args.argsfile,
         Some(&global_opts.environment),
-        &command,
+        &operation,
         &cli_aws_settings,
     ).await?;
 
@@ -185,7 +185,7 @@ async fn perform_stack_creation(
 
     // Build and execute the CreateStack request
     let (create_request, token) = builder.build_create_stack(
-        "create-stack",
+        &CfnOperation::CreateStack,
         &args.argsfile,
         Some(&global_opts.environment),
     ).await?;

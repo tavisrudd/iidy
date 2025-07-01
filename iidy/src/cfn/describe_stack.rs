@@ -1,11 +1,11 @@
 use anyhow::{Result, anyhow};
 
 use crate::{
-    cfn::create_context_for_operation,
+    cfn::{create_context_for_operation, CfnOperation},
     cli::{Cli, ToArgMap, Commands},
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,
-        StackContents, StackStatusInfo, CfnOperation,
+        StackContents, StackStatusInfo,
     },
 };
 

@@ -2,13 +2,13 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation},
     cli::{CreateChangeSetArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
-        DynamicOutputManager, manager::OutputOptions, CfnOperation,
+        DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, create_command_result},
     },
-    stack_args::load_stack_args_with_context,
+    stack_args::load_stack_args,
     aws::AwsSettings,
 };
 
@@ -26,11 +26,11 @@ pub async fn create_changeset(
     ).await?;
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let command = vec!["create-changeset".to_string()];
-    let stack_args = load_stack_args_with_context(
+    let operation = CfnOperation::CreateChangeset;
+    let stack_args = load_stack_args(
         &args.argsfile,
         Some(&global_opts.environment),
-        &command,
+        &operation,
         &cli_aws_settings,
     ).await?;
 
@@ -67,7 +67,7 @@ pub async fn create_changeset(
 
     // Build and execute the CreateChangeSet request
     let (create_request, token) =
-        builder.build_create_changeset(changeset_name, "create-changeset");
+        builder.build_create_changeset(changeset_name, &CfnOperation::CreateChangeset);
     
     // Pass token to output manager for conditional display
     let output_token = crate::output::aws_conversion::convert_token_info(&token);

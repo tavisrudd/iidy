@@ -1,6 +1,6 @@
 use aws_sdk_cloudformation::Client;
 use iidy::{
-    cfn::{CfnContext, CfnRequestBuilder},
+    cfn::{CfnContext, CfnRequestBuilder, CfnOperation},
     cli::AwsOpts,
     timing::{ReliableTimeProvider, TimeProvider, TokenInfo, TokenSource},
 };
@@ -85,8 +85,8 @@ async fn test_token_management_integration() {
     assert!(!context.has_derived_tokens());
 
     // Test 5: Token derivation in context
-    let create_token = context.derive_token_for_step("create-changeset");
-    let execute_token = context.derive_token_for_step("execute-changeset");
+    let create_token = context.derive_token_for_step(&CfnOperation::CreateChangeset);
+    let execute_token = context.derive_token_for_step(&CfnOperation::ExecuteChangeset);
 
     // Verify derivation
     assert!(create_token.is_derived());
@@ -103,10 +103,10 @@ async fn test_token_management_integration() {
     let builder = CfnRequestBuilder::new(&context, &mock_stack_args);
 
     // Test request building with token injection
-    let (_create_request, create_token) = builder.build_create_stack("test-create", "test-stack-args.yaml", Some("test")).await.unwrap();
-    let (_update_request, update_token) = builder.build_update_stack("test-update");
+    let (_create_request, create_token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+    let (_update_request, update_token) = builder.build_update_stack(&CfnOperation::UpdateStack);
     let (_changeset_request, changeset_token) =
-        builder.build_create_changeset("test-changeset", "test-changeset");
+        builder.build_create_changeset("test-changeset", &CfnOperation::CreateChangeset);
 
     // Verify all tokens are different but correlated
     assert_ne!(create_token.value, update_token.value);

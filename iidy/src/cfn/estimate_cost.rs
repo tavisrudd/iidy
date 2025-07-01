@@ -2,13 +2,13 @@ use anyhow::Result;
 use std::path::Path;
 
 use crate::{
-    cfn::create_context,
+    cfn::{create_context, CfnOperation},
     cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         OutputData, StatusUpdate, StatusLevel
     },
-    stack_args::load_stack_args_with_context,
+    stack_args::load_stack_args,
     aws::AwsSettings,
 };
 
@@ -27,13 +27,12 @@ pub async fn estimate_cost(
         output_options
     ).await?;
 
-    // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let command = vec!["estimate-cost".to_string()];
-    let stack_args = load_stack_args_with_context(
+    let operation = CfnOperation::EstimateCost;
+    let stack_args = load_stack_args(
         &args.argsfile,
         Some(&global_opts.environment),
-        &command,
+        &operation,
         &cli_aws_settings,
     ).await?;
     let context = create_context(opts, false).await?; // Read-only operation, no NTP needed
@@ -43,7 +42,6 @@ pub async fn estimate_cost(
         .or(stack_args.stack_name.as_ref())
         .ok_or_else(|| anyhow::anyhow!("Stack name must be provided either via --stack-name or in stack-args.yaml"))?;
 
-    // Load and process the template
     let template_body = match &stack_args.template {
         Some(template_path) => {
             let template_path = Path::new(template_path);
@@ -68,7 +66,6 @@ pub async fn estimate_cost(
         }
     }
 
-    // Build the estimate request
     let mut estimate_request = context.client
         .estimate_template_cost();
 
@@ -80,10 +77,8 @@ pub async fn estimate_cost(
         estimate_request = estimate_request.set_parameters(Some(cfn_parameters));
     }
 
-    // Call AWS API
     let estimate_response = estimate_request.send().await?;
 
-    // Display the cost estimator URL
     if let Some(url) = estimate_response.url {
         let status_update = StatusUpdate {
             message: format!("Stack cost estimator: {}", url),

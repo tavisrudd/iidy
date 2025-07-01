@@ -4,9 +4,9 @@ use serde::{Serialize, Deserialize};
 
 use crate::{
     cli::{Cli, Commands},
-    cfn::create_context_for_operation,
+    cfn::{create_context_for_operation, CfnOperation},
     output::{
-        DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn, CfnOperation
+        DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn
     },
 };
 

@@ -2,10 +2,10 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::{create_context_for_operation, stack_operations::StackInfoService},
+    cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
     cli::{DeleteArgs, NormalizedAwsOpts, GlobalOpts},
     output::{
-        DynamicOutputManager, OutputData, CfnOperation,
+        DynamicOutputManager, OutputData,
         aws_conversion::{create_command_metadata, warning_message, convert_token_info},
     },
 };
@@ -20,7 +20,7 @@ async fn perform_stack_deletion(
     output_manager: &mut DynamicOutputManager,
 ) -> Result<(String, DateTime<Utc>)> {
     // Derive a token for the delete operation
-    let token = context.derive_token_for_step("delete-stack");
+    let token = context.derive_token_for_step(&CfnOperation::DeleteStack);
     
     // Show token info
     let output_token = convert_token_info(&token);

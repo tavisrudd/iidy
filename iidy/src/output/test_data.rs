@@ -4,6 +4,7 @@
 //! actual AWS CloudFormation responses for testing renderers.
 
 use crate::output::data::*;
+use crate::cfn::CfnOperation;
 use chrono::{DateTime, Utc, TimeZone};
 use std::collections::HashMap;
 

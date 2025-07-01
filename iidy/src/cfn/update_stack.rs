@@ -1,12 +1,12 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService},
+    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
     cli::{NormalizedAwsOpts, UpdateStackArgs, GlobalOpts},
-    stack_args::load_stack_args_with_context,
+    stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
-        DynamicOutputManager, OutputData, CfnOperation,
+        DynamicOutputManager, OutputData,
         aws_conversion::{create_command_metadata, create_final_command_summary, convert_token_info}
     },
 };
@@ -24,13 +24,12 @@ pub async fn update_stack(
     args: &UpdateStackArgs, 
     global_opts: &GlobalOpts
 ) -> Result<i32> {
-    // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let command = vec!["update-stack".to_string()];
-    let stack_args = load_stack_args_with_context(
+    let operation = CfnOperation::UpdateStack;
+    let stack_args = load_stack_args(
         &args.base.argsfile,
         Some(&global_opts.environment),
-        &command,
+        &operation,
         &cli_aws_settings,
     ).await?;
 
@@ -40,7 +39,6 @@ pub async fn update_stack(
         final_stack_args.stack_name = Some(stack_name.clone());
     }
 
-    // Validate required fields
     if final_stack_args.stack_name.is_none() {
         anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
     }
@@ -174,7 +172,7 @@ async fn perform_stack_update(
     let builder = CfnRequestBuilder::new(context, stack_args);
 
     // Build and execute the UpdateStack request
-    let (update_request, token) = builder.build_update_stack("update-stack");
+    let (update_request, token) = builder.build_update_stack(&CfnOperation::UpdateStack);
     
     // Pass token to output manager for conditional display
     let output_token = convert_token_info(&token);
@@ -215,7 +213,7 @@ async fn update_stack_with_changeset(
     // Step 1: Create changeset
     let changeset_name = format!("iidy-update-{}", &context.primary_token().value[..8]);
     let (create_request, create_token) =
-        builder.build_create_changeset(&changeset_name, "create-changeset");
+        builder.build_create_changeset(&changeset_name, &CfnOperation::CreateChangeset);
     
     // Pass create token to output manager for conditional display
     let output_token = convert_token_info(&create_token);
@@ -248,7 +246,7 @@ async fn update_stack_with_changeset(
 
     // Step 2: Execute changeset
     let (execute_request, execute_token) =
-        builder.build_execute_changeset(&changeset_name, "execute-changeset");
+        builder.build_execute_changeset(&changeset_name, &CfnOperation::ExecuteChangeset);
     
     // Pass execute token to output manager for conditional display
     let output_token = convert_token_info(&execute_token);

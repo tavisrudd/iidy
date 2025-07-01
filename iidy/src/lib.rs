@@ -1,7 +1,6 @@
 pub mod aws;
 pub mod cfn;
 pub mod cli;
-pub mod cli_context;
 pub mod color;
 pub mod debug;
 pub mod display;

@@ -60,7 +60,7 @@ pub async fn watch_stack(
     let sender = output_manager.start();
     
     // Setup AWS context (no need for command metadata for read-only operation)
-    let context = crate::cfn::create_context_for_operation(&opts, crate::output::CfnOperation::WatchStack).await?;
+    let context = crate::cfn::create_context_for_operation(&opts, crate::cfn::CfnOperation::WatchStack).await?;
 
     // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();

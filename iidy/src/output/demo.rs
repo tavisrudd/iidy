@@ -4,6 +4,7 @@
 //! and shows how the system works end-to-end.
 
 use crate::output::*;
+use crate::cfn::CfnOperation;
 use anyhow::Result;
 
 /// Run a demo of the output system with fixture data

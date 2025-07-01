@@ -2,7 +2,7 @@ use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
 use crate::{stack_args::StackArgs, timing::TokenInfo};
 
-use super::{CfnContext, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
+use super::{CfnContext, CfnOperation, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
 
 /// Builder pattern for constructing CloudFormation API requests with proper token injection.
 ///
@@ -27,11 +27,11 @@ impl<'a> CfnRequestBuilder<'a> {
 
     /// Build a CreateStack request with token injection and StackArgs integration.
     ///
-    /// This method automatically derives a token for the specific step and applies
+    /// This method automatically derives a token for the specific operation and applies
     /// all relevant StackArgs configuration to the request.
     ///
     /// # Arguments
-    /// * `step_name` - The operation step name for token derivation (e.g., "create-stack")
+    /// * `operation` - The CloudFormation operation for token derivation
     /// * `argsfile_path` - Path to the stack-args.yaml file (for template base location)
     /// * `environment` - Environment name for template processing
     ///
@@ -39,14 +39,14 @@ impl<'a> CfnRequestBuilder<'a> {
     /// A tuple containing the prepared CreateStack fluent builder and the token used
     pub async fn build_create_stack(
         &self,
-        step_name: &str,
+        operation: &CfnOperation,
         argsfile_path: &str,
         environment: Option<&str>,
     ) -> anyhow::Result<(
         aws_sdk_cloudformation::operation::create_stack::builders::CreateStackFluentBuilder,
         TokenInfo,
     )> {
-        let token = self.context.derive_token_for_step(step_name);
+        let token = self.context.derive_token_for_step(operation);
 
         let mut builder = self
             .context
@@ -175,18 +175,18 @@ impl<'a> CfnRequestBuilder<'a> {
     /// Build an UpdateStack request with token injection and StackArgs integration.
     ///
     /// # Arguments
-    /// * `step_name` - The operation step name for token derivation (e.g., "update-stack")
+    /// * `operation` - The CloudFormation operation for token derivation
     ///
     /// # Returns
     /// A tuple containing the prepared UpdateStack fluent builder and the token used
     pub fn build_update_stack(
         &self,
-        step_name: &str,
+        operation: &CfnOperation,
     ) -> (
         aws_sdk_cloudformation::operation::update_stack::builders::UpdateStackFluentBuilder,
         TokenInfo,
     ) {
-        let token = self.context.derive_token_for_step(step_name);
+        let token = self.context.derive_token_for_step(operation);
 
         let mut builder = self
             .context
@@ -272,12 +272,12 @@ impl<'a> CfnRequestBuilder<'a> {
     ///
     /// # Arguments
     /// * `changeset_name` - The name for the changeset
-    /// * `step_name` - The operation step name for token derivation (e.g., "create-changeset")
+    /// * `operation` - The CloudFormation operation for token derivation
     ///
     /// # Returns
     /// A tuple containing the prepared CreateChangeSet fluent builder and the token used
-    pub fn build_create_changeset(&self, changeset_name: &str, step_name: &str) -> (aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, TokenInfo){
-        let token = self.context.derive_token_for_step(step_name);
+    pub fn build_create_changeset(&self, changeset_name: &str, operation: &CfnOperation) -> (aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, TokenInfo){
+        let token = self.context.derive_token_for_step(operation);
 
         let mut builder = self
             .context
@@ -361,12 +361,12 @@ impl<'a> CfnRequestBuilder<'a> {
     ///
     /// # Arguments
     /// * `changeset_name` - The name or ARN of the changeset to execute
-    /// * `step_name` - The operation step name for token derivation (e.g., "execute-changeset")
+    /// * `operation` - The CloudFormation operation for token derivation
     ///
     /// # Returns
     /// A tuple containing the prepared ExecuteChangeSet fluent builder and the token used
-    pub fn build_execute_changeset(&self, changeset_name: &str, step_name: &str) -> (aws_sdk_cloudformation::operation::execute_change_set::builders::ExecuteChangeSetFluentBuilder, TokenInfo){
-        let token = self.context.derive_token_for_step(step_name);
+    pub fn build_execute_changeset(&self, changeset_name: &str, operation: &CfnOperation) -> (aws_sdk_cloudformation::operation::execute_change_set::builders::ExecuteChangeSetFluentBuilder, TokenInfo){
+        let token = self.context.derive_token_for_step(operation);
 
         let mut builder = self
             .context
@@ -464,7 +464,7 @@ mod tests {
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_create_builder, token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
 
         // Token should be derived from primary token
         assert!(token.is_derived());
@@ -484,14 +484,14 @@ mod tests {
         stack_args.use_previous_template = Some(true);
 
         let builder = CfnRequestBuilder::new(&context, &stack_args);
-        let (_update_builder, token) = builder.build_update_stack("update-stack");
+        let (_update_builder, token) = builder.build_update_stack(&CfnOperation::UpdateStack);
 
         // Token should be derived
         assert!(token.is_derived());
         assert_ne!(token.value, context.primary_token().value);
 
         // Different step should produce different token
-        let (_create_builder, create_token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, create_token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
         assert_ne!(token.value, create_token.value);
     }
 
@@ -502,7 +502,7 @@ mod tests {
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
         let (_changeset_builder, token) =
-            builder.build_create_changeset("test-changeset", "create-changeset");
+            builder.build_create_changeset("test-changeset", &CfnOperation::CreateChangeset);
 
         // Token should be derived for the changeset step
         assert!(token.is_derived());
@@ -525,7 +525,7 @@ mod tests {
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
         let (_execute_builder, token) =
-            builder.build_execute_changeset("test-changeset-arn", "execute-changeset");
+            builder.build_execute_changeset("test-changeset-arn", &CfnOperation::ExecuteChangeset);
 
         // Token should be derived for the execute step
         assert!(token.is_derived());
@@ -546,7 +546,7 @@ mod tests {
         };
 
         let builder = CfnRequestBuilder::new(&context, &minimal_args);
-        let (_create_builder, token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
 
         // Should work with minimal configuration
         assert!(token.is_derived());
@@ -563,8 +563,8 @@ mod tests {
         let builder2 = CfnRequestBuilder::new(&context, &stack_args);
 
         // Same step should produce same derived token
-        let (_, token1) = builder1.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
-        let (_, token2) = builder2.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, token1) = builder1.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, token2) = builder2.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
 
         assert_eq!(token1.value, token2.value);
         assert_eq!(token1.source, token2.source);
@@ -576,12 +576,12 @@ mod tests {
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_, create_token) = builder.build_create_stack("create-stack", "test-stack-args.yaml", Some("test")).await.unwrap();
-        let (_, update_token) = builder.build_update_stack("update-stack");
+        let (_, create_token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, update_token) = builder.build_update_stack(&CfnOperation::UpdateStack);
         let (_, changeset_token) =
-            builder.build_create_changeset("test-changeset", "create-changeset");
+            builder.build_create_changeset("test-changeset", &CfnOperation::CreateChangeset);
         let (_, execute_token) =
-            builder.build_execute_changeset("test-changeset", "execute-changeset");
+            builder.build_execute_changeset("test-changeset", &CfnOperation::ExecuteChangeset);
 
         // All tokens should be different
         let tokens = vec![

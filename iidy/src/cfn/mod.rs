@@ -21,6 +21,7 @@ pub mod get_stack_instances;
 pub mod get_stack_template;
 pub mod is_terminal_status;
 pub mod list_stacks;
+pub mod operations;
 pub mod request_builder;
 pub mod stack_operations;
 pub mod template_loader;
@@ -28,6 +29,7 @@ pub mod update_stack;
 pub mod watch_stack;
 
 // Re-exports
+pub use operations::CfnOperation;
 pub use request_builder::CfnRequestBuilder;
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
@@ -43,7 +45,7 @@ pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResu
 ///
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
-pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: crate::output::CfnOperation) -> Result<CfnContext> {
+pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: CfnOperation) -> Result<CfnContext> {
     let config = crate::aws::config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
@@ -162,19 +164,35 @@ impl CfnContext {
         Ok((now - start).num_seconds())
     }
 
-    /// Derive a new token from the primary token for a specific operation step.
+    /// Derive a new token from the primary token for a specific CloudFormation operation.
     ///
     /// This method creates a deterministic sub-token that can be safely used for
     /// multi-step operations. The derived token is automatically tracked in the
     /// used_tokens list for audit purposes.
     ///
     /// # Arguments
-    /// * `step` - The name of the operation step (e.g., "create-changeset", "execute-changeset")
+    /// * `operation` - The CloudFormation operation for token derivation
     ///
     /// # Returns
     /// A new TokenInfo with a derived token value that is deterministically generated
-    /// from the primary token and step name.
-    pub fn derive_token_for_step(&self, step: &str) -> TokenInfo {
+    /// from the primary token and operation name.
+    pub fn derive_token_for_step(&self, operation: &CfnOperation) -> TokenInfo {
+        let derived = self.token_info.derive_for_step(operation.as_str());
+
+        // Track the derived token for audit trail
+        if let Ok(mut used) = self.used_tokens.lock() {
+            used.push(derived.clone());
+        }
+
+        derived
+    }
+
+    /// Derive a new token from the primary token for a specific step name (for testing).
+    ///
+    /// This method is primarily for testing purposes when you need to use arbitrary step names.
+    /// For production code, prefer using derive_token_for_step with CfnOperation.
+    #[cfg(test)]
+    pub fn derive_token_for_test_step(&self, step: &str) -> TokenInfo {
         let derived = self.token_info.derive_for_step(step);
 
         // Track the derived token for audit trail
@@ -317,8 +335,8 @@ mod tests {
         let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
 
         // Derive tokens for different steps
-        let create_token = ctx.derive_token_for_step("create-changeset");
-        let execute_token = ctx.derive_token_for_step("execute-changeset");
+        let create_token = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
+        let execute_token = ctx.derive_token_for_step(&CfnOperation::ExecuteChangeset);
 
         // Tokens should be different
         assert_ne!(create_token.value, execute_token.value);
@@ -353,8 +371,8 @@ mod tests {
         let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
 
         // Derive the same token multiple times
-        let token1 = ctx.derive_token_for_step("test-step");
-        let token2 = ctx.derive_token_for_step("test-step");
+        let token1 = ctx.derive_token_for_test_step("test-step");
+        let token2 = ctx.derive_token_for_test_step("test-step");
 
         // Should be identical
         assert_eq!(token1.value, token2.value);

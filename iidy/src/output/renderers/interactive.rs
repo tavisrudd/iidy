@@ -8,6 +8,7 @@ use crate::output::renderer::OutputRenderer;
 use crate::output::theme::{IidyTheme, get_terminal_width};
 use crate::cli::{Theme, ColorChoice};
 use crate::color::{ProgressManager, SpinnerStyle};
+use crate::cfn::CfnOperation;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

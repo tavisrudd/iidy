@@ -362,22 +362,22 @@ pub enum Commands {
 
 impl Commands {
     /// Extract the CloudFormation operation from the command
-    pub fn to_cfn_operation(&self) -> crate::output::CfnOperation {
+    pub fn to_cfn_operation(&self) -> crate::cfn::CfnOperation {
         match self {
             // CloudFormation operations
-            Commands::CreateStack(_) => crate::output::CfnOperation::CreateStack,
-            Commands::UpdateStack(_) => crate::output::CfnOperation::UpdateStack,
-            Commands::DeleteStack(_) => crate::output::CfnOperation::DeleteStack,
-            Commands::CreateOrUpdate(_) => crate::output::CfnOperation::CreateOrUpdate,
-            Commands::EstimateCost(_) => crate::output::CfnOperation::EstimateCost,
-            Commands::CreateChangeset(_) => crate::output::CfnOperation::CreateChangeset,
-            Commands::ExecChangeset(_) => crate::output::CfnOperation::ExecuteChangeset,
-            Commands::DescribeStack(_) => crate::output::CfnOperation::DescribeStack,
-            Commands::WatchStack(_) => crate::output::CfnOperation::WatchStack,
-            Commands::DescribeStackDrift(_) => crate::output::CfnOperation::DescribeStackDrift,
-            Commands::GetStackTemplate(_) => crate::output::CfnOperation::GetStackTemplate,
-            Commands::GetStackInstances(_) => crate::output::CfnOperation::GetStackInstances,
-            Commands::ListStacks(_) => crate::output::CfnOperation::ListStacks,
+            Commands::CreateStack(_) => crate::cfn::CfnOperation::CreateStack,
+            Commands::UpdateStack(_) => crate::cfn::CfnOperation::UpdateStack,
+            Commands::DeleteStack(_) => crate::cfn::CfnOperation::DeleteStack,
+            Commands::CreateOrUpdate(_) => crate::cfn::CfnOperation::CreateOrUpdate,
+            Commands::EstimateCost(_) => crate::cfn::CfnOperation::EstimateCost,
+            Commands::CreateChangeset(_) => crate::cfn::CfnOperation::CreateChangeset,
+            Commands::ExecChangeset(_) => crate::cfn::CfnOperation::ExecuteChangeset,
+            Commands::DescribeStack(_) => crate::cfn::CfnOperation::DescribeStack,
+            Commands::WatchStack(_) => crate::cfn::CfnOperation::WatchStack,
+            Commands::DescribeStackDrift(_) => crate::cfn::CfnOperation::DescribeStackDrift,
+            Commands::GetStackTemplate(_) => crate::cfn::CfnOperation::GetStackTemplate,
+            Commands::GetStackInstances(_) => crate::cfn::CfnOperation::GetStackInstances,
+            Commands::ListStacks(_) => crate::cfn::CfnOperation::ListStacks,
             
             // All other commands should not be calling to_cfn_operation()
             _ => panic!("Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands", self),
