@@ -89,7 +89,7 @@ fn ensure_environment_tag(root: &mut Mapping, env: &str) {
 /// Load stack args with full iidy-js compatibility including AWS credential merging and $envValues injection
 pub async fn load_stack_args(
     argsfile: &str,
-    environment: Option<&str>,
+    environment: &str,
     operation: &CfnOperation,
     cli_aws_settings: &AwsSettings,
 ) -> Result<StackArgs> {    
@@ -104,15 +104,15 @@ pub async fn load_stack_args(
     let mut value = preprocess_yaml(&contents, &base_location, &yaml_spec).await?;
     
     // Resolve environment maps for AWS credential fields BEFORE AWS config
-    if let (Some(env), Value::Mapping(map)) = (environment, &mut value) {
+    if let Value::Mapping(map) = &mut value {
         for key in ["Profile", "AssumeRoleARN", "Region"] {
             let map_key = Value::String(key.to_string());
             if let Some(v) = map.get_mut(&map_key) {
-                let new_v = resolve_env_map(v, env, key)?;
+                let new_v = resolve_env_map(v, environment, key)?;
                 *v = new_v;
             }
         }
-        ensure_environment_tag(map, env);
+        ensure_environment_tag(map, environment);
     }
     
     // Extract AWS settings from argsfile
@@ -137,7 +137,7 @@ pub async fn load_stack_args(
     
     // Create and inject $envValues
     let env_values = create_env_values(
-        environment,
+        Some(environment),
         operation,
         current_region,
         merged_aws_settings.profile.as_deref(),
@@ -163,7 +163,7 @@ pub async fn load_stack_args(
             let processed_commands = process_commands_before(
                 commands_before,
                 &stack_args_pass1,
-                environment,
+                Some(environment),
                 operation,
                 current_region,
                 merged_aws_settings.profile.as_deref(),
@@ -525,7 +525,7 @@ mod tests {
         
         let result = load_stack_args(
             temp_path, 
-            Some("dev"), 
+            "dev", 
             &CfnOperation::CreateStack, 
             &aws_settings
         ).await.expect("failed to load");
@@ -562,7 +562,7 @@ Template: t
         
         let result = load_stack_args(
             temp_path, 
-            Some("prod"), 
+            "prod", 
             &CfnOperation::UpdateStack, 
             &aws_settings
         ).await.unwrap();
@@ -593,7 +593,7 @@ Region: us-west-2
         
         let result = load_stack_args(
             temp_path, 
-            Some("prod"), 
+            "prod", 
             &CfnOperation::CreateStack, 
             &aws_settings
         ).await;

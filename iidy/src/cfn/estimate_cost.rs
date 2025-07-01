@@ -35,7 +35,7 @@ pub async fn estimate_cost(cli: &Cli) -> Result<()> {
     let operation = CfnOperation::EstimateCost;
     let stack_args = load_stack_args(
         &args.argsfile,
-        Some(&global_opts.environment),
+        &global_opts.environment,
         &operation,
         &cli_aws_settings,
     ).await?;

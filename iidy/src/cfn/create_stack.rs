@@ -33,7 +33,7 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
     let operation = CfnOperation::CreateStack;
     let stack_args = load_stack_args(
         &args.argsfile,
-        Some(&global_opts.environment),
+        &global_opts.environment,
         &operation,
         &cli_aws_settings,
     ).await?;

@@ -34,7 +34,7 @@ pub async fn exec_changeset(cli: &Cli) -> Result<()> {
     let operation = CfnOperation::ExecuteChangeset;
     let stack_args = load_stack_args(
         &args.argsfile,
-        Some(&global_opts.environment),
+        &global_opts.environment,
         &operation,
         &cli_aws_settings,
     ).await?;

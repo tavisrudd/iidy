@@ -32,7 +32,7 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
     let operation = CfnOperation::UpdateStack;
     let stack_args = load_stack_args(
         &args.base.argsfile,
-        Some(&global_opts.environment),
+        &global_opts.environment,
         &operation,
         &cli_aws_settings,
     ).await?;

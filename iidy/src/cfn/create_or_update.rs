@@ -33,7 +33,7 @@ pub async fn create_or_update(cli: &Cli) -> Result<()> {
     let operation = CfnOperation::CreateOrUpdate;
     let stack_args = load_stack_args(
         &args.base.argsfile,
-        Some(&global_opts.environment),
+        &global_opts.environment,
         &operation,
         &cli_aws_settings,
     ).await?;
