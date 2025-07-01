@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
-    cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
+    cli::{StackFileArgs, GlobalOpts, Cli, Commands},
     stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
@@ -19,13 +19,17 @@ use crate::{
 /// 2. Stack creation operation  
 /// 3. Watch and summarize with stack definition, previous events, live events, and final contents
 /// Uses the data-driven output architecture for consistent rendering across output modes.
-pub async fn create_stack(
-    opts: &NormalizedAwsOpts, 
-    args: &StackFileArgs, 
-    global_opts: &GlobalOpts
-) -> Result<i32> {
+pub async fn create_stack(cli: &Cli) -> Result<i32> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::CreateStack(args) => args,
+        _ => anyhow::bail!("Invalid command type for create_stack"),
+    };
+
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::CreateStack;
     let stack_args = load_stack_args(
         &args.argsfile,
@@ -54,7 +58,7 @@ pub async fn create_stack(
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     // Setup AWS context for create operation
-    let context = create_context_for_operation(opts, CfnOperation::CreateStack).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::CreateStack).await?;
 
     // Setup data-driven output manager with full CLI context
     let aws_opts = crate::cli::AwsOpts {
@@ -75,7 +79,7 @@ pub async fn create_stack(
     ).await?;
 
     // 1. Show command metadata (exact iidy-js pattern)
-    let command_metadata = create_command_metadata(&context, opts, &final_stack_args, &global_opts.environment).await?;
+    let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     // 2. Stack operation - create the stack

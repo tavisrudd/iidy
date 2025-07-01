@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::{
     cfn::{create_context, CfnOperation},
-    cli::{NormalizedAwsOpts, StackFileArgs, GlobalOpts},
+    cli::{Cli, Commands},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         OutputData, StatusUpdate, StatusLevel
@@ -16,18 +16,22 @@ use crate::{
 ///
 /// Loads the template and parameters from stack-args.yaml, calls AWS
 /// CloudFormation's cost estimation API, and displays the cost estimator URL.
-pub async fn estimate_cost(
-    opts: &NormalizedAwsOpts, 
-    args: &StackFileArgs,
-    global_opts: &GlobalOpts
-) -> Result<()> {
+pub async fn estimate_cost(cli: &Cli) -> Result<()> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::EstimateCost(args) => args,
+        _ => anyhow::bail!("Invalid command type for estimate_cost"),
+    };
+
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
     ).await?;
 
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::EstimateCost;
     let stack_args = load_stack_args(
         &args.argsfile,
@@ -35,7 +39,7 @@ pub async fn estimate_cost(
         &operation,
         &cli_aws_settings,
     ).await?;
-    let context = create_context(opts, false).await?; // Read-only operation, no NTP needed
+    let context = create_context(&opts, false).await?; // Read-only operation, no NTP needed
 
     // Determine stack name from args or stack-args.yaml (not needed for estimate cost, but validate it exists)
     let _stack_name = args.stack_name.as_ref()

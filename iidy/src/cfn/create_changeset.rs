@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation},
-    cli::{CreateChangeSetArgs, NormalizedAwsOpts, GlobalOpts},
+    cli::{Cli, Commands},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, create_command_result},
@@ -13,11 +13,15 @@ use crate::{
 };
 
 /// Create a CloudFormation changeset with data-driven output.
-pub async fn create_changeset(
-    opts: &NormalizedAwsOpts, 
-    args: &CreateChangeSetArgs,
-    global_opts: &GlobalOpts
-) -> Result<()> {
+pub async fn create_changeset(cli: &Cli) -> Result<()> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::CreateChangeset(args) => args,
+        _ => anyhow::bail!("Invalid command type for create_changeset"),
+    };
+
     let start_time = Instant::now();
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
@@ -25,7 +29,7 @@ pub async fn create_changeset(
         output_options
     ).await?;
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::CreateChangeset;
     let stack_args = load_stack_args(
         &args.argsfile,
@@ -49,7 +53,7 @@ pub async fn create_changeset(
     }
 
     // Setup AWS context for changeset creation
-    let context = create_context_for_operation(opts, CfnOperation::CreateChangeset).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::CreateChangeset).await?;
 
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);

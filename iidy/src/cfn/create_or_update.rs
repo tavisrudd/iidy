@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use crate::{
     cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation},
-    cli::{NormalizedAwsOpts, UpdateStackArgs, GlobalOpts},
+    cli::{UpdateStackArgs, Cli, Commands},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, warning_message, create_command_result},
@@ -13,11 +13,15 @@ use crate::{
 };
 
 /// Create or update a CloudFormation stack using intelligent detection with data-driven output.
-pub async fn create_or_update(
-    opts: &NormalizedAwsOpts, 
-    args: &UpdateStackArgs, 
-    global_opts: &GlobalOpts
-) -> Result<()> {
+pub async fn create_or_update(cli: &Cli) -> Result<()> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::CreateOrUpdate(args) => args,
+        _ => anyhow::bail!("Invalid command type for create_or_update"),
+    };
+
     let start_time = Instant::now();
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
@@ -25,7 +29,7 @@ pub async fn create_or_update(
         output_options
     ).await?;
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::CreateOrUpdate;
     let stack_args = load_stack_args(
         &args.base.argsfile,
@@ -49,7 +53,7 @@ pub async fn create_or_update(
     }
 
     // Setup AWS client and context
-    let context = create_context(opts, true).await?; // Write operation, needs NTP for precise timing
+    let context = create_context(&opts, true).await?; // Write operation, needs NTP for precise timing
 
     let stack_name = final_stack_args
         .stack_name

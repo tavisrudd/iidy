@@ -1,5 +1,5 @@
 use crate::{
-    cli::{NormalizedAwsOpts, GetTemplateArgs, TemplateFormat, TemplateStageArg, GlobalOpts},
+    cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli, Commands},
     cfn::{create_context_for_operation, CfnOperation},
 };
 use anyhow::Result;
@@ -87,7 +87,7 @@ pub fn format_template(
 
 /// Retrieve a stack template from CloudFormation and format it for display.
 pub async fn get_stack_template(
-    opts: &NormalizedAwsOpts,
+    opts: &crate::cli::NormalizedAwsOpts,
     args: &GetTemplateArgs,
 ) -> Result<FormattedTemplate> {
     let context = create_context_for_operation(opts, CfnOperation::GetStackTemplate).await?;
@@ -114,13 +114,16 @@ pub async fn get_stack_template(
 /// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
 /// - stdout: Template content in requested format
 /// - No progress messages or command metadata
-pub async fn get_stack_template_with_output(
-    opts: &NormalizedAwsOpts,
-    args: &GetTemplateArgs,
-    _global_opts: &GlobalOpts,
-) -> Result<FormattedTemplate> {
+pub async fn get_stack_template_with_output(cli: &Cli) -> Result<FormattedTemplate> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let args = match &cli.command {
+        Commands::GetStackTemplate(args) => args,
+        _ => anyhow::bail!("Invalid command type for get_stack_template"),
+    };
+
     // Direct call without unnecessary progress messages
-    get_stack_template(opts, args).await
+    get_stack_template(&opts, args).await
 }
 
 #[cfg(test)]

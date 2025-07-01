@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
-    cli::{NormalizedAwsOpts, UpdateStackArgs, GlobalOpts},
+    cli::{UpdateStackArgs, Cli, Commands},
     stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
@@ -19,12 +19,16 @@ use crate::{
 /// 3. Watch and summarize with stack definition, live events, and final contents
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// Returns exit code: 0 for success, 1 for failure, 130 for interrupt.
-pub async fn update_stack(
-    opts: &NormalizedAwsOpts, 
-    args: &UpdateStackArgs, 
-    global_opts: &GlobalOpts
-) -> Result<i32> {
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
+pub async fn update_stack(cli: &Cli) -> Result<i32> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::UpdateStack(args) => args,
+        _ => anyhow::bail!("Invalid command type for update_stack"),
+    };
+
+    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::UpdateStack;
     let stack_args = load_stack_args(
         &args.base.argsfile,
@@ -49,7 +53,7 @@ pub async fn update_stack(
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     // Setup AWS context for update operation
-    let context = create_context_for_operation(opts, CfnOperation::UpdateStack).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::UpdateStack).await?;
 
     // Setup data-driven output manager with full CLI context
     let aws_opts = crate::cli::AwsOpts {
@@ -70,7 +74,7 @@ pub async fn update_stack(
     ).await?;
 
     // 1. Show command metadata (exact iidy-js pattern)
-    let command_metadata = create_command_metadata(&context, opts, &final_stack_args, &global_opts.environment).await?;
+    let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     // Check if changeset mode is requested

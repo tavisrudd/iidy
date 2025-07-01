@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 
 use crate::{
     cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
-    cli::{DeleteArgs, NormalizedAwsOpts, GlobalOpts},
+    cli::{DeleteArgs, Cli, Commands},
     output::{
         DynamicOutputManager, OutputData,
         aws_conversion::{create_command_metadata, warning_message, convert_token_info},
@@ -67,29 +67,22 @@ async fn perform_stack_deletion(
 /// 3. Delete operation
 /// 4. Watch deletion progress with live events
 /// Uses the data-driven output architecture for consistent rendering across output modes.
-pub async fn delete_stack(
-    opts: &NormalizedAwsOpts, 
-    args: &DeleteArgs, 
-    global_opts: &GlobalOpts
-) -> Result<i32> {
+pub async fn delete_stack(cli: &Cli) -> Result<i32> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::DeleteStack(args) => args,
+        _ => anyhow::bail!("Invalid command type for delete_stack"),
+    };
+
     let stack_name = &args.stackname;
     
     // Setup AWS context for delete operation
-    let context = create_context_for_operation(opts, CfnOperation::DeleteStack).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::DeleteStack).await?;
 
     // Setup data-driven output manager with full CLI context
-    let aws_opts = crate::cli::AwsOpts {
-        region: opts.region.clone(),
-        profile: opts.profile.clone(),
-        assume_role_arn: opts.assume_role_arn.clone(),
-        client_request_token: Some(opts.client_request_token.value.clone()),
-    };
-    let cli = crate::cli::Cli {
-        global_opts: global_opts.clone(),
-        aws_opts,
-        command: crate::cli::Commands::DeleteStack(args.clone()),
-    };
-    let output_options = crate::output::manager::OutputOptions::new(cli);
+    let output_options = crate::output::manager::OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -122,7 +115,7 @@ pub async fn delete_stack(
         profile: opts.profile.clone(),
         ..Default::default()
     };
-    let command_metadata = create_command_metadata(&context, opts, &minimal_stack_args, &global_opts.environment).await?;
+    let command_metadata = create_command_metadata(&context, &opts, &minimal_stack_args, &global_opts.environment).await?;
 
     // 3. Start parallel data collection and rendering (following predefined sections pattern)
     let sender = output_manager.start();

@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    cli::{NormalizedAwsOpts, GetStackInstancesArgs, GlobalOpts},
+    cli::{Cli, Commands},
     cfn::{create_context_for_operation, CfnOperation},
     output::{
         DynamicOutputManager, manager::OutputOptions,
@@ -15,11 +15,15 @@ use crate::{
 ///
 /// Queries EC2 for instances with the stack tag and displays them in either
 /// short format (DNS/IP only) or detailed format with instance details.
-pub async fn get_stack_instances(
-    opts: &NormalizedAwsOpts, 
-    args: &GetStackInstancesArgs,
-    global_opts: &GlobalOpts
-) -> Result<()> {
+pub async fn get_stack_instances(cli: &Cli) -> Result<()> {
+    // Extract components from CLI
+    let opts = cli.aws_opts.clone().normalize();
+    let global_opts = &cli.global_opts;
+    let args = match &cli.command {
+        Commands::GetStackInstances(args) => args,
+        _ => anyhow::bail!("Invalid command type for get_stack_instances"),
+    };
+
     let start_time = Instant::now();
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
@@ -27,7 +31,7 @@ pub async fn get_stack_instances(
         output_options
     ).await?;
 
-    let context = create_context_for_operation(opts, CfnOperation::GetStackInstances).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::GetStackInstances).await?;
     let ec2_client = aws_sdk_ec2::Client::new(&context.aws_config);
     
     // Query EC2 for instances with the CloudFormation stack tag
