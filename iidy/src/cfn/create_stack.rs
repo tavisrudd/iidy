@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
     cli::{StackFileArgs, GlobalOpts, Cli, Commands},
     stack_args::load_stack_args,
     aws::AwsSettings,
@@ -38,16 +38,7 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
         &cli_aws_settings,
     ).await?;
 
-    // Override stack name if provided via CLI
-    let mut final_stack_args = stack_args;
-    if let Some(ref stack_name) = args.stack_name {
-        final_stack_args.stack_name = Some(stack_name.clone());
-    }
-
-    // Validate required fields
-    if final_stack_args.stack_name.is_none() {
-        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
-    }
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
@@ -142,11 +133,8 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
     // Calculate elapsed time and determine success based on final stack status
     let elapsed_seconds = (Utc::now() - start_time).num_seconds();
     
-    // Expected successful terminal states for create-stack (based on iidy-js spec)
-    let expected_success_states = ["CREATE_COMPLETE"];
-    let success = final_status.as_ref()
-        .map(|status| expected_success_states.contains(&status.as_str()))
-        .unwrap_or(false);
+    // Determine success using centralized helper
+    let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
     
     // Skip stack contents if the stack was deleted (unlikely for create-stack, but handle gracefully)
     if let Some(ref status) = final_status {

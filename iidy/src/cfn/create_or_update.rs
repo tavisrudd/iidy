@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation},
+    cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation, apply_stack_name_override_and_validate},
     cli::{UpdateStackArgs, Cli, Commands},
     output::{
         DynamicOutputManager, manager::OutputOptions,
@@ -38,16 +38,7 @@ pub async fn create_or_update(cli: &Cli) -> Result<()> {
         &cli_aws_settings,
     ).await?;
 
-    // Override stack name if provided via CLI
-    let mut final_stack_args = stack_args;
-    if let Some(ref stack_name) = args.base.stack_name {
-        final_stack_args.stack_name = Some(stack_name.clone());
-    }
-
-    // Validate required fields
-    if final_stack_args.stack_name.is_none() {
-        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
-    }
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }

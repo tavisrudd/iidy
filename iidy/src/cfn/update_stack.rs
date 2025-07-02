@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
     cli::{UpdateStackArgs, Cli, Commands},
     stack_args::load_stack_args,
     aws::AwsSettings,
@@ -37,15 +37,7 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
         &cli_aws_settings,
     ).await?;
 
-    // Override stack name if provided via CLI
-    let mut final_stack_args = stack_args;
-    if let Some(ref stack_name) = args.base.stack_name {
-        final_stack_args.stack_name = Some(stack_name.clone());
-    }
-
-    if final_stack_args.stack_name.is_none() {
-        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
-    }
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
 
     let stack_name = final_stack_args
         .stack_name
@@ -146,11 +138,8 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
     drop(sender);
     output_manager.stop().await?;
     
-    // Determine success based on final stack status (exact iidy-js patterns)
-    let expected_success_states = ["UPDATE_COMPLETE"];
-    let success = final_status.as_ref()
-        .map(|status| expected_success_states.contains(&status.as_str()))
-        .unwrap_or(false);
+    // Determine success using centralized helper
+    let success = determine_operation_success(&final_status, UPDATE_SUCCESS_STATES);
     
     // Show final command summary (exact iidy-js showFinalComandSummary pattern)
     let elapsed = if let Some(start_time) = start_time {

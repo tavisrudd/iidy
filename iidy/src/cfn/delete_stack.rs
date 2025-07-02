@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::{
-    cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation},
+    cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES},
     cli::{DeleteArgs, Cli, Commands},
     output::{
         DynamicOutputManager, OutputData,
@@ -221,11 +221,8 @@ pub async fn delete_stack(cli: &Cli) -> Result<i32> {
     // 7. Determine success based on final stack status and show final command summary
     let elapsed_seconds = (Utc::now() - start_time).num_seconds();
     
-    // Expected successful terminal states for delete-stack (based on iidy-js spec)
-    let expected_success_states = ["DELETE_COMPLETE"];
-    let success = final_status.as_ref()
-        .map(|status| expected_success_states.contains(&status.as_str()))
-        .unwrap_or(false);
+    // Determine success using centralized helper
+    let success = determine_operation_success(&final_status, DELETE_SUCCESS_STATES);
     
     let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
         success,

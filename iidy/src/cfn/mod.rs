@@ -243,6 +243,70 @@ impl CfnContext {
     }
 }
 
+// Success state determination for CloudFormation operations
+// Centralizes the common pattern of checking if an operation succeeded
+
+/// Constants for expected success states for each CloudFormation operation
+pub const CREATE_SUCCESS_STATES: &[&str] = &["CREATE_COMPLETE"];
+pub const UPDATE_SUCCESS_STATES: &[&str] = &["UPDATE_COMPLETE"];  
+pub const DELETE_SUCCESS_STATES: &[&str] = &["DELETE_COMPLETE"];
+
+/// Determine if a CloudFormation operation succeeded based on its final status.
+/// 
+/// This helper function centralizes the common pattern across handlers that
+/// check if a final stack status indicates successful completion of the operation.
+/// 
+/// # Arguments
+/// * `final_status` - The final stack status from the CloudFormation operation
+/// * `expected_states` - Array of status strings that indicate success
+/// 
+/// # Returns
+/// * `true` if the final status matches one of the expected success states
+/// * `false` if no status is available or the status doesn't match success states
+/// 
+/// # Example
+/// ```rust
+/// let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
+/// ```
+pub fn determine_operation_success(final_status: &Option<String>, expected_states: &[&str]) -> bool {
+    final_status.as_ref()
+        .map(|status| expected_states.contains(&status.as_str()))
+        .unwrap_or(false)
+}
+
+/// Apply stack name override from CLI and validate that a stack name is present.
+///
+/// This helper function centralizes the common pattern across handlers that
+/// override the stack name from the CLI argument if provided, and then validate
+/// that a stack name is available (either from stack-args.yaml or CLI).
+///
+/// # Arguments
+/// * `stack_args` - The loaded stack arguments from the YAML file
+/// * `cli_stack_name` - Optional stack name override from CLI arguments
+///
+/// # Returns
+/// * `Ok(StackArgs)` with the final stack arguments including any CLI override
+/// * `Err` if no stack name is available after override and validation
+///
+/// # Example
+/// ```rust
+/// let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
+/// ```
+pub fn apply_stack_name_override_and_validate(
+    mut stack_args: crate::stack_args::StackArgs, 
+    cli_stack_name: Option<&String>
+) -> Result<crate::stack_args::StackArgs> {
+    if let Some(stack_name) = cli_stack_name {
+        stack_args.stack_name = Some(stack_name.clone());
+    }
+    
+    if stack_args.stack_name.is_none() {
+        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
+    }
+    
+    Ok(stack_args)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::time::Instant;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation},
+    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate},
     cli::{Cli, Commands},
     output::{
         DynamicOutputManager, manager::OutputOptions,
@@ -39,16 +39,7 @@ pub async fn exec_changeset(cli: &Cli) -> Result<()> {
         &cli_aws_settings,
     ).await?;
 
-    // Override stack name if provided via CLI
-    let mut final_stack_args = stack_args;
-    if let Some(ref stack_name) = args.stack_name {
-        final_stack_args.stack_name = Some(stack_name.clone());
-    }
-
-    // Validate required fields
-    if final_stack_args.stack_name.is_none() {
-        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
-    }
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
 
     // Setup AWS context for changeset execution
     let context = create_context_for_operation(&opts, CfnOperation::ExecuteChangeset).await?;
