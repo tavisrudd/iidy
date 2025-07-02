@@ -187,22 +187,6 @@ impl CfnContext {
         derived
     }
 
-    /// Derive a new token from the primary token for a specific step name (for testing).
-    ///
-    /// This method is primarily for testing purposes when you need to use arbitrary step names.
-    /// For production code, prefer using derive_token_for_step with CfnOperation.
-    #[cfg(test)]
-    pub fn derive_token_for_test_step(&self, step: &str) -> TokenInfo {
-        let derived = self.token_info.derive_for_step(step);
-
-        // Track the derived token for audit trail
-        if let Ok(mut used) = self.used_tokens.lock() {
-            used.push(derived.clone());
-        }
-
-        derived
-    }
-
     /// Get a snapshot of all tokens that have been used in this context.
     ///
     /// This includes the primary token and any derived tokens that have been
@@ -235,6 +219,7 @@ impl CfnContext {
     ///
     /// # Returns
     /// True if derive_token_for_step() has been called at least once, false otherwise.
+    #[cfg(test)]
     pub fn has_derived_tokens(&self) -> bool {
         match self.used_tokens.lock() {
             Ok(tokens) => tokens.len() > 1, // More than just the primary token
@@ -292,6 +277,7 @@ pub fn determine_operation_success(final_status: &Option<String>, expected_state
 /// ```rust
 /// let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
 /// ```
+// TODO factor out
 pub fn apply_stack_name_override_and_validate(
     mut stack_args: crate::stack_args::StackArgs, 
     cli_stack_name: Option<&String>
@@ -435,8 +421,8 @@ mod tests {
         let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
 
         // Derive the same token multiple times
-        let token1 = ctx.derive_token_for_test_step("test-step");
-        let token2 = ctx.derive_token_for_test_step("test-step");
+        let token1 = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
+        let token2 = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
 
         // Should be identical
         assert_eq!(token1.value, token2.value);
