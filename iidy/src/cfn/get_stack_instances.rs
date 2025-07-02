@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    cli::{Cli, Commands},
+    cli::{Cli, GetStackInstancesArgs},
     cfn::{create_context_for_operation, CfnOperation},
     output::{
         DynamicOutputManager, manager::OutputOptions,
@@ -14,14 +14,10 @@ use crate::{
 ///
 /// Queries EC2 for instances with the stack tag and displays them in either
 /// short format (DNS/IP only) or detailed format with instance details.
-pub async fn get_stack_instances(cli: &Cli) -> Result<()> {
+pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Result<()> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::GetStackInstances(args) => args,
-        _ => anyhow::bail!("Invalid command type for get_stack_instances"),
-    };
 
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(

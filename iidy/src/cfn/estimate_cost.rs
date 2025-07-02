@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::{
     cfn::{create_context, CfnOperation},
-    cli::{Cli, Commands},
+    cli::{Cli, StackFileArgs},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         OutputData, StatusUpdate, StatusLevel
@@ -16,14 +16,10 @@ use crate::{
 ///
 /// Loads the template and parameters from stack-args.yaml, calls AWS
 /// CloudFormation's cost estimation API, and displays the cost estimator URL.
-pub async fn estimate_cost(cli: &Cli) -> Result<()> {
+pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<()> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::EstimateCost(args) => args,
-        _ => anyhow::bail!("Invalid command type for estimate_cost"),
-    };
 
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(

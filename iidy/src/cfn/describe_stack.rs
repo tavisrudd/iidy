@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 
 use crate::{
     cfn::{create_context_for_operation, CfnOperation},
-    cli::{Cli, ToArgMap, Commands},
+    cli::{Cli, ToArgMap, DescribeArgs},
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,
         StackContents, StackStatusInfo,
@@ -17,10 +17,7 @@ use crate::{
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// The stack details can be displayed in Interactive (with colors and formatting), 
 /// Plain (CI-friendly), or JSON (machine-readable) formats.
-pub async fn describe_stack(cli: &Cli) -> Result<()> {
-    let Commands::DescribeStack(args) = &cli.command else {
-        return Err(anyhow::anyhow!("Invalid command for describe_stack"));
-    };
+pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<()> {
     let opts = cli.aws_opts.clone().normalize();
 
     // Setup data-driven output manager FIRST to show immediate UI feedback

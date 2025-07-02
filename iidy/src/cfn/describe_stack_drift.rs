@@ -5,7 +5,7 @@ use aws_sdk_cloudformation::{
 };
 
 use crate::{
-    cli::{Cli, Commands},
+    cli::{Cli, DriftArgs},
     cfn::{create_context_for_operation, CfnOperation},
     output::{
         DynamicOutputManager, manager::OutputOptions,
@@ -22,14 +22,10 @@ use crate::{
 /// 2. Update drift data (with spinner if needed)
 /// 3. Show drifted resources
 /// No command metadata is shown (read-only operation).
-pub async fn describe_stack_drift(cli: &Cli) -> Result<()> {
+pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<()> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::DescribeStackDrift(args) => args,
-        _ => anyhow::bail!("Invalid command type for describe_stack_drift"),
-    };
 
     let _cli_aws_settings = crate::aws::AwsSettings::from_normalized_opts(&opts);
     let output_options = OutputOptions::minimal();

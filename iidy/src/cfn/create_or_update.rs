@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation, apply_stack_name_override_and_validate},
-    cli::{UpdateStackArgs, Cli, Commands},
+    cli::{UpdateStackArgs, Cli},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, warning_message, create_command_result},
@@ -12,14 +12,10 @@ use crate::{
 };
 
 /// Create or update a CloudFormation stack using intelligent detection with data-driven output.
-pub async fn create_or_update(cli: &Cli) -> Result<()> {
+pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<()> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::CreateOrUpdate(args) => args,
-        _ => anyhow::bail!("Invalid command type for create_or_update"),
-    };
 
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(

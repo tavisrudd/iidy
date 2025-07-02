@@ -1,5 +1,5 @@
 use crate::{
-    cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli, Commands},
+    cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli},
     cfn::{create_context_for_operation, CfnOperation},
 };
 use anyhow::Result;
@@ -114,13 +114,9 @@ pub async fn get_stack_template(
 /// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
 /// - stdout: Template content in requested format
 /// - No progress messages or command metadata
-pub async fn get_stack_template_with_output(cli: &Cli) -> Result<FormattedTemplate> {
+pub async fn get_stack_template_with_output(cli: &Cli, args: &GetTemplateArgs) -> Result<FormattedTemplate> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
-    let args = match &cli.command {
-        Commands::GetStackTemplate(args) => args,
-        _ => anyhow::bail!("Invalid command type for get_stack_template"),
-    };
 
     // Direct call without unnecessary progress messages
     get_stack_template(&opts, args).await

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::{
-    cli::{Cli, Commands},
+    cli::{Cli, ListArgs},
     cfn::{create_context_for_operation, CfnOperation},
     output::{
         DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn
@@ -79,10 +79,7 @@ impl From<&aws_sdk_cloudformation::types::Stack> for SerializableStack {
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// The stack list can be displayed in Interactive (with colors and icons), Plain (CI-friendly),
 /// or JSON (machine-readable) formats.
-pub async fn list_stacks(cli: &Cli) -> Result<()> {
-    let Commands::ListStacks(args) = &cli.command else {
-        return Err(anyhow::anyhow!("Invalid command for list_stacks"));
-    };
+pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
     
     // Setup AWS client and retrieve stacks
     let normalized_opts = cli.aws_opts.clone().normalize();

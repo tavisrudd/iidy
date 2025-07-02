@@ -17,8 +17,8 @@ use tokio::runtime::Runtime;
 fn handle_command(cli: Cli) {
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
-        Commands::CreateStack(_) => {
-            match rt.block_on(cfn::create_stack::create_stack(&cli)) {
+        Commands::CreateStack(ref args) => {
+            match rt.block_on(cfn::create_stack::create_stack(&cli, &args)) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
                     eprintln!("error creating stack: {e:?}");
@@ -26,8 +26,8 @@ fn handle_command(cli: Cli) {
                 }
             }
         }
-        Commands::UpdateStack(_) => {
-            match rt.block_on(cfn::update_stack::update_stack(&cli)) {
+        Commands::UpdateStack(ref args) => {
+            match rt.block_on(cfn::update_stack::update_stack(&cli, &args)) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
                     eprintln!("error updating stack: {e:?}");
@@ -35,55 +35,55 @@ fn handle_command(cli: Cli) {
                 }
             }
         }
-        Commands::CreateOrUpdate(_) => {
-            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(&cli)) {
+        Commands::CreateOrUpdate(ref args) => {
+            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(&cli, &args)) {
                 eprintln!("error creating or updating stack: {e:?}");
                 std::process::exit(1);
             }
         }
-        Commands::EstimateCost(_) => {
-            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&cli)) {
+        Commands::EstimateCost(ref args) => {
+            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&cli, &args)) {
                 eprintln!("error estimating cost: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::DummySpacer => {}
-        Commands::CreateChangeset(_) => {
-            if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(&cli)) {
+        Commands::CreateChangeset(ref args) => {
+            if let Err(e) = rt.block_on(cfn::create_changeset::create_changeset(&cli, &args)) {
                 eprintln!("error creating change set: {e:?}");
                 std::process::exit(1);
             }
         }
-        Commands::ExecChangeset(_) => {
-            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&cli)) {
+        Commands::ExecChangeset(ref args) => {
+            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&cli, &args)) {
                 eprintln!("error executing change set: {e:?}");
                 std::process::exit(1);
             }
         }
         Commands::DummySpacer2 => {}
-        Commands::DescribeStack(ref _args) => {
+        Commands::DescribeStack(ref args) => {
             if let Err(e) =
-                rt.block_on(cfn::describe_stack::describe_stack(&cli))
+                rt.block_on(cfn::describe_stack::describe_stack(&cli, &args))
             {
                 eprintln!("error describing stack: {e:?}");
                 std::process::exit(1);
             }
         }
 
-        Commands::DescribeStackDrift(_) => {
-            if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(&cli)) {
+        Commands::DescribeStackDrift(ref args) => {
+            if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(&cli, &args)) {
                 eprintln!("error describing stack drift: {e:?}");
                 std::process::exit(1);
             }
         }
-        Commands::WatchStack(ref _args) => {
-            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&cli)) {
+        Commands::WatchStack(ref args) => {
+            if let Err(e) = rt.block_on(cfn::watch_stack::watch_stack(&cli, &args)) {
                 eprintln!("error watching stack: {e:?}");
                 std::process::exit(1);
             }
         }
-        Commands::DeleteStack(_) => {
-            match rt.block_on(cfn::delete_stack::delete_stack(&cli)) {
+        Commands::DeleteStack(ref args) => {
+            match rt.block_on(cfn::delete_stack::delete_stack(&cli, &args)) {
                 Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
                     eprintln!("error deleting stack: {e:?}");
@@ -91,8 +91,8 @@ fn handle_command(cli: Cli) {
                 }
             }
         }
-        Commands::GetStackTemplate(_) => {
-            match rt.block_on(cfn::get_stack_template::get_stack_template_with_output(&cli)) {
+        Commands::GetStackTemplate(ref args) => {
+            match rt.block_on(cfn::get_stack_template::get_stack_template_with_output(&cli, &args)) {
                 Ok(out) => {
                     for line in out.stderr_lines {
                         eprintln!("{line}");
@@ -105,14 +105,14 @@ fn handle_command(cli: Cli) {
                 }
             }
         }
-        Commands::GetStackInstances(_) => {
-            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(&cli)) {
+        Commands::GetStackInstances(ref args) => {
+            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(&cli, &args)) {
                 eprintln!("error getting stack instances: {e:?}");
                 std::process::exit(1);
             }
         }
-        Commands::ListStacks(ref _args) => {
-            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli)) {
+        Commands::ListStacks(ref args) => {
+            if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli, &args)) {
                 eprintln!("error listing stacks: {e:?}");
                 std::process::exit(1);
             }

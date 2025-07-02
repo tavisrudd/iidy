@@ -13,7 +13,7 @@ pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 
 use crate::{
-    cli::Commands,
+    cli::WatchArgs,
     cfn::CfnContext,
     output::{
         DynamicOutputManager, OutputData,
@@ -40,11 +40,9 @@ use super::{stack_operations::{StackEventsService, StackInfoService}};
 /// 3. Show live stack events with polling and spinner
 /// 4. Show stack contents at the end
 pub async fn watch_stack(
-    cli: &crate::cli::Cli
+    cli: &crate::cli::Cli,
+    args: &WatchArgs
 ) -> Result<()> {
-    let Commands::WatchStack(args) = &cli.command else {
-        return Err(anyhow::anyhow!("Invalid command for watch_stack"));
-    };
     
     // Normalize AWS options 
     let opts = cli.aws_opts.clone().normalize();

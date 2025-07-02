@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
-    cli::{StackFileArgs, GlobalOpts, Cli, Commands},
+    cli::{CreateStackArgs, GlobalOpts, Cli},
     stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
@@ -18,14 +18,10 @@ use crate::{
 /// 2. Stack creation operation  
 /// 3. Watch and summarize with stack definition, previous events, live events, and final contents
 /// Uses the data-driven output architecture for consistent rendering across output modes.
-pub async fn create_stack(cli: &Cli) -> Result<i32> {
+pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::CreateStack(args) => args,
-        _ => anyhow::bail!("Invalid command type for create_stack"),
-    };
 
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
@@ -167,7 +163,7 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
 async fn perform_stack_creation(
     context: &crate::cfn::CfnContext,
     stack_args: &crate::stack_args::StackArgs,
-    args: &StackFileArgs,
+    args: &CreateStackArgs,
     global_opts: &GlobalOpts,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {

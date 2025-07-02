@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES},
-    cli::{DeleteArgs, Cli, Commands},
+    cli::{DeleteArgs, Cli},
     output::{
         DynamicOutputManager, OutputData,
         aws_conversion::{create_command_metadata, warning_message, convert_token_info},
@@ -64,14 +64,10 @@ async fn perform_stack_deletion(
 /// 3. Delete operation
 /// 4. Watch deletion progress with live events
 /// Uses the data-driven output architecture for consistent rendering across output modes.
-pub async fn delete_stack(cli: &Cli) -> Result<i32> {
+pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::DeleteStack(args) => args,
-        _ => anyhow::bail!("Invalid command type for delete_stack"),
-    };
 
     let stack_name = &args.stackname;
     

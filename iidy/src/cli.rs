@@ -292,7 +292,7 @@ impl std::fmt::Display for YamlSpec {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// create a cfn stack based on stack-args.yaml
-    CreateStack(StackFileArgs),
+    CreateStack(CreateStackArgs),
     /// update a cfn stack based on stack-args.yaml
     UpdateStack(UpdateStackArgs),
     /// create or update a cfn stack based on stack-args.yaml
@@ -387,6 +387,13 @@ impl Commands {
 
 #[derive(Args, Debug, Clone)]
 pub struct StackFileArgs {
+    pub argsfile: String,
+    #[arg(long = "stack-name")]
+    pub stack_name: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CreateStackArgs {
     pub argsfile: String,
     #[arg(long = "stack-name")]
     pub stack_name: Option<String>,

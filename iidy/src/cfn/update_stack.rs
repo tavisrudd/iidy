@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
-    cli::{UpdateStackArgs, Cli, Commands},
+    cli::{UpdateStackArgs, Cli},
     stack_args::load_stack_args,
     aws::AwsSettings,
     output::{
@@ -19,14 +19,10 @@ use crate::{
 /// 3. Watch and summarize with stack definition, live events, and final contents
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// Returns exit code: 0 for success, 1 for failure, 130 for interrupt.
-pub async fn update_stack(cli: &Cli) -> Result<i32> {
+pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::UpdateStack(args) => args,
-        _ => anyhow::bail!("Invalid command type for update_stack"),
-    };
 
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
     let operation = CfnOperation::UpdateStack;

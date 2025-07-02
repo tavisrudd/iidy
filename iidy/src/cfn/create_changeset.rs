@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate},
-    cli::{Cli, Commands},
+    cli::{Cli, CreateChangeSetArgs},
     output::{
         DynamicOutputManager, manager::OutputOptions,
         aws_conversion::{progress_message, success_message, create_command_result},
@@ -12,14 +12,10 @@ use crate::{
 };
 
 /// Create a CloudFormation changeset with data-driven output.
-pub async fn create_changeset(cli: &Cli) -> Result<()> {
+pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<()> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
-    let args = match &cli.command {
-        Commands::CreateChangeset(args) => args,
-        _ => anyhow::bail!("Invalid command type for create_changeset"),
-    };
 
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
