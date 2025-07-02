@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::cfn::{create_context, CfnOperation};
+use crate::cfn::create_context;
 use crate::cli::{Cli, StackFileArgs};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
@@ -26,7 +26,7 @@ pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<()> {
     ).await?;
 
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = CfnOperation::EstimateCost;
+    let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.argsfile,
         &global_opts.environment,

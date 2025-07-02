@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 
-use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::cfn::create_context_for_operation;
 use crate::cli::{Cli, ToArgMap, DescribeArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, convert_stack_to_definition,
@@ -55,7 +55,8 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<()> {
     let _ = sender.send(OutputData::CommandMetadata(metadata));
 
     // Now setup AWS context (fast - automatically uses system time for read-only operations)
-    let context = create_context_for_operation(&opts, CfnOperation::DescribeStack).await?;
+    let operation = cli.command.to_cfn_operation();
+    let context = create_context_for_operation(&opts, operation).await?;
     
     // Clone values needed for the async tasks
     let client = context.client.clone();

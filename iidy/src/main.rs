@@ -92,7 +92,7 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::GetStackTemplate(ref args) => {
-            match rt.block_on(cfn::get_stack_template::get_stack_template_with_output(&cli, &args)) {
+            match rt.block_on(cfn::get_stack_template::get_stack_template(&cli, &args)) {
                 Ok(out) => {
                     for line in out.stderr_lines {
                         eprintln!("{line}");

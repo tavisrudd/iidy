@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::cli::{Cli, GetStackInstancesArgs};
-use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
     aws_conversion::{create_command_result},
@@ -23,7 +23,8 @@ pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Res
         output_options
     ).await?;
 
-    let context = create_context_for_operation(&opts, CfnOperation::GetStackInstances).await?;
+    let operation = cli.command.to_cfn_operation();
+    let context = create_context_for_operation(&opts, operation).await?;
     let ec2_client = aws_sdk_ec2::Client::new(&context.aws_config);
     
     // Query EC2 for instances with the CloudFormation stack tag

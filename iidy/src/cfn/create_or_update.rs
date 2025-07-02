@@ -23,7 +23,7 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<()> {
     ).await?;
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = CfnOperation::CreateOrUpdate;
+    let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.base.argsfile,
         &global_opts.environment,

@@ -30,7 +30,7 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     let global_opts = &cli.global_opts;
 
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = CfnOperation::UpdateStack;
+    let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.base.argsfile,
         &global_opts.environment,
@@ -46,7 +46,7 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     // Setup AWS context for update operation
-    let context = create_context_for_operation(&opts, CfnOperation::UpdateStack).await?;
+    let context = create_context_for_operation(&opts, operation).await?;
 
     // Setup data-driven output manager with full CLI context
     let aws_opts = AwsOpts {

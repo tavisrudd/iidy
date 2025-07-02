@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::cli::{Cli, ListArgs};
-use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
     aws_conversion::convert_stack_to_list_entry,
@@ -83,7 +83,8 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
     
     // Setup AWS client and retrieve stacks
     let normalized_opts = cli.aws_opts.clone().normalize();
-    let context = create_context_for_operation(&normalized_opts, CfnOperation::ListStacks).await?;
+    let operation = cli.command.to_cfn_operation();
+    let context = create_context_for_operation(&normalized_opts, operation).await?;
     let client = &context.client;
 
     // Use the paginator to retrieve all stacks in the region.

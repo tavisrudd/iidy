@@ -1,5 +1,5 @@
 use crate::cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli};
-use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::cfn::create_context_for_operation;
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
 use aws_sdk_cloudformation::types::TemplateStage;
@@ -84,13 +84,16 @@ pub fn format_template(
 }
 
 /// Retrieve a stack template from CloudFormation and format it for display.
-pub async fn get_stack_template(
-    opts: &crate::cli::NormalizedAwsOpts,
-    args: &GetTemplateArgs,
-) -> Result<FormattedTemplate> {
-    let context = create_context_for_operation(opts, CfnOperation::GetStackTemplate).await?;
+///
+/// This is a read-only operation
+/// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
+/// - stdout: Template content in requested format
+/// - No progress messages or command metadata
+pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<FormattedTemplate> {
+    let operation = cli.command.to_cfn_operation();
+    let opts = cli.aws_opts.clone().normalize();
+    let context = create_context_for_operation(&opts, operation).await?;
     let client = &context.client;
-
     let stage = match args.stage {
         TemplateStageArg::Original => TemplateStage::Original,
         TemplateStageArg::Processed => TemplateStage::Processed,
@@ -104,20 +107,6 @@ pub async fn get_stack_template(
         .await?;
 
     format_template(output, args.stage.clone(), args.format.clone())
-}
-
-/// Retrieve a stack template with data-driven output wrapper.
-/// 
-/// This is a read-only operation that follows the iidy-js pattern:
-/// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
-/// - stdout: Template content in requested format
-/// - No progress messages or command metadata
-pub async fn get_stack_template_with_output(cli: &Cli, args: &GetTemplateArgs) -> Result<FormattedTemplate> {
-    // Extract components from CLI
-    let opts = cli.aws_opts.clone().normalize();
-
-    // Direct call without unnecessary progress messages
-    get_stack_template(&opts, args).await
 }
 
 #[cfg(test)]

@@ -5,7 +5,7 @@ use aws_sdk_cloudformation::{
 };
 
 use crate::cli::{Cli, DriftArgs};
-use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
 };
@@ -31,7 +31,8 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<()> {
         global_opts.effective_output_mode(),
         output_options
     ).await?;
-    let context = create_context_for_operation(&opts, CfnOperation::DescribeStackDrift).await?;
+    let operation = cli.command.to_cfn_operation();
+    let context = create_context_for_operation(&opts, operation).await?;
     let client = &context.client;
 
     // 1. Show stack definition (following iidy-js pattern)

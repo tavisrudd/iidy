@@ -25,7 +25,7 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
 
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = CfnOperation::CreateStack;
+    let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.argsfile,
         &global_opts.environment,
@@ -44,7 +44,7 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     // Setup AWS context for create operation
-    let context = create_context_for_operation(&opts, CfnOperation::CreateStack).await?;
+    let context = create_context_for_operation(&opts, operation).await?;
 
     // Setup data-driven output manager with full CLI context
     let aws_opts = AwsOpts {

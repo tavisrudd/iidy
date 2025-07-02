@@ -13,7 +13,7 @@ pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 
 use crate::cli::WatchArgs;
-use crate::cfn::{CfnContext, create_context_for_operation, CfnOperation, stack_operations::collect_stack_contents};
+use crate::cfn::{CfnContext, create_context_for_operation, stack_operations::collect_stack_contents};
 use crate::output::{
     DynamicOutputManager, OutputData,
     StackEventWithTiming,
@@ -61,7 +61,8 @@ pub async fn watch_stack(
     let sender = output_manager.start();
     
     // Setup AWS context (no need for command metadata for read-only operation)
-    let context = create_context_for_operation(&opts, CfnOperation::WatchStack).await?;
+    let operation = cli.command.to_cfn_operation();
+    let context = create_context_for_operation(&opts, operation).await?;
 
     // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();

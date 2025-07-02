@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate};
+use crate::cfn::{CfnRequestBuilder, create_context_for_operation, apply_stack_name_override_and_validate};
 use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
@@ -24,7 +24,7 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<()> {
     // Load stack configuration
     // Load stack configuration with full context (AWS credential merging + $envValues injection)
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = CfnOperation::ExecuteChangeset;
+    let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.argsfile,
         &global_opts.environment,
@@ -35,7 +35,7 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<()> {
     let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
 
     // Setup AWS context for changeset execution
-    let context = create_context_for_operation(&opts, CfnOperation::ExecuteChangeset).await?;
+    let context = create_context_for_operation(&opts, operation.clone()).await?;
 
     // Setup request builder
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
@@ -46,7 +46,7 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<()> {
 
     // Build and execute the ExecuteChangeSet request
     let (execute_request, token) =
-        builder.build_execute_changeset(&args.changeset_name, &CfnOperation::ExecuteChangeset);
+        builder.build_execute_changeset(&args.changeset_name, &operation);
     
     // Pass token to output manager for conditional display
     let output_token = convert_token_info(&token);
