@@ -1,13 +1,11 @@
 use anyhow::Result;
 
-use crate::{
-    cli::{Cli, GetStackInstancesArgs},
-    cfn::{create_context_for_operation, CfnOperation},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-        aws_conversion::{create_command_result},
-        OutputData, StatusUpdate, StatusLevel
-    },
+use crate::cli::{Cli, GetStackInstancesArgs};
+use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
+    aws_conversion::{create_command_result},
+    OutputData, StatusUpdate, StatusLevel
 };
 
 /// Get stack EC2 instances that belong to a CloudFormation stack.

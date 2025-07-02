@@ -1,13 +1,13 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
-    cli::{CreateStackArgs, GlobalOpts, Cli},
-    stack_args::load_stack_args,
+    cfn::{CfnRequestBuilder, CfnContext, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}},
+    cli::{CreateStackArgs, GlobalOpts, Cli, AwsOpts, Commands},
+    stack_args::{load_stack_args, StackArgs},
     aws::AwsSettings,
     output::{
-        DynamicOutputManager, OutputData,
-        aws_conversion::{create_command_metadata, convert_token_info}
+        DynamicOutputManager, OutputData, manager::OutputOptions, convert_stack_to_definition,
+        aws_conversion::{create_command_metadata, convert_token_info, create_final_command_summary}
     },
 };
 
@@ -47,18 +47,18 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
     let context = create_context_for_operation(&opts, CfnOperation::CreateStack).await?;
 
     // Setup data-driven output manager with full CLI context
-    let aws_opts = crate::cli::AwsOpts {
+    let aws_opts = AwsOpts {
         region: opts.region.clone(),
         profile: opts.profile.clone(),
         assume_role_arn: opts.assume_role_arn.clone(),
         client_request_token: Some(opts.client_request_token.value.clone()),
     };
-    let cli = crate::cli::Cli {
+    let cli = Cli {
         global_opts: global_opts.clone(),
         aws_opts,
-        command: crate::cli::Commands::CreateStack(args.clone()),
+        command: Commands::CreateStack(args.clone()),
     };
-    let output_options = crate::output::manager::OutputOptions::new(cli);
+    let output_options = OutputOptions::new(cli);
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -81,7 +81,7 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
         let tx = sender.clone();
         tokio::spawn(async move {
             let stack = StackInfoService::get_stack(&client, &stack_id).await?;
-            let output_data = crate::output::aws_conversion::convert_stack_to_definition(&stack, true);
+            let output_data = convert_stack_to_definition(&stack, true);
             let _ = tx.send(output_data);
             Ok::<(), anyhow::Error>(())
         })
@@ -95,13 +95,13 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
         let context_clone = context.clone();
         
         tokio::spawn(async move {
-            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
-            let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
+            let sender_output = SenderOutput { sender: tx };
+            let final_status = watch_stack_live_events_with_seen_events(
                 &client, 
                 &context_clone, 
                 &stack_id, 
                 sender_output, 
-                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
+                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
                 std::time::Duration::from_secs(3600), // 1 hour timeout for create operations
                 vec![] // No previous events for brand new stack
             ).await?;
@@ -135,7 +135,7 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
     if let Some(ref status) = final_status {
         if status == "DELETE_COMPLETE" {
             // Stack was deleted during creation (e.g., OnFailure=DELETE), skip stack contents
-            let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+            let final_command_summary = create_final_command_summary(
                 false, // Mark as failed since stack was deleted
                 elapsed_seconds
             );
@@ -145,11 +145,11 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
     }
     
     // Final step: Show stack contents (for successful or failed stacks that still exist)
-    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
-    output_manager.render(crate::output::OutputData::StackContents(stack_contents)).await?;
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    output_manager.render(OutputData::StackContents(stack_contents)).await?;
     
     // Show final command summary
-    let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+    let final_command_summary = create_final_command_summary(
         success,
         elapsed_seconds
     );
@@ -161,8 +161,8 @@ pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
 
 /// Perform the actual stack creation operation and return the start time and stack_id for watching
 async fn perform_stack_creation(
-    context: &crate::cfn::CfnContext,
-    stack_args: &crate::stack_args::StackArgs,
+    context: &CfnContext,
+    stack_args: &StackArgs,
     args: &CreateStackArgs,
     global_opts: &GlobalOpts,
     output_manager: &mut DynamicOutputManager,

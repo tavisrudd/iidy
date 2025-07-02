@@ -4,8 +4,12 @@ use aws_sdk_s3::Client as S3Client;
 use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 
-use crate::cli::NormalizedAwsOpts;
-use crate::timing::{ReliableTimeProvider, TimeProvider, TokenInfo};
+use crate::{
+    cli::NormalizedAwsOpts,
+    timing::{ReliableTimeProvider, TimeProvider, TokenInfo, SystemTimeProvider},
+    aws::config_from_normalized_opts,
+    stack_args::StackArgs,
+};
 
 // CloudFormation operation modules
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
@@ -46,10 +50,10 @@ pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResu
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: CfnOperation) -> Result<CfnContext> {
-    let config = crate::aws::config_from_normalized_opts(opts).await?;
+    let config = config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
-        Arc::new(crate::timing::SystemTimeProvider::new())
+        Arc::new(SystemTimeProvider::new())
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
@@ -68,12 +72,12 @@ pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: C
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Result<CfnContext> {
-    let config = crate::aws::config_from_normalized_opts(opts).await?;
+    let config = config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = if need_ntp_sync {
         Arc::new(ReliableTimeProvider::new())
     } else {
-        Arc::new(crate::timing::SystemTimeProvider::new())
+        Arc::new(SystemTimeProvider::new())
     };
     CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await
 }
@@ -256,9 +260,9 @@ pub fn determine_operation_success(final_status: &Option<String>, expected_state
 /// ```
 // TODO factor out
 pub fn apply_stack_name_override_and_validate(
-    mut stack_args: crate::stack_args::StackArgs, 
+    mut stack_args: StackArgs, 
     cli_stack_name: Option<&String>
-) -> Result<crate::stack_args::StackArgs> {
+) -> Result<StackArgs> {
     if let Some(stack_name) = cli_stack_name {
         stack_args.stack_name = Some(stack_name.clone());
     }

@@ -1,16 +1,14 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::{
-    cfn::{create_context, CfnOperation},
-    cli::{Cli, StackFileArgs},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-        OutputData, StatusUpdate, StatusLevel
-    },
-    stack_args::load_stack_args,
-    aws::AwsSettings,
+use crate::cfn::{create_context, CfnOperation};
+use crate::cli::{Cli, StackFileArgs};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
+    OutputData, StatusUpdate, StatusLevel
 };
+use crate::stack_args::load_stack_args;
+use crate::aws::AwsSettings;
 
 /// Estimate stack cost using CloudFormation's estimateTemplateCost API.
 ///

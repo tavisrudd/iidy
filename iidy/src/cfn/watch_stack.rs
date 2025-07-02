@@ -12,14 +12,15 @@ const DEFAULT_PREVIOUS_EVENTS_COUNT: usize = 10;
 pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 
-use crate::{
-    cli::WatchArgs,
-    cfn::CfnContext,
-    output::{
-        DynamicOutputManager, OutputData,
-        StackEventWithTiming,
-        OperationCompleteInfo, InactivityTimeoutInfo,
-    },
+use crate::cli::WatchArgs;
+use crate::cfn::{CfnContext, create_context_for_operation, CfnOperation, stack_operations::collect_stack_contents};
+use crate::output::{
+    DynamicOutputManager, OutputData,
+    StackEventWithTiming,
+    OperationCompleteInfo, InactivityTimeoutInfo,
+    convert_stack_to_definition,
+    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event},
+    manager::OutputOptions
 };
 
 use super::{stack_operations::{StackEventsService, StackInfoService}};
@@ -48,7 +49,7 @@ pub async fn watch_stack(
     let opts = cli.aws_opts.clone().normalize();
     
     // Setup data-driven output manager with full CLI context (like describe-stack)
-    let output_options = crate::output::manager::OutputOptions::new(cli.clone());
+    let output_options = OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         cli.global_opts.effective_output_mode(),
         output_options
@@ -60,7 +61,7 @@ pub async fn watch_stack(
     let sender = output_manager.start();
     
     // Setup AWS context (no need for command metadata for read-only operation)
-    let context = crate::cfn::create_context_for_operation(&opts, crate::cfn::CfnOperation::WatchStack).await?;
+    let context = create_context_for_operation(&opts, CfnOperation::WatchStack).await?;
 
     // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();
@@ -75,7 +76,7 @@ pub async fn watch_stack(
         let tx = sender.clone();
         let stack_clone = stack.clone();
         tokio::spawn(async move {
-            let output_data = crate::output::convert_stack_to_definition(&stack_clone, true);
+            let output_data = convert_stack_to_definition(&stack_clone, true);
             let _ = tx.send(output_data);
             Ok::<(), anyhow::Error>(())
         })
@@ -97,7 +98,7 @@ pub async fn watch_stack(
             let all_events = StackEventsService::fetch_events(&client, &stack_id).await?;
             
             // Create events display for PREVIOUS events (separate from live events)
-            let output_data = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
+            let output_data = convert_stack_events_to_display_with_max(
                 all_events.clone(), // Clone for live events task to use
                 &format!("Previous Stack Events (max {}):", event_count),
                 Some(event_count),
@@ -139,7 +140,7 @@ pub async fn watch_stack(
     }
     
     // Normal case - show stack contents
-    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
     let sender = output_manager.start();
     let _ = sender.send(OutputData::StackContents(stack_contents));
     drop(sender);
@@ -240,7 +241,7 @@ pub async fn watch_stack_live_events_with_seen_events(
             // Convert and send new events (renderer handles all formatting)
             let converted_events: Vec<StackEventWithTiming> = new_events.iter()
                 .map(|aws_event| {
-                    let converted_event = crate::output::aws_conversion::convert_aws_stack_event(aws_event);
+                    let converted_event = convert_aws_stack_event(aws_event);
                     
                     // Calculate duration from operation start time
                     let duration_seconds = if let Some(event_time) = &converted_event.timestamp {

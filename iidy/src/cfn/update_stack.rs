@@ -1,15 +1,20 @@
 use anyhow::Result;
 
-use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
-    cli::{UpdateStackArgs, Cli},
-    stack_args::load_stack_args,
-    aws::AwsSettings,
-    output::{
-        DynamicOutputManager, OutputData,
-        aws_conversion::{create_command_metadata, create_final_command_summary, convert_token_info}
-    },
+use crate::cfn::{
+    CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, 
+    CfnOperation, determine_operation_success, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate
 };
+use crate::cli::{UpdateStackArgs, Cli};
+use crate::stack_args::load_stack_args;
+use crate::aws::AwsSettings;
+use crate::output::{
+    DynamicOutputManager, OutputData,
+    aws_conversion::{create_command_metadata, create_final_command_summary, convert_token_info, convert_stack_to_definition},
+    manager::OutputOptions
+};
+use crate::cfn::stack_operations::collect_stack_contents;
+use crate::cfn::watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS, watch_stack_with_data_output};
+use crate::cli::{AwsOpts, Commands};
 
 /// Update a CloudFormation stack following exact iidy-js pattern.
 ///
@@ -44,18 +49,18 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     let context = create_context_for_operation(&opts, CfnOperation::UpdateStack).await?;
 
     // Setup data-driven output manager with full CLI context
-    let aws_opts = crate::cli::AwsOpts {
+    let aws_opts = AwsOpts {
         region: opts.region.clone(),
         profile: opts.profile.clone(),
         assume_role_arn: opts.assume_role_arn.clone(),
         client_request_token: Some(opts.client_request_token.value.clone()),
     };
-    let cli = crate::cli::Cli {
+    let cli = Cli {
         global_opts: global_opts.clone(),
         aws_opts,
-        command: crate::cli::Commands::UpdateStack(args.clone()),
+        command: Commands::UpdateStack(args.clone()),
     };
-    let output_options = crate::output::manager::OutputOptions::new(cli);
+    let output_options = OutputOptions::new(cli);
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -83,7 +88,7 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
         let tx = sender.clone();
         tokio::spawn(async move {
             let stack = StackInfoService::get_stack(&client, &stack_id).await?;
-            let output_data = crate::output::aws_conversion::convert_stack_to_definition(&stack, true);
+            let output_data = convert_stack_to_definition(&stack, true);
             let _ = tx.send(output_data);
             Ok::<(), anyhow::Error>(())
         })
@@ -97,13 +102,13 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
         let context_clone = context.clone();
         
         tokio::spawn(async move {
-            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
-            let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
+            let sender_output = SenderOutput { sender: tx };
+            let final_status = watch_stack_live_events_with_seen_events(
                 &client, 
                 &context_clone, 
                 &stack_id, 
                 sender_output, 
-                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
+                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
                 std::time::Duration::from_secs(3600), // 1 hour timeout for update operations
                 vec![] // No previous events for update operations
             ).await?;
@@ -128,7 +133,7 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     let final_status = events_result??;
     
     // Final step: Show stack contents (like create-stack)
-    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
     let sender = output_manager.start();
     let _ = sender.send(OutputData::StackContents(stack_contents));
     drop(sender);
@@ -236,7 +241,7 @@ async fn update_stack_with_changeset(
     let _execute_response = execute_request.send().await?;
 
     // Step 3: Watch stack progress using data-driven output
-    let watch_result = crate::cfn::watch_stack::watch_stack_with_data_output(
+    let watch_result = watch_stack_with_data_output(
         context, 
         stack_name, 
         output_manager, 

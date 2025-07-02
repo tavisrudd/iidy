@@ -2,12 +2,12 @@ use anyhow::Result;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-use crate::{
-    cli::{Cli, ListArgs},
-    cfn::{create_context_for_operation, CfnOperation},
-    output::{
-        DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn
-    },
+use crate::cli::{Cli, ListArgs};
+use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::output::{
+    DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
+    aws_conversion::convert_stack_to_list_entry,
+    manager::OutputOptions
 };
 
 // Note: The complex color formatting and lifecycle icon logic has been moved 
@@ -199,7 +199,7 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
     let stack_list_display = convert_stacks_to_list_display_with_filters(filtered_stacks, show_tags, filters_applied, columns, is_query_mode);
     
     // Setup data-driven output manager
-    let output_options = crate::output::manager::OutputOptions::new(cli.clone());
+    let output_options = OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         cli.global_opts.effective_output_mode(),
         output_options
@@ -219,7 +219,7 @@ fn convert_stacks_to_list_display_with_filters(
     query_mode: bool
 ) -> OutputData {
     let mut entries: Vec<StackListEntry> = stacks.iter().map(|stack| {
-        crate::output::aws_conversion::convert_stack_to_list_entry(stack)
+        convert_stack_to_list_entry(stack)
     }).collect();
     
     // Sort by creation/update time (matching iidy-js logic)

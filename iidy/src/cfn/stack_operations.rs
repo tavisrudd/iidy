@@ -9,6 +9,10 @@ use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
 use super::{CfnContext, is_terminal_status::is_terminal_resource_status};
+use crate::output::{
+    StackContents, StackStatusInfo,
+    aws_conversion::{convert_stack_resources, convert_stack_outputs, convert_outputs_to_exports}
+};
 
 /// Collect stack contents data (controller pattern - no display logic)
 /// 
@@ -23,7 +27,7 @@ use super::{CfnContext, is_terminal_status::is_terminal_resource_status};
 pub async fn collect_stack_contents(
     ctx: &CfnContext,
     stack_name: &str,
-) -> Result<crate::output::StackContents> {
+) -> Result<StackContents> {
     // Start both API calls in parallel - we'll await them as needed
     let resources_future = async {
         ctx.client
@@ -52,21 +56,21 @@ pub async fn collect_stack_contents(
     
     // Get resources (this might still be loading)
     let resources_resp = resources_future.await?;
-    let resources = crate::output::aws_conversion::convert_stack_resources(
+    let resources = convert_stack_resources(
         resources_resp.stack_resources.unwrap_or_default()
     );
 
     // Extract outputs from stack
-    let outputs = crate::output::aws_conversion::convert_stack_outputs(
+    let outputs = convert_stack_outputs(
         stack.outputs.unwrap_or_default()
     );
 
     // Get exports if any outputs have export names
     let stack_id = stack.stack_id.clone().unwrap_or_default();
-    let exports = crate::output::aws_conversion::convert_outputs_to_exports(&outputs, &stack_id);
+    let exports = convert_outputs_to_exports(&outputs, &stack_id);
 
     // Current status
-    let current_status = crate::output::StackStatusInfo {
+    let current_status = StackStatusInfo {
         status: stack.stack_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
         status_reason: stack.stack_status_reason,
         timestamp: stack.last_updated_time.or(stack.creation_time).and_then(|ts| {
@@ -74,7 +78,7 @@ pub async fn collect_stack_contents(
         }),
     };
 
-    Ok(crate::output::StackContents {
+    Ok(StackContents {
         resources,
         outputs,
         exports,

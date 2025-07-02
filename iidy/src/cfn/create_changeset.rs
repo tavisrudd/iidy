@@ -1,15 +1,14 @@
 use anyhow::Result;
 
-use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate},
-    cli::{Cli, CreateChangeSetArgs},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-        aws_conversion::{progress_message, success_message, create_command_result},
-    },
-    stack_args::load_stack_args,
-    aws::AwsSettings,
+use crate::cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate};
+use crate::cli::{Cli, CreateChangeSetArgs};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
+    aws_conversion::{progress_message, success_message, create_command_result, convert_token_info},
+    data::OutputData
 };
+use crate::stack_args::load_stack_args;
+use crate::aws::AwsSettings;
 
 /// Create a CloudFormation changeset with data-driven output.
 pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<()> {
@@ -44,8 +43,8 @@ pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<(
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
     // Pass primary token to output manager for conditional display
-    let primary_token = crate::output::aws_conversion::convert_token_info(&context.primary_token());
-    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
+    let primary_token = convert_token_info(&context.primary_token());
+    output_manager.render(OutputData::TokenInfo(primary_token)).await?;
 
     // Determine changeset name
     let default_changeset_name = format!("iidy-{}", &context.primary_token().value[..8]);
@@ -59,8 +58,8 @@ pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<(
         builder.build_create_changeset(changeset_name, &CfnOperation::CreateChangeset);
     
     // Pass token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",

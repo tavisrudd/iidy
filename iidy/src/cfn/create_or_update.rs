@@ -1,15 +1,14 @@
 use anyhow::Result;
 
-use crate::{
-    cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation, apply_stack_name_override_and_validate},
-    cli::{UpdateStackArgs, Cli},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-        aws_conversion::{progress_message, success_message, warning_message, create_command_result},
-    },
-    stack_args::load_stack_args,
-    aws::AwsSettings,
+use crate::cfn::{CfnContext, CfnRequestBuilder, create_context, CfnOperation, apply_stack_name_override_and_validate};
+use crate::cli::{UpdateStackArgs, Cli};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
+    aws_conversion::{progress_message, success_message, warning_message, create_command_result, convert_token_info},
+    data::OutputData
 };
+use crate::stack_args::load_stack_args;
+use crate::aws::AwsSettings;
 
 /// Create or update a CloudFormation stack using intelligent detection with data-driven output.
 pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<()> {
@@ -125,8 +124,8 @@ async fn create_stack_direct_data(
         Some(environment),
     ).await?;
     // Pass token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -158,8 +157,8 @@ async fn update_stack_direct_data(
     // Build and execute the UpdateStack request  
     let (update_request, token) = builder.build_update_stack(&CfnOperation::CreateOrUpdate);
     // Pass token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     let stack_name = stack_args
         .stack_name
@@ -196,8 +195,8 @@ async fn update_stack_with_changeset_data(
     let (create_request, create_token) =
         builder.build_create_changeset(&changeset_name, &CfnOperation::CreateChangeset);
     // Pass create_token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&create_token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&create_token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Creating changeset '{}' for stack: {}",
@@ -224,8 +223,8 @@ async fn update_stack_with_changeset_data(
     let (execute_request, execute_token) =
         builder.build_execute_changeset(&changeset_name, &CfnOperation::ExecuteChangeset);
     // Pass execute_token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&execute_token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&execute_token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message("Executing changeset...")).await?;
 

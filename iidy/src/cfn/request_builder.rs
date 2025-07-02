@@ -1,6 +1,9 @@
 use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
-use crate::{stack_args::StackArgs, timing::TokenInfo};
+use crate::stack_args::StackArgs;
+use crate::timing::TokenInfo;
+#[cfg(test)]
+use crate::timing::TokenSource;
 
 use super::{CfnContext, CfnOperation, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
 
@@ -506,7 +509,7 @@ mod tests {
 
         // Token should be derived for the changeset step
         assert!(token.is_derived());
-        if let crate::timing::TokenSource::Derived { step, .. } = &token.source {
+        if let TokenSource::Derived { step, .. } = &token.source {
             assert_eq!(step, "create-changeset");
         } else {
             panic!("Expected derived token");
@@ -529,7 +532,7 @@ mod tests {
 
         // Token should be derived for the execute step
         assert!(token.is_derived());
-        if let crate::timing::TokenSource::Derived { step, .. } = &token.source {
+        if let TokenSource::Derived { step, .. } = &token.source {
             assert_eq!(step, "execute-changeset");
         } else {
             panic!("Expected derived token");

@@ -1,15 +1,14 @@
 use anyhow::Result;
 
-use crate::{
-    cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate},
-    cli::{Cli, ExecChangeSetArgs},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-        aws_conversion::{progress_message, success_message, warning_message, create_command_result},
-    },
-    stack_args::load_stack_args,
-    aws::AwsSettings,
+use crate::cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate};
+use crate::cli::{Cli, ExecChangeSetArgs};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
+    aws_conversion::{progress_message, success_message, warning_message, create_command_result, convert_token_info},
+    data::OutputData
 };
+use crate::stack_args::load_stack_args;
+use crate::aws::AwsSettings;
 
 /// Execute a CloudFormation changeset with data-driven output.
 pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<()> {
@@ -42,16 +41,16 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<()> {
     let builder = CfnRequestBuilder::new(&context, &final_stack_args);
 
     // Pass primary token to output manager for conditional display
-    let primary_token = crate::output::aws_conversion::convert_token_info(&context.primary_token());
-    output_manager.render(crate::output::data::OutputData::TokenInfo(primary_token)).await?;
+    let primary_token = convert_token_info(&context.primary_token());
+    output_manager.render(OutputData::TokenInfo(primary_token)).await?;
 
     // Build and execute the ExecuteChangeSet request
     let (execute_request, token) =
         builder.build_execute_changeset(&args.changeset_name, &CfnOperation::ExecuteChangeset);
     
     // Pass token to output manager for conditional display
-    let output_token = crate::output::aws_conversion::convert_token_info(&token);
-    output_manager.render(crate::output::data::OutputData::TokenInfo(output_token)).await?;
+    let output_token = convert_token_info(&token);
+    output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     output_manager.render(progress_message(&format!(
         "Executing changeset '{}' for stack: {}",

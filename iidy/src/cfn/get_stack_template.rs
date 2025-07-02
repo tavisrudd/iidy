@@ -1,7 +1,5 @@
-use crate::{
-    cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli},
-    cfn::{create_context_for_operation, CfnOperation},
-};
+use crate::cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli};
+use crate::cfn::{create_context_for_operation, CfnOperation};
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
 use aws_sdk_cloudformation::types::TemplateStage;

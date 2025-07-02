@@ -1,13 +1,21 @@
 use anyhow::Result;
 
-use crate::{
-    cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES},
-    cli::{DeleteArgs, Cli},
-    output::{
-        DynamicOutputManager, OutputData,
-        aws_conversion::{create_command_metadata, warning_message, convert_token_info},
-    },
+use crate::cfn::{
+    create_context_for_operation, stack_operations::{StackInfoService, StackEventsService, collect_stack_contents}, 
+    CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES
 };
+use crate::cli::{DeleteArgs, Cli};
+use crate::output::{
+    DynamicOutputManager, OutputData,
+    aws_conversion::{
+        create_command_metadata, warning_message, convert_token_info, 
+        convert_stack_to_definition, convert_stack_events_to_display_with_max,
+        create_final_command_summary, error_message
+    },
+    manager::OutputOptions
+};
+use crate::stack_args::StackArgs;
+use crate::cfn::watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
 
 use super::CfnContext;
 
@@ -50,7 +58,7 @@ async fn perform_stack_deletion(
         }
         Err(e) => {
             let error_msg = format!("Failed to initiate stack deletion: {}", e);
-            output_manager.render(crate::output::aws_conversion::error_message(&error_msg)).await?;
+            output_manager.render(error_message(&error_msg)).await?;
             Err(e.into())
         }
     }
@@ -75,7 +83,7 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     let context = create_context_for_operation(&opts, CfnOperation::DeleteStack).await?;
 
     // Setup data-driven output manager with full CLI context
-    let output_options = crate::output::manager::OutputOptions::new(cli.clone());
+    let output_options = OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
@@ -91,7 +99,7 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
             // Stack doesn't exist
             output_manager.render(warning_message(&format!("Stack {} does not exist or is not accessible", stack_name))).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
-            let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+            let final_command_summary = create_final_command_summary(
                 true, // Mark as success since stack is already deleted (matches iidy-js behavior)
                 elapsed_seconds
             );
@@ -101,7 +109,7 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     };
 
     // 2. Prepare command metadata synchronously (doesn't require AWS API calls)
-    let minimal_stack_args = crate::stack_args::StackArgs {
+    let minimal_stack_args = StackArgs {
         stack_name: Some(stack_name.clone()),
         template: None,
         region: opts.region.clone(),
@@ -121,7 +129,7 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         let tx = sender.clone();
         let stack_clone = stack.clone();
         tokio::spawn(async move {
-            let stack_definition = crate::output::aws_conversion::convert_stack_to_definition(&stack_clone, true);
+            let stack_definition = convert_stack_to_definition(&stack_clone, true);
             let _ = tx.send(stack_definition);
             Ok::<(), anyhow::Error>(())
         })
@@ -133,8 +141,8 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         let stack_id = stack_id.clone();
         let tx = sender.clone();
         tokio::spawn(async move {
-            let events = crate::cfn::stack_operations::StackEventsService::fetch_events(&client, &stack_id).await?;
-            let events_display = crate::output::aws_conversion::convert_stack_events_to_display_with_max(
+            let events = StackEventsService::fetch_events(&client, &stack_id).await?;
+            let events_display = convert_stack_events_to_display_with_max(
                 events,
                 "Previous Stack Events (max 10):",
                 Some(10),
@@ -145,14 +153,14 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     };
     
     // Collect stack contents directly before starting async tasks (since we can't clone context)
-    let stack_contents = crate::cfn::stack_operations::collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
     
     // Send stack contents to the output manager
     let stack_contents_task = {
         let tx = sender.clone();
         let stack_contents_clone = stack_contents.clone();
         tokio::spawn(async move {
-            let _ = tx.send(crate::output::OutputData::StackContents(stack_contents_clone));
+            let _ = tx.send(OutputData::StackContents(stack_contents_clone));
             Ok::<(), anyhow::Error>(())
         })
     };
@@ -190,13 +198,13 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         let context_clone = context.clone();
         
         tokio::spawn(async move {
-            let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
-            let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
+            let sender_output = SenderOutput { sender: tx };
+            let final_status = watch_stack_live_events_with_seen_events(
                 &client, 
                 &context_clone, 
                 &stack_id, 
                 sender_output, 
-                std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
+                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
                 std::time::Duration::from_secs(3600), // 1 hour timeout for delete operations
                 vec![] // No previous events for delete operation (they were already shown)
             ).await?;
@@ -217,7 +225,7 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     // Determine success using centralized helper
     let success = determine_operation_success(&final_status, DELETE_SUCCESS_STATES);
     
-    let final_command_summary = crate::output::aws_conversion::create_final_command_summary(
+    let final_command_summary = create_final_command_summary(
         success,
         elapsed_seconds
     );

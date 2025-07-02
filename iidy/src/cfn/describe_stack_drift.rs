@@ -4,12 +4,10 @@ use aws_sdk_cloudformation::{
     types::{StackDriftDetectionStatus, StackResourceDrift, StackResourceDriftStatus},
 };
 
-use crate::{
-    cli::{Cli, DriftArgs},
-    cfn::{create_context_for_operation, CfnOperation},
-    output::{
-        DynamicOutputManager, manager::OutputOptions,
-    },
+use crate::cli::{Cli, DriftArgs};
+use crate::cfn::{create_context_for_operation, CfnOperation};
+use crate::output::{
+    DynamicOutputManager, manager::OutputOptions,
 };
 
 // REMOVED: format_resource_drifts function - Legacy formatting logic replaced by data-driven output architecture
