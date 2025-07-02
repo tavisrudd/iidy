@@ -404,7 +404,7 @@ mod tests {
         Client::new(&config)
     }
 
-    fn mock_context() -> CfnContext {
+    async fn mock_context() -> CfnContext {
         let fixed_time = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
         let client = mock_client();
@@ -415,7 +415,7 @@ mod tests {
             .region(aws_types::region::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        CfnContext::new_without_start_time(client, aws_config, time_provider, token_info)
+        CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap()
     }
 
     fn mock_stack_args() -> StackArgs {
@@ -446,9 +446,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cfn_request_builder_creates_with_context_and_args() {
-        let context = mock_context();
+    #[tokio::test]
+    async fn cfn_request_builder_creates_with_context_and_args() {
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
 
         let builder = CfnRequestBuilder::new(&context, &stack_args);
@@ -460,7 +460,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_create_stack_derives_token_and_applies_stack_args() {
-        let context = mock_context();
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
@@ -479,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_update_stack_handles_use_previous_template() {
-        let context = mock_context();
+        let context = mock_context().await;
         let mut stack_args = mock_stack_args();
         stack_args.use_previous_template = Some(true);
 
@@ -495,9 +495,9 @@ mod tests {
         assert_ne!(token.value, create_token.value);
     }
 
-    #[test]
-    fn build_create_changeset_uses_correct_field_name() {
-        let context = mock_context();
+    #[tokio::test]
+    async fn build_create_changeset_uses_correct_field_name() {
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
@@ -518,9 +518,9 @@ mod tests {
         assert!(token.value.starts_with("test-tok"));
     }
 
-    #[test]
-    fn build_execute_changeset_uses_standard_field_name() {
-        let context = mock_context();
+    #[tokio::test]
+    async fn build_execute_changeset_uses_standard_field_name() {
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
@@ -538,7 +538,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_handles_minimal_stack_args() {
-        let context = mock_context();
+        let context = mock_context().await;
         let minimal_args = StackArgs {
             stack_name: Some("minimal-stack".to_string()),
             template: Some("{}".to_string()),
@@ -555,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn token_derivation_is_deterministic_across_builders() {
-        let context = mock_context();
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
 
         // Create multiple builders with same context
@@ -572,7 +572,7 @@ mod tests {
 
     #[tokio::test]
     async fn different_steps_produce_different_tokens() {
-        let context = mock_context();
+        let context = mock_context().await;
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 

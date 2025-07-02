@@ -1,6 +1,7 @@
 use anyhow::Result;
 use aws_sdk_cloudformation::{Client, types::StackEvent};
-use chrono::{DateTime, Utc};
+#[cfg(test)]
+use chrono::Utc;
 use std::collections::HashSet;
 use std::time::Duration;
 
@@ -13,6 +14,7 @@ pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 use crate::{
     cli::Commands,
+    cfn::CfnContext,
     output::{
         DynamicOutputManager, OutputData,
         StackEventWithTiming,
@@ -20,7 +22,7 @@ use crate::{
     },
 };
 
-use super::{CfnContext, stack_operations::{StackEventsService, StackInfoService}};
+use super::{stack_operations::{StackEventsService, StackInfoService}};
 
 // Removed format_event function - using data-driven output architecture instead
 
@@ -87,7 +89,7 @@ pub async fn watch_stack(
         let stack_id = stack_id.clone();
         let _stack_name = stack_name.clone(); // Keep for display purposes but not used
         let tx = sender.clone();
-        let live_start_time = context.start_time;
+        let context_clone = context.clone();
         let inactivity_timeout = args.inactivity_timeout;
         
         tokio::spawn(async move {
@@ -107,7 +109,7 @@ pub async fn watch_stack(
             
             // Step 2: Now start live events polling with all existing events pre-marked as seen
             let sender_output = SenderOutput { sender: tx };
-            let final_status = watch_stack_live_events_with_seen_events(&client, live_start_time, &stack_id, sender_output, Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), Duration::from_secs(inactivity_timeout as u64), all_events).await?;
+            let final_status = watch_stack_live_events_with_seen_events(&client, &context_clone, &stack_id, sender_output, Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), Duration::from_secs(inactivity_timeout as u64), all_events).await?;
             Ok(final_status)
         })
     };
@@ -200,7 +202,7 @@ impl LiveEventsOutput for SenderOutput {
 /// Returns the final stack status if the stack reached a terminal state
 pub async fn watch_stack_live_events_with_seen_events(
     client: &Client,
-    start_time: Option<DateTime<Utc>>,
+    context: &CfnContext,
     stack_identifier: &str,
     mut output: impl LiveEventsOutput,
     poll_interval: Duration,
@@ -226,7 +228,7 @@ pub async fn watch_stack_live_events_with_seen_events(
     while !done {
         // Poll for new events
         let events = StackEventsService::fetch_events(client, stack_identifier).await?;
-        let (new_events, terminal_detected, terminal_status) = StackEventsService::process_new_events(events, &mut seen, stack_identifier, start_time);
+        let (new_events, terminal_detected, terminal_status) = StackEventsService::process_new_events(events, &mut seen, stack_identifier, context.start_time);
         
         // Track the final status if we detected a terminal event
         if terminal_detected {
@@ -242,9 +244,9 @@ pub async fn watch_stack_live_events_with_seen_events(
                 .map(|aws_event| {
                     let converted_event = crate::output::aws_conversion::convert_aws_stack_event(aws_event);
                     
-                    // Calculate duration from operation start time if available
-                    let duration_seconds = if let (Some(start), Some(event_time)) = (start_time, &converted_event.timestamp) {
-                        Some((event_time.timestamp() - start.timestamp()).max(0) as u64)
+                    // Calculate duration from operation start time
+                    let duration_seconds = if let Some(event_time) = &converted_event.timestamp {
+                        Some((event_time.timestamp() - context.start_time.timestamp()).max(0) as u64)
                     } else {
                         None
                     };
@@ -261,26 +263,22 @@ pub async fn watch_stack_live_events_with_seen_events(
         
         // Check for completion (send completion signal to renderer)
         if terminal_detected {
-            if let Some(start_time) = start_time {
-                let completion_info = OperationCompleteInfo {
-                    elapsed_seconds: (chrono::Utc::now() - start_time).num_seconds(),
-                    operation_start_time: start_time,
-                    skip_remaining_sections: final_stack_status.as_ref().map_or(false, |s| s == "DELETE_COMPLETE"),
-                };
-                let _ = output.send_operation_complete(completion_info).await;
-            }
+            let completion_info = OperationCompleteInfo {
+                elapsed_seconds: context.elapsed_seconds().await?,
+                operation_start_time: context.start_time,
+                skip_remaining_sections: final_stack_status.as_ref().map_or(false, |s| s == "DELETE_COMPLETE"),
+            };
+            let _ = output.send_operation_complete(completion_info).await;
             done = true;
         }
         // Check for inactivity timeout (send timeout signal to renderer)
         else if inactivity_timeout.as_secs() > 0 && (chrono::Utc::now() - last_event_time).num_seconds() as u64 > inactivity_timeout.as_secs() {
-            if let Some(start_time) = start_time {
-                let timeout_info = InactivityTimeoutInfo {
-                    timeout_seconds: inactivity_timeout.as_secs(),
-                    elapsed_seconds: (chrono::Utc::now() - start_time).num_seconds(),
-                    operation_start_time: start_time,
-                };
-                let _ = output.send_inactivity_timeout(timeout_info).await;
-            }
+            let timeout_info = InactivityTimeoutInfo {
+                timeout_seconds: inactivity_timeout.as_secs(),
+                elapsed_seconds: context.elapsed_seconds().await?,
+                operation_start_time: context.start_time,
+            };
+            let _ = output.send_inactivity_timeout(timeout_info).await;
             done = true;
         }
         
@@ -308,7 +306,7 @@ pub async fn watch_stack_with_data_output(
     let manager_output = ManagerOutput { manager: output_manager };
     watch_stack_live_events_with_seen_events(
         &ctx.client, 
-        ctx.start_time, 
+        ctx, 
         stack_identifier, 
         manager_output, 
         poll_interval, 
@@ -394,10 +392,8 @@ mod tests {
         let ctx = CfnContext::new(client, aws_config, time_provider, temp_token)
             .await
             .unwrap();
-        assert!(ctx.start_time.is_some());
-
         // Test that start time is 500ms before the fixed time
         let expected_start = fixed_time - chrono::Duration::milliseconds(500);
-        assert_eq!(ctx.start_time.unwrap(), expected_start);
+        assert_eq!(ctx.start_time, expected_start);
     }
 }

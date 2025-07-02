@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 
 use crate::{
     cfn::{create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES},
@@ -18,15 +17,13 @@ async fn perform_stack_deletion(
     stack_name: &str,
     args: &DeleteArgs,
     output_manager: &mut DynamicOutputManager,
-) -> Result<(String, DateTime<Utc>)> {
+) -> Result<String> {
     // Derive a token for the delete operation
     let token = context.derive_token_for_step(&CfnOperation::DeleteStack);
     
     // Show token info
     let output_token = convert_token_info(&token);
     output_manager.render(OutputData::TokenInfo(output_token)).await?;
-
-    let start_time = context.start_time.unwrap_or_else(Utc::now);
 
     // Get stack ID before deletion
     let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
@@ -49,7 +46,7 @@ async fn perform_stack_deletion(
     // Execute the delete operation
     match request.send().await {
         Ok(_) => {
-            Ok((stack_id, start_time))
+            Ok(stack_id)
         }
         Err(e) => {
             let error_msg = format!("Failed to initiate stack deletion: {}", e);
@@ -185,7 +182,7 @@ pub async fn delete_stack(cli: &Cli) -> Result<i32> {
     // 4. TODO: Add confirmation prompt here (not implemented in this architectural update)
     
     // 5. Perform deletion and start live events monitoring  
-    let (_, start_time) = perform_stack_deletion(&context, stack_name, args, &mut output_manager).await?;
+    let _ = perform_stack_deletion(&context, stack_name, args, &mut output_manager).await?;
     
     // 6. Start live events monitoring in parallel pattern
     let sender = output_manager.start();
@@ -194,13 +191,13 @@ pub async fn delete_stack(cli: &Cli) -> Result<i32> {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
         let tx = sender.clone();
-        let live_start_time = context.start_time;
+        let context_clone = context.clone();
         
         tokio::spawn(async move {
             let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
             let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
                 &client, 
-                live_start_time, 
+                &context_clone, 
                 &stack_id, 
                 sender_output, 
                 std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
@@ -219,7 +216,7 @@ pub async fn delete_stack(cli: &Cli) -> Result<i32> {
     let final_status = live_events_task.await??;
     
     // 7. Determine success based on final stack status and show final command summary
-    let elapsed_seconds = (Utc::now() - start_time).num_seconds();
+    let elapsed_seconds = context.elapsed_seconds().await?;
     
     // Determine success using centralized helper
     let success = determine_operation_success(&final_status, DELETE_SUCCESS_STATES);

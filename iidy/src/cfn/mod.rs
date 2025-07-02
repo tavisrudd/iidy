@@ -83,11 +83,12 @@ pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Re
 /// This includes the AWS client, timing provider for reliable timestamps,
 /// the operation start time for event filtering, and token management for
 /// multi-step operations with idempotency support.
+#[derive(Clone)]
 pub struct CfnContext {
     pub client: Client,
     pub aws_config: aws_config::SdkConfig,
     pub time_provider: Arc<dyn TimeProvider>,
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: DateTime<Utc>,
     pub token_info: TokenInfo,
     pub used_tokens: Arc<Mutex<Vec<TokenInfo>>>,
 }
@@ -112,7 +113,7 @@ impl CfnContext {
         time_provider: Arc<dyn TimeProvider>,
         token_info: TokenInfo,
     ) -> Result<Self> {
-        let start_time = Some(time_provider.start_time().await?);
+        let start_time = time_provider.start_time().await?;
         let used_tokens = Arc::new(Mutex::new(vec![token_info.clone()]));
 
         Ok(CfnContext {
@@ -126,35 +127,11 @@ impl CfnContext {
     }
 
 
-    /// Create a new CFN context without setting a start time.
-    ///
-    /// Useful for operations that don't need event filtering.
-    /// The primary token is automatically added to the used_tokens tracking.
-    pub fn new_without_start_time(
-        client: Client,
-        aws_config: aws_config::SdkConfig,
-        time_provider: Arc<dyn TimeProvider>,
-        token_info: TokenInfo,
-    ) -> Self {
-        let used_tokens = Arc::new(Mutex::new(vec![token_info.clone()]));
-
-        CfnContext {
-            client,
-            aws_config,
-            time_provider,
-            start_time: None,
-            token_info,
-            used_tokens,
-        }
-    }
 
 
-    /// Get the start time for this context, or current time if not set.
+    /// Get the start time for this context.
     pub async fn get_start_time(&self) -> Result<DateTime<Utc>> {
-        match self.start_time {
-            Some(time) => Ok(time),
-            None => self.time_provider.start_time().await,
-        }
+        Ok(self.start_time)
     }
 
     /// Calculate elapsed seconds since the start time.
@@ -327,9 +304,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(ctx.start_time.is_some());
         let expected_start = fixed_time - chrono::Duration::milliseconds(500);
-        assert_eq!(ctx.start_time.unwrap(), expected_start);
+        assert_eq!(ctx.start_time, expected_start);
     }
 
     #[tokio::test]
@@ -375,14 +351,14 @@ mod tests {
         assert!(!ctx.has_derived_tokens());
     }
 
-    #[test]
-    fn cfn_context_derives_tokens_for_steps() {
+    #[tokio::test]
+    async fn cfn_context_derives_tokens_for_steps() {
         let fixed_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
+        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info).await.unwrap();
 
         // Derive tokens for different steps
         let create_token = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
@@ -411,14 +387,14 @@ mod tests {
         assert!(ctx.has_derived_tokens());
     }
 
-    #[test]
-    fn cfn_context_token_derivation_is_deterministic() {
+    #[tokio::test]
+    async fn cfn_context_token_derivation_is_deterministic() {
         let fixed_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
         let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info);
+        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info).await.unwrap();
 
         // Derive the same token multiple times
         let token1 = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
@@ -434,21 +410,4 @@ mod tests {
         assert_eq!(used_tokens.len(), 3); // Primary + 2 identical derived tokens
     }
 
-    #[test]
-    fn cfn_context_without_start_time_works() {
-        let fixed_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-        let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
-        let client = mock_client();
-        let token_info = mock_token_info();
-
-        let ctx = CfnContext::new_without_start_time(client, create_test_aws_config(), time_provider, token_info.clone());
-
-        // Should not have start time set
-        assert!(ctx.start_time.is_none());
-
-        // But should still have token tracking
-        assert_eq!(ctx.primary_token().value, "test-token-123");
-        let used_tokens = ctx.get_used_tokens();
-        assert_eq!(used_tokens.len(), 1);
-    }
 }

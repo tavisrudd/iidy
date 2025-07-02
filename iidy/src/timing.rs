@@ -38,12 +38,6 @@ impl ReliableTimeProvider {
         }
     }
 
-    pub fn with_timeout(timeout: StdDuration) -> Self {
-        Self {
-            ntp_timeout: timeout,
-        }
-    }
-
     async fn try_ntp(&self) -> Result<DateTime<Utc>> {
         let timeout = self.ntp_timeout;
 
@@ -165,16 +159,6 @@ impl TimeProvider for MockTimeProvider {
     async fn now(&self) -> Result<DateTime<Utc>> {
         Ok(self.fixed_time)
     }
-}
-
-/// Helper function to calculate elapsed seconds between two times
-pub fn calc_elapsed_seconds(start_time: DateTime<Utc>, end_time: DateTime<Utc>) -> i64 {
-    (end_time - start_time).num_seconds()
-}
-
-/// Helper function to calculate elapsed seconds from start time to now
-pub fn calc_elapsed_seconds_from_now(start_time: DateTime<Utc>) -> i64 {
-    calc_elapsed_seconds(start_time, Utc::now())
 }
 
 /// Information about a client request token, including its source and derivation.
@@ -317,15 +301,6 @@ mod tests {
         let start_time = provider.start_time().await.unwrap();
         let expected = fixed_time - chrono::Duration::milliseconds(500);
         assert_eq!(start_time, expected);
-    }
-
-    #[test]
-    fn calc_elapsed_seconds_works_correctly() {
-        let start = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-        let end = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 30).unwrap();
-
-        let elapsed = calc_elapsed_seconds(start, end);
-        assert_eq!(elapsed, 30);
     }
 
     #[tokio::test]

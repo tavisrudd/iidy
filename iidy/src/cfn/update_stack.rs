@@ -75,7 +75,7 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
     }
 
     // 2. Direct update mode - perform stack update operation
-    let (start_time, stack_id) = perform_stack_update(&context, &final_stack_args, args, &mut output_manager).await?;
+    let stack_id = perform_stack_update(&context, &final_stack_args, args, &mut output_manager).await?;
     
     // 3. Start parallel data collection and rendering (like create-stack pattern)
     let sender = output_manager.start();
@@ -98,13 +98,13 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
         let tx = sender.clone();
-        let live_start_time = context.start_time;
+        let context_clone = context.clone();
         
         tokio::spawn(async move {
             let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
             let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
                 &client, 
-                live_start_time, 
+                &context_clone, 
                 &stack_id, 
                 sender_output, 
                 std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
@@ -142,11 +142,7 @@ pub async fn update_stack(cli: &Cli) -> Result<i32> {
     let success = determine_operation_success(&final_status, UPDATE_SUCCESS_STATES);
     
     // Show final command summary (exact iidy-js showFinalComandSummary pattern)
-    let elapsed = if let Some(start_time) = start_time {
-        (chrono::Utc::now() - start_time).num_seconds()
-    } else {
-        0
-    };
+    let elapsed = context.elapsed_seconds().await?;
     let final_summary = create_final_command_summary(success, elapsed);
     output_manager.render(final_summary).await?;
     
@@ -160,7 +156,7 @@ async fn perform_stack_update(
     stack_args: &crate::stack_args::StackArgs,
     _args: &UpdateStackArgs,
     output_manager: &mut DynamicOutputManager,
-) -> Result<(Option<chrono::DateTime<chrono::Utc>>, String)> {
+) -> Result<String> {
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
@@ -183,8 +179,8 @@ async fn perform_stack_update(
         .ok_or_else(|| anyhow::anyhow!("AWS did not return a stack ID"))?
         .to_string();
 
-    // Return start time and stack ID for monitoring
-    Ok((context.start_time, stack_id))
+    // Return stack ID for monitoring
+    Ok(stack_id)
 }
 
 /// Perform a stack update using changesets for preview and safer deployment.
@@ -226,11 +222,7 @@ async fn update_stack_with_changeset(
         let input = input.trim().to_lowercase();
 
         if input != "y" && input != "yes" {
-            let elapsed = if let Some(start_time) = context.start_time {
-                (chrono::Utc::now() - start_time).num_seconds()
-            } else {
-                0
-            };
+            let elapsed = context.elapsed_seconds().await?;
             let final_summary = create_final_command_summary(true, elapsed);
             output_manager.render(final_summary).await?;
             return Ok(0);
@@ -261,11 +253,7 @@ async fn update_stack_with_changeset(
     };
 
     // Show final command summary (exact iidy-js showFinalComandSummary pattern)
-    let elapsed = if let Some(start_time) = context.start_time {
-        (chrono::Utc::now() - start_time).num_seconds()
-    } else {
-        0
-    };
+    let elapsed = context.elapsed_seconds().await?;
     let final_summary = create_final_command_summary(success, elapsed);
     output_manager.render(final_summary).await?;
 

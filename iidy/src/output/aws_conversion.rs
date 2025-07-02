@@ -474,7 +474,7 @@ mod tests {
             .region(aws_types::region::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        let context = CfnContext::new_without_start_time(client, aws_config, time_provider, token_info);
+        let context = CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap();
 
         let opts = NormalizedAwsOpts {
             profile: Some("test-profile".to_string()),

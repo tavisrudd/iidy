@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::time::Instant;
 
 use crate::{
     cli::{Cli, Commands},
@@ -24,7 +23,6 @@ pub async fn get_stack_instances(cli: &Cli) -> Result<()> {
         _ => anyhow::bail!("Invalid command type for get_stack_instances"),
     };
 
-    let start_time = Instant::now();
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
@@ -114,7 +112,7 @@ pub async fn get_stack_instances(cli: &Cli) -> Result<()> {
     };
     output_manager.render(OutputData::StatusUpdate(console_status)).await?;
 
-    let elapsed = start_time.elapsed().as_secs() as i64;
+    let elapsed = context.elapsed_seconds().await?;
     let result_msg = format!("Found {} instances", instance_count);
     output_manager.render(create_command_result(true, elapsed, Some(result_msg))).await?;
 

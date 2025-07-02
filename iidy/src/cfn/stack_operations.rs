@@ -169,13 +169,10 @@ impl StackEventsService {
         events: Vec<StackEvent>,
         seen: &mut HashSet<String>,
         stack_identifier: &str,
-        start_time: Option<DateTime<Utc>>,
+        start_time: DateTime<Utc>,
     ) -> (Vec<StackEvent>, bool, Option<String>) {
-        // Filter events by start time if provided
-        let filtered_events = match start_time {
-            Some(start) => Self::filter_events_after_start_time(events, start),
-            None => events,
-        };
+        // Filter events by start time
+        let filtered_events = Self::filter_events_after_start_time(events, start_time);
 
         let mut new_events = Vec::new();
         let mut done = false;

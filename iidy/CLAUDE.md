@@ -32,6 +32,20 @@
 - Do not create duplicate code.
 - Use the correct existing constructors rather than creating new ones.
 
+## Coding standards
+- Act like a staff/principal engineer not a juniour or
+  intermediate. Think and plan first. Review your changes critically
+  as you go.
+- use meaningful variable and fn names and omit useless comments. If a
+  fn's purpose is clear there is no need for comment above it unless
+  we are documenting it for the public api.
+- comment only the non-obvious
+- keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
+- Always import deps at the module level (use ...) at the top of the
+  file. Do not import locally inside of fns or refer to types using
+  the long 'crate::foo::Bar' / 'dep_crate::baz::Foo' syntax. That
+  clutters the code.
+
 ## Testing
 - run `cargo check --all` for a fast sanity check
 - **All tests**: `cargo nextest r --color=never --hide-progress-bar`
@@ -45,6 +59,8 @@
 ## Git Commit Requirements
 - **Green commits only**: All tests must pass (100%) before committing.
 - **No compiler warnings**: Fix all 'cargo check --all' warnings before committing
+- **User review requried**: prior to commit, the user wants to review
+  the changes and commit msg. When you are ready to commit, print a formatted commit msg to the user following the instructions below.
 - **Accurate commit summaries**: The first line of the commit message must accurately reflect the full scope of changes
   - Don't list just 2 items if 5+ things were changed
   - Lead with the most important/impactful changes
@@ -60,14 +76,6 @@
 - Use our local @tmp/ dir instead of the system level /tmp
 - Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making
   a backup of the uncommitted changes and asking for user confirmation.
-
-## Coding Standards
-- Act like a staff/principal engineer not a juniour or intermediate.
-- use meaningful variable and fn names and omit useless comments. If a
-  fn's purpose is clear there is no need for comment above it unless
-  we are documenting it for the public api.
-- comment only the non-obvious
-- keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
 
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.

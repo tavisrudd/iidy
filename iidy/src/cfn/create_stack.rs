@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, stack_operations::StackInfoService, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate},
@@ -74,7 +73,7 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     // 2. Stack operation - create the stack
-    let (start_time, stack_id) = perform_stack_creation(&context, &final_stack_args, args, global_opts, &mut output_manager).await?;
+    let stack_id = perform_stack_creation(&context, &final_stack_args, args, global_opts, &mut output_manager).await?;
     
     // 3. Start parallel data collection and rendering (like watch-stack pattern)
     let sender = output_manager.start();
@@ -97,13 +96,13 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
         let tx = sender.clone();
-        let live_start_time = context.start_time;
+        let context_clone = context.clone();
         
         tokio::spawn(async move {
             let sender_output = crate::cfn::watch_stack::SenderOutput { sender: tx };
             let final_status = crate::cfn::watch_stack::watch_stack_live_events_with_seen_events(
                 &client, 
-                live_start_time, 
+                &context_clone, 
                 &stack_id, 
                 sender_output, 
                 std::time::Duration::from_secs(crate::cfn::watch_stack::DEFAULT_POLL_INTERVAL_SECS), 
@@ -131,7 +130,7 @@ pub async fn create_stack(cli: &Cli) -> Result<i32> {
     let final_status = events_result??;
     
     // Calculate elapsed time and determine success based on final stack status
-    let elapsed_seconds = (Utc::now() - start_time).num_seconds();
+    let elapsed_seconds = context.elapsed_seconds().await?;
     
     // Determine success using centralized helper
     let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
@@ -171,7 +170,7 @@ async fn perform_stack_creation(
     args: &StackFileArgs,
     global_opts: &GlobalOpts,
     output_manager: &mut DynamicOutputManager,
-) -> Result<(DateTime<Utc>, String)> {
+) -> Result<String> {
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
@@ -191,15 +190,12 @@ async fn perform_stack_creation(
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
     
-    // Record start time before the operation
-    let start_time = context.start_time.unwrap_or_else(Utc::now);
-
     let response = create_request.send().await?;
 
     let stack_id = response.stack_id()
         .ok_or_else(|| anyhow::anyhow!("Stack creation response did not include stack ID"))?
         .to_string();
 
-    Ok((start_time, stack_id))
+    Ok(stack_id)
 }
 

@@ -1,5 +1,4 @@
 use anyhow::Result;
-use std::time::Instant;
 
 use crate::{
     cfn::{CfnRequestBuilder, create_context_for_operation, CfnOperation, apply_stack_name_override_and_validate},
@@ -22,7 +21,6 @@ pub async fn create_changeset(cli: &Cli) -> Result<()> {
         _ => anyhow::bail!("Invalid command type for create_changeset"),
     };
 
-    let start_time = Instant::now();
     let output_options = OutputOptions::minimal();
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
@@ -98,7 +96,7 @@ pub async fn create_changeset(cli: &Cli) -> Result<()> {
     };
 
     // Show final result
-    let elapsed = start_time.elapsed().as_secs() as i64;
+    let elapsed = context.elapsed_seconds().await?;
     match result {
         Ok(_) => {
             output_manager.render(create_command_result(true, elapsed, Some("Changeset creation completed".to_string()))).await?;
