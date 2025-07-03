@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 
 /// Token information from the existing token management system
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -372,9 +373,26 @@ pub struct PropertyDifference {
     pub difference_type: Option<String>,
 }
 
+/// Confirmation request for interactive prompts
+#[derive(Debug)]
+pub struct ConfirmationRequest {
+    pub message: String,
+    pub response_tx: Option<oneshot::Sender<bool>>,
+    pub key: Option<String>, // Optional key for multiple confirmations
+}
+
+impl Clone for ConfirmationRequest {
+    fn clone(&self) -> Self {
+        Self {
+            message: self.message.clone(),
+            response_tx: None, // Can't clone oneshot::Sender, so we set to None
+            key: self.key.clone(),
+        }
+    }
+}
 
 /// Main output data enum for the manager
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum OutputData {
     CommandMetadata(CommandMetadata),
     StackDefinition(StackDefinition, bool), // bool = show_times flag
@@ -391,6 +409,7 @@ pub enum OutputData {
     NewStackEvents(Vec<StackEventWithTiming>), // Batch of new events for live watch (no title/header)
     OperationComplete(OperationCompleteInfo), // Signal that live operation finished successfully
     InactivityTimeout(InactivityTimeoutInfo), // Signal that operation timed out due to inactivity
+    ConfirmationPrompt(ConfirmationRequest), // Interactive confirmation prompt
 }
 
 impl OutputData {
@@ -412,6 +431,7 @@ impl OutputData {
             OutputData::NewStackEvents(_) => "new_stack_events",
             OutputData::OperationComplete(_) => "operation_complete",
             OutputData::InactivityTimeout(_) => "inactivity_timeout",
+            OutputData::ConfirmationPrompt(_) => "confirmation_prompt",
         }
     }
     

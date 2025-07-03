@@ -183,7 +183,20 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     events_result??;
     contents_result??;
     
-    // 4. TODO: Add confirmation prompt here (not implemented in this architectural update)
+    // 4. Request confirmation before deletion
+    let confirmed = if args.yes {
+        true
+    } else {
+        let message = format!("Are you sure you want to DELETE the stack {}?", stack_name);
+        output_manager.request_confirmation(message).await?
+    };
+    
+    if !confirmed {
+        let elapsed_seconds = context.elapsed_seconds().await?;
+        let final_summary = create_final_command_summary(true, elapsed_seconds);
+        output_manager.render(final_summary).await?;
+        return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
+    }
     
     // 5. Perform deletion and start live events monitoring  
     let _ = perform_stack_deletion(&context, stack_name, args, &mut output_manager).await?;

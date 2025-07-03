@@ -11,6 +11,7 @@ use anyhow::Result;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
+use tokio::sync::oneshot;
 
 /// Options for configuring output behavior
 #[derive(Debug, Clone)]
@@ -175,6 +176,35 @@ impl DynamicOutputManager {
             }
         }
         Ok(())
+    }
+    
+    /// Request user confirmation and return whether user confirmed
+    pub async fn request_confirmation(&mut self, message: String) -> Result<bool> {
+        self.request_confirmation_impl(message, None).await
+    }
+    
+    /// Request user confirmation with a specific section key
+    pub async fn request_confirmation_with_key(&mut self, message: String, key: String) -> Result<bool> {
+        self.request_confirmation_impl(message, Some(key)).await
+    }
+    
+    /// Internal implementation for confirmation requests
+    async fn request_confirmation_impl(&mut self, message: String, key: Option<String>) -> Result<bool> {
+        // Create oneshot channel internally
+        let (response_tx, response_rx) = oneshot::channel();
+        
+        // Create confirmation request with channel
+        let confirmation = OutputData::ConfirmationPrompt(ConfirmationRequest {
+            message,
+            response_tx: Some(response_tx),
+            key,
+        });
+        
+        // Send through normal rendering system (integrates with sections)
+        self.render(confirmation).await?;
+        
+        // Wait for response from renderer
+        response_rx.await.map_err(|_| anyhow::anyhow!("Confirmation response channel closed"))
     }
     
 }

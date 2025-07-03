@@ -81,14 +81,14 @@ pub struct InteractiveRenderer {
     // Async ordering state
     current_operation: Option<String>,
     expected_sections: Vec<&'static str>,
-    pending_sections: std::collections::HashMap<&'static str, OutputData>,
+    pending_sections: std::collections::HashMap<String, OutputData>,
     current_spinner: Option<ProgressManager>,
     next_section_index: usize,
     suppress_main_heading: bool,
     printed_sections: Vec<String>, // Track which section titles have been printed
     cli_context: Option<Arc<crate::cli::Cli>>,
     // Section titles configured during construction
-    section_titles: HashMap<&'static str, String>,
+    section_titles: HashMap<String, String>,
     // Live events timing state (local to spinner)
     timing_task_handle: Option<tokio::task::JoinHandle<()>>,
     timing_state: Option<Arc<Mutex<(DateTime<Utc>, Option<DateTime<Utc>>)>>>, // (start_time, last_live_event_time)
@@ -516,14 +516,21 @@ impl InteractiveRenderer {
             let section_key = self.expected_sections[self.next_section_index];
             let title = self.get_section_title(section_key).to_string();
             
-            // Show section heading immediately (with newline if section is always multi-line)
-            if self.section_is_always_multiline(section_key) {
-                self.print_section_heading_with_newline(&title);
+            if title.is_empty() {
+                // For confirmation sections: just add blank line separation if not first section
+                if self.next_section_index > 0 {
+                    println!(); // Blank line before confirmation
+                }
             } else {
-                self.print_section_heading(&title);
+                // Show section heading immediately (with newline if section is always multi-line)
+                if self.section_is_always_multiline(section_key) {
+                    self.print_section_heading_with_newline(&title);
+                } else {
+                    self.print_section_heading(&title);
+                }
             }
             
-            if self.options.enable_spinners {
+            if self.options.enable_spinners && !title.is_empty() {
                 // Always put spinner on the line after the heading
                 if !self.section_is_always_multiline(section_key) {
                     println!(); // Add newline after inline heading for spinner
@@ -544,51 +551,56 @@ impl InteractiveRenderer {
         use crate::cli::Commands;
         
         // Default titles (operation-specific titles will override these)
-        self.section_titles.insert("stack_definition", "Stack Details".to_string());
-        self.section_titles.insert("stack_list", "Stack List".to_string());
-        self.section_titles.insert("stack_drift", "Stack Drift".to_string());
-        self.section_titles.insert("changeset_result", "Changeset Result".to_string());
-        self.section_titles.insert("stack_contents", "Stack Resources".to_string());
-        self.section_titles.insert("stack_events", "Stack Events".to_string());
-        self.section_titles.insert("command_metadata", "Command Metadata".to_string());
-        self.section_titles.insert("live_stack_events", "Live Stack Events".to_string());
+        self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
+        self.section_titles.insert("stack_list".to_string(), "Stack List".to_string());
+        self.section_titles.insert("stack_drift".to_string(), "Stack Drift".to_string());
+        self.section_titles.insert("changeset_result".to_string(), "Changeset Result".to_string());
+        self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+        self.section_titles.insert("stack_events".to_string(), "Stack Events".to_string());
+        self.section_titles.insert("command_metadata".to_string(), "Command Metadata".to_string());
+        self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events".to_string());
         
         // Configure stack events title based on operation
         match operation {
             CfnOperation::DescribeStack => {
                 if let Commands::DescribeStack(args) = &cli.command {
-                    self.section_titles.insert("stack_events", 
+                    self.section_titles.insert("stack_events".to_string(), 
                         format!("Previous Stack Events (max {}):", args.events));
                 }
             }
             CfnOperation::WatchStack => {
                 // For watch-stack, we have separate previous and live events sections
-                self.section_titles.insert("stack_events", "Previous Stack Events (max 10):".to_string());
-                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
+                self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
             }
             CfnOperation::CreateStack => {
                 // For create-stack, include command metadata and live events
-                self.section_titles.insert("command_metadata", "Command Metadata:".to_string());
-                self.section_titles.insert("stack_definition", "Stack Details".to_string());
-                self.section_titles.insert("stack_contents", "Stack Resources".to_string());
-                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
+                self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
+                self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
+                self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+                self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
             }
             CfnOperation::DeleteStack => {
                 // For delete-stack, include command metadata, previous events, and live events  
-                self.section_titles.insert("command_metadata", "Command Metadata:".to_string());
-                self.section_titles.insert("stack_definition", "Stack Details".to_string());
-                self.section_titles.insert("stack_events", "Previous Stack Events (max 10):".to_string());
-                self.section_titles.insert("stack_contents", "Stack Resources".to_string());
-                self.section_titles.insert("live_stack_events", "Live Stack Events (2s poll):".to_string());
+                self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
+                self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
+                self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+                self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
             }
             _ => {
-                self.section_titles.insert("stack_events", "Stack Events:".to_string());
+                self.section_titles.insert("stack_events".to_string(), "Stack Events:".to_string());
             }
         }
     }
     
     /// Get the section title for display
     fn get_section_title(&self, section_key: &str) -> &str {
+        // Confirmation sections have no title (empty string)
+        if section_key == "confirmation" || section_key.starts_with("confirmation_") {
+            return "";
+        }
+        
         self.section_titles.get(section_key).map(|s| s.as_str()).unwrap_or("Loading")
     }
     
@@ -612,6 +624,9 @@ impl InteractiveRenderer {
             if key == "live_stack_events" {
                 // Special case: streaming section
                 self.handle_live_events_data(data).await?;
+            } else if key == "confirmation" || key.starts_with("confirmation_") {
+                // Special case: confirmation prompts need immediate handling
+                self.render_data_immediately(data).await?;
             } else {
                 // Regular case: static section
                 self.pending_sections.insert(key, data);
@@ -630,7 +645,7 @@ impl InteractiveRenderer {
         while self.next_section_index < self.expected_sections.len() {
             let section_key = self.expected_sections[self.next_section_index];
             
-            if let Some(data) = self.pending_sections.remove(section_key) {
+            if let Some(data) = self.pending_sections.remove(&section_key.to_string()) {
                 self.render_section(data).await?;
                 self.next_section_index += 1;
                 self.start_next_section_if_exists();
@@ -685,7 +700,7 @@ impl InteractiveRenderer {
         
         // Find the index of live_stack_events in expected sections
         let live_events_index = self.expected_sections.iter()
-            .position(|&section| section == "live_stack_events");
+            .position(|section| *section == "live_stack_events");
         
         if let Some(target_index) = live_events_index {
             // If we haven't reached the live_stack_events section yet, buffer the data
@@ -742,16 +757,22 @@ impl InteractiveRenderer {
     }
     
     /// Get section key for OutputData type
-    fn get_section_key(&self, data: &OutputData) -> Option<&'static str> {
+    fn get_section_key(&self, data: &OutputData) -> Option<String> {
         match data {
-            OutputData::CommandMetadata(..) => Some("command_metadata"),
-            OutputData::StackDefinition(..) => Some("stack_definition"),
-            OutputData::StackEvents(..) => Some("stack_events"),
-            OutputData::StackContents(..) => Some("stack_contents"),
-            OutputData::StackList(..) => Some("stack_list"),
-            OutputData::StackDrift(..) => Some("stack_drift"),
-            OutputData::ChangeSetResult(..) => Some("changeset_result"),
-            OutputData::NewStackEvents(..) => Some("live_stack_events"),
+            OutputData::CommandMetadata(..) => Some("command_metadata".to_string()),
+            OutputData::StackDefinition(..) => Some("stack_definition".to_string()),
+            OutputData::StackEvents(..) => Some("stack_events".to_string()),
+            OutputData::StackContents(..) => Some("stack_contents".to_string()),
+            OutputData::StackList(..) => Some("stack_list".to_string()),
+            OutputData::StackDrift(..) => Some("stack_drift".to_string()),
+            OutputData::ChangeSetResult(..) => Some("changeset_result".to_string()),
+            OutputData::NewStackEvents(..) => Some("live_stack_events".to_string()),
+            OutputData::ConfirmationPrompt(request) => {
+                match &request.key {
+                    Some(key) => Some(format!("confirmation_{}", key)),
+                    None => Some("confirmation".to_string()),
+                }
+            },
             // Only non-section data returns None
             OutputData::TokenInfo(..) | OutputData::OperationComplete(..) | OutputData::InactivityTimeout(..) => None,
             _ => None,
@@ -793,6 +814,7 @@ impl InteractiveRenderer {
             OutputData::NewStackEvents(ref events) => self.render_new_stack_events(events).await,
             OutputData::OperationComplete(ref info) => self.handle_operation_complete(info).await,
             OutputData::InactivityTimeout(ref info) => self.handle_inactivity_timeout(info).await,
+            OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
         }
     }
     
@@ -1605,5 +1627,37 @@ impl InteractiveRenderer {
         }
     }
     
+    /// Render confirmation prompt
+    async fn render_confirmation_prompt(&mut self, mut request: ConfirmationRequest) -> Result<()> {
+        // Clear any active spinner (standard pattern for all sections)
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        let confirmed = if !self.options.enable_ansi_features {
+            // Plain mode: show message but don't interact
+            println!("CONFIRMATION REQUIRED: {}", request.message);
+            println!("Use --yes flag to proceed automatically in non-interactive mode");
+            false // Always decline in non-interactive mode for safety
+        } else {
+            // Interactive mode: prompt user
+            print!("? {} (y/N) ", request.message);
+            use std::io::{self, Write};
+            io::stdout().flush()?;
+            
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            let input = input.trim().to_lowercase();
+            
+            matches!(input.as_str(), "y" | "yes")
+        };
+        
+        // Send response back to command handler via channel
+        if let Some(response_tx) = request.response_tx.take() {
+            let _ = response_tx.send(confirmed);
+        }
+        
+        Ok(())
+    }
     
 }

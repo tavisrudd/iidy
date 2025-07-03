@@ -118,6 +118,7 @@ impl OutputRenderer for JsonRenderer {
             OutputData::NewStackEvents(ref events) => self.render_new_stack_events(events).await,
             OutputData::OperationComplete(ref info) => self.render_operation_complete(info).await,
             OutputData::InactivityTimeout(ref info) => self.render_inactivity_timeout(info).await,
+            OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
         }
     }
 }
@@ -194,6 +195,24 @@ impl JsonRenderer {
         self.output_json("inactivity_timeout", info)
     }
     
+    async fn render_confirmation_prompt(&mut self, mut request: crate::output::data::ConfirmationRequest) -> Result<()> {
+        // JSON mode: output confirmation event but don't interact
+        let confirmation_event = serde_json::json!({
+            "type": "confirmation_required",
+            "message": request.message,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "response": "declined_non_interactive"
+        });
+        
+        println!("{}", confirmation_event.to_string());
+        
+        // Send response back to command handler via channel
+        if let Some(response_tx) = request.response_tx.take() {
+            let _ = response_tx.send(false); // Always decline in JSON mode
+        }
+        
+        Ok(())
+    }
     
 }
 

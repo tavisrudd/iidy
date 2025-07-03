@@ -39,6 +39,9 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     ).await?;
 
     let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
+    if final_stack_args.template.is_none() {
+        anyhow::bail!("Template is required in stack-args.yaml");
+    }
 
     let stack_name = final_stack_args
         .stack_name
@@ -132,19 +135,25 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     stack_result??;
     let final_status = events_result??;
     
-    // Final step: Show stack contents (like create-stack)
-    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
-    let sender = output_manager.start();
-    let _ = sender.send(OutputData::StackContents(stack_contents));
-    drop(sender);
-    output_manager.stop().await?;
-    
-    // Determine success using centralized helper
+    let elapsed_seconds = context.elapsed_seconds().await?;
     let success = determine_operation_success(&final_status, UPDATE_SUCCESS_STATES);
     
-    // Show final command summary (exact iidy-js showFinalComandSummary pattern)
-    let elapsed = context.elapsed_seconds().await?;
-    let final_summary = create_final_command_summary(success, elapsed);
+    // Skip stack contents if the stack was deleted (can happen with failed updates)
+    if let Some(ref status) = final_status {
+        if status == "DELETE_COMPLETE" {
+            let final_command_summary = create_final_command_summary(
+                false, // Mark as failed since stack was deleted
+                elapsed_seconds
+            );
+            output_manager.render(final_command_summary).await?;
+            return Ok(1); // Return exit code 1 for failure
+        }
+    }
+    
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    output_manager.render(OutputData::StackContents(stack_contents)).await?;
+    
+    let final_summary = create_final_command_summary(success, elapsed_seconds);
     output_manager.render(final_summary).await?;
     
     // Return appropriate exit code
@@ -211,23 +220,18 @@ async fn update_stack_with_changeset(
 
     let _create_response = create_request.send().await?;
 
-    // Ask for confirmation unless --yes is specified
-    if !args.yes {
-        // Use data-driven output for user interaction prompts
-        println!();
-        println!("Review the changeset in the AWS Console if needed.");
-        println!("Do you want to execute this changeset? (y/N)");
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_lowercase();
-
-        if input != "y" && input != "yes" {
-            let elapsed = context.elapsed_seconds().await?;
-            let final_summary = create_final_command_summary(true, elapsed);
-            output_manager.render(final_summary).await?;
-            return Ok(0);
-        }
+    // Ask for confirmation unless --yes is specified (exact iidy-js message)
+    let confirmed = if args.yes {
+        true
+    } else {
+        output_manager.request_confirmation("Do you want to execute this changeset now?".to_string()).await?
+    };
+    
+    if !confirmed {
+        let elapsed = context.elapsed_seconds().await?;
+        let final_summary = create_final_command_summary(true, elapsed);
+        output_manager.render(final_summary).await?;
+        return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
     }
 
     // Step 2: Execute changeset
@@ -250,7 +254,7 @@ async fn update_stack_with_changeset(
     
     let success = match watch_result {
         Ok(_) => true,
-        Err(_) => true, // Still successful - changeset executed, just watching failed
+        Err(_) => false, // Watching failed - unknown operation status, treat as failure
     };
 
     // Show final command summary (exact iidy-js showFinalComandSummary pattern)

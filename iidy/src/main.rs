@@ -36,9 +36,12 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::CreateOrUpdate(ref args) => {
-            if let Err(e) = rt.block_on(cfn::create_or_update::create_or_update(&cli, &args)) {
-                eprintln!("error creating or updating stack: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::create_or_update::create_or_update(&cli, &args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error creating or updating stack: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::EstimateCost(ref args) => {
