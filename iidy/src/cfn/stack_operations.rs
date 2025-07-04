@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 use super::{CfnContext, is_terminal_status::is_terminal_resource_status};
 use crate::output::{
-    StackContents, StackStatusInfo,
+    StackContents, StackStatusInfo, ChangeSetInfo, ChangeInfo, ChangeDetail,
     aws_conversion::{convert_stack_resources, convert_stack_outputs, convert_outputs_to_exports}
 };
 
@@ -78,13 +78,93 @@ pub async fn collect_stack_contents(
         }),
     };
 
+    // Get pending changesets
+    let pending_changesets = collect_pending_changesets(ctx, stack_name).await.unwrap_or_default();
+
     Ok(StackContents {
         resources,
         outputs,
         exports,
         current_status,
-        pending_changesets: vec![], // Would need separate query for changeset operations
+        pending_changesets,
     })
+}
+
+/// Collect pending changesets for a stack
+async fn collect_pending_changesets(
+    ctx: &CfnContext,
+    stack_name: &str,
+) -> Result<Vec<ChangeSetInfo>> {
+    // List all changesets for the stack
+    let list_resp = ctx.client
+        .list_change_sets()
+        .stack_name(stack_name)
+        .send()
+        .await?;
+    
+    let changeset_summaries = list_resp.summaries.unwrap_or_default();
+    let mut changesets = Vec::new();
+    
+    for summary in changeset_summaries {
+        // Get detailed information about each changeset
+        let changeset_name = summary.change_set_name().unwrap_or("").to_string();
+        if changeset_name.is_empty() {
+            continue;
+        }
+        
+        let describe_resp = ctx.client
+            .describe_change_set()
+            .stack_name(stack_name)
+            .change_set_name(&changeset_name)
+            .send()
+            .await?;
+        
+        // Convert AWS changeset to our format
+        let mut changes = Vec::new();
+        if let Some(ref changeset_changes) = describe_resp.changes {
+            for change in changeset_changes {
+                if let Some(ref resource_change) = change.resource_change {
+                    changes.push(ChangeInfo {
+                        action: resource_change.action().map(|a| a.as_str()).unwrap_or("Unknown").to_string(),
+                        logical_resource_id: resource_change.logical_resource_id().unwrap_or("").to_string(),
+                        physical_resource_id: resource_change.physical_resource_id().map(|s| s.to_string()),
+                        resource_type: resource_change.resource_type().unwrap_or("").to_string(),
+                        replacement: resource_change.replacement().map(|r| r.as_str().to_string()),
+                        scope: Some(resource_change.scope()
+                            .iter().map(|s| s.as_str().to_string()).collect()
+                        ),
+                        details: resource_change.details()
+                            .iter().map(|detail| ChangeDetail {
+                                target: detail.target().and_then(|t| t.name()).unwrap_or("").to_string(),
+                                evaluation: detail.evaluation().map(|e| e.as_str().to_string()),
+                                change_source: detail.change_source().map(|cs| cs.as_str().to_string()),
+                                causing_entity: detail.causing_entity().map(|ce| ce.to_string()),
+                            }).collect(),
+                    });
+                }
+            }
+        }
+        
+        let changeset_info = ChangeSetInfo {
+            change_set_name: changeset_name,
+            change_set_id: describe_resp.change_set_id().unwrap_or("").to_string(),
+            stack_id: describe_resp.stack_id().unwrap_or("").to_string(),
+            stack_name: describe_resp.stack_name().unwrap_or("").to_string(),
+            description: describe_resp.description().map(|s| s.to_string()),
+            status: describe_resp.status().map(|s| s.as_str().to_string()).unwrap_or("UNKNOWN".to_string()),
+            status_reason: describe_resp.status_reason().map(|s| s.to_string()),
+            creation_time: describe_resp.creation_time().and_then(|ts| {
+                chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            }),
+            execution_status: describe_resp.execution_status().map(|es| es.as_str().to_string()),
+            changes,
+        };
+        
+        changesets.push(changeset_info);
+    }
+    
+    Ok(changesets)
 }
 
 /// Stack Events Service - provides common event fetching and processing patterns

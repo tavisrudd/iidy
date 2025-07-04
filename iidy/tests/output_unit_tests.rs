@@ -254,8 +254,10 @@ fn test_changeset_info_structure() {
     let change_info = ChangeInfo {
         action: "Add".to_string(),
         logical_resource_id: "MyResource".to_string(),
+        physical_resource_id: Some("i-1234567890abcdef0".to_string()),
         resource_type: "AWS::EC2::Instance".to_string(),
         replacement: Some("False".to_string()),
+        scope: Some(vec!["Properties".to_string()]),
         details: vec![change_detail],
     };
     

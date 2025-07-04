@@ -120,6 +120,7 @@ impl OutputRenderer for JsonRenderer {
             OutputData::InactivityTimeout(ref info) => self.render_inactivity_timeout(info).await,
             OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
             OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
+            OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
         }
     }
 }
@@ -217,6 +218,10 @@ impl JsonRenderer {
 
     async fn render_stack_change_details(&mut self, data: &crate::output::data::StackChangeDetails) -> Result<()> {
         self.output_json("stack_change_details", data)
+    }
+
+    async fn render_stack_absent_info(&mut self, data: &crate::output::data::StackAbsentInfo) -> Result<()> {
+        self.output_json("stack_absent_info", data)
     }
     
 }

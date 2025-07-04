@@ -10,17 +10,35 @@ use crate::cli::{DeleteArgs, Cli};
 use crate::output::{
     DynamicOutputManager, OutputData,
     aws_conversion::{
-        create_command_metadata, warning_message, convert_token_info, 
+        create_command_metadata, convert_token_info, 
         convert_stack_to_definition, convert_stack_events_to_display_with_max,
-        create_final_command_summary, error_message
+        create_final_command_summary, convert_aws_error_to_error_info
     },
-    manager::OutputOptions
+    manager::OutputOptions,
+    data::StackAbsentInfo
 };
 use crate::stack_args::StackArgs;
 use crate::cfn::watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
 
-use crate::aws::display_and_return_user_friendly_error;
+// Remove old error handling import - now using data-driven error system
 use super::CfnContext;
+
+/// Get AWS account and auth principal information
+async fn get_aws_identity_info(aws_config: &aws_config::SdkConfig) -> (String, String) {
+    let sts_client = aws_sdk_sts::Client::new(aws_config);
+    
+    match sts_client.get_caller_identity().send().await {
+        Ok(response) => {
+            let account = response.account().unwrap_or("unknown").to_string();
+            let auth_arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
+            (account, auth_arn)
+        }
+        Err(_) => {
+            // Fall back to placeholder if STS call fails
+            ("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string())
+        }
+    }
+}
 
 /// Check if a stack exists for deletion, properly handling different error types
 async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -> Result<Option<aws_sdk_cloudformation::types::Stack>> {
@@ -91,9 +109,10 @@ async fn perform_stack_deletion(
             Ok(stack_id)
         }
         Err(e) => {
-            let error_msg = format!("Failed to initiate stack deletion: {}", e);
-            output_manager.render(error_message(&error_msg)).await?;
-            Err(e.into())
+            let anyhow_error = anyhow::Error::from(e);
+            let error_info = convert_aws_error_to_error_info(&anyhow_error);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            Err(anyhow_error)
         }
     }
 }
@@ -130,8 +149,16 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
             (stack, stack_id)
         }
         Ok(None) => {
-            // Stack doesn't exist
-            output_manager.render(warning_message(&format!("Stack {} does not exist or is not accessible", stack_name))).await?;
+            // Stack doesn't exist - create iidy-js style info data
+            let (account, auth_arn) = get_aws_identity_info(&context.aws_config).await;
+            let stack_absent_info = StackAbsentInfo {
+                stack_name: stack_name.clone(),
+                environment: global_opts.environment.clone(),
+                region: opts.region.clone().unwrap_or_else(|| "us-east-1".to_string()),
+                account,
+                auth_arn,
+            };
+            output_manager.render(OutputData::StackAbsentInfo(stack_absent_info)).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
             let final_command_summary = create_final_command_summary(
                 true, // Mark as success since stack is already deleted (matches iidy-js behavior)
@@ -141,9 +168,10 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
             return Ok(0); // Return exit code 0 for success
         }
         Err(e) => {
-            // Real error (not stack-not-found) - show user-friendly message and return error exit code
-            let error = display_and_return_user_friendly_error(&e);
-            return Ok(error.exit_code);
+            // Real error (not stack-not-found) - show user-friendly error via renderer
+            let error_info = convert_aws_error_to_error_info(&e);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            return Ok(1); // Return exit code 1 for failure
         }
     };
 

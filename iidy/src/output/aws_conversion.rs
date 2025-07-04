@@ -11,6 +11,7 @@ use crate::{
         StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
         StackEventsDisplay, StackEvent, StackEventWithTiming,
         StackResourceInfo, StackOutputInfo, StackExportInfo,
+        data::ErrorInfo,
     },
     cli::NormalizedAwsOpts,
     stack_args::StackArgs,
@@ -606,4 +607,106 @@ mod tests {
         // Second event (COMPLETE) should have 5 second duration
         assert_eq!(events_with_timing[1].duration_seconds, Some(5));
     }
+}
+
+/// Convert AWS errors to ErrorInfo for proper display formatting
+pub fn convert_aws_error_to_error_info(error: &anyhow::Error) -> ErrorInfo {
+    let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
+    
+    // Look for common AWS error patterns and provide user-friendly messages
+    let (error_type, message, suggestions) = analyze_aws_error(&error_chain);
+    
+    ErrorInfo {
+        error_type,
+        message,
+        details: None, // Keep it simple, don't expose internal error details
+        timestamp: Utc::now(),
+        suggestions,
+    }
+}
+
+/// Analyze AWS error chain and return structured error information
+fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
+    for err_msg in error_chain {
+        let lower_msg = err_msg.to_lowercase();
+        
+        if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
+            return (
+                "ExpiredCredentials".to_string(),
+                "AWS credentials have expired. Please refresh your credentials.".to_string(),
+                vec![
+                    "Run 'aws sts get-caller-identity' to check your credentials".to_string(),
+                    "Refresh your AWS SSO session if using SSO".to_string(),
+                    "Check your AWS credentials configuration".to_string(),
+                ]
+            );
+        }
+        
+        if lower_msg.contains("no providers in chain provided credentials") {
+            return (
+                "NoCredentials".to_string(),
+                "AWS credentials not found. Please configure your AWS credentials.".to_string(),
+                vec![
+                    "Run 'aws configure' to set up your credentials".to_string(),
+                    "Set AWS_PROFILE environment variable if using named profiles".to_string(),
+                    "Ensure ~/.aws/credentials file exists and is properly formatted".to_string(),
+                ]
+            );
+        }
+        
+        if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
+            return (
+                "AccessDenied".to_string(),
+                "Access denied. Please check your AWS permissions.".to_string(),
+                vec![
+                    "Verify your IAM user/role has CloudFormation permissions".to_string(),
+                    "Check if you're using the correct AWS account/region".to_string(),
+                    "Review IAM policies attached to your user/role".to_string(),
+                ]
+            );
+        }
+        
+        if lower_msg.contains("invalidclienttokenid") || 
+           lower_msg.contains("invalid security token") ||
+           lower_msg.contains("tokenfreshfailed") ||
+           lower_msg.contains("unrecognizedclientexception") {
+            return (
+                "InvalidToken".to_string(),
+                "Invalid AWS security token. Please refresh your credentials.".to_string(),
+                vec![
+                    "Refresh your AWS credentials".to_string(),
+                    "Check if your AWS region is correct".to_string(),
+                    "Verify you're using the correct AWS profile".to_string(),
+                    "If using SSO, run 'aws sso login' to refresh your session".to_string(),
+                ]
+            );
+        }
+        
+        if lower_msg.contains("network") || lower_msg.contains("timeout") {
+            return (
+                "NetworkError".to_string(),
+                "Network error connecting to AWS. Please check your internet connection.".to_string(),
+                vec![
+                    "Check your internet connection".to_string(),
+                    "Verify AWS service endpoints are accessible".to_string(),
+                    "Try again in a few moments".to_string(),
+                ]
+            );
+        }
+    }
+    
+    // If no specific pattern matches, show the most relevant error from the chain
+    let message = if error_chain.len() > 1 {
+        format!("AWS error - {}", error_chain[error_chain.len() - 1])
+    } else if !error_chain.is_empty() {
+        error_chain[0].clone()
+    } else {
+        "Unknown AWS error".to_string()
+    };
+    
+    (
+        "AWSError".to_string(),
+        message,
+        vec!["Check the AWS CloudFormation console for more details".to_string()]
+    )
 }

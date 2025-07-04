@@ -58,18 +58,22 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::ExecChangeset(ref args) => {
-            if let Err(e) = rt.block_on(cfn::exec_changeset::exec_changeset(&cli, &args)) {
-                eprintln!("error executing change set: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::exec_changeset::exec_changeset(&cli, &args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error executing change set: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::DummySpacer2 => {}
         Commands::DescribeStack(ref args) => {
-            if let Err(e) =
-                rt.block_on(cfn::describe_stack::describe_stack(&cli, &args))
-            {
-                eprintln!("error describing stack: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::describe_stack::describe_stack(&cli, &args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error describing stack: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
 

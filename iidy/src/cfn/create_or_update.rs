@@ -2,7 +2,7 @@ use anyhow::Result;
 use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}, StackChangeType, UpdateResult};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}, StackChangeType, UpdateResult, changeset_operations};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
@@ -80,7 +80,8 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
         }
     } else {
         if args.changeset {
-            output_manager.render(warning_message("Changeset mode not recommended for new stacks, creating directly")).await?;
+            // Use CREATE changeset for new stacks when --changeset is specified
+            return create_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager, &global_opts, &opts).await;
         }
         StackChangeDetails {
             change_type: StackChangeType::Create,
@@ -317,7 +318,10 @@ async fn update_stack_with_changeset_data(
     let confirmed = if args.yes {
         true
     } else {
-        output_manager.request_confirmation("Do you want to execute this changeset now?".to_string()).await?
+        output_manager.request_confirmation_with_key(
+            "Do you want to execute this changeset now?".to_string(),
+            "execute_changeset".to_string()
+        ).await?
     };
     
     if !confirmed {
@@ -361,4 +365,68 @@ async fn update_stack_with_changeset_data(
     };
 
     Ok(if success { 0 } else { 1 })
+}
+
+/// Create new stack with changeset using shared changeset functionality.
+async fn create_stack_with_changeset_data(
+    context: &CfnContext,
+    args: &UpdateStackArgs,
+    stack_args: &crate::stack_args::StackArgs,
+    output_manager: &mut DynamicOutputManager,
+    global_opts: &crate::cli::GlobalOpts,
+    opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
+    // Use shared changeset functionality for CREATE changeset
+    let changeset_result = changeset_operations::create_changeset_comprehensive(
+        context,
+        stack_args,
+        None, // Let it generate a docker-style name
+        &args.base.argsfile,
+        output_manager,
+    ).await?;
+
+    // Render changeset result
+    output_manager.render(OutputData::ChangeSetResult(changeset_result.clone())).await?;
+
+    // Ask for confirmation unless --yes is specified
+    let confirmed = if args.yes {
+        true
+    } else {
+        output_manager.request_confirmation_with_key(
+            "Do you want to execute this changeset now?".to_string(),
+            "execute_changeset".to_string()
+        ).await?
+    };
+    
+    if !confirmed {
+        let elapsed = context.elapsed_seconds().await?;
+        output_manager.render(create_command_result(true, elapsed, Some("Changeset execution declined".to_string()))).await?;
+        return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
+    }
+
+    // Execute changeset - use exec_changeset functionality
+    use super::exec_changeset;
+    
+    // Create exec_changeset args from the changeset result
+    let exec_args = crate::cli::ExecChangeSetArgs {
+        changeset_name: changeset_result.changeset_name,
+        argsfile: args.base.argsfile.clone(),
+        stack_name: Some(changeset_result.stack_name),
+    };
+    
+    // Reconstruct CLI from the passed options
+    let aws_opts = AwsOpts {
+        region: opts.region.clone(),
+        profile: opts.profile.clone(),
+        assume_role_arn: opts.assume_role_arn.clone(),
+        client_request_token: Some(opts.client_request_token.value.clone()),
+    };
+    let exec_cli = Cli {
+        global_opts: global_opts.clone(),
+        aws_opts,
+        command: Commands::ExecChangeset(exec_args.clone()),
+    };
+    
+    // Execute the changeset using the exec_changeset handler
+    exec_changeset::exec_changeset(&exec_cli, &exec_args).await
 }

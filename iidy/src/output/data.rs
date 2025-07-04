@@ -195,8 +195,10 @@ pub struct ChangeSetInfo {
 pub struct ChangeInfo {
     pub action: String, // Add, Modify, Remove
     pub logical_resource_id: String,
+    pub physical_resource_id: Option<String>,
     pub resource_type: String,
     pub replacement: Option<String>, // True, False, Conditional
+    pub scope: Option<Vec<String>>, // What aspects are changing
     pub details: Vec<ChangeDetail>,
 }
 
@@ -355,6 +357,16 @@ pub struct StackChangeDetails {
     pub stack_name: String,
 }
 
+/// Stack absent information for operations on non-existent stacks
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StackAbsentInfo {
+    pub stack_name: String,
+    pub environment: String,
+    pub region: String,
+    pub account: String,
+    pub auth_arn: String,
+}
+
 
 /// Stack drift information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -419,6 +431,7 @@ pub enum OutputData {
     InactivityTimeout(InactivityTimeoutInfo), // Signal that operation timed out due to inactivity
     ConfirmationPrompt(ConfirmationRequest), // Interactive confirmation prompt
     StackChangeDetails(StackChangeDetails), // Stack change type for create-or-update operations
+    StackAbsentInfo(StackAbsentInfo), // Information about absent/non-existent stacks
 }
 
 impl OutputData {
@@ -442,6 +455,7 @@ impl OutputData {
             OutputData::InactivityTimeout(_) => "inactivity_timeout",
             OutputData::ConfirmationPrompt(_) => "confirmation_prompt",
             OutputData::StackChangeDetails(_) => "stack_change_details",
+            OutputData::StackAbsentInfo(_) => "stack_absent_info",
         }
     }
     

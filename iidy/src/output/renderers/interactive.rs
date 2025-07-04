@@ -6,7 +6,7 @@
 use crate::output::data::*;
 use crate::output::renderer::OutputRenderer;
 use crate::output::theme::{IidyTheme, get_terminal_width};
-use crate::cli::{Theme, ColorChoice};
+use crate::cli::{Theme, ColorChoice, Commands};
 use crate::color::{ProgressManager, SpinnerStyle};
 use crate::cfn::CfnOperation;
 use anyhow::Result;
@@ -492,11 +492,30 @@ impl InteractiveRenderer {
             
             // Modification operations with monitoring (include command_metadata as first section)
             CfnOperation::CreateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
-            CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "live_stack_events"],
+            CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "confirmation", "live_stack_events"],
             CfnOperation::UpdateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
-            CfnOperation::CreateChangeset => vec!["changeset_result"],
-            CfnOperation::ExecuteChangeset => vec!["command_metadata", "live_stack_events", "stack_contents"],
-            CfnOperation::CreateOrUpdate => vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"],
+            CfnOperation::CreateChangeset => vec!["command_metadata", "changeset_result"],
+            CfnOperation::ExecuteChangeset => vec!["command_metadata", "stack_definition", "stack_events", "live_stack_events", "stack_contents"],
+            CfnOperation::CreateOrUpdate => {
+                // Check if --changeset flag is set by examining the CLI context
+                if let Some(ref cli_ctx) = self.cli_context {
+                    if let Commands::CreateOrUpdate(args) = &cli_ctx.command {
+                        if args.changeset {
+                            // Phase 1: Changeset creation
+                            vec!["command_metadata", "changeset_result", "confirmation"]
+                        } else {
+                            // Regular create-or-update flow
+                            vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
+                        }
+                    } else {
+                        // Fallback (shouldn't happen)
+                        vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
+                    }
+                } else {
+                    // No CLI context available, use regular flow
+                    vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
+                }
+            },
             
             // Other operations
             CfnOperation::EstimateCost => vec!["cost_estimate"],
@@ -582,6 +601,14 @@ impl InteractiveRenderer {
             }
             CfnOperation::DeleteStack => {
                 // For delete-stack, include command metadata, previous events, and live events  
+                self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
+                self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
+                self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+                self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
+            }
+            CfnOperation::ExecuteChangeset => {
+                // For exec-changeset, include command metadata, previous events, and live events
                 self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
                 self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
                 self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
@@ -825,6 +852,7 @@ impl InteractiveRenderer {
             OutputData::InactivityTimeout(ref info) => self.handle_inactivity_timeout(info).await,
             OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
             OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
+            OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
         }
     }
     
@@ -1175,21 +1203,9 @@ impl InteractiveRenderer {
                     }
                 }
                 
-                // Show changeset changes
+                // Show changeset changes (exact iidy-js formatting)
                 for change in &changeset.changes {
-                    println!("    {} {} {}",
-                        self.format_logical_id(&change.logical_resource_id),
-                        self.colorize_resource_status(&change.action, None),
-                        change.resource_type.color(self.theme.muted)
-                    );
-                    
-                    if let Some(replacement) = &change.replacement {
-                        println!("      {}", format!("Replacement: {}", replacement).color(self.theme.muted));
-                    }
-                    
-                    for detail in &change.details {
-                        println!("      {}", format!("{}: {}", detail.target, detail.change_source.as_deref().unwrap_or("Unknown")).color(self.theme.muted));
-                    }
+                    self.render_changeset_change(change)?;
                 }
                 
                 println!();
@@ -1387,26 +1403,46 @@ impl InteractiveRenderer {
     
     /// Render changeset result (exact iidy-js implementation)
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()> {
-        self.add_content_spacing();
+        if !self.suppress_main_heading {
+            self.add_content_spacing();
+        }
         
-        // Show AWS Console URL
+        // Show AWS Console URL for full changeset review (exact iidy-js format)
+        println!();
         println!("AWS Console URL for full changeset review: {}",
             data.console_url.color(self.theme.muted));
         
-        // Show status
-        let status_text = if data.has_changes {
-            format!("Changeset {} {} with changes",
-                data.changeset_name.magenta(),
-                data.status
-            )
-        } else {
-            format!("Changeset {} {} with no changes",
-                data.changeset_name.magenta(),
-                data.status
-            )
-        };
+        // Show Pending Changesets section
+        println!();
+        self.print_section_heading_with_newline("Pending Changesets");
         
-        println!("{}", status_text);
+        for changeset in &data.pending_changesets {
+            // Format creation time, changeset name, and status (exact iidy-js format)
+            let creation_time = if let Some(ct) = &changeset.creation_time {
+                self.render_timestamp(ct)
+            } else {
+                "Unknown time".to_string()
+            };
+            
+            self.print_section_entry(
+                &self.format_timestamp(&creation_time),
+                &format!("{} {}",
+                    changeset.change_set_name.color(self.theme.primary),
+                    changeset.status
+                )
+            )?;
+            
+            // Show changes using the same formatting as pending changesets
+            for change in &changeset.changes {
+                self.render_changeset_change(change)?;
+            }
+        }
+        
+        // Show next steps (exact iidy-js format)
+        println!();
+        for step in &data.next_steps {
+            println!("{}", step);
+        }
         
         Ok(())
     }
@@ -1462,13 +1498,30 @@ impl InteractiveRenderer {
     
     /// Render error (exact iidy-js implementation)
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
-        eprintln!("{}: {}", 
-            "Error".color(self.theme.error), 
-            data.message
-        );
+        // Clear any active spinner before showing the error
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
         
-        if let Some(details) = &data.details {
-            eprintln!("{}", details.color(self.theme.muted));
+        // Add blank line to separate error from prior output
+        println!();
+        
+        // Display error message with ERROR: prefix in bold bright red (user-friendly format)
+        if self.colors_enabled() {
+            println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
+        } else {
+            println!("ERROR: {}", data.message);
+        }
+        
+        // Show suggestions if available (in muted color)
+        if !data.suggestions.is_empty() {
+            for suggestion in &data.suggestions {
+                if self.colors_enabled() {
+                    println!("  • {}", suggestion.color(self.theme.muted));
+                } else {
+                    println!("  • {}", suggestion);
+                }
+            }
         }
         
         Ok(())
@@ -1650,8 +1703,8 @@ impl InteractiveRenderer {
             println!("Use --yes flag to proceed automatically in non-interactive mode");
             false // Always decline in non-interactive mode for safety
         } else {
-            // Interactive mode: prompt user
-            print!("? {} (y/N) ", request.message);
+            // Interactive mode: prompt user with bold bright red text (matching iidy-js)
+            print!("? {} (y/N) ", request.message.bold().bright_red());
             use std::io::{self, Write};
             io::stdout().flush()?;
             
@@ -1662,6 +1715,17 @@ impl InteractiveRenderer {
             matches!(input.as_str(), "y" | "yes")
         };
         
+        // Handle post-confirmation actions based on key BEFORE sending response
+        // This ensures renderer state is updated before command handler proceeds
+        if confirmed {
+            if let Some(key) = &request.key {
+                match key.as_str() {
+                    "execute_changeset" => self.post_confirmation_execute_changeset(),
+                    _ => {} // No special handling for other keys
+                }
+            }
+        }
+        
         // Send response back to command handler via channel
         if let Some(response_tx) = request.response_tx.take() {
             let _ = response_tx.send(confirmed);
@@ -1670,6 +1734,79 @@ impl InteractiveRenderer {
         Ok(())
     }
     
+    /// Post-confirmation handler for changeset execution
+    fn post_confirmation_execute_changeset(&mut self) {
+        // Clear current operation state
+        self.cleanup_operation();
+        
+        // Set up expected sections for execution phase
+        self.expected_sections = vec!["command_metadata", "stack_definition", "stack_events", "live_stack_events", "stack_contents"];
+        self.next_section_index = 0;
+        
+        // Configure section titles for execution phase (same as ExecuteChangeset operation)
+        self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
+        self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
+        self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
+        self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+        self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
+        
+        // Don't start next section here - let the normal flow handle it when execution phase begins
+        // This prevents spinner conflicts between changeset creation and execution phases
+    }
+    
+    /// Render stack absent info with iidy-js styling (green "info" prefix and structured data)
+    async fn render_stack_absent_info(&mut self, info: &crate::output::data::StackAbsentInfo) -> Result<()> {
+        // Clear any active spinner before showing the message
+        if let Some(spinner) = self.current_spinner.take() {
+            spinner.clear();
+        }
+        
+        // Format message exactly like iidy-js: green "info" prefix + structured message
+        let info_prefix = if self.colors_enabled() {
+            "info".color(self.theme.success).to_string()
+        } else {
+            "info".to_string()
+        };
+        
+        let stack_name_colored = if self.colors_enabled() {
+            info.stack_name.color(self.theme.primary).to_string()
+        } else {
+            info.stack_name.clone()
+        };
+        
+        let env_colored = if self.colors_enabled() {
+            info.environment.color(self.theme.primary).to_string()
+        } else {
+            info.environment.clone()
+        };
+        
+        let region_colored = if self.colors_enabled() {
+            info.region.color(self.theme.primary).to_string()
+        } else {
+            info.region.clone()
+        };
+        
+        let account_colored = if self.colors_enabled() {
+            info.account.color(self.theme.primary).to_string()
+        } else {
+            info.account.clone()
+        };
+        
+        let auth_arn_colored = if self.colors_enabled() {
+            info.auth_arn.color(self.theme.primary).to_string()
+        } else {
+            info.auth_arn.clone()
+        };
+
+        println!("{} The stack {} is absent in env = {}", 
+            info_prefix, stack_name_colored, env_colored);
+        println!("      region = {}", region_colored);  
+        println!("      account = {}", account_colored);
+        println!("      auth_arn = {}.", auth_arn_colored);
+        
+        Ok(())
+    }
+
     /// Render stack change details for create-or-update operations
     async fn render_stack_change_details(&mut self, data: &crate::output::data::StackChangeDetails) -> Result<()> {
         use crate::cfn::StackChangeType;
@@ -1692,6 +1829,106 @@ impl InteractiveRenderer {
                 self.cleanup_operation();
             },
         }
+        Ok(())
+    }
+    
+    /// Render a single changeset change (exact iidy-js formatting from summarizeChangeSet)
+    fn render_changeset_change(&self, change: &ChangeInfo) -> Result<()> {
+        // Use padding based on length of "Modify  " (8 characters) to accommodate all actions
+        let action_width = 8; // len("Modify  ") - fits "Replace?" which is the longest action
+        let logical_id_width = 30;
+        
+        match change.action.as_str() {
+            "Add" => {
+                // Add: green action, logical ID, muted resource type
+                let action_padded = format!("{:<width$}", change.action, width = action_width);
+                println!("  {} {:<width$} {}", 
+                    action_padded.color(self.theme.success),
+                    change.logical_resource_id,
+                    change.resource_type.color(self.theme.muted),
+                    width = logical_id_width
+                );
+            },
+            "Remove" => {
+                // Remove: red action, logical ID, muted resource type + physical ID
+                let resource_info = if let Some(ref physical_id) = change.physical_resource_id {
+                    format!("{} {}", change.resource_type, physical_id)
+                } else {
+                    change.resource_type.clone()
+                };
+                let action_padded = format!("{:<width$}", change.action, width = action_width);
+                println!("  {} {:<width$} {}", 
+                    action_padded.color(self.theme.error),
+                    change.logical_resource_id,
+                    resource_info.color(self.theme.muted),
+                    width = logical_id_width
+                );
+            },
+            "Modify" => {
+                let (action_text, action_color) = if let Some(ref replacement) = change.replacement {
+                    match replacement.as_str() {
+                        "True" => ("Replace", self.theme.error),
+                        "Conditional" => ("Replace?", self.theme.error),
+                        _ => ("Modify", self.theme.warning),
+                    }
+                } else {
+                    ("Modify", self.theme.warning)
+                };
+                
+                let resource_info = if let Some(ref physical_id) = change.physical_resource_id {
+                    format!("{} {}", change.resource_type, physical_id)
+                } else {
+                    change.resource_type.clone()
+                };
+                
+                // For Modify without replacement, show scope in yellow if available
+                if change.replacement.is_none() || change.replacement.as_deref() == Some("False") {
+                    let scope_text = if let Some(ref scope) = change.scope {
+                        scope.join(", ")
+                    } else {
+                        String::new()
+                    };
+                    
+                    let action_padded = format!("{:<width$}", action_text, width = action_width);
+                    println!("  {} {:<width$} {} {}", 
+                        action_padded.color(action_color),
+                        change.logical_resource_id,
+                        scope_text.color(self.theme.warning),
+                        resource_info.color(self.theme.muted),
+                        width = logical_id_width
+                    );
+                } else {
+                    let action_padded = format!("{:<width$}", action_text, width = action_width);
+                    println!("  {} {:<width$} {}", 
+                        action_padded.color(action_color),
+                        change.logical_resource_id,
+                        resource_info.color(self.theme.muted),
+                        width = logical_id_width
+                    );
+                }
+                
+                // Show details as YAML for Modify operations (like iidy-js)
+                if !change.details.is_empty() {
+                    for detail in &change.details {
+                        println!("    {}: {}", 
+                            detail.target.color(self.theme.muted),
+                            detail.change_source.as_deref().unwrap_or("Unknown").color(self.theme.muted)
+                        );
+                    }
+                }
+            },
+            _ => {
+                // Unknown action - fallback formatting
+                let action_padded = format!("{:<width$}", change.action, width = action_width);
+                println!("  {} {:<width$} {}", 
+                    action_padded,
+                    change.logical_resource_id,
+                    change.resource_type.color(self.theme.muted),
+                    width = logical_id_width
+                );
+            }
+        }
+        
         Ok(())
     }
     

@@ -37,7 +37,7 @@ pub async fn load_random_import(location: &str, base_location: &str) -> Result<I
 }
 
 /// Generate a dashed name for random imports
-fn generate_dashed_name() -> String {
+pub fn generate_dashed_name() -> String {
     use rand::Rng;
     let adjectives = [
         "red", "blue", "green", "happy", "clever", "brave", "swift", "mighty",

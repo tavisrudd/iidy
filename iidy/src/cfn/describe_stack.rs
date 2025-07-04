@@ -1,12 +1,12 @@
 use anyhow::{Result, anyhow};
 
-use crate::cfn::create_context_for_operation;
+use crate::cfn::{create_context_for_operation, stack_operations::collect_stack_contents};
 use crate::cli::{Cli, ToArgMap, DescribeArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, convert_stack_to_definition,
-    StackContents, StackStatusInfo, manager::OutputOptions,
+    manager::OutputOptions,
     CommandMetadata, TokenInfo, TokenSource,
-    aws_conversion::{convert_stack_events_to_display_with_max, convert_stack_resources, convert_stack_outputs, create_stack_export}
+    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_error_to_error_info}
 };
 
 // Note: Stack formatting logic has been moved to the output renderers
@@ -17,7 +17,9 @@ use crate::output::{
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// The stack details can be displayed in Interactive (with colors and formatting), 
 /// Plain (CI-friendly), or JSON (machine-readable) formats.
-pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<()> {
+/// 
+/// Returns exit code (0 for success, 1 for failure).
+pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
     let opts = cli.aws_opts.clone().normalize();
 
     // Setup data-driven output manager FIRST to show immediate UI feedback
@@ -129,113 +131,11 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<()> {
     };
     
     let contents_task = {
-        let client = client.clone();
+        let context = context.clone();
         let stack_name = stack_name.clone();
         let tx = sender.clone();
         tokio::spawn(async move {
-            // Get both stack info and resources in parallel
-            let (stack_resp, resources_resp) = tokio::try_join!(
-                async {
-                    client
-                        .describe_stacks()
-                        .stack_name(&stack_name)
-                        .send()
-                        .await
-                        .map_err(anyhow::Error::from)
-                },
-                async {
-                    client
-                        .describe_stack_resources()
-                        .stack_name(&stack_name)
-                        .send()
-                        .await
-                        .map_err(anyhow::Error::from)
-                }
-            )?;
-                
-            let stack = stack_resp
-                .stacks
-                .and_then(|mut s| s.pop())
-                .ok_or_else(|| anyhow!("stack not found"))?;
-        
-            let resources = convert_stack_resources(
-                resources_resp.stack_resources.unwrap_or_default()
-            );
-
-            // Extract outputs from stack
-            let outputs = convert_stack_outputs(
-                stack.outputs.unwrap_or_default()
-            );
-
-            // Get exports if any outputs have export names and query for importing stacks in parallel
-            let exports_with_names: Vec<_> = outputs.iter()
-                .filter_map(|output| {
-                    output.export_name.as_ref().map(|export_name| (output, export_name))
-                })
-                .collect();
-            
-            let exports = if !exports_with_names.is_empty() {
-                // Create futures for all import queries
-                let import_tasks: Vec<_> = exports_with_names.iter()
-                    .map(|(_, export_name)| {
-                        let client = client.clone();
-                        let export_name = (*export_name).clone();
-                        tokio::spawn(async move {
-                            match client
-                                .list_imports()
-                                .export_name(export_name)
-                                .send()
-                                .await
-                            {
-                                Ok(import_resp) => import_resp.imports.unwrap_or_default(),
-                                Err(_) => vec![], // If we can't query imports, continue without them
-                            }
-                        })
-                    })
-                    .collect();
-                
-                // Wait for all tasks to complete
-                let mut import_results = Vec::new();
-                for task in import_tasks {
-                    match task.await {
-                        Ok(imports) => import_results.push(imports),
-                        Err(_) => import_results.push(vec![]),
-                    }
-                }
-                
-                // Combine outputs with import results using conversion helper
-                let stack_id = stack.stack_id.clone().unwrap_or_default();
-                exports_with_names.iter()
-                    .zip(import_results.iter())
-                    .filter_map(|((output, _), importing_stacks)| {
-                        create_stack_export(
-                            output, 
-                            &stack_id, 
-                            importing_stacks.clone()
-                        )
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-
-            // Current status
-            let current_status = StackStatusInfo {
-                status: stack.stack_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
-                status_reason: stack.stack_status_reason,
-                timestamp: stack.last_updated_time.or(stack.creation_time).and_then(|ts| {
-                    chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-                }),
-            };
-
-            let stack_contents = StackContents {
-                resources,
-                outputs,
-                exports,
-                current_status,
-                pending_changesets: vec![], // Would need separate query
-            };
-
+            let stack_contents = collect_stack_contents(&context, &stack_name).await?;
             let _ = tx.send(OutputData::StackContents(stack_contents));
             Ok::<(), anyhow::Error>(())
         })
@@ -254,12 +154,25 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<()> {
         contents_task
     );
     
-    // Propagate any errors from the spawned tasks
-    stack_result??;
-    events_result??;
-    contents_result??;
+    // Helper to handle task results consistently
+    let handle_task_result = |result: Result<Result<(), anyhow::Error>, tokio::task::JoinError>| -> Option<anyhow::Error> {
+        match result {
+            Err(join_error) => Some(join_error.into()),
+            Ok(Err(task_error)) => Some(task_error),
+            Ok(Ok(())) => None,
+        }
+    };
+    
+    // Check all task results and show first error encountered
+    for task_result in [stack_result, events_result, contents_result] {
+        if let Some(error) = handle_task_result(task_result) {
+            let error_info = convert_aws_error_to_error_info(&error);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            return Ok(1); // Return exit code 1 for failure
+        }
+    }
 
-    Ok(())
+    Ok(0) // Return exit code 0 for success
 }
 
 #[cfg(test)]
