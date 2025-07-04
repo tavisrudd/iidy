@@ -496,7 +496,7 @@ impl InteractiveRenderer {
             CfnOperation::UpdateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
             CfnOperation::CreateChangeset => vec!["changeset_result"],
             CfnOperation::ExecuteChangeset => vec!["command_metadata", "live_stack_events", "stack_contents"],
-            CfnOperation::CreateOrUpdate => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
+            CfnOperation::CreateOrUpdate => vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"],
             
             // Other operations
             CfnOperation::EstimateCost => vec!["cost_estimate"],
@@ -585,6 +585,14 @@ impl InteractiveRenderer {
                 self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
                 self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
                 self.section_titles.insert("stack_events".to_string(), "Previous Stack Events (max 10):".to_string());
+                self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
+                self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
+            }
+            CfnOperation::CreateOrUpdate => {
+                // For create-or-update, include change details section
+                self.section_titles.insert("command_metadata".to_string(), "Command Metadata:".to_string());
+                self.section_titles.insert("stack_change_details".to_string(), "Stack Change Details".to_string());
+                self.section_titles.insert("stack_definition".to_string(), "Stack Details".to_string());
                 self.section_titles.insert("stack_contents".to_string(), "Stack Resources".to_string());
                 self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events (2s poll):".to_string());
             }
@@ -767,6 +775,7 @@ impl InteractiveRenderer {
             OutputData::StackDrift(..) => Some("stack_drift".to_string()),
             OutputData::ChangeSetResult(..) => Some("changeset_result".to_string()),
             OutputData::NewStackEvents(..) => Some("live_stack_events".to_string()),
+            OutputData::StackChangeDetails(..) => Some("stack_change_details".to_string()),
             OutputData::ConfirmationPrompt(request) => {
                 match &request.key {
                     Some(key) => Some(format!("confirmation_{}", key)),
@@ -815,6 +824,7 @@ impl InteractiveRenderer {
             OutputData::OperationComplete(ref info) => self.handle_operation_complete(info).await,
             OutputData::InactivityTimeout(ref info) => self.handle_inactivity_timeout(info).await,
             OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
+            OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
         }
     }
     
@@ -1657,6 +1667,31 @@ impl InteractiveRenderer {
             let _ = response_tx.send(confirmed);
         }
         
+        Ok(())
+    }
+    
+    /// Render stack change details for create-or-update operations
+    async fn render_stack_change_details(&mut self, data: &crate::output::data::StackChangeDetails) -> Result<()> {
+        use crate::cfn::StackChangeType;
+        
+        if !self.suppress_main_heading {
+            self.print_section_heading_with_newline("Stack Change Details");
+        }
+        
+        match &data.change_type {
+            StackChangeType::Create => {
+                println!(" {}", "Creating new stack".color(self.theme.info));
+            },
+            StackChangeType::UpdateWithChanges { .. } => {
+                println!(" {}", "Updating existing stack".color(self.theme.info));
+            },
+            StackChangeType::UpdateNoChanges => {
+                println!(" {}", "No changes detected so no stack update needed.".color(self.theme.success));
+                
+                // Handle early exit for UpdateNoChanges case
+                self.cleanup_operation();
+            },
+        }
         Ok(())
     }
     

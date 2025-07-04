@@ -31,10 +31,12 @@ pub mod stack_operations;
 pub mod template_loader;
 pub mod update_stack;
 pub mod watch_stack;
+pub mod stack_change_type;
 
 // Re-exports
 pub use operations::CfnOperation;
 pub use request_builder::CfnRequestBuilder;
+pub use stack_change_type::{StackChangeType, UpdateResult};
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 
 /// Create a CfnContext from NormalizedAwsOpts with operation-aware time provider selection.

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
+use crate::cfn::StackChangeType;
 
 /// Token information from the existing token management system
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -347,6 +348,13 @@ pub struct InactivityTimeoutInfo {
     pub operation_start_time: DateTime<Utc>,
 }
 
+/// Stack change details for create-or-update operations
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StackChangeDetails {
+    pub change_type: StackChangeType,
+    pub stack_name: String,
+}
+
 
 /// Stack drift information
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -410,6 +418,7 @@ pub enum OutputData {
     OperationComplete(OperationCompleteInfo), // Signal that live operation finished successfully
     InactivityTimeout(InactivityTimeoutInfo), // Signal that operation timed out due to inactivity
     ConfirmationPrompt(ConfirmationRequest), // Interactive confirmation prompt
+    StackChangeDetails(StackChangeDetails), // Stack change type for create-or-update operations
 }
 
 impl OutputData {
@@ -432,6 +441,7 @@ impl OutputData {
             OutputData::OperationComplete(_) => "operation_complete",
             OutputData::InactivityTimeout(_) => "inactivity_timeout",
             OutputData::ConfirmationPrompt(_) => "confirmation_prompt",
+            OutputData::StackChangeDetails(_) => "stack_change_details",
         }
     }
     

@@ -7,6 +7,68 @@ use aws_types::region::Region;
 
 use crate::cli::NormalizedAwsOpts;
 
+/// Custom error type for user-friendly AWS errors that have already been displayed
+#[derive(Debug)]
+pub struct UserFriendlyAwsError {
+    pub message: String,
+    pub exit_code: i32,
+}
+
+impl std::fmt::Display for UserFriendlyAwsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for UserFriendlyAwsError {}
+
+/// Format AWS errors in a user-friendly way
+pub fn format_aws_error(error: &anyhow::Error) -> String {
+    let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
+    
+    // Look for common AWS error patterns and provide user-friendly messages
+    for err_msg in &error_chain {
+        let lower_msg = err_msg.to_lowercase();
+        
+        if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
+            return "ERROR: AWS credentials have expired. Please refresh your credentials.".to_string();
+        }
+        
+        if lower_msg.contains("no providers in chain provided credentials") {
+            return "ERROR: AWS credentials not found. Please configure your AWS credentials.".to_string();
+        }
+        
+        if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
+            return "ERROR: Access denied. Please check your AWS permissions.".to_string();
+        }
+        
+        if lower_msg.contains("invalid security token") {
+            return "ERROR: Invalid AWS security token. Please refresh your credentials.".to_string();
+        }
+        
+        if lower_msg.contains("network") || lower_msg.contains("timeout") {
+            return "ERROR: Network error connecting to AWS. Please check your internet connection.".to_string();
+        }
+    }
+    
+    // If no specific pattern matches, show the most relevant error from the chain
+    if error_chain.len() > 1 {
+        format!("ERROR: AWS error - {}", error_chain[error_chain.len() - 1])
+    } else {
+        format!("ERROR: {}", error)
+    }
+}
+
+/// Display a user-friendly AWS error message and return a custom error that won't print additional details
+pub fn display_and_return_user_friendly_error(error: &anyhow::Error) -> UserFriendlyAwsError {
+    let message = format_aws_error(error);
+    eprintln!("{}", message);
+    UserFriendlyAwsError {
+        message: "User-friendly error already displayed".to_string(),
+        exit_code: 1,
+    }
+}
+
 /// AWS settings structure for merging CLI and stack-args.yaml settings
 #[derive(Debug, Clone, Default)]
 pub struct AwsSettings {

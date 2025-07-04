@@ -182,13 +182,15 @@ impl<'a> CfnRequestBuilder<'a> {
     ///
     /// # Returns
     /// A tuple containing the prepared UpdateStack fluent builder and the token used
-    pub fn build_update_stack(
+    pub async fn build_update_stack(
         &self,
         operation: &CfnOperation,
-    ) -> (
+        argsfile_path: &str,
+        environment: Option<&str>,
+    ) -> anyhow::Result<(
         aws_sdk_cloudformation::operation::update_stack::builders::UpdateStackFluentBuilder,
         TokenInfo,
-    ) {
+    )> {
         let token = self.context.derive_token_for_step(operation);
 
         let mut builder = self
@@ -204,8 +206,20 @@ impl<'a> CfnRequestBuilder<'a> {
 
         // Apply template body (if not using previous template)
         if !self.stack_args.use_previous_template.unwrap_or(false) {
-            if let Some(ref template) = self.stack_args.template {
-                builder = builder.template_body(template);
+            if let Some(ref template_location) = self.stack_args.template {
+                let template_result = load_cfn_template(
+                    Some(template_location),
+                    argsfile_path,
+                    environment,
+                    TEMPLATE_MAX_BYTES,
+                    Some(&self.context.create_s3_client()),
+                ).await?;
+
+                if let Some(template_body) = template_result.template_body {
+                    builder = builder.template_body(template_body);
+                } else if let Some(template_url) = template_result.template_url {
+                    builder = builder.template_url(template_url);
+                }
             }
         } else {
             builder = builder.use_previous_template(true);
@@ -265,7 +279,7 @@ impl<'a> CfnRequestBuilder<'a> {
             builder = builder.set_resource_types(Some(resource_types.clone()));
         }
 
-        (builder, token)
+        Ok((builder, token))
     }
 
     /// Build a CreateChangeSet request with token injection.
@@ -487,7 +501,7 @@ mod tests {
         stack_args.use_previous_template = Some(true);
 
         let builder = CfnRequestBuilder::new(&context, &stack_args);
-        let (_update_builder, token) = builder.build_update_stack(&CfnOperation::UpdateStack);
+        let (_update_builder, token) = builder.build_update_stack(&CfnOperation::UpdateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
 
         // Token should be derived
         assert!(token.is_derived());
@@ -580,7 +594,7 @@ mod tests {
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
         let (_, create_token) = builder.build_create_stack(&CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
-        let (_, update_token) = builder.build_update_stack(&CfnOperation::UpdateStack);
+        let (_, update_token) = builder.build_update_stack(&CfnOperation::UpdateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
         let (_, changeset_token) =
             builder.build_create_changeset("test-changeset", &CfnOperation::CreateChangeset);
         let (_, execute_token) =

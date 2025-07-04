@@ -1,4 +1,6 @@
 use anyhow::Result;
+use aws_sdk_cloudformation::error::SdkError;
+use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
 use crate::cfn::{
     create_context_for_operation, stack_operations::{StackInfoService, StackEventsService, collect_stack_contents}, 
@@ -17,7 +19,39 @@ use crate::output::{
 use crate::stack_args::StackArgs;
 use crate::cfn::watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
 
+use crate::aws::display_and_return_user_friendly_error;
 use super::CfnContext;
+
+/// Check if a stack exists for deletion, properly handling different error types
+async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -> Result<Option<aws_sdk_cloudformation::types::Stack>> {
+    let describe_request = context.client.describe_stacks().stack_name(stack_name);
+
+    match describe_request.send().await {
+        Ok(response) => {
+            // Stack exists, return the first stack from the response
+            let stack = response
+                .stacks
+                .and_then(|mut stacks| stacks.pop())
+                .ok_or_else(|| anyhow::anyhow!("stack '{}' not found in response", stack_name))?;
+            Ok(Some(stack))
+        }
+        Err(SdkError::ServiceError(e)) => {
+            let service_err = e.err();
+            if service_err.code() == Some("ValidationError") &&
+               service_err.message().unwrap_or("").contains("does not exist") {
+                // Stack doesn't exist - this is expected for delete operations
+                Ok(None)
+            } else {
+                // Real error (expired token, access denied, etc.) - propagate it directly
+                Err(SdkError::ServiceError(e).into())
+            }
+        }
+        Err(e) => {
+            // Other errors (network, timeout, etc.) - propagate them directly
+            Err(e.into())
+        }
+    }
+}
 
 /// Perform the actual stack deletion operation and return the start time and stack_id for watching
 async fn perform_stack_deletion(
@@ -90,12 +124,12 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     ).await?;
 
     // 1. Check if stack exists and get its information
-    let (stack, stack_id) = match StackInfoService::get_stack(&context.client, stack_name).await {
-        Ok(stack) => {
+    let (stack, stack_id) = match check_stack_exists_for_delete(&context, stack_name).await {
+        Ok(Some(stack)) => {
             let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
             (stack, stack_id)
         }
-        Err(_) => {
+        Ok(None) => {
             // Stack doesn't exist
             output_manager.render(warning_message(&format!("Stack {} does not exist or is not accessible", stack_name))).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
@@ -105,6 +139,11 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
             );
             output_manager.render(final_command_summary).await?;
             return Ok(0); // Return exit code 0 for success
+        }
+        Err(e) => {
+            // Real error (not stack-not-found) - show user-friendly message and return error exit code
+            let error = display_and_return_user_friendly_error(&e);
+            return Ok(error.exit_code);
         }
     };
 

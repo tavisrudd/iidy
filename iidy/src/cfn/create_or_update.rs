@@ -1,11 +1,13 @@
 use anyhow::Result;
+use aws_sdk_cloudformation::error::SdkError;
+use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}, StackChangeType, UpdateResult};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
     aws_conversion::{progress_message, success_message, warning_message, create_command_result, convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
-    data::OutputData
+    data::{OutputData, StackChangeDetails}
 };
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
@@ -56,31 +58,56 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
     let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
-    output_manager.render(progress_message(&format!("Checking if stack '{}' exists...", stack_name))).await?;
-
     let stack_exists = check_stack_exists(&context, stack_name).await?;
 
-    if stack_exists {
-        output_manager.render(progress_message(&format!("Stack '{}' exists, performing update", stack_name))).await?;
-
+    // Check stack existence and determine change type
+    let stack_change_details = if stack_exists {
         if args.changeset {
             return update_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager).await;
         } else {
-            let stack_id = update_stack_direct_data(&context, args, &final_stack_args, &mut output_manager).await?;
-            return watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, UPDATE_SUCCESS_STATES).await;
+            // Try update and check for no-changes case
+            match try_update_stack(&context, args, &final_stack_args, &global_opts.environment).await {
+                Ok(UpdateResult::NoChanges) => StackChangeDetails {
+                    change_type: StackChangeType::UpdateNoChanges,
+                    stack_name: stack_name.clone(),
+                },
+                Ok(UpdateResult::StackId(stack_id)) => StackChangeDetails {
+                    change_type: StackChangeType::UpdateWithChanges { stack_id },
+                    stack_name: stack_name.clone(),
+                },
+                Err(e) => return Err(e),
+            }
         }
     } else {
-        output_manager.render(progress_message(&format!(
-            "Stack '{}' does not exist, performing create",
-            stack_name
-        ))).await?;
-
         if args.changeset {
             output_manager.render(warning_message("Changeset mode not recommended for new stacks, creating directly")).await?;
         }
+        StackChangeDetails {
+            change_type: StackChangeType::Create,
+            stack_name: stack_name.clone(),
+        }
+    };
 
-        let stack_id = create_stack_direct_data(&context, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await?;
-        return watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, CREATE_SUCCESS_STATES).await;
+    // Send change details to renderer
+    output_manager.render(OutputData::StackChangeDetails(stack_change_details.clone())).await?;
+
+    // Continue based on change type  
+    match stack_change_details.change_type {
+        StackChangeType::UpdateNoChanges => {
+            // Early exit is handled in render_stack_change_details
+            // Just return success - the renderer will handle cleanup and final summary
+            Ok(0)
+        },
+        StackChangeType::Create => {
+            let stack_id = create_stack_direct_data(&context, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await?;
+            watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, CREATE_SUCCESS_STATES).await
+        },
+        StackChangeType::UpdateWithChanges { stack_id } => {
+            let token = context.derive_token_for_step(&CfnOperation::CreateOrUpdate);
+            let output_token = convert_token_info(&token);
+            output_manager.render(OutputData::TokenInfo(output_token)).await?;
+            watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, UPDATE_SUCCESS_STATES).await
+        },
     }
 }
 
@@ -167,17 +194,16 @@ async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bo
 
     match describe_request.send().await {
         Ok(_) => Ok(true),
-        Err(err) => {
-            // Check if it's a "stack does not exist" error
-            let error_message = format!("{}", err);
-            if error_message.contains("does not exist") || error_message.contains("ValidationError")
-            {
+        Err(SdkError::ServiceError(e)) => {
+            let service_err = e.err();
+            if service_err.code() == Some("ValidationError") &&
+               service_err.message().unwrap_or("").contains("does not exist") {
                 Ok(false)
             } else {
-                // Some other error occurred
-                Err(anyhow::anyhow!("Error checking stack existence: {}", err))
+                Err(SdkError::ServiceError(e).into())
             }
         }
+        Err(e) => Err(e.into()),
     }
 }
 
@@ -214,32 +240,43 @@ async fn create_stack_direct_data(
     Ok(stack_id)
 }
 
-/// Update stack directly with data-driven output.
-async fn update_stack_direct_data(
+/// Try to update a stack and return the result without any output.
+/// This allows us to detect no-changes case early before showing stack details.
+async fn try_update_stack(
     context: &CfnContext,
-    _args: &UpdateStackArgs,
+    args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
-    output_manager: &mut DynamicOutputManager,
-) -> Result<String> {
+    environment: &str,
+) -> Result<UpdateResult> {
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
     // Build and execute the UpdateStack request  
-    let (update_request, token) = builder.build_update_stack(&CfnOperation::CreateOrUpdate);
-    let output_token = convert_token_info(&token);
-    output_manager.render(OutputData::TokenInfo(output_token)).await?;
+    let (update_request, _token) = builder.build_update_stack(
+        &CfnOperation::CreateOrUpdate,
+        &args.base.argsfile,
+        Some(environment),
+    ).await?;
 
-    let _stack_name = stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
-    let response = update_request.send().await?;
-
-    let stack_id = response.stack_id()
-        .ok_or_else(|| anyhow::anyhow!("AWS did not return a stack ID"))?
-        .to_string();
-
-    Ok(stack_id)
+    match update_request.send().await {
+        Ok(response) => {
+            let stack_id = response.stack_id()
+                .ok_or_else(|| anyhow::anyhow!("AWS did not return a stack ID"))?
+                .to_string();
+            Ok(UpdateResult::StackId(stack_id))
+        }
+        Err(SdkError::ServiceError(e)) => {
+            let service_err = e.err();
+            if service_err.code() == Some("ValidationError") &&
+               (service_err.message().unwrap_or("").contains("No updates are to be performed") ||
+                service_err.message().unwrap_or("").contains("No changes detected")) {
+                // No changes detected - this is a success case, not an error
+                Ok(UpdateResult::NoChanges)
+            } else {
+                Err(anyhow::anyhow!("Update failed: {}", SdkError::ServiceError(e)))
+            }
+        }
+        Err(e) => Err(anyhow::anyhow!("Update failed: {}", e)),
+    }
 }
 
 /// Update stack with changeset using data-driven output.

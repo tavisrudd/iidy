@@ -79,7 +79,7 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
     }
 
     // 2. Direct update mode - perform stack update operation
-    let stack_id = perform_stack_update(&context, &final_stack_args, args, &mut output_manager).await?;
+    let stack_id = perform_stack_update(&context, &final_stack_args, args, &global_opts.environment, &mut output_manager).await?;
     
     // 3. Start parallel data collection and rendering (like create-stack pattern)
     let sender = output_manager.start();
@@ -164,14 +164,19 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
 async fn perform_stack_update(
     context: &crate::cfn::CfnContext,
     stack_args: &crate::stack_args::StackArgs,
-    _args: &UpdateStackArgs,
+    args: &UpdateStackArgs,
+    environment: &str,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
     // Build and execute the UpdateStack request
-    let (update_request, token) = builder.build_update_stack(&CfnOperation::UpdateStack);
+    let (update_request, token) = builder.build_update_stack(
+        &CfnOperation::UpdateStack,
+        &args.base.argsfile,
+        Some(environment),
+    ).await?;
     
     // Pass token to output manager for conditional display
     let output_token = convert_token_info(&token);
