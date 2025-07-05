@@ -34,33 +34,39 @@ impl GitCommandExecutor for SystemGitExecutor {
     }
 }
 
-/// Execute a git command and return the output
-async fn execute_git_command(command: &str) -> Result<String> {
-    let executor = SystemGitExecutor;
-    executor.execute(command).await
+/// Map git command type to actual git command string
+fn get_git_command(git_command_type: &str) -> Result<&'static str> {
+    match git_command_type {
+        "branch" => Ok("git rev-parse --abbrev-ref HEAD"),
+        "describe" => Ok("git describe --always --dirty --tags"),
+        "sha" => Ok("git rev-parse HEAD"),
+        _ => Err(anyhow!("Invalid git command: {}", git_command_type)),
+    }
 }
 
-/// Load a git import (branch, describe, sha)
-pub async fn load_git_import(location: &str, _base_location: &str) -> Result<ImportData> {
+/// Parse and validate git import location format
+fn parse_git_location(location: &str) -> Result<&str> {
     let parts: Vec<&str> = location.splitn(2, ':').collect();
     if parts.len() != 2 || parts[0] != "git" {
         return Err(anyhow!("Invalid git import format: {}", location));
     }
+    Ok(parts[1])
+}
 
-    let git_command = parts[1];
-    let data = match git_command {
-        "branch" => execute_git_command("git rev-parse --abbrev-ref HEAD").await?,
-        "describe" => execute_git_command("git describe --always --dirty --tags").await?,
-        "sha" => execute_git_command("git rev-parse HEAD").await?,
-        _ => return Err(anyhow!("Invalid git command: {}", location)),
-    };
-
-    Ok(ImportData {
+/// Create ImportData from git command output
+fn create_git_import_data(location: &str, data: String) -> ImportData {
+    ImportData {
         import_type: ImportType::Git,
         resolved_location: location.to_string(),
         data: data.clone(),
         doc: Value::String(data),
-    })
+    }
+}
+
+/// Load a git import (branch, describe, sha)
+pub async fn load_git_import(location: &str, base_location: &str) -> Result<ImportData> {
+    let executor = SystemGitExecutor;
+    load_git_import_with_executor(location, base_location, &executor).await
 }
 
 /// Load a git import with custom executor (for testing)
@@ -69,27 +75,10 @@ pub async fn load_git_import_with_executor(
     _base_location: &str,
     executor: &dyn GitCommandExecutor,
 ) -> Result<ImportData> {
-    let parts: Vec<&str> = location.splitn(2, ':').collect();
-    if parts.len() != 2 || parts[0] != "git" {
-        return Err(anyhow!("Invalid git import format: {}", location));
-    }
-
-    let git_command_type = parts[1];
-    let command = match git_command_type {
-        "branch" => "git rev-parse --abbrev-ref HEAD",
-        "describe" => "git describe --always --dirty --tags",
-        "sha" => "git rev-parse HEAD",
-        _ => return Err(anyhow!("Invalid git command: {}", location)),
-    };
-
+    let git_command_type = parse_git_location(location)?;
+    let command = get_git_command(git_command_type)?;
     let data = executor.execute(command).await?;
-
-    Ok(ImportData {
-        import_type: ImportType::Git,
-        resolved_location: location.to_string(),
-        data: data.clone(),
-        doc: Value::String(data),
-    })
+    Ok(create_git_import_data(location, data))
 }
 
 #[cfg(test)]
