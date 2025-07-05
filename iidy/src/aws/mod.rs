@@ -7,6 +7,9 @@ use aws_types::region::Region;
 
 use crate::cli::NormalizedAwsOpts;
 
+pub mod timing;
+pub mod client_req_token;
+
 /// Custom error type for user-friendly AWS errors that have already been displayed
 #[derive(Debug)]
 pub struct UserFriendlyAwsError {
