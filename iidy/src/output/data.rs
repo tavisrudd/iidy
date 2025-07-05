@@ -393,6 +393,20 @@ pub struct PropertyDifference {
     pub difference_type: Option<String>,
 }
 
+/// Cost estimate information from AWS CloudFormation
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CostEstimateInfo {
+    pub url: String,
+    pub stack_name: Option<String>,
+    pub template_file: Option<String>,
+}
+
+/// Cost estimate display data
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CostEstimate {
+    pub info: CostEstimateInfo,
+}
+
 /// Confirmation request for interactive prompts
 #[derive(Debug)]
 pub struct ConfirmationRequest {
@@ -432,6 +446,7 @@ pub enum OutputData {
     ConfirmationPrompt(ConfirmationRequest), // Interactive confirmation prompt
     StackChangeDetails(StackChangeDetails), // Stack change type for create-or-update operations
     StackAbsentInfo(StackAbsentInfo), // Information about absent/non-existent stacks
+    CostEstimate(CostEstimate), // Cost estimation result from AWS
 }
 
 impl OutputData {
@@ -456,6 +471,7 @@ impl OutputData {
             OutputData::ConfirmationPrompt(_) => "confirmation_prompt",
             OutputData::StackChangeDetails(_) => "stack_change_details",
             OutputData::StackAbsentInfo(_) => "stack_absent_info",
+            OutputData::CostEstimate(_) => "cost_estimate",
         }
     }
     

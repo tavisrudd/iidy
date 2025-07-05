@@ -45,9 +45,12 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::EstimateCost(ref args) => {
-            if let Err(e) = rt.block_on(cfn::estimate_cost::estimate_cost(&cli, &args)) {
-                eprintln!("error estimating cost: {e:?}");
-                std::process::exit(1);
+            match rt.block_on(cfn::estimate_cost::estimate_cost(&cli, &args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error estimating cost: {e:?}");
+                    std::process::exit(1);
+                }
             }
         }
         Commands::DummySpacer => {}

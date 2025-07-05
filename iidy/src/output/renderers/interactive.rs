@@ -518,7 +518,7 @@ impl InteractiveRenderer {
             },
             
             // Other operations
-            CfnOperation::EstimateCost => vec!["cost_estimate"],
+            CfnOperation::EstimateCost => vec!["command_metadata", "cost_estimate"],
             CfnOperation::GetStackInstances => vec!["stack_instances"],
         };
         
@@ -578,6 +578,7 @@ impl InteractiveRenderer {
         self.section_titles.insert("stack_events".to_string(), "Stack Events".to_string());
         self.section_titles.insert("command_metadata".to_string(), "Command Metadata".to_string());
         self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events".to_string());
+        self.section_titles.insert("cost_estimate".to_string(), "Cost Estimate".to_string());
         
         // Configure stack events title based on operation
         match operation {
@@ -803,6 +804,7 @@ impl InteractiveRenderer {
             OutputData::ChangeSetResult(..) => Some("changeset_result".to_string()),
             OutputData::NewStackEvents(..) => Some("live_stack_events".to_string()),
             OutputData::StackChangeDetails(..) => Some("stack_change_details".to_string()),
+            OutputData::CostEstimate(..) => Some("cost_estimate".to_string()),
             OutputData::ConfirmationPrompt(request) => {
                 match &request.key {
                     Some(key) => Some(format!("confirmation_{}", key)),
@@ -853,6 +855,7 @@ impl InteractiveRenderer {
             OutputData::ConfirmationPrompt(request) => self.render_confirmation_prompt(request).await,
             OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
             OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
+            OutputData::CostEstimate(ref estimate) => self.render_cost_estimate(estimate).await,
         }
     }
     
@@ -1928,6 +1931,18 @@ impl InteractiveRenderer {
                 );
             }
         }
+        
+        Ok(())
+    }
+
+    /// Render cost estimate (exact iidy-js estimateStackCost implementation)
+    async fn render_cost_estimate(&mut self, data: &crate::output::data::CostEstimate) -> Result<()> {
+        if !self.suppress_main_heading {
+            self.print_section_heading_with_newline("Cost Estimate");
+        }
+        
+        // Display the URL exactly like iidy-js: "Stack cost estimator: {URL}"
+        self.print_section_entry("Stack cost estimator:", &data.info.url.color(self.theme.primary).to_string())?;
         
         Ok(())
     }
