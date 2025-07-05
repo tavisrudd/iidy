@@ -634,8 +634,8 @@ pub struct GetImportArgs {
 #[derive(Args, Debug, Clone)]
 pub struct DemoArgs {
     pub demoscript: String,
-    #[arg(long, default_value_t = 1)]
-    pub timescaling: u32,
+    #[arg(long, default_value_t = 1.0)]
+    pub timescaling: f64,
 }
 
 #[derive(Args, Debug, Clone)]

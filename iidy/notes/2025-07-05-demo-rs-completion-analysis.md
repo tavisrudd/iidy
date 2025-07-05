@@ -136,11 +136,32 @@ Based on the example demo scripts, the preprocessor must handle:
 
 ## Implementation Strategy
 
-1. **Phase 1**: Fix YAML preprocessing integration
-2. **Phase 2**: Add command normalization and file path validation
-3. **Phase 3**: Enhance error handling and shell safety
-4. **Phase 4**: Add comprehensive tests
-5. **Phase 5**: Visual consistency improvements
+1. **Phase 1**: Fix YAML preprocessing integration ✅
+2. **Phase 2**: Add command normalization and file path validation ✅
+3. **Phase 3**: Enhance error handling and shell safety ✅
+4. **Phase 4**: Add comprehensive tests ✅
+5. **Phase 5**: Visual consistency improvements ✅
+
+## Additional Features Added
+
+### Command Path Substitution
+
+The implementation automatically handles `iidy` command references in demo scripts:
+
+- **Environment Variable**: `$IIDY_EXE` is set to the current executable path
+- **Auto-substitution**: All `iidy` commands in shell commands are replaced with the full executable path
+- **Portability**: Works whether running via `cargo run`, installed binary, or different paths
+
+#### Examples:
+
+```yaml
+demo:
+  - "echo 'Using: $IIDY_EXE'"           # Shows current executable path
+  - "iidy help"                         # Becomes "/path/to/iidy help"  
+  - "cat file.yaml | iidy render"       # Becomes "cat file.yaml | /path/to/iidy render"
+```
+
+This ensures demo scripts work regardless of how iidy is invoked.
 
 ## Security Considerations
 
