@@ -136,7 +136,15 @@ fn handle_command(cli: Cli) {
                 std::process::exit(1);
             }
         }
-        Commands::GetImport(args) => println!("get-import {:?}", args),
+        Commands::GetImport(ref args) => {
+            match rt.block_on(cfn::get_import::get_import(&cli, &args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error getting import: {e:?}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::Demo(args) => {
             if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling)) {
                 eprintln!("demo failed: {e:?}");

@@ -22,6 +22,7 @@ pub mod describe_stack;
 pub mod describe_stack_drift;
 pub mod estimate_cost;
 pub mod exec_changeset;
+pub mod get_import;
 pub mod get_stack_instances;
 pub mod get_stack_template;
 pub mod is_terminal_status;

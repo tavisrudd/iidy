@@ -50,7 +50,7 @@ pub async fn load_git_import(location: &str, _base_location: &str) -> Result<Imp
     let git_command = parts[1];
     let data = match git_command {
         "branch" => execute_git_command("git rev-parse --abbrev-ref HEAD").await?,
-        "describe" => execute_git_command("git describe --dirty --tags").await?,
+        "describe" => execute_git_command("git describe --always --dirty --tags").await?,
         "sha" => execute_git_command("git rev-parse HEAD").await?,
         _ => return Err(anyhow!("Invalid git command: {}", location)),
     };
@@ -77,7 +77,7 @@ pub async fn load_git_import_with_executor(
     let git_command_type = parts[1];
     let command = match git_command_type {
         "branch" => "git rev-parse --abbrev-ref HEAD",
-        "describe" => "git describe --dirty --tags",
+        "describe" => "git describe --always --dirty --tags",
         "sha" => "git rev-parse HEAD",
         _ => return Err(anyhow!("Invalid git command: {}", location)),
     };
@@ -143,7 +143,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_git_import_describe() -> Result<()> {
         let executor = MockGitExecutor::new().expect_command(
-            "git describe --dirty --tags",
+            "git describe --always --dirty --tags",
             Ok("v1.2.3-4-gabcdef".to_string()),
         );
 
@@ -222,7 +222,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_git_import_dirty_describe() -> Result<()> {
         let executor = MockGitExecutor::new().expect_command(
-            "git describe --dirty --tags",
+            "git describe --always --dirty --tags",
             Ok("v1.0.0-dirty".to_string()),
         );
 
@@ -241,6 +241,24 @@ mod tests {
         let result = load_git_import_with_executor("git:branch", "/base", &executor).await?;
 
         assert_eq!(result.data, "HEAD");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_load_git_import_describe_no_tags() -> Result<()> {
+        // Test --always behavior when no tags exist (falls back to commit hash)
+        let executor = MockGitExecutor::new().expect_command(
+            "git describe --always --dirty --tags",
+            Ok("abcdef1".to_string()),
+        );
+
+        let result = load_git_import_with_executor("git:describe", "/base", &executor).await?;
+
+        assert_eq!(result.import_type, ImportType::Git);
+        assert_eq!(result.resolved_location, "git:describe");
+        assert_eq!(result.data, "abcdef1");
+        assert_eq!(result.doc, Value::String("abcdef1".to_string()));
 
         Ok(())
     }

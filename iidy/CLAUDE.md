@@ -73,7 +73,7 @@
 ## Development Commands
 - Use the standard cargo stuff. 
 - Do not use `rustc` directly. Use cargo.
-- Use our local @tmp/ dir instead of the system level /tmp
+- Use our local ./tmp/ dir instead of the system level /tmp
 - Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making
   a backup of the uncommitted changes and asking for user confirmation.
 
