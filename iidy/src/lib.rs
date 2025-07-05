@@ -1,7 +1,6 @@
 pub mod aws;
 pub mod cfn;
 pub mod cli;
-pub mod color;
 pub mod debug;
 pub mod display;
 pub mod explain;
@@ -9,6 +8,5 @@ pub mod output;
 pub mod pocs;
 pub mod render;
 pub mod stack_args;
-pub mod terminal;
 pub mod timing;
 pub mod yaml;

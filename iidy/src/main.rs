@@ -7,7 +7,8 @@ use std::io;
 use iidy::{
     cfn,
     cli::{Cli, Commands},
-    color::ColorContext,
+    output::color::ColorContext,
+    output::terminal::Theme as TerminalTheme,
     explain::handle_explain_command,
     render::handle_render_command,
 };
@@ -183,10 +184,10 @@ fn main() {
 
             // Initialize color context early for global access
             let theme = match cli.global_opts.theme {
-                iidy::cli::Theme::Auto => iidy::terminal::Theme::Auto,
-                iidy::cli::Theme::Light => iidy::terminal::Theme::Light,
-                iidy::cli::Theme::Dark => iidy::terminal::Theme::Dark,
-                iidy::cli::Theme::HighContrast => iidy::terminal::Theme::HighContrast,
+                iidy::cli::Theme::Auto => TerminalTheme::Auto,
+                iidy::cli::Theme::Light => TerminalTheme::Light,
+                iidy::cli::Theme::Dark => TerminalTheme::Dark,
+                iidy::cli::Theme::HighContrast => TerminalTheme::HighContrast,
             };
             ColorContext::init_global(cli.global_opts.color.clone(), theme);
 

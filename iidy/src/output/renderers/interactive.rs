@@ -7,7 +7,7 @@ use crate::output::data::*;
 use crate::output::renderer::OutputRenderer;
 use crate::output::theme::{IidyTheme, get_terminal_width};
 use crate::cli::{Theme, ColorChoice, Commands};
-use crate::color::{ProgressManager, SpinnerStyle};
+use crate::output::color::{ProgressManager, SpinnerStyle};
 use crate::cfn::CfnOperation;
 use anyhow::Result;
 use async_trait::async_trait;

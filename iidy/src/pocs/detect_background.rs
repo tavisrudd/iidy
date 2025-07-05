@@ -4,6 +4,7 @@
 //! colors and validates the theme auto-detection logic.
 
 use crate::cli::Theme;
+use crate::output::terminal::{ColorTheme, TerminalCapabilities, Theme as TerminalTheme};
 use std::collections::HashMap;
 use std::io::IsTerminal;
 
@@ -374,9 +375,9 @@ fn demonstrate_theme_override(explicit_theme: Option<Theme>) {
         println!("  🔍 No explicit theme specified - using auto-detection");
         let detected = detect_background_comprehensive();
         let terminal_theme = match detected {
-            BackgroundDetection::Dark => crate::terminal::Theme::Dark,
-            BackgroundDetection::Light => crate::terminal::Theme::Light,
-            BackgroundDetection::Unknown => crate::terminal::Theme::Dark, // Default to dark for iidy-js compatibility
+            BackgroundDetection::Dark => TerminalTheme::Dark,
+            BackgroundDetection::Light => TerminalTheme::Light,
+            BackgroundDetection::Unknown => TerminalTheme::Dark, // Default to dark for iidy-js compatibility
         };
         
         println!("  🎯 Auto-detected theme: {:?}", terminal_theme);
@@ -389,17 +390,16 @@ fn demonstrate_theme_override(explicit_theme: Option<Theme>) {
 }
 
 /// Convert CLI theme enum to terminal theme enum
-fn convert_cli_theme_to_terminal(cli_theme: Theme) -> crate::terminal::Theme {
+fn convert_cli_theme_to_terminal(cli_theme: Theme) -> TerminalTheme {
     match cli_theme {
-        Theme::Auto => crate::terminal::Theme::Auto,
-        Theme::Light => crate::terminal::Theme::Light,
-        Theme::Dark => crate::terminal::Theme::Dark,
-        Theme::HighContrast => crate::terminal::Theme::HighContrast,
+        Theme::Auto => TerminalTheme::Auto,
+        Theme::Light => TerminalTheme::Light,
+        Theme::Dark => TerminalTheme::Dark,
+        Theme::HighContrast => TerminalTheme::HighContrast,
     }
 }
 
-fn demonstrate_cloudformation_output(theme: crate::terminal::Theme) {
-    use crate::terminal::{ColorTheme, TerminalCapabilities};
+fn demonstrate_cloudformation_output(theme: TerminalTheme) {
     use owo_colors::OwoColorize;
     
     println!("📋 CloudFormation Output Example (using {:?} theme):", theme);
@@ -443,10 +443,10 @@ fn demonstrate_all_themes() {
     println!("🌈 All Available Themes:");
     
     let themes = vec![
-        (crate::terminal::Theme::Dark, "Dark (iidy-js compatible, optimized for dark terminals)"),
-        (crate::terminal::Theme::Light, "Light (optimized for light terminals)"),
-        (crate::terminal::Theme::HighContrast, "High Contrast (accessibility focused)"),
-        (crate::terminal::Theme::Auto, "Auto (detects terminal background)"),
+        (TerminalTheme::Dark, "Dark (iidy-js compatible, optimized for dark terminals)"),
+        (TerminalTheme::Light, "Light (optimized for light terminals)"),
+        (TerminalTheme::HighContrast, "High Contrast (accessibility focused)"),
+        (TerminalTheme::Auto, "Auto (detects terminal background)"),
     ];
     
     for (theme, description) in themes {
@@ -454,8 +454,8 @@ fn demonstrate_all_themes() {
         println!("  {:?}: {}", theme, description);
         
         if std::io::stdout().is_terminal() && std::env::var("NO_COLOR").is_err() {
-            let caps = crate::terminal::TerminalCapabilities::detect();
-            let color_theme = crate::terminal::ColorTheme::for_theme(theme, &caps);
+            let caps = TerminalCapabilities::detect();
+            let color_theme = ColorTheme::for_theme(theme, &caps);
             
             use owo_colors::OwoColorize;
             print!("    Sample: ");

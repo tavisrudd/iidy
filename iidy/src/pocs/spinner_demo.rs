@@ -1,5 +1,5 @@
 /// Spinner demonstration module showcasing ora-like API
-use crate::color::{ColorExt, ProgressManager, SpinnerStyle};
+use crate::output::color::{ColorExt, ProgressManager, SpinnerStyle};
 use std::thread;
 use std::time::Duration;
 

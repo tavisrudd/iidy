@@ -1,6 +1,6 @@
 /// Theme demonstration module to showcase color capabilities
-use crate::color::{ColorExt, ProgressManager};
-use crate::terminal::{ColorTheme, TerminalCapabilities, Theme};
+use crate::output::color::{ColorExt, ProgressManager};
+use crate::output::terminal::{ColorTheme, TerminalCapabilities, Theme};
 use std::thread;
 use std::time::Duration;
 
@@ -238,7 +238,7 @@ fn demonstrate_progress_indicator() {
 mod tests {
     use super::*;
     use crate::cli::ColorChoice;
-    use crate::color::ColorContext;
+    use crate::output::color::ColorContext;
 
     fn init_test_context() {
         let _ = ColorContext::init_global(ColorChoice::Never, Theme::Dark);

@@ -1,7 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use iidy::cli::{ColorChoice, Theme};
-use iidy::color::ColorContext;
+use iidy::output::color::ColorContext;
+use iidy::output::terminal::Theme as TerminalTheme;
 use iidy::pocs::{detect_background, ratatui_demo, spinner_demo, theme_demo};
 
 #[derive(Parser)]
@@ -37,7 +38,7 @@ fn main() -> Result<()> {
 
     // Initialize color context for demos with default theme
     // (individual commands can override this)
-    ColorContext::init_global(ColorChoice::Auto, iidy::terminal::Theme::Auto);
+    ColorContext::init_global(ColorChoice::Auto, TerminalTheme::Auto);
 
     match cli.command {
         Commands::DetectBackground { theme } => {

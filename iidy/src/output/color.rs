@@ -1,5 +1,5 @@
 use crate::cli::ColorChoice;
-use crate::terminal::{ColorTheme, TerminalCapabilities, Theme};
+use crate::output::terminal::{ColorTheme, TerminalCapabilities, Theme};
 use owo_colors::OwoColorize;
 /// Color context management and semantic color markup system
 use std::sync::OnceLock;
@@ -419,7 +419,7 @@ impl Default for ProgressManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::terminal::Theme;
+    use crate::output::terminal::Theme;
 
     fn init_test_context() {
         let _ = ColorContext::init_global(ColorChoice::Never, Theme::Dark);
