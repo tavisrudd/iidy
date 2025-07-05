@@ -1,9 +1,9 @@
 use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
 use crate::stack_args::StackArgs;
-use crate::timing::TokenInfo;
+use crate::aws::client_req_token::TokenInfo;
 #[cfg(test)]
-use crate::timing::TokenSource;
+use crate::aws::client_req_token::TokenSource;
 
 use super::{CfnContext, CfnOperation, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
 
@@ -406,7 +406,7 @@ mod tests {
     use super::*;
     use crate::{
         cfn::CfnContext,
-        timing::{MockTimeProvider, TokenInfo},
+        aws::{timing::MockTimeProvider, client_req_token::TokenInfo},
     };
     use aws_sdk_cloudformation::Client;
     use chrono::TimeZone;

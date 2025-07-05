@@ -15,13 +15,13 @@ use crate::{
     },
     cli::NormalizedAwsOpts,
     stack_args::StackArgs,
-    timing::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
+    aws::client_req_token::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
 };
 use aws_sdk_cloudformation::types::{Stack, StackEvent as AwsStackEvent, StackResource, Output};
 use chrono::{Utc, DateTime};
 use std::collections::HashMap;
 
-/// Convert timing::TokenInfo to output::TokenInfo
+/// Convert aws::client_req_token::TokenInfo to output::TokenInfo
 pub fn convert_token_info(timing_token: &TimingTokenInfo) -> OutputTokenInfo {
     let source = match &timing_token.source {
         TimingTokenSource::UserProvided => OutputTokenSource::UserProvided,
@@ -454,7 +454,7 @@ mod tests {
     use chrono::{DateTime, Utc};
     use crate::{
         cfn::CfnContext,
-        timing::{TokenInfo, MockTimeProvider},
+        aws::{client_req_token::TokenInfo, timing::MockTimeProvider},
         cli::NormalizedAwsOpts,
         stack_args::StackArgs,
     };

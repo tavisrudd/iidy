@@ -8,5 +8,4 @@ pub mod output;
 pub mod pocs;
 pub mod render;
 pub mod stack_args;
-pub mod timing;
 pub mod yaml;

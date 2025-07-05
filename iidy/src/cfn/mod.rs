@@ -6,8 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     cli::NormalizedAwsOpts,
-    timing::{ReliableTimeProvider, TimeProvider, TokenInfo, SystemTimeProvider},
-    aws::config_from_normalized_opts,
+    aws::{timing::{ReliableTimeProvider, TimeProvider, SystemTimeProvider}, client_req_token::TokenInfo, config_from_normalized_opts},
     stack_args::StackArgs,
 };
 
@@ -281,7 +280,7 @@ pub fn apply_stack_name_override_and_validate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::timing::{MockTimeProvider, TokenInfo};
+    use crate::aws::{timing::MockTimeProvider, client_req_token::TokenInfo};
     use chrono::TimeZone;
 
     fn create_test_aws_config() -> aws_config::SdkConfig {

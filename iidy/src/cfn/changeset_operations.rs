@@ -119,7 +119,7 @@ async fn build_create_changeset_with_type(
     operation: &CfnOperation,
     argsfile_path: &str,
     context: &CfnContext,
-) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::timing::TokenInfo)> {
+) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::aws::client_req_token::TokenInfo)> {
     use aws_sdk_cloudformation::types::{Capability, Parameter, Tag};
     
     let token = context.derive_token_for_step(operation);
