@@ -20,7 +20,7 @@ use crate::output::{
 /// 2. Update drift data (with spinner if needed)
 /// 3. Show drifted resources
 /// No command metadata is shown (read-only operation).
-pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<()> {
+pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
@@ -103,7 +103,7 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<()> {
     let drift_data = collect_stack_drift_data(&client, &args.stackname).await?;
     output_manager.render(crate::output::OutputData::StackDrift(drift_data)).await?;
 
-    Ok(())
+    Ok(0) // Return success exit code
 }
 
 /// Collect stack drift data (controller pattern - no display logic)

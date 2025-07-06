@@ -12,7 +12,7 @@ use crate::output::{
 ///
 /// Queries EC2 for instances with the stack tag and displays them in either
 /// short format (DNS/IP only) or detailed format with instance details.
-pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Result<()> {
+pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
@@ -111,5 +111,5 @@ pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Res
     let result_msg = format!("Found {} instances", instance_count);
     output_manager.render(create_command_result(true, elapsed, Some(result_msg))).await?;
 
-    Ok(())
+    Ok(0) // Return success exit code
 }

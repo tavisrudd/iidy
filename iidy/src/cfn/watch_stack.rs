@@ -43,7 +43,7 @@ use super::{stack_operations::{StackEventsService, StackInfoService}};
 pub async fn watch_stack(
     cli: &crate::cli::Cli,
     args: &WatchArgs
-) -> Result<()> {
+) -> Result<i32> {
     
     // Normalize AWS options 
     let opts = cli.aws_opts.clone().normalize();
@@ -136,7 +136,7 @@ pub async fn watch_stack(
         if status == "DELETE_COMPLETE" {
             // Stack was deleted, skip stack contents collection as it will fail
             // No need to show empty stack contents
-            return Ok(());
+            return Ok(0); // Return success exit code
         }
     }
     
@@ -147,7 +147,7 @@ pub async fn watch_stack(
     drop(sender);
     output_manager.stop().await?;
     
-    Ok(())
+    Ok(0) // Return success exit code
 }
 
 /// Output trait for live events - allows using either DynamicOutputManager or sender (public for use by other operations)
