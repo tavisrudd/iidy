@@ -382,6 +382,7 @@ async fn create_stack_with_changeset_data(
         &args.base.argsfile,
         false,
         output_manager,
+        None, // No description argument available in create-or-update
     ).await?;
 
     // Render changeset result

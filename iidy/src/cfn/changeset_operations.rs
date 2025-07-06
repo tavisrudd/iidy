@@ -44,6 +44,7 @@ pub async fn create_changeset_comprehensive(
     argsfile_path: &str,
     use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
+    description: Option<&str>,
 ) -> Result<ChangeSetCreationResult> {
     // Determine changeset name (docker-style if not provided)
     let final_changeset_name = if let Some(name) = changeset_name {
@@ -64,6 +65,7 @@ pub async fn create_changeset_comprehensive(
         argsfile_path,
         use_primary_token,
         output_manager,
+        description,
     ).await?;
 
     // Wait for changeset to complete processing
@@ -88,6 +90,7 @@ async fn perform_changeset_creation(
     argsfile_path: &str,
     use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
+    description: Option<&str>,
 ) -> Result<(CreateChangeSetOutput, String)> {
     let (create_request, token) = build_create_changeset_with_type(
         stack_args,
@@ -100,7 +103,8 @@ async fn perform_changeset_creation(
         &CfnOperation::CreateChangeset,
         argsfile_path,
         use_primary_token,
-        context
+        context,
+        description
     ).await?;
     
     // Show token info
@@ -120,6 +124,7 @@ async fn build_create_changeset_with_type(
     argsfile_path: &str,
     use_primary_token: bool,
     context: &CfnContext,
+    description: Option<&str>,
 ) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::aws::client_req_token::TokenInfo)> {
     use aws_sdk_cloudformation::types::{Capability, Parameter, Tag};
     
@@ -214,6 +219,11 @@ async fn build_create_changeset_with_type(
     // Apply resource types
     if let Some(ref resource_types) = stack_args.resource_types {
         create_request = create_request.set_resource_types(Some(resource_types.clone()));
+    }
+
+    // Apply description if provided
+    if let Some(desc) = description {
+        create_request = create_request.description(desc);
     }
 
     Ok((create_request, token))
