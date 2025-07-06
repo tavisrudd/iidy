@@ -17,7 +17,7 @@ pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Res
     let opts = cli.aws_opts.clone().normalize();
     let global_opts = &cli.global_opts;
 
-    let output_options = OutputOptions::minimal();
+    let output_options = OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options

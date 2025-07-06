@@ -35,33 +35,6 @@ impl OutputOptions {
         }
     }
     
-    /// Create minimal options for stub/incomplete implementations
-    /// TODO: Remove this once all command handlers are updated to pass full CLI context
-    pub fn minimal() -> Self {
-        use crate::cli::{Commands, DescribeArgs, GlobalOpts, AwsOpts, ColorChoice, Theme};
-        let cli = Cli {
-            global_opts: GlobalOpts {
-                environment: "development".to_string(),
-                color: ColorChoice::Auto,
-                theme: Theme::Auto,
-                output_mode: None,
-                debug: false,
-                log_full_error: false,
-            },
-            aws_opts: AwsOpts {
-                region: None,
-                profile: None,
-                assume_role_arn: None,
-                client_request_token: None,
-            },
-            command: Commands::DescribeStack(DescribeArgs {
-                stackname: "stub".to_string(),
-                events: 50,
-                query: None,
-            }),
-        };
-        Self::new(cli)
-    }
 }
 
 /// Dynamic output manager that handles mode switching and event replay
@@ -70,6 +43,7 @@ pub struct DynamicOutputManager {
     current_renderer: Box<dyn OutputRenderer>,
     event_buffer: VecDeque<OutputData>,
     buffer_limit: usize,
+    options: OutputOptions, // Store options for mode switching
     // Parallel rendering channel
     parallel_receiver: Option<UnboundedReceiver<OutputData>>,
 }
@@ -80,11 +54,14 @@ impl DynamicOutputManager {
         let mut renderer = create_renderer(mode, &options)?;
         renderer.init().await?;
         
+        let buffer_limit = options.buffer_limit;
+        
         Ok(Self {
             current_mode: mode,
             current_renderer: renderer,
-            event_buffer: VecDeque::with_capacity(options.buffer_limit),
-            buffer_limit: options.buffer_limit,
+            event_buffer: VecDeque::with_capacity(buffer_limit),
+            buffer_limit,
+            options,
             parallel_receiver: None,
         })
     }
@@ -112,10 +89,8 @@ impl DynamicOutputManager {
         
         // Clear screen logic will be added when TUI is implemented
         
-        // Create new renderer  
-        // TODO: We need to store options to recreate renderer. For now, create with minimal options.
-        let temp_options = OutputOptions::minimal();
-        self.current_renderer = create_renderer(new_mode, &temp_options)?;
+        // Create new renderer using stored options
+        self.current_renderer = create_renderer(new_mode, &self.options)?;
         self.current_renderer.init().await?;
         
         // Re-render all buffered data in new mode

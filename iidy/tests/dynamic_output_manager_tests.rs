@@ -14,7 +14,29 @@ use tokio;
 
 /// Helper function to create test output options
 fn create_test_output_options() -> OutputOptions {
-    OutputOptions::minimal()
+    use iidy::cli::{Commands, DescribeArgs, GlobalOpts, AwsOpts, ColorChoice, Theme, Cli};
+    let cli = Cli {
+        global_opts: GlobalOpts {
+            environment: "test".to_string(),
+            color: ColorChoice::Auto,
+            theme: Theme::Auto,
+            output_mode: None,
+            debug: false,
+            log_full_error: false,
+        },
+        aws_opts: AwsOpts {
+            region: None,
+            profile: None,
+            assume_role_arn: None,
+            client_request_token: None,
+        },
+        command: Commands::DescribeStack(DescribeArgs {
+            stackname: "test-stack".to_string(),
+            events: 50,
+            query: None,
+        }),
+    };
+    OutputOptions::new(cli)
 }
 
 /// Helper function to create sample command metadata

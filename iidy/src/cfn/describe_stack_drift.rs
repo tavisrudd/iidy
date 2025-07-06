@@ -26,7 +26,7 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
     let global_opts = &cli.global_opts;
 
     let _cli_aws_settings = crate::aws::AwsSettings::from_normalized_opts(&opts);
-    let output_options = OutputOptions::minimal();
+    let output_options = OutputOptions::new(cli.clone());
     let mut output_manager = DynamicOutputManager::new(
         global_opts.effective_output_mode(),
         output_options
