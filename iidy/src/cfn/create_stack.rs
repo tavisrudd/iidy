@@ -170,8 +170,8 @@ async fn perform_stack_creation(
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
-    // Build and execute the CreateStack request
     let (create_request, token) = builder.build_create_stack(
+        true,
         &CfnOperation::CreateStack,
         &args.argsfile,
         Some(&global_opts.environment),

@@ -189,8 +189,7 @@ async fn perform_changeset_execution(
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
-    // Build and execute the ExecuteChangeSet request
-    let (execute_request, token) = builder.build_execute_changeset(&args.changeset_name, &CfnOperation::ExecuteChangeset);
+    let (execute_request, token) = builder.build_execute_changeset(&args.changeset_name, true, &CfnOperation::ExecuteChangeset);
     
     // Show token info
     let output_token = convert_token_info(&token);

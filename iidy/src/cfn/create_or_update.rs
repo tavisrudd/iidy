@@ -218,8 +218,8 @@ async fn create_stack_direct_data(
 ) -> Result<String> {
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
-    // Build and execute the CreateStack request
     let (create_request, token) = builder.build_create_stack(
+        true,
         &CfnOperation::CreateOrUpdate,
         argsfile,
         Some(environment),
@@ -251,8 +251,8 @@ async fn try_update_stack(
 ) -> Result<UpdateResult> {
     let builder = CfnRequestBuilder::new(&context, stack_args);
 
-    // Build and execute the UpdateStack request  
     let (update_request, _token) = builder.build_update_stack(
+        true,
         &CfnOperation::CreateOrUpdate,
         &args.base.argsfile,
         Some(environment),
@@ -295,7 +295,7 @@ async fn update_stack_with_changeset_data(
         &context.primary_token().value[..8]
     );
     let (create_request, create_token) =
-        builder.build_create_changeset(&changeset_name, &CfnOperation::CreateChangeset);
+        builder.build_create_changeset(&changeset_name, false, &CfnOperation::CreateChangeset);
     // Pass create_token to output manager for conditional display
     let output_token = convert_token_info(&create_token);
     output_manager.render(OutputData::TokenInfo(output_token)).await?;
@@ -330,9 +330,8 @@ async fn update_stack_with_changeset_data(
         return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
     }
 
-    // Step 2: Execute changeset
     let (execute_request, execute_token) =
-        builder.build_execute_changeset(&changeset_name, &CfnOperation::ExecuteChangeset);
+        builder.build_execute_changeset(&changeset_name, false, &CfnOperation::ExecuteChangeset);
     // Pass execute_token to output manager for conditional display
     let output_token = convert_token_info(&execute_token);
     output_manager.render(OutputData::TokenInfo(output_token)).await?;
@@ -376,12 +375,12 @@ async fn create_stack_with_changeset_data(
     global_opts: &crate::cli::GlobalOpts,
     opts: &crate::cli::NormalizedAwsOpts,
 ) -> Result<i32> {
-    // Use shared changeset functionality for CREATE changeset
     let changeset_result = changeset_operations::create_changeset_comprehensive(
         context,
         stack_args,
-        None, // Let it generate a docker-style name
+        None,
         &args.base.argsfile,
+        false,
         output_manager,
     ).await?;
 

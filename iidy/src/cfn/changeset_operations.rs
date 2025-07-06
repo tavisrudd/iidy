@@ -42,6 +42,7 @@ pub async fn create_changeset_comprehensive(
     stack_args: &StackArgs,
     changeset_name: Option<&str>,
     argsfile_path: &str,
+    use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<ChangeSetCreationResult> {
     // Determine changeset name (docker-style if not provided)
@@ -55,13 +56,13 @@ pub async fn create_changeset_comprehensive(
     let stack_name = stack_args.stack_name.as_ref().unwrap();
     let stack_exists = check_stack_exists(context, stack_name).await?;
     
-    // Create changeset with appropriate type
     let (changeset_response, _) = perform_changeset_creation(
         context,
         stack_args,
         &final_changeset_name,
         stack_exists,
         argsfile_path,
+        use_primary_token,
         output_manager,
     ).await?;
 
@@ -79,16 +80,15 @@ pub async fn create_changeset_comprehensive(
     ).await
 }
 
-/// Create a changeset with proper type detection and template loading
 async fn perform_changeset_creation(
     context: &CfnContext,
     stack_args: &StackArgs,
     changeset_name: &str,
     stack_exists: bool,
     argsfile_path: &str,
+    use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<(CreateChangeSetOutput, String)> {
-    // Build and execute the CreateChangeSet request with proper changeset type
     let (create_request, token) = build_create_changeset_with_type(
         stack_args,
         changeset_name,
@@ -99,6 +99,7 @@ async fn perform_changeset_creation(
         },
         &CfnOperation::CreateChangeset,
         argsfile_path,
+        use_primary_token,
         context
     ).await?;
     
@@ -111,18 +112,22 @@ async fn perform_changeset_creation(
     Ok((response, changeset_name.to_string()))
 }
 
-/// Build a CreateChangeSet request with proper template loading and changeset type
 async fn build_create_changeset_with_type(
     stack_args: &StackArgs,
     changeset_name: &str,
     changeset_type: aws_sdk_cloudformation::types::ChangeSetType,
     operation: &CfnOperation,
     argsfile_path: &str,
+    use_primary_token: bool,
     context: &CfnContext,
 ) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::aws::client_req_token::TokenInfo)> {
     use aws_sdk_cloudformation::types::{Capability, Parameter, Tag};
     
-    let token = context.derive_token_for_step(operation);
+    let token = if use_primary_token {
+        context.primary_token().clone()
+    } else {
+        context.derive_token_for_step(operation)
+    };
 
     let mut create_request = context
         .client

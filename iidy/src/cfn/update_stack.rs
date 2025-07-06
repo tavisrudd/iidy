@@ -171,8 +171,8 @@ async fn perform_stack_update(
     // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
-    // Build and execute the UpdateStack request
     let (update_request, token) = builder.build_update_stack(
+        true,
         &CfnOperation::UpdateStack,
         &args.base.argsfile,
         Some(environment),
@@ -217,7 +217,7 @@ async fn update_stack_with_changeset(
     // Step 1: Create changeset
     let changeset_name = format!("iidy-update-{}", &context.primary_token().value[..8]);
     let (create_request, create_token) =
-        builder.build_create_changeset(&changeset_name, &CfnOperation::CreateChangeset);
+        builder.build_create_changeset(&changeset_name, false, &CfnOperation::CreateChangeset);
     
     // Pass create token to output manager for conditional display
     let output_token = convert_token_info(&create_token);
@@ -239,9 +239,8 @@ async fn update_stack_with_changeset(
         return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
     }
 
-    // Step 2: Execute changeset
     let (execute_request, execute_token) =
-        builder.build_execute_changeset(&changeset_name, &CfnOperation::ExecuteChangeset);
+        builder.build_execute_changeset(&changeset_name, false, &CfnOperation::ExecuteChangeset);
     
     // Pass execute token to output manager for conditional display
     let output_token = convert_token_info(&execute_token);

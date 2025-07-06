@@ -62,12 +62,12 @@ pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<i
     let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
-    // 2. Create changeset using shared functionality
     let changeset_result = changeset_operations::create_changeset_comprehensive(
         &context,
         &final_stack_args,
         args.changeset_name.as_deref(),
         &args.argsfile,
+        true,
         &mut output_manager,
     ).await?;
 

@@ -78,8 +78,7 @@ async fn perform_stack_deletion(
     args: &DeleteArgs,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {
-    // Derive a token for the delete operation
-    let token = context.derive_token_for_step(&CfnOperation::DeleteStack);
+    let token = context.primary_token();
     
     // Show token info
     let output_token = convert_token_info(&token);
