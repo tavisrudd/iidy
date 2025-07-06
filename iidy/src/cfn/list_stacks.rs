@@ -6,7 +6,7 @@ use crate::cli::{Cli, ListArgs};
 use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
-    aws_conversion::convert_stack_to_list_entry,
+    aws_conversion::{convert_stack_to_list_entry, convert_aws_error_to_error_info},
     manager::OutputOptions
 };
 
@@ -79,7 +79,7 @@ impl From<&aws_sdk_cloudformation::types::Stack> for SerializableStack {
 /// Uses the data-driven output architecture for consistent rendering across output modes.
 /// The stack list can be displayed in Interactive (with colors and icons), Plain (CI-friendly),
 /// or JSON (machine-readable) formats.
-pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
+pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
     
     // Setup AWS client and retrieve stacks
     let normalized_opts = cli.aws_opts.clone().normalize();
@@ -87,14 +87,31 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
     let context = create_context_for_operation(&normalized_opts, operation).await?;
     let client = &context.client;
 
+    // Setup data-driven output manager first (needed for error handling)
+    let output_options = OutputOptions::new(cli.clone());
+    let mut output_manager = DynamicOutputManager::new(
+        cli.global_opts.effective_output_mode(),
+        output_options
+    ).await?;
+
     // Use the paginator to retrieve all stacks in the region.
-    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = client
+    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = match client
         .describe_stacks()
         .into_paginator()
         .items()
         .send()
         .try_collect()
-        .await?;
+        .await
+    {
+        Ok(stacks) => stacks,
+        Err(e) => {
+            // Handle AWS errors through the output system (like delete_stack.rs does)
+            let anyhow_error = anyhow::Error::from(e);
+            let error_info = convert_aws_error_to_error_info(&anyhow_error);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            return Ok(1); // Return exit code 1 for failure
+        }
+    };
 
     // Handle empty stack list - let the renderer handle the "no stacks" message
     // (Continue processing to use data-driven output architecture)
@@ -199,16 +216,10 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<()> {
     // Convert to structured data for output
     let stack_list_display = convert_stacks_to_list_display_with_filters(filtered_stacks, show_tags, filters_applied, columns, is_query_mode);
     
-    // Setup data-driven output manager
-    let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        cli.global_opts.effective_output_mode(),
-        output_options
-    ).await?;
-
+    // Render the stack list (output_manager was already created above)
     output_manager.render(stack_list_display).await?;
 
-    Ok(())
+    Ok(0) // Return exit code 0 for success
 }
 
 /// Convert a list of AWS SDK Stacks to StackListDisplay with applied filters
