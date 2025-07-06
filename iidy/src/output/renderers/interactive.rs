@@ -7,7 +7,7 @@ use crate::output::data::*;
 use crate::output::renderer::OutputRenderer;
 use crate::output::theme::{IidyTheme, get_terminal_width};
 use crate::cli::{Theme, ColorChoice, Commands};
-use crate::output::color::{ProgressManager, SpinnerStyle};
+use crate::output::spinner::{Spinner, SpinnerStyle};
 use crate::cfn::CfnOperation;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -82,7 +82,7 @@ pub struct InteractiveRenderer {
     current_operation: Option<String>,
     expected_sections: Vec<&'static str>,
     pending_sections: std::collections::HashMap<String, OutputData>,
-    current_spinner: Option<ProgressManager>,
+    current_spinner: Option<Spinner>,
     next_section_index: usize,
     suppress_main_heading: bool,
     printed_sections: Vec<String>, // Track which section titles have been printed
@@ -358,11 +358,11 @@ impl InteractiveRenderer {
     }
     
     /// Create spinner for API waiting periods (iidy-js style) - only in TTY and if enabled
-    fn create_api_spinner(&self, message: &str) -> Option<ProgressManager> {
+    fn create_api_spinner(&self, message: &str) -> Option<Spinner> {
         if self.options.enable_spinners && self.colors_enabled() && io::stdout().is_terminal() {
             // Style spinner text with muted color (brightblack) like iidy-js
             let styled_message = self.style_muted_text(message);
-            Some(ProgressManager::with_style(SpinnerStyle::Dots12, &styled_message))
+            Some(Spinner::with_style(SpinnerStyle::Dots12, &styled_message))
         } else {
             // Spinners disabled, non-TTY, or colors disabled: just print the message
             println!("{}", message);

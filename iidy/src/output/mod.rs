@@ -14,6 +14,7 @@ pub mod keyboard;
 pub mod aws_conversion;
 pub mod color;
 pub mod terminal;
+pub mod spinner;
 
 // Re-exports for convenience
 pub use data::*;
@@ -25,3 +26,4 @@ pub use keyboard::{KeyboardListener, KeyboardCommand, KeyboardConfig, is_tty_env
 pub use aws_conversion::*;
 pub use color::*;
 pub use terminal::*;
+pub use spinner::*;
