@@ -2,7 +2,6 @@ pub mod aws;
 pub mod cfn;
 pub mod cli;
 pub mod debug;
-pub mod display;
 pub mod explain;
 pub mod output;
 pub mod pocs;
