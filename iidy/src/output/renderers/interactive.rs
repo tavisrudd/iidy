@@ -1511,20 +1511,25 @@ impl InteractiveRenderer {
         // Add blank line to separate error from prior output
         println!();
         
-        // Display error message with ERROR: prefix in bold bright red (user-friendly format)
-        if self.colors_enabled() {
-            println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
+        // Special handling for "Stack with id X does not exist" ValidationError
+        if self.is_stack_absent_error(&data.message) {
+            self.render_stack_absent_error(&data.message).await?;
         } else {
-            println!("ERROR: {}", data.message);
-        }
-        
-        // Show suggestions if available (in muted color)
-        if !data.suggestions.is_empty() {
-            for suggestion in &data.suggestions {
-                if self.colors_enabled() {
-                    println!("  • {}", suggestion.color(self.theme.muted));
-                } else {
-                    println!("  • {}", suggestion);
+            // Display generic error message with ERROR: prefix in bold bright red (user-friendly format)
+            if self.colors_enabled() {
+                println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
+            } else {
+                println!("ERROR: {}", data.message);
+            }
+            
+            // Show suggestions if available (in muted color)
+            if !data.suggestions.is_empty() {
+                for suggestion in &data.suggestions {
+                    if self.colors_enabled() {
+                        println!("  • {}", suggestion.color(self.theme.muted));
+                    } else {
+                        println!("  • {}", suggestion);
+                    }
                 }
             }
         }
@@ -1767,44 +1772,30 @@ impl InteractiveRenderer {
         }
         
         // Format message exactly like iidy-js: green "info" prefix + structured message
-        let info_prefix = if self.colors_enabled() {
-            "info".color(self.theme.success).to_string()
-        } else {
-            "info".to_string()
-        };
-        
-        let stack_name_colored = if self.colors_enabled() {
-            info.stack_name.color(self.theme.primary).to_string()
-        } else {
-            info.stack_name.clone()
-        };
-        
-        let env_colored = if self.colors_enabled() {
-            info.environment.color(self.theme.primary).to_string()
-        } else {
-            info.environment.clone()
-        };
-        
-        let region_colored = if self.colors_enabled() {
-            info.region.color(self.theme.primary).to_string()
-        } else {
-            info.region.clone()
-        };
-        
-        let account_colored = if self.colors_enabled() {
-            info.account.color(self.theme.primary).to_string()
-        } else {
-            info.account.clone()
-        };
-        
-        let auth_arn_colored = if self.colors_enabled() {
-            info.auth_arn.color(self.theme.primary).to_string()
-        } else {
-            info.auth_arn.clone()
-        };
+        let (info_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
+            if self.colors_enabled() {
+                (
+                    "info".color(self.theme.success).bold().to_string(),
+                    info.stack_name.color(self.theme.info).bold().to_string(),
+                    info.environment.color(self.theme.primary).to_string(),
+                    info.region.color(self.theme.primary).to_string(),
+                    info.account.color(self.theme.primary).to_string(),
+                    info.auth_arn.color(self.theme.primary).to_string(),
+                )
+            } else {
+                (
+                    "info".to_string(),
+                    info.stack_name.clone(),
+                    info.environment.clone(),
+                    info.region.clone(),
+                    info.account.clone(),
+                    info.auth_arn.clone(),
+                )
+            };
 
-        println!("{} The stack {} is absent in env = {}", 
-            info_prefix, stack_name_colored, env_colored);
+        println!("{} The stack {} is absent", 
+            info_prefix, stack_name_colored);
+        println!("      env = {}", env_colored);
         println!("      region = {}", region_colored);  
         println!("      account = {}", account_colored);
         println!("      auth_arn = {}.", auth_arn_colored);
@@ -1960,6 +1951,103 @@ impl InteractiveRenderer {
         println!("{}", data.template_body);
         
         Ok(())
+    }
+    
+    /// Check if error message indicates a stack does not exist
+    fn is_stack_absent_error(&self, error_message: &str) -> bool {
+        error_message.contains("Stack with id") && error_message.contains("does not exist")
+    }
+    
+    /// Render stack absent error with structured formatting like delete-stack but with ERROR prefix
+    async fn render_stack_absent_error(&mut self, error_message: &str) -> Result<()> {
+        // Extract stack name from error message
+        let stack_name = self.extract_stack_name_from_error(error_message);
+        
+        // Get context information from CLI
+        let (environment, region, account, auth_arn) = self.get_context_info().await;
+        
+        // Format message exactly like delete-stack StackAbsentInfo but with red ERROR prefix
+        let (error_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
+            if self.colors_enabled() {
+                (
+                    "ERROR".color(self.theme.error).bold().to_string(),
+                    stack_name.color(self.theme.info).bold().to_string(),
+                    environment.color(self.theme.primary).to_string(),
+                    region.color(self.theme.primary).to_string(),
+                    account.color(self.theme.primary).to_string(),
+                    auth_arn.color(self.theme.primary).to_string(),
+                )
+            } else {
+                (
+                    "ERROR".to_string(),
+                    stack_name.clone(),
+                    environment.clone(),
+                    region.clone(),
+                    account.clone(),
+                    auth_arn.clone(),
+                )
+            };
+
+        println!("{} The stack {} is absent", 
+            error_prefix, stack_name_colored);
+        println!("      env = {}", env_colored);
+        println!("      region = {}", region_colored);  
+        println!("      account = {}", account_colored);
+        println!("      auth_arn = {}.", auth_arn_colored);
+        
+        Ok(())
+    }
+    
+    /// Extract stack name from AWS error message
+    fn extract_stack_name_from_error(&self, error_message: &str) -> String {
+        // Pattern: "Stack with id STACK_NAME does not exist"
+        if let Some(start) = error_message.find("Stack with id ") {
+            let after_prefix = &error_message[start + "Stack with id ".len()..];
+            if let Some(end) = after_prefix.find(" does not exist") {
+                return after_prefix[..end].to_string();
+            }
+        }
+        "unknown-stack".to_string()
+    }
+    
+    /// Get context information from CLI context
+    async fn get_context_info(&self) -> (String, String, String, String) {
+        let (environment, region) = if let Some(ref cli) = self.cli_context {
+            (
+                cli.global_opts.environment.clone(),
+                cli.aws_opts.region.clone().unwrap_or_else(|| "us-east-1".to_string())
+            )
+        } else {
+            ("development".to_string(), "us-east-1".to_string())
+        };
+        
+        // For account and auth_arn, we'll make a simple STS call or use placeholders
+        let (account, auth_arn) = self.get_aws_identity().await;
+        
+        (environment, region, account, auth_arn)
+    }
+    
+    /// Get AWS account and auth ARN from STS
+    async fn get_aws_identity(&self) -> (String, String) {
+        // Try to get identity from AWS STS
+        match self.try_get_sts_identity().await {
+            Ok((account, arn)) => (account, arn),
+            Err(_) => ("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string()),
+        }
+    }
+    
+    /// Try to get STS caller identity
+    async fn try_get_sts_identity(&self) -> Result<(String, String)> {
+        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
+        let sts_client = aws_sdk_sts::Client::new(&config);
+        
+        let response = sts_client.get_caller_identity().send().await
+            .map_err(|e| anyhow::anyhow!("STS call failed: {}", e))?;
+        
+        let account = response.account().unwrap_or("unknown").to_string();
+        let arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
+        
+        Ok((account, arn))
     }
     
 }
