@@ -11,8 +11,8 @@ use tokio::fs;
 use super::utils::resolve_doc_from_import_data;
 use crate::yaml::imports::{ImportData, ImportType};
 
-/// Load a file import from the local filesystem
-pub async fn load_file_import(location: &str, base_location: &str) -> Result<ImportData> {
+/// Resolve file path relative to base location
+fn resolve_file_path(location: &str, base_location: &str) -> PathBuf {
     // Remove file: prefix if present
     let clean_location = location.strip_prefix("file:").unwrap_or(location);
 
@@ -23,13 +23,27 @@ pub async fn load_file_import(location: &str, base_location: &str) -> Result<Imp
         PathBuf::from(base_location)
     };
 
-    let resolved_path = if Path::new(clean_location).is_absolute() {
+    if Path::new(clean_location).is_absolute() {
         PathBuf::from(clean_location)
     } else {
         let base_dir = base_path.parent().unwrap_or(Path::new("."));
         base_dir.join(clean_location)
-    };
+    }
+}
 
+/// Create ImportData from file content
+fn create_file_import_data(resolved_location: String, data: String, doc: Value) -> ImportData {
+    ImportData {
+        import_type: ImportType::File,
+        resolved_location,
+        data,
+        doc,
+    }
+}
+
+/// Load a file import from the local filesystem
+pub async fn load_file_import(location: &str, base_location: &str) -> Result<ImportData> {
+    let resolved_path = resolve_file_path(location, base_location);
     let resolved_location = resolved_path.to_string_lossy().to_string();
 
     // Read the file content
@@ -45,20 +59,11 @@ pub async fn load_file_import(location: &str, base_location: &str) -> Result<Imp
     // Parse the document based on file extension
     let doc = resolve_doc_from_import_data(&data, &resolved_location)?;
 
-    Ok(ImportData {
-        import_type: ImportType::File,
-        resolved_location,
-        data,
-        doc,
-    })
+    Ok(create_file_import_data(resolved_location, data, doc))
 }
 
-/// Load a filehash import (SHA256 of file content)
-pub async fn load_filehash_import(
-    location: &str,
-    base_location: &str,
-    base64: bool,
-) -> Result<ImportData> {
+/// Parse filehash location and extract file path and options
+fn parse_filehash_location(location: &str) -> Result<(&str, bool)> {
     let parts: Vec<&str> = location.splitn(2, ':').collect();
     if parts.len() != 2 {
         return Err(anyhow!("Invalid filehash import format: {}", location));
@@ -70,7 +75,37 @@ pub async fn load_filehash_import(
         file_path = file_path.strip_prefix('?').unwrap().trim();
     }
 
-    // Resolve path relative to base location
+    Ok((file_path, allow_missing))
+}
+
+/// Create ImportData for filehash
+fn create_filehash_import_data(
+    _location: &str,
+    resolved_location: String,
+    data: String,
+    base64: bool,
+) -> ImportData {
+    ImportData {
+        import_type: if base64 {
+            ImportType::FilehashBase64
+        } else {
+            ImportType::Filehash
+        },
+        resolved_location,
+        data: data.clone(),
+        doc: Value::String(data),
+    }
+}
+
+/// Load a filehash import (SHA256 of file content)
+pub async fn load_filehash_import(
+    location: &str,
+    base_location: &str,
+    base64: bool,
+) -> Result<ImportData> {
+    let (file_path, allow_missing) = parse_filehash_location(location)?;
+
+    // Use base_location directly for path resolution since filehash uses different logic
     let base_path = PathBuf::from(base_location);
     let resolved_path = if Path::new(file_path).is_absolute() {
         PathBuf::from(file_path)
@@ -84,16 +119,7 @@ pub async fn load_filehash_import(
     if !resolved_path.exists() {
         if allow_missing {
             let data = "FILE_MISSING".to_string();
-            return Ok(ImportData {
-                import_type: if base64 {
-                    ImportType::FilehashBase64
-                } else {
-                    ImportType::Filehash
-                },
-                resolved_location,
-                data: data.clone(),
-                doc: Value::String(data),
-            });
+            return Ok(create_filehash_import_data(location, resolved_location, data, base64));
         } else {
             return Err(anyhow!(
                 "Invalid location {} for filehash in {}",
@@ -115,16 +141,7 @@ pub async fn load_filehash_import(
         hash
     };
 
-    Ok(ImportData {
-        import_type: if base64 {
-            ImportType::FilehashBase64
-        } else {
-            ImportType::Filehash
-        },
-        resolved_location,
-        data: data.clone(),
-        doc: Value::String(data),
-    })
+    Ok(create_filehash_import_data(location, resolved_location, data, base64))
 }
 
 /// Compute SHA256 hash of a string

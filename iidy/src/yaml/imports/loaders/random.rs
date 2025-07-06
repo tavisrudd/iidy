@@ -7,33 +7,44 @@ use serde_yaml::Value;
 
 use crate::yaml::imports::{ImportData, ImportType};
 
-/// Load a random import (dashed-name, name, int)
-pub async fn load_random_import(location: &str, base_location: &str) -> Result<ImportData> {
+/// Parse and validate random import location format
+fn parse_random_location(location: &str) -> Result<&str> {
     let parts: Vec<&str> = location.splitn(2, ':').collect();
     if parts.len() != 2 || parts[0] != "random" {
         return Err(anyhow!("Invalid random import format: {}", location));
     }
+    Ok(parts[1])
+}
 
-    let random_type = parts[1];
-    let data = match random_type {
-        "dashed-name" => generate_dashed_name(),
-        "name" => generate_name(),
-        "int" => generate_random_int(),
-        _ => {
-            return Err(anyhow!(
-                "Invalid random type in {} at {}",
-                location,
-                base_location
-            ));
-        }
-    };
-
-    Ok(ImportData {
+/// Create ImportData from random value
+fn create_random_import_data(location: &str, data: String) -> ImportData {
+    ImportData {
         import_type: ImportType::Random,
         resolved_location: location.to_string(),
         data: data.clone(),
         doc: Value::String(data),
-    })
+    }
+}
+
+/// Get random value generator based on type
+fn get_random_value(random_type: &str, location: &str, base_location: &str) -> Result<String> {
+    match random_type {
+        "dashed-name" => Ok(generate_dashed_name()),
+        "name" => Ok(generate_name()),
+        "int" => Ok(generate_random_int()),
+        _ => Err(anyhow!(
+            "Invalid random type in {} at {}",
+            location,
+            base_location
+        )),
+    }
+}
+
+/// Load a random import (dashed-name, name, int)
+pub async fn load_random_import(location: &str, base_location: &str) -> Result<ImportData> {
+    let random_type = parse_random_location(location)?;
+    let data = get_random_value(random_type, location, base_location)?;
+    Ok(create_random_import_data(location, data))
 }
 
 /// Generate a dashed name for random imports

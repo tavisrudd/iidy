@@ -7,37 +7,52 @@ use serde_yaml::Value;
 
 use crate::yaml::imports::{ImportData, ImportType};
 
-/// Load an environment variable import
-pub async fn load_env_import(location: &str, base_location: &str) -> Result<ImportData> {
+/// Parse and validate env import location format
+fn parse_env_location(location: &str) -> Result<(&str, Option<&str>)> {
     let parts: Vec<&str> = location.splitn(3, ':').collect();
     if parts.len() < 2 || parts[0] != "env" {
         return Err(anyhow!("Invalid env import format: {}", location));
     }
 
     let var_name = parts[1];
-    let default_value = parts.get(2);
+    let default_value = parts.get(2).copied();
 
-    let data = match std::env::var(var_name) {
-        Ok(value) => value,
-        Err(_) => {
-            if let Some(default) = default_value {
-                default.to_string()
-            } else {
-                return Err(anyhow!(
-                    "Env-var {} not found from {}",
-                    var_name,
-                    base_location
-                ));
-            }
-        }
-    };
+    Ok((var_name, default_value))
+}
 
-    Ok(ImportData {
+/// Create ImportData from environment variable value
+fn create_env_import_data(location: &str, data: String) -> ImportData {
+    ImportData {
         import_type: ImportType::Env,
         resolved_location: location.to_string(),
         data: data.clone(),
         doc: Value::String(data),
-    })
+    }
+}
+
+/// Get environment variable value with optional default
+fn get_env_value(var_name: &str, default_value: Option<&str>, base_location: &str) -> Result<String> {
+    match std::env::var(var_name) {
+        Ok(value) => Ok(value),
+        Err(_) => {
+            if let Some(default) = default_value {
+                Ok(default.to_string())
+            } else {
+                Err(anyhow!(
+                    "Env-var {} not found from {}",
+                    var_name,
+                    base_location
+                ))
+            }
+        }
+    }
+}
+
+/// Load an environment variable import
+pub async fn load_env_import(location: &str, base_location: &str) -> Result<ImportData> {
+    let (var_name, default_value) = parse_env_location(location)?;
+    let data = get_env_value(var_name, default_value, base_location)?;
+    Ok(create_env_import_data(location, data))
 }
 
 #[cfg(test)]
