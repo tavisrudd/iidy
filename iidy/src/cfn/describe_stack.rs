@@ -1,5 +1,24 @@
 use anyhow::{Result, anyhow};
 
+// Macro to reduce repetition when awaiting tasks and handling errors consistently
+macro_rules! await_and_render {
+    ($task:expr, $output_manager:expr) => {
+        match $task.await {
+            Ok(Ok(data)) => $output_manager.render(data).await?,
+            Ok(Err(error)) => {
+                let error_info = convert_aws_error_to_error_info(&error);
+                $output_manager.render(OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+            Err(join_error) => {
+                let error_info = convert_aws_error_to_error_info(&join_error.into());
+                $output_manager.render(OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+        }
+    };
+}
+
 use crate::cfn::{create_context_for_operation, stack_operations::collect_stack_contents};
 use crate::cli::{Cli, ToArgMap, DescribeArgs};
 use crate::output::{
@@ -31,10 +50,7 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
 
     let event_count = args.events as usize;
     
-    // Start parallel rendering and show first section immediately
-    let sender = output_manager.start();
-    
-    // Tell the renderer what operation we're doing so it shows the first section heading
+    // Show command metadata immediately
     let metadata = CommandMetadata {
         iidy_environment: cli.global_opts.environment.clone(),
         region: opts.region.clone().unwrap_or_default(),
@@ -54,7 +70,7 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
         },
         derived_tokens: Vec::new(),
     };
-    let _ = sender.send(OutputData::CommandMetadata(metadata));
+    output_manager.render(OutputData::CommandMetadata(metadata)).await?;
 
     // Now setup AWS context (fast - automatically uses system time for read-only operations)
     let operation = cli.command.to_cfn_operation();
@@ -64,11 +80,10 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
     let client = context.client.clone();
     let stack_name = args.stackname.clone();
     
-    // Start all three async operations in parallel
+    // Start all three async operations in parallel (tasks start immediately)
     let stack_task = {
         let client = client.clone();
         let stack_name = stack_name.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let stack_resp = client
                 .describe_stacks()
@@ -83,15 +98,13 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
                 .ok_or_else(|| anyhow!("stack not found"))?;
                 
             let output_data = convert_stack_to_definition(&stack, true);
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(output_data)
         })
     };
     
     let events_task = {
         let client = client.clone();
         let stack_name = stack_name.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let first_events_resp = client
                 .describe_stack_events()
@@ -125,52 +138,23 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
                 Some(event_count),
             );
             
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(output_data)
         })
     };
     
     let contents_task = {
         let context = context.clone();
         let stack_name = stack_name.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let stack_contents = collect_stack_contents(&context, &stack_name).await?;
-            let _ = tx.send(OutputData::StackContents(stack_contents));
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(OutputData::StackContents(stack_contents))
         })
     };
     
-    // Drop the original sender so the receiver knows when all tasks are done
-    drop(sender);
-    
-    // Process and render all data from parallel operations
-    output_manager.stop().await?;
-    
-    // Wait for all tasks to complete and handle any errors
-    let (stack_result, events_result, contents_result) = tokio::join!(
-        stack_task,
-        events_task, 
-        contents_task
-    );
-    
-    // Helper to handle task results consistently
-    let handle_task_result = |result: Result<Result<(), anyhow::Error>, tokio::task::JoinError>| -> Option<anyhow::Error> {
-        match result {
-            Err(join_error) => Some(join_error.into()),
-            Ok(Err(task_error)) => Some(task_error),
-            Ok(Ok(())) => None,
-        }
-    };
-    
-    // Check all task results and show first error encountered
-    for task_result in [stack_result, events_result, contents_result] {
-        if let Some(error) = handle_task_result(task_result) {
-            let error_info = convert_aws_error_to_error_info(&error);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            return Ok(1); // Return exit code 1 for failure
-        }
-    }
+    // Await and render in correct section order (tasks already running in parallel)
+    await_and_render!(stack_task, output_manager);
+    await_and_render!(events_task, output_manager);
+    await_and_render!(contents_task, output_manager);
 
     Ok(0) // Return exit code 0 for success
 }
