@@ -1,10 +1,28 @@
 use crate::cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli};
 use crate::cfn::create_context_for_operation;
+use crate::output::{
+    DynamicOutputManager, OutputData, 
+    data::StackTemplate,
+    aws_conversion::convert_aws_error_to_error_info,
+    manager::OutputOptions
+};
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
 use aws_sdk_cloudformation::types::TemplateStage;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
+
+/// Helper function to handle AWS errors with consistent pattern
+async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(e) => {
+            let error_info = convert_aws_error_to_error_info(&e);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            Ok(None) // Signal failure
+        }
+    }
+}
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {
@@ -85,28 +103,55 @@ pub fn format_template(
 
 /// Retrieve a stack template from CloudFormation and format it for display.
 ///
-/// This is a read-only operation
-/// - stderr: "# Stages Available: ..." and "# Stage Shown: ..."
-/// - stdout: Template content in requested format
-/// - No progress messages or command metadata
-pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<FormattedTemplate> {
+/// Uses the data-driven output architecture for consistent error handling and rendering.
+/// Returns exit code: 0 for success, 1 for failure.
+pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32> {
     let operation = cli.command.to_cfn_operation();
     let opts = cli.aws_opts.clone().normalize();
-    let context = create_context_for_operation(&opts, operation).await?;
+    
+    // Setup output manager first (needed for error handling)
+    let output_options = OutputOptions::new(cli.clone());
+    let mut output_manager = DynamicOutputManager::new(
+        cli.global_opts.effective_output_mode(),
+        output_options
+    ).await?;
+
+    let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
+        Some(ctx) => ctx,
+        None => return Ok(1),
+    };
+    
     let client = &context.client;
     let stage = match args.stage {
         TemplateStageArg::Original => TemplateStage::Original,
         TemplateStageArg::Processed => TemplateStage::Processed,
     };
 
-    let output = client
-        .get_template()
-        .stack_name(&args.stackname)
-        .template_stage(stage)
-        .send()
-        .await?;
+    let output = match handle_aws_error(
+        client
+            .get_template()
+            .stack_name(&args.stackname)
+            .template_stage(stage)
+            .send()
+            .await
+            .map_err(anyhow::Error::from),
+        &mut output_manager
+    ).await? {
+        Some(output) => output,
+        None => return Ok(1),
+    };
 
-    format_template(output, args.stage.clone(), args.format.clone())
+    let formatted_template = format_template(output, args.stage.clone(), args.format.clone())?;
+    
+    // Convert to output data and render through the output manager
+    let stack_template = StackTemplate {
+        stderr_lines: formatted_template.stderr_lines,
+        template_body: formatted_template.body,
+    };
+    
+    output_manager.render(OutputData::StackTemplate(stack_template)).await?;
+    
+    Ok(0) // Return success exit code
 }
 
 #[cfg(test)]

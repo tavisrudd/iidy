@@ -805,6 +805,7 @@ impl InteractiveRenderer {
             OutputData::NewStackEvents(..) => Some("live_stack_events".to_string()),
             OutputData::StackChangeDetails(..) => Some("stack_change_details".to_string()),
             OutputData::CostEstimate(..) => Some("cost_estimate".to_string()),
+            OutputData::StackTemplate(..) => Some("stack_template".to_string()),
             OutputData::ConfirmationPrompt(request) => {
                 match &request.key {
                     Some(key) => Some(format!("confirmation_{}", key)),
@@ -856,6 +857,7 @@ impl InteractiveRenderer {
             OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
             OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
             OutputData::CostEstimate(ref estimate) => self.render_cost_estimate(estimate).await,
+            OutputData::StackTemplate(ref template) => self.render_stack_template(template).await,
         }
     }
     
@@ -1943,6 +1945,19 @@ impl InteractiveRenderer {
         
         // Display the URL exactly like iidy-js: "Stack cost estimator: {URL}"
         self.print_section_entry("Stack cost estimator:", &data.info.url.color(self.theme.primary).to_string())?;
+        
+        Ok(())
+    }
+
+    /// Render stack template - matches original get-stack-template behavior exactly
+    async fn render_stack_template(&mut self, data: &crate::output::data::StackTemplate) -> Result<()> {
+        // Print stderr lines to stderr (like original implementation)
+        for line in &data.stderr_lines {
+            eprintln!("{}", line);
+        }
+        
+        // Print template body to stdout (like original implementation) 
+        println!("{}", data.template_body);
         
         Ok(())
     }

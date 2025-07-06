@@ -122,6 +122,7 @@ impl OutputRenderer for JsonRenderer {
             OutputData::StackChangeDetails(ref details) => self.render_stack_change_details(details).await,
             OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
             OutputData::CostEstimate(ref estimate) => self.render_cost_estimate(estimate).await,
+            OutputData::StackTemplate(ref template) => self.render_stack_template(template).await,
         }
     }
 }
@@ -227,6 +228,17 @@ impl JsonRenderer {
 
     async fn render_cost_estimate(&mut self, data: &crate::output::data::CostEstimate) -> Result<()> {
         self.output_json("cost_estimate", data)
+    }
+
+    async fn render_stack_template(&mut self, data: &crate::output::data::StackTemplate) -> Result<()> {
+        // For JSON mode, the template should behave like the interactive mode
+        // Print stderr lines to stderr and template body to stdout 
+        // This maintains the same external behavior
+        for line in &data.stderr_lines {
+            eprintln!("{}", line);
+        }
+        println!("{}", data.template_body);
+        Ok(())
     }
     
 }

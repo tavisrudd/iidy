@@ -104,12 +104,7 @@ fn handle_command(cli: Cli) {
         }
         Commands::GetStackTemplate(ref args) => {
             match rt.block_on(cfn::get_stack_template::get_stack_template(&cli, &args)) {
-                Ok(out) => {
-                    for line in out.stderr_lines {
-                        eprintln!("{line}");
-                    }
-                    println!("{}", out.body);
-                }
+                Ok(exit_code) => std::process::exit(exit_code),
                 Err(e) => {
                     eprintln!("error getting template: {e:?}");
                     std::process::exit(1);

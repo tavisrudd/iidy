@@ -407,6 +407,13 @@ pub struct CostEstimate {
     pub info: CostEstimateInfo,
 }
 
+/// Stack template display data for get-stack-template command
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StackTemplate {
+    pub stderr_lines: Vec<String>,
+    pub template_body: String,
+}
+
 /// Confirmation request for interactive prompts
 #[derive(Debug)]
 pub struct ConfirmationRequest {
@@ -447,6 +454,7 @@ pub enum OutputData {
     StackChangeDetails(StackChangeDetails), // Stack change type for create-or-update operations
     StackAbsentInfo(StackAbsentInfo), // Information about absent/non-existent stacks
     CostEstimate(CostEstimate), // Cost estimation result from AWS
+    StackTemplate(StackTemplate), // Stack template content from get-stack-template
 }
 
 impl OutputData {
@@ -472,6 +480,7 @@ impl OutputData {
             OutputData::StackChangeDetails(_) => "stack_change_details",
             OutputData::StackAbsentInfo(_) => "stack_absent_info",
             OutputData::CostEstimate(_) => "cost_estimate",
+            OutputData::StackTemplate(_) => "stack_template",
         }
     }
     
