@@ -2,7 +2,7 @@
 
 **Date**: 2025-07-06  
 **Context**: Fix for list-stacks error handling inconsistency (commit 24783cd)  
-**Status**: Analysis Complete - 5 commands need updates  
+**Status**: In Progress - 3 commands fixed (commit f202255), 2 remaining  
 
 ## Background
 
@@ -15,9 +15,9 @@ This analysis reviews all 13 CFN command handlers for consistency in:
 
 ## Analysis Results
 
-### ✅ Compliant Commands (8/13)
+### ✅ Compliant Commands (11/13)
 
-These commands already follow the proper pattern perfectly:
+These commands follow the proper pattern perfectly:
 
 - **`create_stack.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0/1)
 - **`update_stack.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0/1/130)
@@ -27,8 +27,11 @@ These commands already follow the proper pattern perfectly:
 - **`delete_stack.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0/1/130)
 - **`describe_stack.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0/1)
 - **`list_stacks.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0/1) *[Fixed in 24783cd]*
+- **`watch_stack.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0) *[Fixed in f202255]*
+- **`describe_stack_drift.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0) *[Fixed in f202255]*
+- **`get_stack_instances.rs`**: ✅ `Result<i32>`, ✅ proper error handling, ✅ exit codes (0) *[Fixed in f202255]*
 
-### ❌ Non-Compliant Commands (5/13)
+### ❌ Non-Compliant Commands (2/13)
 
 #### 1. `estimate_cost.rs` - Missing Error Handling Pattern
 - ✅ **Return type**: `Result<i32>`
@@ -36,36 +39,18 @@ These commands already follow the proper pattern perfectly:
 - ✅ **Exit codes**: Returns 0 (though only success case is handled)
 - **Fix needed**: Wrap AWS API calls with proper error handling
 
-#### 2. `watch_stack.rs` - Wrong Return Type
-- ❌ **Return type**: `Result<()>` (should be `Result<i32>`)
-- ✅ **Error handling**: Uses proper error handling pattern
-- ❌ **Exit codes**: No exit codes returned
-- **Fix needed**: Change return type to `Result<i32>` and return proper exit codes
-
-#### 3. `describe_stack_drift.rs` - Wrong Return Type
-- ❌ **Return type**: `Result<()>` (should be `Result<i32>`)
-- ✅ **Error handling**: Uses proper error handling pattern
-- ❌ **Exit codes**: No exit codes returned
-- **Fix needed**: Change return type to `Result<i32>` and return proper exit codes
-
-#### 4. `get_stack_template.rs` - Special Case Architectural Issue
+#### 2. `get_stack_template.rs` - Special Case Architectural Issue
 - ❌ **Return type**: `Result<FormattedTemplate>` (should be `Result<i32>`)
 - ❌ **Error handling**: No use of `convert_aws_error_to_error_info()` pattern
 - ❌ **Exit codes**: No exit codes returned
 - **Fix needed**: This appears to be a special case that returns formatted template content rather than following the standard command pattern. May need architectural discussion.
 
-#### 5. `get_stack_instances.rs` - Wrong Return Type
-- ❌ **Return type**: `Result<()>` (should be `Result<i32>`)
-- ✅ **Error handling**: Uses proper error handling pattern
-- ❌ **Exit codes**: No exit codes returned
-- **Fix needed**: Change return type to `Result<i32>` and return proper exit codes
-
 ## Implementation Priority
 
-### High Priority (Simple Fixes)
-1. **`watch_stack.rs`** - Just needs return type change and exit codes
-2. **`describe_stack_drift.rs`** - Just needs return type change and exit codes
-3. **`get_stack_instances.rs`** - Just needs return type change and exit codes
+### ✅ Completed (commit f202255)
+1. **`watch_stack.rs`** - ✅ Fixed return type and exit codes
+2. **`describe_stack_drift.rs`** - ✅ Fixed return type and exit codes  
+3. **`get_stack_instances.rs`** - ✅ Fixed return type and exit codes
 
 ### Medium Priority (Requires Error Handling Work)
 4. **`estimate_cost.rs`** - Needs AWS error handling pattern implementation
@@ -75,20 +60,22 @@ These commands already follow the proper pattern perfectly:
 
 ## Success Metrics
 
-- **Current**: 8/13 commands (61.5%) follow proper pattern
+- **Initial**: 8/13 commands (61.5%) follow proper pattern
+- **Current**: 11/13 commands (84.6%) follow proper pattern
 - **Target**: 13/13 commands (100%) follow proper pattern
 - **User Impact**: Consistent error messages and exit codes across all CFN commands
 
 ## Related Work
 
 - **Fixed in commit 24783cd**: `list_stacks.rs` error handling enhancement
+- **Fixed in commit f202255**: Return type standardization for `watch_stack.rs`, `describe_stack_drift.rs`, and `get_stack_instances.rs`
 - **See**: `src/output/aws_conversion.rs` for `convert_aws_error_to_error_info()` implementation
 - **Pattern**: Based on `delete_stack.rs` and `create_stack.rs` implementations
 
 ## Next Steps
 
-1. Fix the 4 simple cases (return type + exit codes)
-2. Implement proper error handling in `estimate_cost.rs`
+1. ✅ ~~Fix the 3 simple cases (return type + exit codes)~~ *[Completed in f202255]*
+2. Implement proper error handling in `estimate_cost.rs` 
 3. Discuss architectural approach for `get_stack_template.rs`
 4. Test all commands for consistent error behavior
 5. Update CLI integration tests to verify exit codes

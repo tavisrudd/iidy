@@ -19,9 +19,21 @@ use crate::output::{
     StackEventWithTiming,
     OperationCompleteInfo, InactivityTimeoutInfo,
     convert_stack_to_definition,
-    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event},
+    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event, convert_aws_error_to_error_info},
     manager::OutputOptions
 };
+
+/// Helper function to handle AWS errors with consistent pattern
+async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(e) => {
+            let error_info = convert_aws_error_to_error_info(&e);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            Ok(None) // Signal failure
+        }
+    }
+}
 
 use super::{stack_operations::{StackEventsService, StackInfoService}};
 
@@ -62,15 +74,24 @@ pub async fn watch_stack(
     
     // Setup AWS context (no need for command metadata for read-only operation)
     let operation = cli.command.to_cfn_operation();
-    let context = create_context_for_operation(&opts, operation).await?;
+    let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
+        Some(ctx) => ctx,
+        None => return Ok(1),
+    };
 
     // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();
     let stack_name = args.stackname.clone();
     
     // Get stack info and ID using the consolidated service
-    let stack = StackInfoService::get_stack(&client, &stack_name).await?;
-    let stack_id = StackInfoService::get_stack_id(&client, &stack_name).await?;
+    let stack = match handle_aws_error(StackInfoService::get_stack(&client, &stack_name).await, &mut output_manager).await? {
+        Some(stack) => stack,
+        None => return Ok(1),
+    };
+    let stack_id = match handle_aws_error(StackInfoService::get_stack_id(&client, &stack_name).await, &mut output_manager).await? {
+        Some(id) => id,
+        None => return Ok(1),
+    };
     
     // Start stack definition task (already have the stack data)
     let stack_task = {
@@ -126,9 +147,9 @@ pub async fn watch_stack(
         events_and_live_task
     );
     
-    // Propagate any errors from the spawned tasks
-    stack_result??;
-    let final_status = events_and_live_result??;
+    // Handle task join errors and inner task errors
+    stack_result??; // Propagate join errors and inner task errors
+    let final_status = events_and_live_result??; // Propagate join errors and inner task errors
     
     // Final step: Show stack contents like iidy-js
     // Skip stack contents if the stack was deleted (DELETE_COMPLETE)
@@ -141,7 +162,10 @@ pub async fn watch_stack(
     }
     
     // Normal case - show stack contents
-    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = match handle_aws_error(collect_stack_contents(&context, &stack_id).await, &mut output_manager).await? {
+        Some(contents) => contents,
+        None => return Ok(1),
+    };
     let sender = output_manager.start();
     let _ = sender.send(OutputData::StackContents(stack_contents));
     drop(sender);
