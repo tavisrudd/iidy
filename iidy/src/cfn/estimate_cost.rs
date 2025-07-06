@@ -5,10 +5,22 @@ use crate::cli::{Cli, StackFileArgs, Commands, AwsOpts};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
     OutputData, data::{CostEstimate, CostEstimateInfo},
-    aws_conversion::create_command_metadata
+    aws_conversion::{create_command_metadata, convert_aws_error_to_error_info}
 };
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
+
+/// Helper function to handle AWS errors with consistent pattern
+async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(e) => {
+            let error_info = convert_aws_error_to_error_info(&e);
+            output_manager.render(OutputData::Error(error_info)).await?;
+            Ok(None) // Signal failure
+        }
+    }
+}
 
 /// Estimate stack cost using CloudFormation's estimateTemplateCost API.
 ///
@@ -33,8 +45,7 @@ pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<i32> {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let context = create_context_for_operation(&opts, operation).await?;
-
+    // Setup output manager first (needed for error handling)
     let aws_opts = AwsOpts {
         region: opts.region.clone(),
         profile: opts.profile.clone(),
@@ -52,17 +63,28 @@ pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<i32> {
         output_options
     ).await?;
 
-    let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
+    let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
+        Some(ctx) => ctx,
+        None => return Ok(1),
+    };
+
+    let command_metadata = match handle_aws_error(create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await, &mut output_manager).await? {
+        Some(metadata) => metadata,
+        None => return Ok(1),
+    };
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
     let template_result = if let Some(ref template_location) = final_stack_args.template {
-        load_cfn_template(
+        match handle_aws_error(load_cfn_template(
             Some(template_location),
             &args.argsfile,
             Some(&global_opts.environment),
             TEMPLATE_MAX_BYTES,
             Some(&context.create_s3_client()),
-        ).await?
+        ).await, &mut output_manager).await? {
+            Some(result) => result,
+            None => return Ok(1),
+        }
     } else {
         return Err(anyhow::anyhow!("Template must be specified in stack-args.yaml"));
     };
@@ -91,7 +113,13 @@ pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<i32> {
         estimate_request = estimate_request.set_parameters(Some(cfn_parameters));
     }
 
-    let estimate_response = estimate_request.send().await?;
+    let estimate_response = match handle_aws_error(
+        estimate_request.send().await.map_err(anyhow::Error::from),
+        &mut output_manager
+    ).await? {
+        Some(response) => response,
+        None => return Ok(1),
+    };
 
     let url = estimate_response.url
         .ok_or_else(|| anyhow::anyhow!("AWS did not return a cost estimation URL"))?;
