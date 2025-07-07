@@ -6,7 +6,7 @@
 
 ## Context and Problem Statement
 
-The iidy Rust rewrite provides three distinct output modes. Initially we aimed for pixel-perfect compatibility with the original iidy-js implementation, which we achieved and have now moved beyond:
+The iidy Rust rewrite provides three distinct output modes:
 
 1. **Interactive Mode**: Rich colored output with spinners, proper section ordering, and real-time feedback
 2. **Plain Mode**: CI-friendly output with timestamps, no colors, no spinners, but same information structure
@@ -35,7 +35,7 @@ CloudFormation operations involve multiple async data sources (stack metadata, e
 
 ## Decision: Multi-Layer Architecture
 
-**UPDATE 2025-07-06**: We are migrating away from the parallel channel pattern towards a simpler sequential await approach that maintains parallel execution benefits while eliminating coordination complexity.
+This architecture supports two coordination patterns for handling multiple concurrent AWS API calls. The channel-based pattern is deprecated and will be removed once migration to the sequential await pattern is complete.
 
 ### Layer 1: Command Handlers (`src/cfn/`)
 
@@ -46,18 +46,18 @@ CloudFormation operations involve multiple async data sources (stack metadata, e
 - Sending data to `DynamicOutputManager` as it becomes available
 - **NO formatting, colors, section titles, or spinner management**
 
-**Current Pattern (being phased out):**
+**Channel-Based Pattern (Deprecated):**
 ```rust
-// OLD: Channel-based parallel coordination
+// Channel-based parallel coordination - DEPRECATED, will be removed
 let sender = output_manager.start();
 let stack_task = spawn_stack_collection_task(&sender, &client, &stack_id);
 let events_task = spawn_events_watching_task(&sender, &client, &stack_id);
 output_manager.stop().await?; // Processes all parallel data in arrival order
 ```
 
-**New Preferred Pattern:**
+**Sequential Await Pattern:**
 ```rust
-// NEW: Sequential await with parallel execution
+// Sequential await with parallel execution
 let stack_task = tokio::spawn(async move { /* fetch stack data */ });
 let events_task = tokio::spawn(async move { /* fetch events data */ });
 let contents_task = tokio::spawn(async move { /* fetch contents data */ });
@@ -99,18 +99,17 @@ macro_rules! await_and_render {
 - **Buffer Management**: Keeps last 1000 events for seamless mode switching
 - **Clean Confirmation API**: Command handlers call simple `request_confirmation(message)`, manager handles `oneshot::channel` internally
 - **Single Interface**: Command handlers only interact with `DynamicOutputManager`, never directly with renderers
-- **Simplified Coordination**: No longer requires parallel channel management - command handlers use direct `render()` calls
 
-**Simplified Command Handler Interface:**
+**Command Handler Interface:**
 ```rust
-// Direct rendering - no channel coordination needed
+// Direct rendering
 output_manager.render(OutputData::StackDefinition(stack_def)).await?;
 let confirmed = output_manager.request_confirmation("Delete stack?".to_string()).await?;
 ```
 
-**Confirmation Implementation (still uses channels internally):**
+**Confirmation Implementation:**
 ```rust
-// Manager still hides oneshot::channel complexity from command handlers
+// Manager hides oneshot::channel complexity from command handlers
 async fn request_confirmation_impl(&mut self, message: String, key: Option<String>) -> Result<bool> {
     let (response_tx, response_rx) = oneshot::channel(); // Hidden from command handlers
     let confirmation = OutputData::ConfirmationPrompt(ConfirmationRequest {
@@ -365,11 +364,14 @@ The new pattern is more intuitive for developers familiar with async/await patte
 
 This architecture successfully provides professional, consistent output while supporting multiple output modes and robust async operations. The separation of concerns enables independent testing and maintenance of AWS API logic versus presentation logic.
 
-**Migration Strategy**: We are migrating from the channel-based parallel coordination pattern to the simpler sequential await pattern. This transition:
-- Reduces implementation complexity by ~50 lines of coordination code per command
-- Eliminates the need for `start()/stop()` methods in `DynamicOutputManager`
-- Maintains all performance and user experience benefits
+**Migration Strategy**: The deprecated channel-based pattern (`output_manager.start()/stop()`) is being replaced by the sequential await pattern. Once migration is complete, the channel-based methods will be removed from `DynamicOutputManager`. This transition:
+- Reduces implementation complexity 
 - Provides cleaner error handling via standardized macros
+- Maintains all performance and user experience benefits
 - Makes the codebase more approachable for new developers
+
+**Migration Status**: 
+- ✅ **Completed**: `create_stack`, `delete_stack`, `describe_stack` 
+- 🔄 **Remaining**: `watch_stack`, `create_or_update`, `update_stack`, `exec_changeset`
 
 The key insight is that while CloudFormation operations have inherent sequencing requirements, these can be handled more simply through direct sequential awaiting rather than complex channel coordination, while still maintaining parallel AWS API execution for optimal performance.
