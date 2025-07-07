@@ -1,22 +1,25 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, create_context_for_operation, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, watch_stack::DEFAULT_POLL_INTERVAL_SECS};
-use crate::cli::{Cli, ExecChangeSetArgs, AwsOpts, Commands};
+use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, watch_stack::DEFAULT_POLL_INTERVAL_SECS};
+use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
-    DynamicOutputManager, manager::OutputOptions,
+    DynamicOutputManager,
     aws_conversion::{convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
     data::{OutputData, StackEventsDisplay}
 };
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
+use crate::run_command_handler;
 
-/// Execute a CloudFormation changeset with data-driven output.
-pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> {
-    // Extract components from CLI (identical to update-stack.rs)
-    let opts = cli.aws_opts.clone().normalize();
+async fn exec_changeset_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &crate::cfn::CfnContext,
+    cli: &Cli,
+    args: &ExecChangeSetArgs,
+    opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
     let global_opts = &cli.global_opts;
-
-    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
+    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
     let operation = cli.command.to_cfn_operation();
     let stack_args = load_stack_args(
         &args.argsfile,
@@ -32,37 +35,11 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
-    // Setup AWS context
-    let context = create_context_for_operation(&opts, operation).await?;
-
-    // Setup data-driven output manager with full CLI context (identical to update-stack.rs)
-    let aws_opts = AwsOpts {
-        region: opts.region.clone(),
-        profile: opts.profile.clone(),
-        assume_role_arn: opts.assume_role_arn.clone(),
-        client_request_token: Some(opts.client_request_token.value.clone()),
-    };
-    let cli = Cli {
-        global_opts: global_opts.clone(),
-        aws_opts,
-        command: Commands::ExecChangeset(args.clone()),
-    };
-    let output_options = OutputOptions::new(cli);
-    let mut output_manager = DynamicOutputManager::new(
-        global_opts.effective_output_mode(),
-        output_options
-    ).await?;
-
-    // 1. Show command metadata (exact iidy-js pattern)
-    let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
+    let command_metadata = create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
 
-    // 2. Execute changeset operation
-    let stack_id = perform_changeset_execution(&context, &final_stack_args, args, &mut output_manager).await?;
+    let stack_id = perform_changeset_execution(context, &final_stack_args, args, output_manager).await?;
 
-    // 3. Start parallel data collection and rendering using sequential await pattern
-    
-    // Start stack definition task
     let stack_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
@@ -73,13 +50,11 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
         })
     };
     
-    // Start previous events task
     let previous_events_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
         tokio::spawn(async move {
             let events = StackEventsService::fetch_events(&client, &stack_id).await?;
-            // Convert AWS events to our format with timing
             let events_with_timing: Vec<crate::output::data::StackEventWithTiming> = events.into_iter()
                 .map(|event| crate::output::data::StackEventWithTiming {
                     event: crate::output::data::StackEvent {
@@ -95,7 +70,7 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
                         resource_properties: event.resource_properties().map(|s| s.to_string()),
                         client_request_token: event.client_request_token().map(|s| s.to_string()),
                     },
-                    duration_seconds: None, // Duration is calculated later
+                    duration_seconds: None,
                 })
                 .collect();
             
@@ -109,16 +84,14 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
         })
     };
     
-    // Await and render in correct section order (tasks already running in parallel)
-    crate::await_and_render!(stack_task, output_manager);
-    crate::await_and_render!(previous_events_task, output_manager);
+    output_manager.render(stack_task.await??).await?;
+    output_manager.render(previous_events_task.await??).await?;
     
-    // Then handle live events watching using the existing helper function
     use super::watch_stack::watch_stack_with_data_output;
     let final_status = match watch_stack_with_data_output(
-        &context,
+        context,
         &stack_id,
-        &mut output_manager,
+        output_manager,
         std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
     ).await {
         Ok(status) => status,
@@ -131,28 +104,28 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
     
     let elapsed_seconds = context.elapsed_seconds().await?;
     
-    // Define success states for changeset execution
     const CHANGESET_EXECUTE_SUCCESS_STATES: &[&str] = &["UPDATE_COMPLETE", "CREATE_COMPLETE"];
     let success = determine_operation_success(&final_status, CHANGESET_EXECUTE_SUCCESS_STATES);
     
-    // Skip stack contents if the stack was deleted
     if let Some(ref status) = final_status {
         if status == "DELETE_COMPLETE" {
             let final_command_summary = create_final_command_summary(success, elapsed_seconds);
             output_manager.render(final_command_summary).await?;
-            return Ok(1); // Return exit code 1 for failure
+            return Ok(1);
         }
     }
     
-    // Show stack contents (identical to update-stack.rs)
-    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = collect_stack_contents(context, &stack_id).await?;
     output_manager.render(OutputData::StackContents(stack_contents)).await?;
     
     let final_summary = create_final_command_summary(success, elapsed_seconds);
     output_manager.render(final_summary).await?;
     
-    // Return appropriate exit code
     Ok(if success { 0 } else { 1 })
+}
+
+pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> {
+    run_command_handler!(exec_changeset_impl, cli, args)
 }
 
 async fn perform_changeset_execution(
@@ -161,18 +134,15 @@ async fn perform_changeset_execution(
     args: &ExecChangeSetArgs,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {
-    // Setup request builder
     let builder = CfnRequestBuilder::new(context, stack_args);
 
     let (execute_request, token) = builder.build_execute_changeset(&args.changeset_name, true, &CfnOperation::ExecuteChangeset);
     
-    // Show token info
     let output_token = convert_token_info(&token);
     output_manager.render(OutputData::TokenInfo(output_token)).await?;
 
     let _response = execute_request.send().await?;
 
-    // For ExecuteChangeset, we need to get the stack ID from the stack name
     let stack_id = StackInfoService::get_stack_id(&context.client, 
         stack_args.stack_name.as_ref().unwrap()).await?;
 

@@ -3,8 +3,8 @@ use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
 use crate::cfn::{
-    create_context_for_operation, stack_operations::{StackInfoService, StackEventsService, collect_stack_contents}, 
-    CfnOperation, determine_operation_success, DELETE_SUCCESS_STATES
+    stack_operations::{StackInfoService, StackEventsService, collect_stack_contents}, 
+    determine_operation_success, DELETE_SUCCESS_STATES
 };
 use crate::cli::{DeleteArgs, Cli};
 use crate::output::{
@@ -14,11 +14,11 @@ use crate::output::{
         convert_stack_to_definition, convert_stack_events_to_display_with_max,
         create_final_command_summary, convert_aws_error_to_error_info
     },
-    manager::OutputOptions,
     data::StackAbsentInfo
 };
 use crate::stack_args::StackArgs;
 use crate::cfn::watch_stack::{ManagerOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
+use crate::run_command_handler;
 
 use super::CfnContext;
 
@@ -27,7 +27,6 @@ async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -
 
     match describe_request.send().await {
         Ok(response) => {
-            // Stack exists, return the first stack from the response
             let stack = response
                 .stacks
                 .and_then(|mut stacks| stacks.pop())
@@ -38,15 +37,12 @@ async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -
             let service_err = e.err();
             if service_err.code() == Some("ValidationError") &&
                service_err.message().unwrap_or("").contains("does not exist") {
-                // Stack doesn't exist - this is expected for delete operations
                 Ok(None)
             } else {
-                // Real error (expired token, access denied, etc.) - propagate it directly
                 Err(SdkError::ServiceError(e).into())
             }
         }
         Err(e) => {
-            // Other errors (network, timeout, etc.) - propagate them directly
             Err(e.into())
         }
     }
@@ -61,7 +57,6 @@ async fn perform_stack_deletion_without_output(
 ) -> Result<String> {
     let token = context.primary_token();
 
-    // Build the delete request
     let mut request = context
         .client
         .delete_stack()
@@ -76,57 +71,44 @@ async fn perform_stack_deletion_without_output(
         request = request.set_retain_resources(Some(args.retain_resources.clone()));
     }
 
-    // Execute the delete operation
     request.send().await?;
     Ok(stack_id.to_string())
 }
 
-pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
-    // Extract components from CLI
-    let opts = cli.aws_opts.clone().normalize();
-    let global_opts = &cli.global_opts;
-
+async fn delete_stack_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &CfnContext,
+    _cli: &Cli,
+    args: &DeleteArgs,
+    opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
     let stack_name = &args.stackname;
     
-    // Setup AWS context for delete operation
-    let context = create_context_for_operation(&opts, CfnOperation::DeleteStack).await?;
-
-    // Setup data-driven output manager with full CLI context
-    let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        global_opts.effective_output_mode(),
-        output_options
-    ).await?;
-
-    // 1. Check if stack exists and get its information
-    let (stack, stack_id) = match check_stack_exists_for_delete(&context, stack_name).await {
+    let (stack, stack_id) = match check_stack_exists_for_delete(context, stack_name).await {
         Ok(Some(stack)) => {
             let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
             (stack, stack_id)
         }
         Ok(None) => {
-            // Stack doesn't exist - create iidy-js style info data
             let stack_absent_info = StackAbsentInfo {
                 stack_name: stack_name.clone(),
             };
             output_manager.render(OutputData::StackAbsentInfo(stack_absent_info)).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
             let final_command_summary = create_final_command_summary(
-                true, // Mark as success since stack is already deleted (matches iidy-js behavior)
+                true,
                 elapsed_seconds
             );
             output_manager.render(final_command_summary).await?;
-            return Ok(0); // Return exit code 0 for success
+            return Ok(0);
         }
         Err(e) => {
-            // Real error (not stack-not-found) - show user-friendly error via renderer
             let error_info = convert_aws_error_to_error_info(&e);
             output_manager.render(OutputData::Error(error_info)).await?;
-            return Ok(1); // Return exit code 1 for failure
+            return Ok(1);
         }
     };
 
-    // 2. Prepare command metadata synchronously (doesn't require AWS API calls)
     let minimal_stack_args = StackArgs {
         stack_name: Some(stack_name.clone()),
         template: None,
@@ -134,16 +116,12 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         profile: opts.profile.clone(),
         ..Default::default()
     };
-    let command_metadata = create_command_metadata(&context, &opts, &minimal_stack_args, &global_opts.environment).await?;
-
-    // 3. Render command metadata immediately
+    let command_metadata = create_command_metadata(context, opts, &minimal_stack_args, &_cli.global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
     
-    // 4. Render stack definition immediately (synchronous conversion)
     let stack_definition = convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
     
-    // Start parallel data collection tasks for async operations  
     let previous_events_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
@@ -158,7 +136,6 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         })
     };
     
-    // Start stack contents task
     let stack_contents_task = {
         let context_clone = context.clone();
         let stack_id = stack_id.clone();
@@ -168,11 +145,9 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         })
     };
     
-    // Await and render remaining async tasks in correct section order
-    crate::await_and_render!(previous_events_task, output_manager);
-    crate::await_and_render!(stack_contents_task, output_manager);
+    output_manager.render(previous_events_task.await??).await?;
+    output_manager.render(stack_contents_task.await??).await?;
     
-    // 5. Request confirmation before deletion
     let confirmed = if args.yes {
         true
     } else {
@@ -184,24 +159,22 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         let elapsed_seconds = context.elapsed_seconds().await?;
         let final_summary = create_final_command_summary(true, elapsed_seconds);
         output_manager.render(final_summary).await?;
-        return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
+        return Ok(130);
     }
             
-    // 6. Perform deletion (similar to create_stack pattern)
-    let stack_id_for_deletion = perform_stack_deletion_without_output(&context, stack_name, &stack_id, args).await?;
+    let stack_id_for_deletion = perform_stack_deletion_without_output(context, stack_name, &stack_id, args).await?;
 
-    // 7. Handle live events directly with the output manager (sequential await pattern)
     let final_status = {
         let live_events_context = context.clone();
-        let manager_output = ManagerOutput { manager: &mut output_manager };
+        let manager_output = ManagerOutput { manager: output_manager };
         match watch_stack_live_events_with_seen_events(
             &live_events_context.client, 
             &live_events_context, 
             &stack_id_for_deletion, 
             manager_output,
             std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-            std::time::Duration::from_secs(3600), // 1 hour timeout for delete operations
-            vec![] // No previous events for delete operation (they were already shown)
+            std::time::Duration::from_secs(3600),
+            vec![]
         ).await {
             Ok(status) => status,
             Err(error) => {
@@ -220,6 +193,9 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     );
     output_manager.render(final_command_summary).await?;
     
-    // Return appropriate exit code
     Ok(if success { 0 } else { 1 })
+}
+
+pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
+    run_command_handler!(delete_stack_impl, cli, args)
 }
