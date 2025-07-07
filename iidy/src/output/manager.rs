@@ -3,7 +3,7 @@
 //! This module provides the core DynamicOutputManager that coordinates
 //! between different output renderers and manages event history for 
 //! seamless mode switching.
-
+use crate::debug::debug_log;
 use crate::output::data::*;
 use crate::output::renderer::{OutputRenderer, OutputMode};
 use crate::cli::Cli;
@@ -147,6 +147,7 @@ impl DynamicOutputManager {
         if let Some(mut rx) = self.parallel_receiver.take() {
             // Render data as it arrives (arrival order)
             while let Some(data) = rx.recv().await {
+                debug_log!("  -- {:?}", data);
                 self.render(data).await?;
             }
         }
