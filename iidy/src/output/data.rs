@@ -361,10 +361,6 @@ pub struct StackChangeDetails {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StackAbsentInfo {
     pub stack_name: String,
-    pub environment: String,
-    pub region: String,
-    pub account: String,
-    pub auth_arn: String,
 }
 
 

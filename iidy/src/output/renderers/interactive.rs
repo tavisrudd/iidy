@@ -1774,25 +1774,28 @@ impl InteractiveRenderer {
             spinner.clear();
         }
         
+        // Get context information dynamically (same as stack_absent_error case)
+        let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
+        
         // Format message exactly like iidy-js: green "info" prefix + structured message
         let (info_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
             if self.colors_enabled() {
                 (
                     "info".color(self.theme.success).bold().to_string(),
                     info.stack_name.color(self.theme.info).bold().to_string(),
-                    info.environment.color(self.theme.primary).to_string(),
-                    info.region.color(self.theme.primary).to_string(),
-                    info.account.color(self.theme.primary).to_string(),
-                    info.auth_arn.color(self.theme.primary).to_string(),
+                    environment.color(self.theme.primary).to_string(),
+                    region.color(self.theme.primary).to_string(),
+                    account.color(self.theme.primary).to_string(),
+                    auth_arn.color(self.theme.primary).to_string(),
                 )
             } else {
                 (
                     "info".to_string(),
                     info.stack_name.clone(),
-                    info.environment.clone(),
-                    info.region.clone(),
-                    info.account.clone(),
-                    info.auth_arn.clone(),
+                    environment.clone(),
+                    region.clone(),
+                    account.clone(),
+                    auth_arn.clone(),
                 )
             };
 
@@ -1967,7 +1970,7 @@ impl InteractiveRenderer {
         let stack_name = self.extract_stack_name_from_error(error_message);
         
         // Get context information from CLI
-        let (environment, region, account, auth_arn) = self.get_context_info().await;
+        let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
         
         // Format message exactly like delete-stack StackAbsentInfo but with red ERROR prefix
         let (error_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
@@ -2014,7 +2017,7 @@ impl InteractiveRenderer {
     }
     
     /// Get context information from CLI context
-    async fn get_context_info(&self) -> (String, String, String, String) {
+    async fn get_stack_absent_context_info(&self) -> (String, String, String, String) {
         let (environment, region) = if let Some(ref cli) = self.cli_context {
             (
                 cli.global_opts.environment.clone(),

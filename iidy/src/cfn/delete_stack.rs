@@ -10,7 +10,7 @@ use crate::cli::{DeleteArgs, Cli};
 use crate::output::{
     DynamicOutputManager, OutputData,
     aws_conversion::{
-        create_command_metadata, convert_token_info, 
+        create_command_metadata, 
         convert_stack_to_definition, convert_stack_events_to_display_with_max,
         create_final_command_summary, convert_aws_error_to_error_info
     },
@@ -18,29 +18,10 @@ use crate::output::{
     data::StackAbsentInfo
 };
 use crate::stack_args::StackArgs;
-use crate::cfn::watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
+use crate::cfn::watch_stack::{ManagerOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
 
-// Remove old error handling import - now using data-driven error system
 use super::CfnContext;
 
-/// Get AWS account and auth principal information
-async fn get_aws_identity_info(aws_config: &aws_config::SdkConfig) -> (String, String) {
-    let sts_client = aws_sdk_sts::Client::new(aws_config);
-    
-    match sts_client.get_caller_identity().send().await {
-        Ok(response) => {
-            let account = response.account().unwrap_or("unknown").to_string();
-            let auth_arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
-            (account, auth_arn)
-        }
-        Err(_) => {
-            // Fall back to placeholder if STS call fails
-            ("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string())
-        }
-    }
-}
-
-/// Check if a stack exists for deletion, properly handling different error types
 async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -> Result<Option<aws_sdk_cloudformation::types::Stack>> {
     let describe_request = context.client.describe_stacks().stack_name(stack_name);
 
@@ -71,21 +52,14 @@ async fn check_stack_exists_for_delete(context: &CfnContext, stack_name: &str) -
     }
 }
 
-/// Perform the actual stack deletion operation and return the start time and stack_id for watching
-async fn perform_stack_deletion(
+
+async fn perform_stack_deletion_without_output(
     context: &CfnContext,
     stack_name: &str,
+    stack_id: &str,
     args: &DeleteArgs,
-    output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {
     let token = context.primary_token();
-    
-    // Show token info
-    let output_token = convert_token_info(&token);
-    output_manager.render(OutputData::TokenInfo(output_token)).await?;
-
-    // Get stack ID before deletion
-    let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
 
     // Build the delete request
     let mut request = context
@@ -103,27 +77,10 @@ async fn perform_stack_deletion(
     }
 
     // Execute the delete operation
-    match request.send().await {
-        Ok(_) => {
-            Ok(stack_id)
-        }
-        Err(e) => {
-            let anyhow_error = anyhow::Error::from(e);
-            let error_info = convert_aws_error_to_error_info(&anyhow_error);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            Err(anyhow_error)
-        }
-    }
+    request.send().await?;
+    Ok(stack_id.to_string())
 }
 
-/// Delete a CloudFormation stack following exact iidy-js pattern.
-///
-/// Implements the complete delete-stack flow:
-/// 1. Command metadata
-/// 2. Stack information and confirmation 
-/// 3. Delete operation
-/// 4. Watch deletion progress with live events
-/// Uses the data-driven output architecture for consistent rendering across output modes.
 pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     // Extract components from CLI
     let opts = cli.aws_opts.clone().normalize();
@@ -149,13 +106,8 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         }
         Ok(None) => {
             // Stack doesn't exist - create iidy-js style info data
-            let (account, auth_arn) = get_aws_identity_info(&context.aws_config).await;
             let stack_absent_info = StackAbsentInfo {
                 stack_name: stack_name.clone(),
-                environment: global_opts.environment.clone(),
-                region: opts.region.clone().unwrap_or_else(|| "us-east-1".to_string()),
-                account,
-                auth_arn,
             };
             output_manager.render(OutputData::StackAbsentInfo(stack_absent_info)).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
@@ -184,28 +136,17 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
     };
     let command_metadata = create_command_metadata(&context, &opts, &minimal_stack_args, &global_opts.environment).await?;
 
-    // 3. Start parallel data collection and rendering (following predefined sections pattern)
-    let sender = output_manager.start();
+    // 3. Render command metadata immediately
+    output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
     
-    // Send command metadata immediately (prepared synchronously but sent via channel for ordering)
-    let _ = sender.send(OutputData::CommandMetadata(command_metadata));
+    // 4. Render stack definition immediately (synchronous conversion)
+    let stack_definition = convert_stack_to_definition(&stack, true);
+    output_manager.render(stack_definition).await?;
     
-    // Start stack definition task
-    let stack_definition_task = {
-        let tx = sender.clone();
-        let stack_clone = stack.clone();
-        tokio::spawn(async move {
-            let stack_definition = convert_stack_to_definition(&stack_clone, true);
-            let _ = tx.send(stack_definition);
-            Ok::<(), anyhow::Error>(())
-        })
-    };
-    
-    // Start previous events task (max 10 events like watch-stack)
+    // Start parallel data collection tasks for async operations  
     let previous_events_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let events = StackEventsService::fetch_events(&client, &stack_id).await?;
             let events_display = convert_stack_events_to_display_with_max(
@@ -213,43 +154,25 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
                 "Previous Stack Events (max 10):",
                 Some(10),
             );
-            let _ = tx.send(events_display);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(events_display)
         })
     };
     
-    // Collect stack contents directly before starting async tasks (since we can't clone context)
-    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
-    
-    // Send stack contents to the output manager
+    // Start stack contents task
     let stack_contents_task = {
-        let tx = sender.clone();
-        let stack_contents_clone = stack_contents.clone();
+        let context_clone = context.clone();
+        let stack_id = stack_id.clone();
         tokio::spawn(async move {
-            let _ = tx.send(OutputData::StackContents(stack_contents_clone));
-            Ok::<(), anyhow::Error>(())
+            let stack_contents = collect_stack_contents(&context_clone, &stack_id).await?;
+            Ok::<OutputData, anyhow::Error>(OutputData::StackContents(stack_contents))
         })
     };
     
-    // Drop the original sender so the receiver knows when all tasks are done
-    drop(sender);
+    // Await and render remaining async tasks in correct section order
+    crate::await_and_render!(previous_events_task, output_manager);
+    crate::await_and_render!(stack_contents_task, output_manager);
     
-    // Process and render all data from parallel operations
-    output_manager.stop().await?;
-    
-    // Wait for all initial tasks to complete before proceeding with deletion
-    let (definition_result, events_result, contents_result) = tokio::join!(
-        stack_definition_task,
-        previous_events_task,
-        stack_contents_task
-    );
-    
-    // Propagate any errors from the spawned tasks
-    definition_result??;
-    events_result??;
-    contents_result??;
-    
-    // 4. Request confirmation before deletion
+    // 5. Request confirmation before deletion
     let confirmed = if args.yes {
         true
     } else {
@@ -263,47 +186,34 @@ pub async fn delete_stack(cli: &Cli, args: &DeleteArgs) -> Result<i32> {
         output_manager.render(final_summary).await?;
         return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
     }
-    
-    // 5. Perform deletion and start live events monitoring  
-    let _ = perform_stack_deletion(&context, stack_name, args, &mut output_manager).await?;
-    
-    // 6. Start live events monitoring in parallel pattern
-    let sender = output_manager.start();
-    
-    let live_events_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
-        let client = context.client.clone();
-        let stack_id = stack_id.clone();
-        let tx = sender.clone();
-        let context_clone = context.clone();
-        
-        tokio::spawn(async move {
-            let sender_output = SenderOutput { sender: tx };
-            let final_status = watch_stack_live_events_with_seen_events(
-                &client, 
-                &context_clone, 
-                &stack_id, 
-                sender_output, 
-                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-                std::time::Duration::from_secs(3600), // 1 hour timeout for delete operations
-                vec![] // No previous events for delete operation (they were already shown)
-            ).await?;
-            Ok(final_status)
-        })
+            
+    // 6. Perform deletion (similar to create_stack pattern)
+    let stack_id_for_deletion = perform_stack_deletion_without_output(&context, stack_name, &stack_id, args).await?;
+
+    // 7. Handle live events directly with the output manager (sequential await pattern)
+    let final_status = {
+        let live_events_context = context.clone();
+        let manager_output = ManagerOutput { manager: &mut output_manager };
+        match watch_stack_live_events_with_seen_events(
+            &live_events_context.client, 
+            &live_events_context, 
+            &stack_id_for_deletion, 
+            manager_output,
+            std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
+            std::time::Duration::from_secs(3600), // 1 hour timeout for delete operations
+            vec![] // No previous events for delete operation (they were already shown)
+        ).await {
+            Ok(status) => status,
+            Err(error) => {
+                let error_info = convert_aws_error_to_error_info(&error);
+                output_manager.render(OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+        }
     };
     
-    // Drop sender and process live events
-    drop(sender);
-    output_manager.stop().await?;
-    
-    // Wait for live events to complete
-    let final_status = live_events_task.await??;
-    
-    // 7. Determine success based on final stack status and show final command summary
     let elapsed_seconds = context.elapsed_seconds().await?;
-    
-    // Determine success using centralized helper
     let success = determine_operation_success(&final_status, DELETE_SUCCESS_STATES);
-    
     let final_command_summary = create_final_command_summary(
         success,
         elapsed_seconds

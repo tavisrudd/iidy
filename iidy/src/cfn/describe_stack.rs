@@ -1,31 +1,12 @@
 use anyhow::{Result, anyhow};
 
-// Macro to reduce repetition when awaiting tasks and handling errors consistently
-macro_rules! await_and_render {
-    ($task:expr, $output_manager:expr) => {
-        match $task.await {
-            Ok(Ok(data)) => $output_manager.render(data).await?,
-            Ok(Err(error)) => {
-                let error_info = convert_aws_error_to_error_info(&error);
-                $output_manager.render(OutputData::Error(error_info)).await?;
-                return Ok(1);
-            }
-            Err(join_error) => {
-                let error_info = convert_aws_error_to_error_info(&join_error.into());
-                $output_manager.render(OutputData::Error(error_info)).await?;
-                return Ok(1);
-            }
-        }
-    };
-}
-
 use crate::cfn::{create_context_for_operation, stack_operations::collect_stack_contents};
 use crate::cli::{Cli, ToArgMap, DescribeArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, convert_stack_to_definition,
     manager::OutputOptions,
     CommandMetadata, TokenInfo, TokenSource,
-    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_error_to_error_info}
+    aws_conversion::convert_stack_events_to_display_with_max
 };
 
 // Note: Stack formatting logic has been moved to the output renderers
@@ -152,9 +133,9 @@ pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
     };
     
     // Await and render in correct section order (tasks already running in parallel)
-    await_and_render!(stack_task, output_manager);
-    await_and_render!(events_task, output_manager);
-    await_and_render!(contents_task, output_manager);
+    crate::await_and_render!(stack_task, output_manager);
+    crate::await_and_render!(events_task, output_manager);
+    crate::await_and_render!(contents_task, output_manager);
 
     Ok(0) // Return exit code 0 for success
 }

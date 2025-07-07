@@ -10,6 +10,36 @@ use crate::{
     stack_args::StackArgs,
 };
 
+/// Macro to consistently await tasks and handle errors via the output system
+/// 
+/// This macro reduces repetition in command handlers by providing standardized
+/// error handling for parallel AWS API tasks. It renders errors through the
+/// output system and returns appropriate exit codes.
+/// 
+/// # Usage
+/// ```rust
+/// let task = tokio::spawn(async { /* AWS API call */ });
+/// await_and_render!(task, output_manager);
+/// ```
+#[macro_export]
+macro_rules! await_and_render {
+    ($task:expr, $output_manager:expr) => {
+        match $task.await {
+            Ok(Ok(data)) => $output_manager.render(data).await?,
+            Ok(Err(error)) => {
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+            Err(join_error) => {
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&join_error.into());
+                $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+        }
+    };
+}
+
 // CloudFormation operation modules
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod changeset_operations; // Shared changeset functionality

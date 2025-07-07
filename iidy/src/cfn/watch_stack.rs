@@ -181,9 +181,9 @@ pub trait LiveEventsOutput {
     fn send_inactivity_timeout(&mut self, info: InactivityTimeoutInfo) -> impl std::future::Future<Output = Result<()>> + Send;
 }
 
-/// Implementation for DynamicOutputManager
-struct ManagerOutput<'a> {
-    manager: &'a mut DynamicOutputManager,
+/// Implementation for DynamicOutputManager (public for use by other operations)
+pub struct ManagerOutput<'a> {
+    pub manager: &'a mut DynamicOutputManager,
 }
 
 impl<'a> LiveEventsOutput for ManagerOutput<'a> {
