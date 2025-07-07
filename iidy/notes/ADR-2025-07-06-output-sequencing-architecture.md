@@ -47,40 +47,56 @@ This architecture uses a clean sequential await pattern for handling multiple co
 - Sending data to `DynamicOutputManager` as it becomes available
 - **NO formatting, colors, section titles, or spinner management**
 
-**Current Implementation: Macro-Based Error Handling**
+**Current Implementation: Mixed Approaches**
 
-All command handlers currently use the `await_and_render!` macro for consistent error handling and exit code management:
+Most command handlers still use the `await_and_render!` macro for consistent error handling and exit code management. However, we've begun migrating to a cleaner pattern:
 
-**Parallel Operations Pattern (Spawn + Progressive Rendering):**
+**New Pattern (implemented in describe-stack):**
+The `run_command_handler!` macro provides:
+- AWS options normalization
+- Output manager creation
+- AWS context creation with error handling
+- Running the implementation function
+- Error conversion and rendering
+
+This significantly reduces boilerplate:
+
 ```rust
-// For operations with multiple independent API calls that benefit from parallelism
+// Example: describe-stack using the new pattern
+pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
+    run_command_handler!(describe_stack_impl, cli, args)
+}
+
+async fn describe_stack_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &crate::cfn::CfnContext,
+    _cli: &Cli,
+    args: &DescribeArgs,
+    _opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
+    // Spawn parallel tasks
+    let stack_task = tokio::spawn(async move { /* fetch stack data */ });
+    let events_task = tokio::spawn(async move { /* fetch events data */ });
+    let contents_task = tokio::spawn(async move { /* fetch contents data */ });
+    
+    // Simple error propagation with ?? pattern
+    output_manager.render(stack_task.await??).await?;
+    output_manager.render(events_task.await??).await?;
+    output_manager.render(contents_task.await??).await?;
+    
+    Ok(0)
+}
+```
+
+**Legacy Pattern (still used in most handlers):**
+```rust
+// For operations with multiple independent API calls
 let stack_task = tokio::spawn(async move { /* fetch stack data */ });
 let events_task = tokio::spawn(async move { /* fetch events data */ });
-let contents_task = tokio::spawn(async move { /* fetch contents data */ });
 
 // Use await_and_render! for consistent error handling and exit codes
 await_and_render!(stack_task, output_manager);   // Renders as soon as ready
 await_and_render!(events_task, output_manager);  // May already be complete
-await_and_render!(contents_task, output_manager); // May already be complete
-
-// The await_and_render! macro handles the double-Result pattern from tokio::spawn:
-macro_rules! await_and_render {
-    ($task:expr, $output_manager:expr) => {
-        match $task.await {
-            Ok(Ok(data)) => $output_manager.render(data).await?,
-            Ok(Err(error)) => {
-                let error_info = convert_aws_error_to_error_info(&error);
-                $output_manager.render(OutputData::Error(error_info)).await?;
-                return Ok(1);
-            }
-            Err(join_error) => {
-                let error_info = convert_aws_error_to_error_info(&join_error.into());
-                $output_manager.render(OutputData::Error(error_info)).await?;
-                return Ok(1);
-            }
-        }
-    };
-}
 ```
 
 **Single Operation Pattern (Manual Error Handling):**
@@ -99,66 +115,16 @@ match StackInfoService::get_stack(&context.client, &stack_id).await {
 }
 ```
 
-**Future Direction: Handler Wrapper Function**
-
-We plan to introduce a cleaner wrapper-based approach that eliminates repetitive error handling code while supporting explicit exit codes for cases like user cancellation:
-
-```rust
-pub async fn execute_with_error_handling<F, Fut>(
-    output_manager: &mut DynamicOutputManager,
-    handler: F,
-) -> Result<i32> 
-where
-    F: FnOnce(&mut DynamicOutputManager) -> Fut,
-    Fut: std::future::Future<Output = Result<i32>>,
-{
-    match handler(output_manager).await {
-        Ok(exit_code) => Ok(exit_code), // Handler returned explicit exit code
-        Err(error) => {
-            // Convert error and render through output system
-            let error_info = convert_aws_error_to_error_info(&error);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            Ok(1) // Error exit code
-        }
-    }
-}
-```
-
-**Future Handler Pattern:**
-```rust
-pub async fn my_command(cli: &Cli, args: &MyArgs) -> Result<i32> {
-    let mut output_manager = DynamicOutputManager::new(...).await?;
-    
-    execute_with_error_handling(&mut output_manager, |output_manager| async move {
-        // Command logic with standard Rust error handling
-        let confirmed = output_manager.request_confirmation("Delete?").await?;
-        if !confirmed {
-            return Ok(130); // User cancellation - explicit exit code
-        }
-        
-        // For parallel operations, use helper to unwrap task results
-        let stack_data = unwrap_task(stack_task).await?;
-        output_manager.render(stack_data).await?;
-        
-        Ok(0) // Success
-    }).await
-}
-
-// Helper to unwrap tokio::spawn double-Result pattern
-async fn unwrap_task<T>(task: tokio::task::JoinHandle<Result<T, anyhow::Error>>) -> Result<T> {
-    match task.await {
-        Ok(Ok(data)) => Ok(data),
-        Ok(Err(error)) => Err(error),
-        Err(join_error) => Err(join_error.into()),
-    }
-}
-```
 
 **Migration Strategy:**
-- **Phase 1**: Continue using `await_and_render!` macro for all current handlers
-- **Phase 2**: Introduce `execute_with_error_handling` wrapper for new commands
-- **Phase 3**: Gradually migrate existing handlers when touching them for other reasons
+- **Phase 1**: ✅ Introduced `run_command_handler!` macro and migrated describe-stack
+- **Phase 2**: Gradually migrate other handlers to the new pattern when touching them
 - **No mass migration**: Existing working code remains unchanged unless there's a specific need
+
+The new pattern with `run_command_handler!` macro provides cleaner separation of concerns:
+- All AWS setup and error handling is centralized in the macro
+- Implementation functions focus purely on business logic
+- Error propagation is simplified with the `??` pattern for tokio::spawn tasks
 
 ### Layer 2: Output Manager (`src/output/manager.rs`)
 
@@ -432,23 +398,26 @@ Uses standard Rust async patterns that are familiar to developers: direct await 
 
 This architecture successfully provides professional, consistent output while supporting multiple output modes and robust async operations. The separation of concerns enables independent testing and maintenance of AWS API logic versus presentation logic.
 
-**Current Implementation**: All CloudFormation command handlers use the `await_and_render!` macro for consistent error handling:
+**Current Implementation**: Mixed approaches across CloudFormation command handlers:
 
-- **Multi-operation commands** (`describe_stack`, `delete_stack`): Use `spawn` for true parallelism with progressive rendering
+- **New Pattern** (`describe_stack`): Uses `run_command_handler!` macro with `??` pattern for cleaner error propagation
+- **Legacy Pattern** (most other handlers): Use `await_and_render!` macro for consistent error handling
+- **Multi-operation commands**: Use `spawn` for true parallelism with progressive rendering
 - **Operation with monitoring** (`create_stack`, `update_stack`, `create_or_update`, `exec_changeset`, `watch_stack`): Use `spawn` for stack definition + sequential await for live monitoring
 
-**Evolution Path**: We're transitioning toward wrapper-based error handling:
+**Evolution Path**: We're transitioning toward the `run_command_handler!` pattern:
 
-- **Current**: `await_and_render!` macro handles tokio::spawn double-Result pattern consistently
-- **Future**: `execute_with_error_handling` wrapper function for cleaner code with explicit exit code support
-- **Migration**: Gradual adoption without mass changes to working code
+- **Completed**: `describe_stack` migrated to new pattern
+- **In Progress**: Gradual migration of other handlers when touched for other reasons
+- **Benefits**: Cleaner separation of concerns, simplified error handling with `??` pattern
 
 **Key Insights:**
 
 1. **`spawn` is valuable for parallel + progressive rendering**: When you have multiple independent API calls and want to render results as soon as each completes
-2. **Wrapper functions reduce boilerplate**: Eliminate repetitive error handling while supporting explicit exit codes (130 for cancellation)
-3. **Rust futures are lazy**: Unlike JavaScript promises, they don't start until polled, making direct await truly sequential
-4. **Progressive rendering requires spawn**: For the "render as ready" UX pattern, background task execution is necessary
-5. **Error handling consistency**: All errors go through the same conversion and rendering pipeline for professional output
+2. **Macros reduce boilerplate**: `run_command_handler!` eliminates repetitive AWS setup and error handling code
+3. **The `??` pattern is idiomatic**: For tokio::spawn tasks, `task.await??` cleanly propagates both JoinError and inner Result errors
+4. **Rust futures are lazy**: Unlike JavaScript promises, they don't start until polled, making direct await truly sequential
+5. **Progressive rendering requires spawn**: For the "render as ready" UX pattern, background task execution is necessary
+6. **Error handling consistency**: All errors go through the same conversion and rendering pipeline for professional output
 
 This provides the optimal balance of performance, simplicity, and user experience across all CloudFormation operations, with a clear evolution path toward even cleaner error handling patterns.
