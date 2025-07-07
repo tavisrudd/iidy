@@ -3,15 +3,12 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::cli::{Cli, ListArgs};
-use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
-    aws_conversion::{convert_stack_to_list_entry, convert_aws_error_to_error_info},
-    manager::OutputOptions
+    aws_conversion::convert_stack_to_list_entry
 };
+use crate::run_command_handler;
 
-// Note: The complex color formatting and lifecycle icon logic has been moved 
-// to the output renderers where it can be applied consistently across all modes.
 
 /// Serializable representation of a CloudFormation stack for JSON output
 #[derive(Serialize, Deserialize)]
@@ -74,49 +71,21 @@ impl From<&aws_sdk_cloudformation::types::Stack> for SerializableStack {
     }
 }
 
-/// Retrieve all stacks for the configured AWS region and display them.
-///
-/// Uses the data-driven output architecture for consistent rendering across output modes.
-/// The stack list can be displayed in Interactive (with colors and icons), Plain (CI-friendly),
-/// or JSON (machine-readable) formats.
-pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
-    
-    // Setup AWS client and retrieve stacks
-    let normalized_opts = cli.aws_opts.clone().normalize();
-    let operation = cli.command.to_cfn_operation();
-    let context = create_context_for_operation(&normalized_opts, operation).await?;
-    let client = &context.client;
-
-    // Setup data-driven output manager first (needed for error handling)
-    let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        cli.global_opts.effective_output_mode(),
-        output_options
-    ).await?;
-
-    // Use the paginator to retrieve all stacks in the region.
-    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = match client
+async fn list_stacks_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &crate::cfn::CfnContext,
+    _cli: &Cli,
+    args: &ListArgs,
+    _opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
+    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = context.client
         .describe_stacks()
         .into_paginator()
         .items()
         .send()
         .try_collect()
-        .await
-    {
-        Ok(stacks) => stacks,
-        Err(e) => {
-            // Handle AWS errors through the output system (like delete_stack.rs does)
-            let anyhow_error = anyhow::Error::from(e);
-            let error_info = convert_aws_error_to_error_info(&anyhow_error);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            return Ok(1); // Return exit code 1 for failure
-        }
-    };
+        .await?;
 
-    // Handle empty stack list - let the renderer handle the "no stacks" message
-    // (Continue processing to use data-driven output architecture)
-
-    // Parse tag filters from CLI args
     let tag_filters: Vec<(String, String)> = args.tag_filter.iter()
         .map(|tf| {
             let parts: Vec<&str> = tf.splitn(2, '=').collect();
@@ -124,11 +93,8 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
         })
         .collect();
 
-    // Apply filtering
     let mut filtered_stacks = stacks;
     let mut filters_applied = Vec::new();
-
-    // Apply tag filtering
     if !tag_filters.is_empty() {
         filtered_stacks.retain(|stack| {
             let tags: HashMap<String, String> = stack.tags()
@@ -149,9 +115,7 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
         }
     }
 
-    // Apply JMESPath filtering
     if let Some(jmespath_filter) = &args.jmespath_filter {
-        // Convert stacks to JSON value for JMESPath processing
         let serializable_stacks: Vec<SerializableStack> = filtered_stacks
             .iter()
             .map(SerializableStack::from)
@@ -160,14 +124,12 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
         let json_value = serde_json::to_value(&serializable_stacks)
             .map_err(|e| anyhow::anyhow!("Failed to convert stacks to JSON for filtering: {}", e))?;
         
-        // Apply JMESPath filter
         let expression = jmespath::compile(jmespath_filter)
             .map_err(|e| anyhow::anyhow!("Invalid JMESPath expression '{}': {}", jmespath_filter, e))?;
         
         let filtered_json = expression.search(&json_value)
             .map_err(|e| anyhow::anyhow!("JMESPath filter execution failed: {}", e))?;
         
-        // Convert jmespath result to serde_json::Value
         let filtered_json_value = match filtered_json.as_array() {
             Some(arr) => serde_json::Value::Array(
                 arr.iter()
@@ -177,13 +139,9 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
             None => return Err(anyhow::anyhow!("JMESPath filter must return an array"))
         };
         
-        // Convert back to SerializableStack structs
         let filtered_serializable: Vec<SerializableStack> = serde_json::from_value(filtered_json_value)
             .map_err(|e| anyhow::anyhow!("Failed to convert filtered JSON back to stacks: {}", e))?;
         
-        // Convert back to AWS Stack types for compatibility with rest of function
-        // Note: This is a limitation - we lose some data in the round-trip conversion
-        // but it's necessary to maintain compatibility with the existing output pipeline
         filtered_stacks = filtered_stacks.into_iter()
             .filter(|stack| {
                 let serializable = SerializableStack::from(stack);
@@ -197,10 +155,7 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
         filters_applied.push(format!("jmespath:{}", jmespath_filter));
     }
 
-    // Handle JSON query output through data-driven architecture
     let is_query_mode = args.query.is_some();
-
-    // Parse custom columns if provided
     let columns = if let Some(columns_str) = &args.columns {
         columns_str.split(',')
             .map(|s| s.trim())
@@ -210,16 +165,15 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
         StackListColumn::default_columns()
     };
     
-    // Determine if tags should be shown (either through columns or legacy flag)
     let show_tags = columns.contains(&StackListColumn::Tags) || args.tags;
-    
-    // Convert to structured data for output
     let stack_list_display = convert_stacks_to_list_display_with_filters(filtered_stacks, show_tags, filters_applied, columns, is_query_mode);
-    
-    // Render the stack list (output_manager was already created above)
     output_manager.render(stack_list_display).await?;
 
-    Ok(0) // Return exit code 0 for success
+    Ok(0)
+}
+
+pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
+    run_command_handler!(list_stacks_impl, cli, args)
 }
 
 /// Convert a list of AWS SDK Stacks to StackListDisplay with applied filters
@@ -234,7 +188,6 @@ fn convert_stacks_to_list_display_with_filters(
         convert_stack_to_list_entry(stack)
     }).collect();
     
-    // Sort by creation/update time (matching iidy-js logic)
     entries.sort_by(|a, b| {
         let time_a = a.creation_time.or(a.last_updated_time);
         let time_b = b.creation_time.or(b.last_updated_time);
@@ -251,8 +204,4 @@ fn convert_stacks_to_list_display_with_filters(
 }
 
 #[cfg(test)]
-mod tests {
-    // Tests for this module are now primarily in the output conversion utilities
-    // and renderer integration tests. The list_stacks function is tested end-to-end
-    // through the data-driven output architecture.
-}
+mod tests {}
