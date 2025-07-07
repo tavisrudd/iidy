@@ -548,7 +548,6 @@ impl InteractiveRenderer {
                     self.print_section_heading(&title);
                 }
             }
-            
             if self.options.enable_spinners && !title.is_empty() {
                 // Always put spinner on the line after the heading
                 if !self.section_is_always_multiline(section_key) {
@@ -1731,8 +1730,12 @@ impl InteractiveRenderer {
             if let Some(key) = &request.key {
                 match key.as_str() {
                     "execute_changeset" => self.post_confirmation_execute_changeset(),
-                    _ => {} // No special handling for other keys
+                    _ => {
+                        self.advance_to_next_section();
+                    }
                 }
+            } else {
+                self.advance_to_next_section();
             }
         }
         
