@@ -2,19 +2,29 @@ use anyhow::Result;
 use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
-    DynamicOutputManager, manager::OutputOptions,
+    DynamicOutputManager,
     aws_conversion::{create_command_result, convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
     data::{OutputData, StackChangeDetails}
 };
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
+use crate::run_command_handler;
 
 /// Create or update a CloudFormation stack using intelligent detection with data-driven output.
 pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
-    let opts = cli.aws_opts.clone().normalize();
+    run_command_handler!(create_or_update_impl, cli, args)
+}
+
+async fn create_or_update_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &CfnContext,
+    cli: &Cli,
+    args: &UpdateStackArgs,
+    opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
     let global_opts = &cli.global_opts;
 
     let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
@@ -31,29 +41,10 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let context = create_context_for_operation(&opts, operation).await?;
-
     let stack_name = final_stack_args
         .stack_name
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
-    let aws_opts = AwsOpts {
-        region: opts.region.clone(),
-        profile: opts.profile.clone(),
-        assume_role_arn: opts.assume_role_arn.clone(),
-        client_request_token: Some(opts.client_request_token.value.clone()),
-    };
-    let cli = Cli {
-        global_opts: global_opts.clone(),
-        aws_opts,
-        command: Commands::CreateOrUpdate(args.clone()),
-    };
-    let output_options = OutputOptions::new(cli);
-    let mut output_manager = DynamicOutputManager::new(
-        global_opts.effective_output_mode(),
-        output_options
-    ).await?;
 
     let command_metadata = create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
@@ -63,7 +54,7 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
     // Check stack existence and determine change type
     let stack_change_details = if stack_exists {
         if args.changeset {
-            return update_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager, &global_opts.environment).await;
+            return update_stack_with_changeset_data(&context, args, &final_stack_args, output_manager, &global_opts.environment).await;
         } else {
             // Try update and check for no-changes case
             match try_update_stack(&context, args, &final_stack_args, &global_opts.environment).await {
@@ -81,7 +72,7 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
     } else {
         if args.changeset {
             // Use CREATE changeset for new stacks when --changeset is specified
-            return create_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager, &global_opts, &opts).await;
+            return create_stack_with_changeset_data(&context, args, &final_stack_args, output_manager, &global_opts, &opts).await;
         }
         StackChangeDetails {
             change_type: StackChangeType::Create,
@@ -100,14 +91,14 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
             Ok(0)
         },
         StackChangeType::Create => {
-            let stack_id = create_stack_direct_data(&context, &final_stack_args, &args.base.argsfile, &global_opts.environment, &mut output_manager).await?;
-            watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, CREATE_SUCCESS_STATES).await
+            let stack_id = create_stack_direct_data(&context, &final_stack_args, &args.base.argsfile, &global_opts.environment, output_manager).await?;
+            watch_and_summarize_stack_operation(&context, &stack_id, output_manager, CREATE_SUCCESS_STATES).await
         },
         StackChangeType::UpdateWithChanges { stack_id } => {
             let token = context.derive_token_for_step(&CfnOperation::CreateOrUpdate);
             let output_token = convert_token_info(&token);
             output_manager.render(OutputData::TokenInfo(output_token)).await?;
-            watch_and_summarize_stack_operation(&context, &stack_id, &mut output_manager, UPDATE_SUCCESS_STATES).await
+            watch_and_summarize_stack_operation(&context, &stack_id, output_manager, UPDATE_SUCCESS_STATES).await
         },
     }
 }

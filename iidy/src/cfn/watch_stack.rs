@@ -13,15 +13,15 @@ pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 
 use crate::cli::WatchArgs;
-use crate::cfn::{CfnContext, create_context_for_operation, stack_operations::collect_stack_contents};
+use crate::cfn::{CfnContext, stack_operations::collect_stack_contents};
 use crate::output::{
     DynamicOutputManager, OutputData,
     StackEventWithTiming,
     OperationCompleteInfo, InactivityTimeoutInfo,
     convert_stack_to_definition,
-    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event, convert_aws_error_to_error_info},
-    manager::OutputOptions
+    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event, convert_aws_error_to_error_info}
 };
+use crate::run_command_handler;
 
 /// Helper function to handle AWS errors with consistent pattern
 async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
@@ -56,36 +56,28 @@ pub async fn watch_stack(
     cli: &crate::cli::Cli,
     args: &WatchArgs
 ) -> Result<i32> {
-    
-    // Normalize AWS options 
-    let opts = cli.aws_opts.clone().normalize();
-    
-    // Setup data-driven output manager with full CLI context (like describe-stack)
-    let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        cli.global_opts.effective_output_mode(),
-        output_options
-    ).await?;
+    run_command_handler!(watch_stack_impl, cli, args)
+}
 
+async fn watch_stack_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &CfnContext,
+    _cli: &crate::cli::Cli,
+    args: &WatchArgs,
+    _opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
     let event_count = DEFAULT_PREVIOUS_EVENTS_COUNT; // Fixed at 10 for watch-stack per iidy-js
-    
-    // Setup AWS context (no need for command metadata for read-only operation)
-    let operation = cli.command.to_cfn_operation();
-    let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
-        Some(ctx) => ctx,
-        None => return Ok(1),
-    };
 
     // Get stack ARN first for reliable polling (important for delete operations)
     let client = context.client.clone();
     let stack_name = args.stackname.clone();
     
     // Get stack info and ID using the consolidated service
-    let stack = match handle_aws_error(StackInfoService::get_stack(&client, &stack_name).await, &mut output_manager).await? {
+    let stack = match handle_aws_error(StackInfoService::get_stack(&client, &stack_name).await, output_manager).await? {
         Some(stack) => stack,
         None => return Ok(1),
     };
-    let stack_id = match handle_aws_error(StackInfoService::get_stack_id(&client, &stack_name).await, &mut output_manager).await? {
+    let stack_id = match handle_aws_error(StackInfoService::get_stack_id(&client, &stack_name).await, output_manager).await? {
         Some(id) => id,
         None => return Ok(1),
     };
@@ -116,7 +108,7 @@ pub async fn watch_stack(
     output_manager.render(events_output_data).await?;
     
     // Now start live events polling with all existing events pre-marked as seen
-    let manager_output = ManagerOutput { manager: &mut output_manager };
+    let manager_output = ManagerOutput { manager: output_manager };
     let final_status = watch_stack_live_events_with_seen_events(
         &client, 
         &context, 
@@ -138,7 +130,7 @@ pub async fn watch_stack(
     }
     
     // Normal case - show stack contents
-    let stack_contents = match handle_aws_error(collect_stack_contents(&context, &stack_id).await, &mut output_manager).await? {
+    let stack_contents = match handle_aws_error(collect_stack_contents(&context, &stack_id).await, output_manager).await? {
         Some(contents) => contents,
         None => return Ok(1),
     };
