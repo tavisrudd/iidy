@@ -40,6 +40,75 @@ macro_rules! await_and_render {
     };
 }
 
+/// Execute a command handler with automatic error handling and rendering
+/// 
+/// This function wraps the main logic of command handlers to provide consistent
+/// error handling. The handler can return either:
+/// - Ok(exit_code) for explicit exit codes (0=success, 1=error, 130=cancelled)
+/// - Err(error) which gets converted to OutputData::Error and returns exit code 1
+/// 
+/// # Usage
+/// ```rust
+/// pub async fn my_command(cli: &Cli, args: &MyArgs) -> Result<i32> {
+///     let mut output_manager = DynamicOutputManager::new(...).await?;
+///     
+///     execute_with_error_handling(&mut output_manager, |output_manager| async move {
+///         // Your command logic here
+///         let confirmed = output_manager.request_confirmation("Delete?").await?;
+///         if !confirmed {
+///             return Ok(130); // User cancelled
+///         }
+///         
+///         let data = some_aws_api_call().await?;
+///         output_manager.render(data).await?;
+///         Ok(0) // Success
+///     }).await
+/// }
+/// ```
+#[allow(dead_code)] // Future use - documented in ADR
+pub async fn execute_with_error_handling<F, Fut>(
+    output_manager: &mut crate::output::DynamicOutputManager,
+    handler: F,
+) -> Result<i32> 
+where
+    F: FnOnce(&mut crate::output::DynamicOutputManager) -> Fut,
+    Fut: std::future::Future<Output = Result<i32>>,
+{
+    match handler(output_manager).await {
+        Ok(exit_code) => Ok(exit_code), // Handler returned explicit exit code
+        Err(error) => {
+            // Convert error and render through output system
+            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
+            Ok(1) // Error exit code
+        }
+    }
+}
+
+/// Helper to unwrap tokio::spawn double-Result pattern
+/// 
+/// When using tokio::spawn with async blocks that return Result<T, Error>,
+/// you get JoinHandle<Result<T, Error>>. When you .await that handle, you get
+/// Result<Result<T, Error>, JoinError>. This helper flattens that into Result<T, Error>.
+/// 
+/// # Usage
+/// ```rust
+/// let task = tokio::spawn(async move {
+///     let data = some_aws_api_call().await?;
+///     Ok::<SomeData, anyhow::Error>(data)
+/// });
+/// 
+/// let result = unwrap_task(task).await?;
+/// ```
+#[allow(dead_code)] // Future use - documented in ADR
+pub async fn unwrap_task<T>(task: tokio::task::JoinHandle<Result<T, anyhow::Error>>) -> Result<T> {
+    match task.await {
+        Ok(Ok(data)) => Ok(data),
+        Ok(Err(error)) => Err(error),
+        Err(join_error) => Err(join_error.into()),
+    }
+}
+
 // CloudFormation operation modules
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod changeset_operations; // Shared changeset functionality

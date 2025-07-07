@@ -3,14 +3,12 @@
 //! This module provides the core DynamicOutputManager that coordinates
 //! between different output renderers and manages event history for 
 //! seamless mode switching.
-use crate::debug::debug_log;
 use crate::output::data::*;
 use crate::output::renderer::{OutputRenderer, OutputMode};
 use crate::cli::Cli;
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use tokio::sync::oneshot;
 
 /// Options for configuring output behavior
@@ -44,8 +42,6 @@ pub struct DynamicOutputManager {
     event_buffer: VecDeque<OutputData>,
     buffer_limit: usize,
     options: OutputOptions, // Store options for mode switching
-    // Parallel rendering channel
-    parallel_receiver: Option<UnboundedReceiver<OutputData>>,
 }
 
 impl DynamicOutputManager {
@@ -62,7 +58,6 @@ impl DynamicOutputManager {
             event_buffer: VecDeque::with_capacity(buffer_limit),
             buffer_limit,
             options,
-            parallel_receiver: None,
         })
     }
     
@@ -127,32 +122,6 @@ impl DynamicOutputManager {
         self.event_buffer.len()
     }
     
-    /// Start parallel rendering mode and return a sender for OutputData
-    /// 
-    /// The caller should:
-    /// 1. Spawn tasks that send OutputData through the channel
-    /// 2. Drop the sender when done spawning
-    /// 3. Call `stop()` to process and render all data
-    pub fn start(&mut self) -> UnboundedSender<OutputData> {
-        let (tx, rx) = mpsc::unbounded_channel::<OutputData>();
-        self.parallel_receiver = Some(rx);
-        tx
-    }
-    
-    /// Process and render all data from parallel operations
-    /// 
-    /// Collects all parallel data and renders in arrival order.
-    /// Renderers can handle their own ordering logic if needed.
-    pub async fn stop(&mut self) -> Result<()> {
-        if let Some(mut rx) = self.parallel_receiver.take() {
-            // Render data as it arrives (arrival order)
-            while let Some(data) = rx.recv().await {
-                debug_log!("  -- {:?}", data);
-                self.render(data).await?;
-            }
-        }
-        Ok(())
-    }
     
     /// Request user confirmation and return whether user confirmed
     pub async fn request_confirmation(&mut self, message: String) -> Result<bool> {

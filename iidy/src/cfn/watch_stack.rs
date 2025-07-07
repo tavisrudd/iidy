@@ -69,9 +69,6 @@ pub async fn watch_stack(
 
     let event_count = DEFAULT_PREVIOUS_EVENTS_COUNT; // Fixed at 10 for watch-stack per iidy-js
     
-    // Start parallel rendering
-    let sender = output_manager.start();
-    
     // Setup AWS context (no need for command metadata for read-only operation)
     let operation = cli.command.to_cfn_operation();
     let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
@@ -93,63 +90,42 @@ pub async fn watch_stack(
         None => return Ok(1),
     };
     
-    // Start stack definition task (already have the stack data)
+    // Start stack definition task using sequential await pattern
     let stack_task = {
-        let tx = sender.clone();
         let stack_clone = stack.clone();
         tokio::spawn(async move {
             let output_data = convert_stack_to_definition(&stack_clone, true);
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(output_data)
         })
     };
     
-    // Sequential execution: previous events MUST complete before live events start
-    let events_and_live_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
-        let client = client.clone();
-        let stack_id = stack_id.clone();
-        let _stack_name = stack_name.clone(); // Keep for display purposes but not used
-        let tx = sender.clone();
-        let context_clone = context.clone();
-        let inactivity_timeout = args.inactivity_timeout;
-        
-        tokio::spawn(async move {
-            // Step 1: Fetch and display previous events using stack ID
-            // Note: StackEventsService::fetch_events() handles basic pagination but not our event count limit
-            // For now, use the simple version and enhance the service later if needed
-            let all_events = StackEventsService::fetch_events(&client, &stack_id).await?;
-            
-            // Create events display for PREVIOUS events (separate from live events)
-            let output_data = convert_stack_events_to_display_with_max(
-                all_events.clone(), // Clone for live events task to use
-                &format!("Previous Stack Events (max {}):", event_count),
-                Some(event_count),
-            );
-            
-            let _ = tx.send(output_data);
-            
-            // Step 2: Now start live events polling with all existing events pre-marked as seen
-            let sender_output = SenderOutput { sender: tx };
-            let final_status = watch_stack_live_events_with_seen_events(&client, &context_clone, &stack_id, sender_output, Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), Duration::from_secs(inactivity_timeout as u64), all_events).await?;
-            Ok(final_status)
-        })
-    };
+    // Await and render stack definition first
+    crate::await_and_render!(stack_task, output_manager);
     
-    // Drop the original sender so the receiver knows when all tasks are done
-    drop(sender);
+    // Fetch and display previous events using stack ID
+    let all_events = StackEventsService::fetch_events(&client, &stack_id).await?;
     
-    // Process and render all data from parallel operations (but keep renderer alive)
-    output_manager.stop().await?;
-    
-    // Wait for all tasks to complete and handle any errors
-    let (stack_result, events_and_live_result) = tokio::join!(
-        stack_task,
-        events_and_live_task
+    // Create events display for PREVIOUS events (separate from live events)
+    let events_output_data = convert_stack_events_to_display_with_max(
+        all_events.clone(), // Clone for live events task to use
+        &format!("Previous Stack Events (max {}):", event_count),
+        Some(event_count),
     );
     
-    // Handle task join errors and inner task errors
-    stack_result??; // Propagate join errors and inner task errors
-    let final_status = events_and_live_result??; // Propagate join errors and inner task errors
+    // Render previous events
+    output_manager.render(events_output_data).await?;
+    
+    // Now start live events polling with all existing events pre-marked as seen
+    let manager_output = ManagerOutput { manager: &mut output_manager };
+    let final_status = watch_stack_live_events_with_seen_events(
+        &client, 
+        &context, 
+        &stack_id, 
+        manager_output, 
+        Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
+        Duration::from_secs(args.inactivity_timeout as u64), 
+        all_events
+    ).await?;
     
     // Final step: Show stack contents like iidy-js
     // Skip stack contents if the stack was deleted (DELETE_COMPLETE)
@@ -166,10 +142,8 @@ pub async fn watch_stack(
         Some(contents) => contents,
         None => return Ok(1),
     };
-    let sender = output_manager.start();
-    let _ = sender.send(OutputData::StackContents(stack_contents));
-    drop(sender);
-    output_manager.stop().await?;
+    
+    output_manager.render(OutputData::StackContents(stack_contents)).await?;
     
     Ok(0) // Return success exit code
 }
