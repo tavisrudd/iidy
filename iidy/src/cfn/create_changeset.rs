@@ -70,6 +70,7 @@ pub async fn create_changeset(cli: &Cli, args: &CreateChangeSetArgs) -> Result<i
         true,
         &mut output_manager,
         args.description.as_deref(),
+        Some(&global_opts.environment),
     ).await?;
 
     // 3. Render changeset result

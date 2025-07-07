@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, create_context_for_operation, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}};
+use crate::cfn::{CfnRequestBuilder, create_context_for_operation, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, watch_stack::DEFAULT_POLL_INTERVAL_SECS};
 use crate::cli::{Cli, ExecChangeSetArgs, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
@@ -60,27 +60,23 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
     // 2. Execute changeset operation
     let stack_id = perform_changeset_execution(&context, &final_stack_args, args, &mut output_manager).await?;
 
-    // 3. Start parallel data collection and rendering (identical to update-stack.rs pattern)
-    let sender = output_manager.start();
+    // 3. Start parallel data collection and rendering using sequential await pattern
     
     // Start stack definition task
     let stack_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let stack = StackInfoService::get_stack(&client, &stack_id).await?;
             let output_data = convert_stack_to_definition(&stack, true);
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(output_data)
         })
     };
     
-    // Start previous events task (identical to update-stack.rs)
+    // Start previous events task
     let previous_events_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let events = StackEventsService::fetch_events(&client, &stack_id).await?;
             // Convert AWS events to our format with timing
@@ -109,50 +105,29 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
                 max_events: Some(10),
                 truncated: None,
             };
-            let _ = tx.send(OutputData::StackEvents(events_display));
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(OutputData::StackEvents(events_display))
         })
     };
     
-    // Start live events task
-    let events_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
-        let client = context.client.clone();
-        let stack_id = stack_id.clone();
-        let tx = sender.clone();
-        let context_clone = context.clone();
-        
-        tokio::spawn(async move {
-            let sender_output = SenderOutput { sender: tx };
-            let final_status = watch_stack_live_events_with_seen_events(
-                &client, 
-                &context_clone, 
-                &stack_id, 
-                sender_output, 
-                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-                std::time::Duration::from_secs(3600), // 1 hour timeout
-                vec![] // No previous events for changeset execution
-            ).await?;
-            Ok(final_status)
-        })
+    // Await and render in correct section order (tasks already running in parallel)
+    crate::await_and_render!(stack_task, output_manager);
+    crate::await_and_render!(previous_events_task, output_manager);
+    
+    // Then handle live events watching using the existing helper function
+    use super::watch_stack::watch_stack_with_data_output;
+    let final_status = match watch_stack_with_data_output(
+        &context,
+        &stack_id,
+        &mut output_manager,
+        std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
+    ).await {
+        Ok(status) => status,
+        Err(error) => {
+            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
+            return Ok(1);
+        }
     };
-    
-    // Drop the original sender so the receiver knows when all tasks are done
-    drop(sender);
-    
-    // Process and render all data from parallel operations
-    output_manager.stop().await?;
-    
-    // Wait for all tasks to complete and handle any errors
-    let (stack_result, previous_events_result, events_result) = tokio::join!(
-        stack_task,
-        previous_events_task,
-        events_task
-    );
-    
-    // Propagate any errors from the spawned tasks
-    stack_result??;
-    previous_events_result??;
-    let final_status = events_result??;
     
     let elapsed_seconds = context.elapsed_seconds().await?;
     

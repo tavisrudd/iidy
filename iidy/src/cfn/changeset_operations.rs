@@ -45,6 +45,7 @@ pub async fn create_changeset_comprehensive(
     use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
     description: Option<&str>,
+    environment: Option<&str>,
 ) -> Result<ChangeSetCreationResult> {
     // Determine changeset name (docker-style if not provided)
     let final_changeset_name = if let Some(name) = changeset_name {
@@ -66,6 +67,7 @@ pub async fn create_changeset_comprehensive(
         use_primary_token,
         output_manager,
         description,
+        environment,
     ).await?;
 
     // Wait for changeset to complete processing
@@ -91,6 +93,7 @@ async fn perform_changeset_creation(
     use_primary_token: bool,
     output_manager: &mut DynamicOutputManager,
     description: Option<&str>,
+    environment: Option<&str>,
 ) -> Result<(CreateChangeSetOutput, String)> {
     let (create_request, token) = build_create_changeset_with_type(
         stack_args,
@@ -104,7 +107,8 @@ async fn perform_changeset_creation(
         argsfile_path,
         use_primary_token,
         context,
-        description
+        description,
+        environment,
     ).await?;
     
     // Show token info
@@ -125,6 +129,7 @@ async fn build_create_changeset_with_type(
     use_primary_token: bool,
     context: &CfnContext,
     description: Option<&str>,
+    environment: Option<&str>,
 ) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::aws::client_req_token::TokenInfo)> {
     use aws_sdk_cloudformation::types::{Capability, Parameter, Tag};
     
@@ -152,7 +157,7 @@ async fn build_create_changeset_with_type(
             let template_result = load_cfn_template(
                 Some(template_location),
                 argsfile_path,
-                None, // environment is already resolved in stack args
+                environment, // Pass through the environment for proper YAML preprocessing
                 TEMPLATE_MAX_BYTES,
                 Some(&context.create_s3_client()),
             ).await?;

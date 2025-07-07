@@ -493,7 +493,26 @@ impl InteractiveRenderer {
             // Modification operations with monitoring (include command_metadata as first section)
             CfnOperation::CreateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
             CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "confirmation", "live_stack_events"],
-            CfnOperation::UpdateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
+            CfnOperation::UpdateStack => {
+                // Check if --changeset flag is set by examining the CLI context
+                if let Some(ref cli_ctx) = self.cli_context {
+                    if let Commands::UpdateStack(args) = &cli_ctx.command {
+                        if args.changeset {
+                            // Phase 1: Changeset creation (show current stack first, then changeset)
+                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
+                        } else {
+                            // Regular update-stack flow
+                            vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
+                        }
+                    } else {
+                        // Fallback (shouldn't happen)
+                        vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
+                    }
+                } else {
+                    // No CLI context available, use regular flow
+                    vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
+                }
+            },
             CfnOperation::CreateChangeset => vec!["command_metadata", "changeset_result"],
             CfnOperation::ExecuteChangeset => vec!["command_metadata", "stack_definition", "stack_events", "live_stack_events", "stack_contents"],
             CfnOperation::CreateOrUpdate => {
@@ -501,8 +520,8 @@ impl InteractiveRenderer {
                 if let Some(ref cli_ctx) = self.cli_context {
                     if let Commands::CreateOrUpdate(args) = &cli_ctx.command {
                         if args.changeset {
-                            // Phase 1: Changeset creation
-                            vec!["command_metadata", "changeset_result", "confirmation"]
+                            // Phase 1: Changeset creation (show current stack first, then changeset)
+                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
                         } else {
                             // Regular create-or-update flow
                             vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]

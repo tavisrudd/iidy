@@ -2,11 +2,11 @@ use anyhow::Result;
 use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::{SenderOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS}, StackChangeType, UpdateResult, changeset_operations};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, create_context_for_operation, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
-    aws_conversion::{progress_message, success_message, warning_message, create_command_result, convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
+    aws_conversion::{create_command_result, convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
     data::{OutputData, StackChangeDetails}
 };
 use crate::stack_args::load_stack_args;
@@ -63,7 +63,7 @@ pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> 
     // Check stack existence and determine change type
     let stack_change_details = if stack_exists {
         if args.changeset {
-            return update_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager).await;
+            return update_stack_with_changeset_data(&context, args, &final_stack_args, &mut output_manager, &global_opts.environment).await;
         } else {
             // Try update and check for no-changes case
             match try_update_stack(&context, args, &final_stack_args, &global_opts.environment).await {
@@ -119,51 +119,35 @@ async fn watch_and_summarize_stack_operation(
     output_manager: &mut DynamicOutputManager,
     success_states: &[&str],
 ) -> Result<i32> {
-    let sender = output_manager.start();
-    
+    // Start stack definition task
     let stack_task = {
         let client = context.client.clone();
         let stack_id = stack_id.to_string();
-        let tx = sender.clone();
         tokio::spawn(async move {
             let stack = StackInfoService::get_stack(&client, &stack_id).await?;
             let output_data = convert_stack_to_definition(&stack, true);
-            let _ = tx.send(output_data);
-            Ok::<(), anyhow::Error>(())
+            Ok::<OutputData, anyhow::Error>(output_data)
         })
     };
     
-    let events_task: tokio::task::JoinHandle<Result<Option<String>, anyhow::Error>> = {
-        let client = context.client.clone();
-        let stack_id = stack_id.to_string();
-        let tx = sender.clone();
-        let context_clone = context.clone();
-        
-        tokio::spawn(async move {
-            let sender_output = SenderOutput { sender: tx };
-            let final_status = watch_stack_live_events_with_seen_events(
-                &client, 
-                &context_clone, 
-                &stack_id, 
-                sender_output, 
-                std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-                std::time::Duration::from_secs(3600),
-                vec![]
-            ).await?;
-            Ok(final_status)
-        })
+    // Await and render stack definition first
+    crate::await_and_render!(stack_task, output_manager);
+    
+    // Then handle live events watching using the existing helper function
+    use super::watch_stack::watch_stack_with_data_output;
+    let final_status = match watch_stack_with_data_output(
+        context,
+        stack_id,
+        output_manager,
+        std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
+    ).await {
+        Ok(status) => status,
+        Err(error) => {
+            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
+            return Ok(1);
+        }
     };
-    
-    drop(sender);
-    output_manager.stop().await?;
-    
-    let (stack_result, events_result) = tokio::join!(
-        stack_task,
-        events_task
-    );
-    
-    stack_result??;
-    let final_status = events_result??;
     
     let elapsed_seconds = context.elapsed_seconds().await?;
     let success = determine_operation_success(&final_status, success_states);
@@ -286,33 +270,42 @@ async fn update_stack_with_changeset_data(
     args: &UpdateStackArgs,
     stack_args: &crate::stack_args::StackArgs,
     output_manager: &mut DynamicOutputManager,
+    environment: &str,
 ) -> Result<i32> {
-    let builder = CfnRequestBuilder::new(&context, stack_args);
-
-    // Step 1: Create changeset
+    // Step 1: Fetch and render stack definition first
+    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_task = {
+        let client = context.client.clone();
+        let stack_name = stack_name.clone();
+        tokio::spawn(async move {
+            let stack = crate::cfn::stack_operations::StackInfoService::get_stack(&client, &stack_name).await?;
+            let output_data = crate::output::aws_conversion::convert_stack_to_definition(&stack, true);
+            Ok::<OutputData, anyhow::Error>(output_data)
+        })
+    };
+    
+    // Await and render stack definition
+    crate::await_and_render!(stack_task, output_manager);
+    
+    // Step 2: Create changeset using shared changeset operations
     let changeset_name = format!(
         "iidy-create-or-update-{}",
         &context.primary_token().value[..8]
     );
-    let (create_request, create_token) =
-        builder.build_create_changeset(&changeset_name, false, &CfnOperation::CreateChangeset);
-    // Pass create_token to output manager for conditional display
-    let output_token = convert_token_info(&create_token);
-    output_manager.render(OutputData::TokenInfo(output_token)).await?;
+    
+    let changeset_result = changeset_operations::create_changeset_comprehensive(
+        context,
+        stack_args,
+        Some(&changeset_name),
+        &args.base.argsfile,
+        false, // Don't use primary token for changeset creation
+        output_manager,
+        None, // No description for create-or-update changeset
+        Some(environment), 
+    ).await?;
 
-    output_manager.render(progress_message(&format!(
-        "Creating changeset '{}' for stack: {}",
-        changeset_name,
-        stack_args.stack_name.as_ref().unwrap()
-    ))).await?;
-
-    let create_response = create_request.send().await?;
-
-    if let Some(changeset_id) = create_response.id() {
-        output_manager.render(success_message(&format!("Changeset created: {}", changeset_id))).await?;
-    } else {
-        output_manager.render(success_message("Changeset created")).await?;
-    }
+    // Render changeset result
+    output_manager.render(OutputData::ChangeSetResult(changeset_result.clone())).await?;
 
     // Ask for confirmation unless --yes is specified
     let confirmed = if args.yes {
@@ -330,40 +323,39 @@ async fn update_stack_with_changeset_data(
         return Ok(130); // 130 = interrupted by user (Ctrl-C equivalent)
     }
 
-    let (execute_request, execute_token) =
-        builder.build_execute_changeset(&changeset_name, false, &CfnOperation::ExecuteChangeset);
-    // Pass execute_token to output manager for conditional display
-    let output_token = convert_token_info(&execute_token);
-    output_manager.render(OutputData::TokenInfo(output_token)).await?;
-
-    output_manager.render(progress_message("Executing changeset...")).await?;
-
-    let _execute_response = execute_request.send().await?;
-
-    output_manager.render(success_message("Changeset execution initiated")).await?;
-
-    // Step 3: Watch stack progress
-    use super::watch_stack::watch_stack_with_data_output;
-    output_manager.render(progress_message("Watching stack operation progress...")).await?;
-
-    let success = if let Err(e) = watch_stack_with_data_output(
-        &context,
-        stack_args.stack_name.as_ref().unwrap(),
-        output_manager,
-        std::time::Duration::from_secs(5),
-    )
-    .await
-    {
-        output_manager.render(warning_message(&format!("Error watching stack progress: {}", e))).await?;
-        output_manager.render(warning_message("The changeset execution was initiated, but there was an error watching progress.")).await?;
-        output_manager.render(warning_message("You can check the stack status manually in the AWS Console.")).await?;
-        false // Watching failed - unknown operation status, treat as failure
-    } else {
-        output_manager.render(success_message("Stack operation completed successfully")).await?;
-        true
+    // Step 2: Execute changeset using shared exec_changeset functionality
+    use super::exec_changeset;
+    
+    // Create exec_changeset args from the changeset result
+    let exec_args = crate::cli::ExecChangeSetArgs {
+        changeset_name: changeset_result.changeset_name,
+        argsfile: args.base.argsfile.clone(),
+        stack_name: Some(changeset_result.stack_name),
     };
-
-    Ok(if success { 0 } else { 1 })
+    
+    // We need to reconstruct the CLI context for exec_changeset
+    // This is a bit awkward but maintains the existing interfaces
+    let aws_opts = crate::cli::AwsOpts {
+        region: context.client.config().region().map(|r| r.to_string()),
+        profile: None, // Profile info is not easily accessible from context
+        assume_role_arn: None,
+        client_request_token: Some(context.primary_token().value.clone()),
+    };
+    let exec_cli = crate::cli::Cli {
+        global_opts: crate::cli::GlobalOpts {
+            environment: "development".to_string(), // Default fallback
+            output_mode: None, 
+            color: crate::cli::ColorChoice::Auto,
+            theme: crate::cli::Theme::Auto,
+            debug: false,
+            log_full_error: false,
+        },
+        aws_opts,
+        command: crate::cli::Commands::ExecChangeset(exec_args.clone()),
+    };
+    
+    // Execute the changeset using the exec_changeset handler
+    exec_changeset::exec_changeset(&exec_cli, &exec_args).await
 }
 
 /// Create new stack with changeset using shared changeset functionality.
@@ -383,6 +375,7 @@ async fn create_stack_with_changeset_data(
         false,
         output_manager,
         None, // No description argument available in create-or-update
+        Some(&global_opts.environment),
     ).await?;
 
     // Render changeset result
