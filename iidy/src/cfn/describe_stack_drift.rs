@@ -5,49 +5,45 @@ use aws_sdk_cloudformation::{
 };
 
 use crate::cli::{Cli, DriftArgs};
-use crate::cfn::create_context_for_operation;
 use crate::output::{
-    DynamicOutputManager, manager::OutputOptions,
+    DynamicOutputManager, OutputData, convert_stack_to_definition,
+    StatusUpdate, StatusLevel, StackDrift, DriftedResource, PropertyDifference,
 };
+use crate::run_command_handler;
 
 // REMOVED: format_resource_drifts function - Legacy formatting logic replaced by data-driven output architecture
 // Drift formatting is now handled by the renderers through OutputData::StackDrift
 
-/// Describe CloudFormation stack drift with data-driven output.
-/// 
-/// This is a read-only operation that follows the iidy-js pattern:
-/// 1. Show stack definition
-/// 2. Update drift data (with spinner if needed)
-/// 3. Show drifted resources
-/// No command metadata is shown (read-only operation).
-pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
-    // Extract components from CLI
-    let opts = cli.aws_opts.clone().normalize();
-    let global_opts = &cli.global_opts;
-
-    let _cli_aws_settings = crate::aws::AwsSettings::from_normalized_opts(&opts);
-    let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        global_opts.effective_output_mode(),
-        output_options
-    ).await?;
-    let operation = cli.command.to_cfn_operation();
-    let context = create_context_for_operation(&opts, operation).await?;
-    let client = &context.client;
-
+async fn describe_stack_drift_impl(
+    output_manager: &mut DynamicOutputManager,
+    context: &crate::cfn::CfnContext,
+    _cli: &Cli,
+    args: &DriftArgs,
+    _opts: &crate::cli::NormalizedAwsOpts,
+) -> Result<i32> {
     // 1. Show stack definition (following iidy-js pattern)
-    let stack_resp = client
-        .describe_stacks()
-        .stack_name(&args.stackname)
-        .send()
-        .await?;
-    
-    let stack = stack_resp
-        .stacks
-        .and_then(|mut s| s.pop())
-        .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
-    
-    let stack_definition = crate::output::convert_stack_to_definition(&stack, true);
+    let stack_task = {
+        let client = context.client.clone();
+        let stack_name = args.stackname.clone();
+        tokio::spawn(async move {
+            let stack_resp = client
+                .describe_stacks()
+                .stack_name(&stack_name)
+                .send()
+                .await?;
+            
+            let stack = stack_resp
+                .stacks
+                .and_then(|mut s| s.pop())
+                .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
+            
+            let stack_definition = convert_stack_to_definition(&stack, true);
+            Ok::<(OutputData, aws_sdk_cloudformation::types::Stack), anyhow::Error>((stack_definition, stack))
+        })
+    };
+
+    // Get the stack for drift checking
+    let (stack_definition, stack) = stack_task.await??;
     output_manager.render(stack_definition).await?;
 
     // 2. Update drift data if needed (following iidy-js updateStackDriftData pattern)
@@ -67,16 +63,15 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
 
     if needs_drift_check {
         // Send status update for drift detection progress
-        use crate::output::{StatusUpdate, StatusLevel};
         let drift_start_msg = StatusUpdate {
             message: "Checking for stack drift...".to_string(),
             timestamp: chrono::Utc::now(),
             level: StatusLevel::Info,
         };
-        output_manager.render(crate::output::OutputData::StatusUpdate(drift_start_msg)).await?;
+        output_manager.render(OutputData::StatusUpdate(drift_start_msg)).await?;
         
         // Start drift detection
-        let detect = client
+        let detect = context.client
             .detect_stack_drift()
             .stack_name(&args.stackname)
             .send()
@@ -85,7 +80,7 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
 
         // Wait for completion with progress updates
         loop {
-            let status = client
+            let status = context.client
                 .describe_stack_drift_detection_status()
                 .stack_drift_detection_id(detection_id)
                 .send()
@@ -100,17 +95,21 @@ pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
     }
 
     // 3. Collect and send drift data
-    let drift_data = collect_stack_drift_data(&client, &args.stackname).await?;
-    output_manager.render(crate::output::OutputData::StackDrift(drift_data)).await?;
+    let drift_data = collect_stack_drift_data(&context.client, &args.stackname).await?;
+    output_manager.render(OutputData::StackDrift(drift_data)).await?;
 
     Ok(0) // Return success exit code
+}
+
+pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
+    run_command_handler!(describe_stack_drift_impl, cli, args)
 }
 
 /// Collect stack drift data (controller pattern - no display logic)
 async fn collect_stack_drift_data(
     client: &Client,
     stack_name: &str,
-) -> Result<crate::output::StackDrift> {
+) -> Result<StackDrift> {
     // Retrieve all drifted resources
     let pages: Vec<_> = client
         .describe_stack_resource_drifts()
@@ -125,13 +124,13 @@ async fn collect_stack_drift_data(
         all_drifts.extend_from_slice(page.stack_resource_drifts());
     }
 
-    let drifted_resources: Vec<crate::output::DriftedResource> = all_drifts
+    let drifted_resources: Vec<DriftedResource> = all_drifts
         .into_iter()
         .filter(|d| match d.stack_resource_drift_status() {
             Some(StackResourceDriftStatus::InSync) => false,
             _ => true,
         })
-        .map(|drift| crate::output::DriftedResource {
+        .map(|drift| DriftedResource {
             logical_resource_id: drift.logical_resource_id().unwrap_or("unknown").to_string(),
             physical_resource_id: drift.physical_resource_id().unwrap_or("unknown").to_string(),
             resource_type: drift.resource_type().unwrap_or("unknown").to_string(),
@@ -140,7 +139,7 @@ async fn collect_stack_drift_data(
                 .unwrap_or_default(),
             property_differences: drift.property_differences()
                 .iter()
-                .map(|pd| crate::output::PropertyDifference {
+                .map(|pd| PropertyDifference {
                     property_path: pd.property_path().unwrap_or_default().to_string(),
                     expected_value: pd.expected_value().map(|s| s.to_string()),
                     actual_value: pd.actual_value().map(|s| s.to_string()),
@@ -151,19 +150,19 @@ async fn collect_stack_drift_data(
         })
         .collect();
 
-    Ok(crate::output::StackDrift {
+    Ok(StackDrift {
         drifted_resources,
     })
 }
 
 #[cfg(test)]
 mod tests {
-    // No longer need imports - tests now focus on data-driven output structures
+    use super::*;
 
     #[test]
     fn drift_data_conversion_no_drift() {
         // Test that empty drift list is handled correctly
-        let drift_data = crate::output::StackDrift {
+        let drift_data = StackDrift {
             drifted_resources: vec![],
         };
         assert_eq!(drift_data.drifted_resources.len(), 0);
@@ -172,9 +171,9 @@ mod tests {
     #[test]
     fn drift_data_conversion_with_drift() {
         // Test that drift data structure contains expected information
-        let drift_data = crate::output::StackDrift {
+        let drift_data = StackDrift {
             drifted_resources: vec![
-                crate::output::DriftedResource {
+                DriftedResource {
                     logical_resource_id: "TestResource".to_string(),
                     physical_resource_id: "test-resource-123".to_string(),
                     resource_type: "AWS::S3::Bucket".to_string(),
