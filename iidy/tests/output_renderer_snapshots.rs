@@ -94,6 +94,7 @@ async fn test_plain_renderer_stack_definition() {
         stackset_name: None,
         description: Some("Development environment infrastructure".to_string()),
         status: "CREATE_COMPLETE".to_string(),
+        status_reason: None,
         capabilities: vec!["CAPABILITY_IAM".to_string(), "CAPABILITY_NAMED_IAM".to_string()],
         service_role: None,
         tags: [

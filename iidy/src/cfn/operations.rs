@@ -18,6 +18,8 @@ pub enum CfnOperation {
     GetStackTemplate,
     GetStackInstances,
     DescribeStackDrift,
+    TemplateApprovalRequest,
+    TemplateApprovalReview,
 }
 
 impl CfnOperation {
@@ -37,6 +39,8 @@ impl CfnOperation {
             "get-stack-template" => Some(Self::GetStackTemplate),
             "get-stack-instances" => Some(Self::GetStackInstances),
             "describe-stack-drift" => Some(Self::DescribeStackDrift),
+            "template-approval-request" => Some(Self::TemplateApprovalRequest),
+            "template-approval-review" => Some(Self::TemplateApprovalReview),
             _ => None,
         }
     }
@@ -57,6 +61,8 @@ impl CfnOperation {
             Self::GetStackTemplate => "get-stack-template",
             Self::GetStackInstances => "get-stack-instances",
             Self::DescribeStackDrift => "describe-stack-drift",
+            Self::TemplateApprovalRequest => "template-approval-request",
+            Self::TemplateApprovalReview => "template-approval-review",
         }
     }
 
@@ -69,6 +75,7 @@ impl CfnOperation {
             Self::GetStackTemplate | 
             Self::GetStackInstances | 
             Self::DescribeStackDrift
+            // Note: TemplateApprovalRequest writes to S3, TemplateApprovalReview writes conditionally
         )
     }
 }

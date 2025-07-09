@@ -113,6 +113,9 @@ pub mod template_loader;
 pub mod update_stack;
 pub mod watch_stack;
 pub mod stack_change_type;
+pub mod template_approval_request;
+pub mod template_approval_review;
+pub mod template_hash;
 
 // Re-exports
 pub use operations::CfnOperation;

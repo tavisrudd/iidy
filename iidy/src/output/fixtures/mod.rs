@@ -152,6 +152,7 @@ impl FixtureLoader {
             stackset_name: None,
             description: stack.get("description").and_then(|v| v.as_str()).map(|s| s.to_string()),
             status: stack.get("stack_status").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_string(),
+            status_reason: stack.get("stack_status_reason").and_then(|v| v.as_str()).map(|s| s.to_string()),
             capabilities: stack.get("capabilities")
                 .and_then(|v| v.as_sequence())
                 .map(|seq| seq.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect())

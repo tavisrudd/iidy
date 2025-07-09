@@ -57,6 +57,12 @@ yaml-rust = "0.4"
 # JMESPath for JSON query filtering
 jmespath = "0.3"
 
+# MD5 hashing for template versioning
+md5 = "0.7"
+
+# Diff generation for template approval
+similar = "2.4"
+
 # Tree-sitter for precise YAML location tracking
 tree-sitter = "0.24"
 tree-sitter-yaml = "0.7"

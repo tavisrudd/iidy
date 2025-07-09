@@ -369,7 +369,12 @@ async fn create_stack_with_changeset_data(
         Some(&global_opts.environment),
     ).await?;
 
-    // Render changeset result
+    // Fetch and render stack definition (stack now exists in REVIEW_IN_PROGRESS state)
+    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack = StackInfoService::get_stack(&context.client, &stack_name).await?;
+    let stack_definition = convert_stack_to_definition(&stack, true);
+    output_manager.render(stack_definition).await?;
+
     output_manager.render(OutputData::ChangeSetResult(changeset_result.clone())).await?;
 
     // Ask for confirmation unless --yes is specified

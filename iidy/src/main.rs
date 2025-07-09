@@ -6,7 +6,7 @@ use std::io;
 
 use iidy::{
     cfn,
-    cli::{Cli, Commands},
+    cli::{Cli, Commands, ApprovalCommands},
     output::color::ColorContext,
     output::terminal::Theme as TerminalTheme,
     explain::handle_explain_command,
@@ -126,7 +126,28 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer3 => {}
         Commands::Param { command } => println!("param {:?}", command),
         Commands::DummySpacer4 => {}
-        Commands::TemplateApproval { command } => println!("template-approval {:?}", command),
+        Commands::TemplateApproval { ref command } => {
+            match command {
+                ApprovalCommands::Request(args) => {
+                    match rt.block_on(cfn::template_approval_request::template_approval_request(&cli, &args)) {
+                        Ok(exit_code) => std::process::exit(exit_code),
+                        Err(e) => {
+                            eprintln!("error requesting template approval: {e:?}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                ApprovalCommands::Review(args) => {
+                    match rt.block_on(cfn::template_approval_review::template_approval_review(&cli, &args)) {
+                        Ok(exit_code) => std::process::exit(exit_code),
+                        Err(e) => {
+                            eprintln!("error reviewing template approval: {e:?}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
         Commands::DummySpacer5 => {}
         Commands::Render(args) => {
             if let Err(e) = rt.block_on(handle_render_command(&args)) {

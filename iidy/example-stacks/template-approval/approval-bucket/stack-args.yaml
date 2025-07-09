@@ -1,0 +1,9 @@
+StackName: iidy-template-approval-bucket
+Template: ./cfn-template.yaml
+
+Region: us-east-1
+
+Tags:
+  project: iidy-template-approval
+  environment: development
+  component: storage

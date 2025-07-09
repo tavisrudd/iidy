@@ -58,6 +58,7 @@ pub fn sample_stack_definition() -> StackDefinition {
         stackset_name: None,
         description: Some("Test stack for iidy development".to_string()),
         status: "CREATE_COMPLETE".to_string(),
+        status_reason: None,
         capabilities: vec!["CAPABILITY_IAM".to_string()],
         service_role: Some("arn:aws:iam::123456789012:role/CloudFormationRole".to_string()),
         tags,

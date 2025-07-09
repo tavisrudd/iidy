@@ -1,0 +1,17 @@
+StackName: iidy-template-approval-test-stack
+Template: ./cfn-template.yaml
+
+# This is the key parameter for template approval workflow
+ApprovedTemplateLocation: s3://iidy-template-approval-bucket/approved-templates/test-stack
+
+Region: us-east-1
+
+Parameters:
+  Name: template-approval-test
+  Message: This stack was deployed from an approved template
+
+Tags:
+  project: iidy-template-approval
+  environment: development
+  component: test
+  deployed-from: approved-template

@@ -257,6 +257,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
         stackset_name: None, // TODO: Determine if this is a StackSet stack
         description: stack.description().map(|s| s.to_string()),
         status: stack.stack_status().map(|s| s.as_str().to_string()).unwrap_or_else(|| "UNKNOWN".to_string()),
+        status_reason: stack.stack_status_reason().map(|s| s.to_string()),
         capabilities: stack.capabilities().iter().map(|c| c.as_str().to_string()).collect(),
         service_role: stack.role_arn().map(|s| s.to_string()),
         tags,
@@ -690,6 +691,35 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
                     "Check your internet connection".to_string(),
                     "Verify AWS service endpoints are accessible".to_string(),
                     "Try again in a few moments".to_string(),
+                ]
+            );
+        }
+        
+        if lower_msg.contains("insufficientcapabilitiesexception") && lower_msg.contains("requires capabilities") {
+            // Extract the required capabilities from the error message
+            // Message format: "Requires capabilities : [CAPABILITY_NAMED_IAM]"
+            let capabilities_list = if let Some(start) = err_msg.find('[') {
+                if let Some(end) = err_msg.find(']') {
+                    let caps_str = &err_msg[start+1..end];
+                    // Split by comma and clean up
+                    caps_str.split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| format!("\"{}\"", s))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else {
+                    "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
+                }
+            } else {
+                "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
+            };
+            
+            return (
+                "InsufficientCapabilities".to_string(),
+                format!("CloudFormation stack requires additional capabilities"),
+                vec![
+                    format!("Add \"Capabilities: [{}]\" to your stack-args.yaml file", capabilities_list),
                 ]
             );
         }

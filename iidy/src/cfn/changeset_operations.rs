@@ -18,6 +18,58 @@ use crate::stack_args::StackArgs;
 use crate::yaml::imports::loaders::random::generate_dashed_name;
 
 /// Check if a CloudFormation stack exists.
+#[derive(Debug, Clone)]
+pub enum StackState {
+    DoesNotExist,
+    Exists,
+    ReviewInProgress(String), // Contains existing changeset name if any
+}
+
+pub async fn check_stack_state(context: &CfnContext, stack_name: &str) -> Result<StackState> {
+    let describe_request = context.client.describe_stacks().stack_name(stack_name);
+
+    match describe_request.send().await {
+        Ok(response) => {
+            if let Some(stack) = response.stacks().first() {
+                if let Some(status) = stack.stack_status() {
+                    if status.as_str() == "REVIEW_IN_PROGRESS" {
+                        // Check for existing changesets
+                        let changeset_name = check_existing_changesets(context, stack_name).await?;
+                        return Ok(StackState::ReviewInProgress(changeset_name));
+                    }
+                }
+            }
+            Ok(StackState::Exists)
+        }
+        Err(SdkError::ServiceError(e)) => {
+            let service_err = e.err();
+            if service_err.code() == Some("ValidationError") &&
+               service_err.message().unwrap_or("").contains("does not exist") {
+                Ok(StackState::DoesNotExist)
+            } else {
+                Err(SdkError::ServiceError(e).into())
+            }
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+async fn check_existing_changesets(context: &CfnContext, stack_name: &str) -> Result<String> {
+    let list_request = context.client.list_change_sets().stack_name(stack_name);
+    
+    match list_request.send().await {
+        Ok(response) => {
+            if let Some(changeset) = response.summaries().first() {
+                if let Some(name) = changeset.change_set_name() {
+                    return Ok(name.to_string());
+                }
+            }
+            Ok("unknown-changeset".to_string())
+        }
+        Err(_) => Ok("unknown-changeset".to_string()),
+    }
+}
+
 pub async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bool> {
     let describe_request = context.client.describe_stacks().stack_name(stack_name);
 
@@ -54,9 +106,29 @@ pub async fn create_changeset_comprehensive(
         generate_dashed_name()
     };
 
-    // Check if stack exists to determine changeset type
+    // Check stack state to determine changeset handling
     let stack_name = stack_args.stack_name.as_ref().unwrap();
-    let stack_exists = check_stack_exists(context, stack_name).await?;
+    let stack_state = check_stack_state(context, stack_name).await?;
+    
+    // Handle REVIEW_IN_PROGRESS state - show existing changeset details and flow to execution
+    if let StackState::ReviewInProgress(existing_changeset_name) = &stack_state {
+        // Infer changeset type: REVIEW_IN_PROGRESS means this is the initial CREATE changeset
+        let changeset_type = "CREATE".to_string();
+        
+        // Build changeset result for the existing changeset to show details to user
+        let existing_changeset_result = build_existing_changeset_result(
+            context,
+            stack_name,
+            &existing_changeset_name,
+            &changeset_type,
+        ).await?;
+        
+        // Return this result - it will flow through the normal create-or-update execution path
+        // which will show the changeset details and then prompt "Do you want to execute this changeset now?"
+        return Ok(existing_changeset_result);
+    }
+
+    let stack_exists = matches!(stack_state, StackState::Exists);
     
     let (changeset_response, _) = perform_changeset_creation(
         context,
@@ -409,3 +481,43 @@ async fn wait_for_changeset_completion(
     
     Err(anyhow::anyhow!("Timeout waiting for changeset to complete"))
 }
+
+async fn build_existing_changeset_result(
+    context: &CfnContext,
+    stack_name: &str,
+    changeset_name: &str,
+    changeset_type: &str,
+) -> Result<ChangeSetCreationResult> {
+    // Describe the existing changeset to get its details
+    let describe_response = context.client
+        .describe_change_set()
+        .stack_name(stack_name)
+        .change_set_name(changeset_name)
+        .send()
+        .await?;
+    
+    // Generate console URL
+    let console_url = format!(
+        "https://console.aws.amazon.com/cloudformation/home#/stacks/stackinfo?stackId={}",
+        stack_name
+    );
+    
+    // Get pending changesets (reuse existing logic)
+    let pending_changesets = fetch_pending_changesets(&context.client, stack_name).await?;
+    
+    Ok(ChangeSetCreationResult {
+        changeset_name: changeset_name.to_string(),
+        stack_name: stack_name.to_string(),
+        changeset_type: changeset_type.to_string(),
+        has_changes: !describe_response.changes().is_empty(),
+        status: describe_response.status()
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_else(|| "UNKNOWN".to_string()),
+        console_url,
+        pending_changesets,
+        next_steps: vec![
+            format!("Found existing changeset '{}' ready for execution", changeset_name),
+        ],
+    })
+}
+

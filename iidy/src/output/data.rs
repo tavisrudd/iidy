@@ -122,6 +122,7 @@ pub struct StackDefinition {
     pub stackset_name: Option<String>, // If StackSet
     pub description: Option<String>,
     pub status: String,
+    pub status_reason: Option<String>,
     pub capabilities: Vec<String>,
     pub service_role: Option<String>,
     pub tags: HashMap<String, String>,
@@ -410,6 +411,52 @@ pub struct StackTemplate {
     pub template_body: String,
 }
 
+/// Template approval request result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApprovalRequestResult {
+    pub template_location: String,
+    pub pending_location: String,
+    pub already_approved: bool,
+    pub next_steps: Vec<String>,
+}
+
+/// Template validation results
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TemplateValidation {
+    pub enabled: bool,
+    pub using_parameters: bool,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// Template approval status
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApprovalStatus {
+    pub pending_exists: bool,
+    pub already_approved: bool,
+    pub pending_location: String,
+    pub approved_location: Option<String>,
+}
+
+/// Template diff display
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TemplateDiff {
+    pub old_template: String,
+    pub new_template: String,
+    pub diff_output: String,
+    pub context_lines: u32,
+    pub has_changes: bool,
+}
+
+/// Approval result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApprovalResult {
+    pub approved: bool,
+    pub approved_location: Option<String>,
+    pub latest_location: Option<String>,
+    pub cleanup_completed: bool,
+}
+
 /// Confirmation request for interactive prompts
 #[derive(Debug)]
 pub struct ConfirmationRequest {
@@ -451,6 +498,11 @@ pub enum OutputData {
     StackAbsentInfo(StackAbsentInfo), // Information about absent/non-existent stacks
     CostEstimate(CostEstimate), // Cost estimation result from AWS
     StackTemplate(StackTemplate), // Stack template content from get-stack-template
+    ApprovalRequestResult(ApprovalRequestResult), // Template approval request result
+    TemplateValidation(TemplateValidation), // Template validation results
+    ApprovalStatus(ApprovalStatus), // Template approval status
+    TemplateDiff(TemplateDiff), // Template diff display
+    ApprovalResult(ApprovalResult), // Approval result
 }
 
 impl OutputData {
@@ -477,6 +529,11 @@ impl OutputData {
             OutputData::StackAbsentInfo(_) => "stack_absent_info",
             OutputData::CostEstimate(_) => "cost_estimate",
             OutputData::StackTemplate(_) => "stack_template",
+            OutputData::ApprovalRequestResult(_) => "approval_request_result",
+            OutputData::TemplateValidation(_) => "template_validation",
+            OutputData::ApprovalStatus(_) => "approval_status",
+            OutputData::TemplateDiff(_) => "template_diff",
+            OutputData::ApprovalResult(_) => "approval_result",
         }
     }
     

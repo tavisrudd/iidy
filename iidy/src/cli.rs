@@ -378,6 +378,10 @@ impl Commands {
             Commands::GetStackTemplate(_) => crate::cfn::CfnOperation::GetStackTemplate,
             Commands::GetStackInstances(_) => crate::cfn::CfnOperation::GetStackInstances,
             Commands::ListStacks(_) => crate::cfn::CfnOperation::ListStacks,
+            Commands::TemplateApproval { command } => match command {
+                ApprovalCommands::Request(_) => crate::cfn::CfnOperation::TemplateApprovalRequest,
+                ApprovalCommands::Review(_) => crate::cfn::CfnOperation::TemplateApprovalReview,
+            },
             
             // All other commands should not be calling to_cfn_operation()
             _ => panic!("Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands", self),

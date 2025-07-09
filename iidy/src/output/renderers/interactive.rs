@@ -18,6 +18,7 @@ use std::io::{self, Write, IsTerminal};
 use std::collections::VecDeque;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
+use textwrap;
 
 // Core constants matching iidy-js exactly (from complete implementation spec)
 pub const COLUMN2_START: usize = 25;
@@ -520,7 +521,7 @@ impl InteractiveRenderer {
                 if let Some(ref cli_ctx) = self.cli_context {
                     if let Commands::CreateOrUpdate(args) = &cli_ctx.command {
                         if args.changeset {
-                            // Phase 1: Changeset creation (show current stack first, then changeset)
+                            // Phase 1: Changeset creation (show current stack first if exists, then changeset)
                             vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
                         } else {
                             // Regular create-or-update flow
@@ -539,6 +540,8 @@ impl InteractiveRenderer {
             // Other operations
             CfnOperation::EstimateCost => vec!["command_metadata", "cost_estimate"],
             CfnOperation::GetStackInstances => vec!["stack_instances"],
+            CfnOperation::TemplateApprovalRequest => vec!["command_metadata", "template_validation", "approval_request_result"],
+            CfnOperation::TemplateApprovalReview => vec!["command_metadata", "approval_status", "template_diff", "confirmation", "approval_result"],
         };
         
         // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)
@@ -824,6 +827,11 @@ impl InteractiveRenderer {
             OutputData::StackChangeDetails(..) => Some("stack_change_details".to_string()),
             OutputData::CostEstimate(..) => Some("cost_estimate".to_string()),
             OutputData::StackTemplate(..) => Some("stack_template".to_string()),
+            OutputData::ApprovalRequestResult(..) => Some("approval_request_result".to_string()),
+            OutputData::TemplateValidation(..) => Some("template_validation".to_string()),
+            OutputData::ApprovalStatus(..) => Some("approval_status".to_string()),
+            OutputData::TemplateDiff(..) => Some("template_diff".to_string()),
+            OutputData::ApprovalResult(..) => Some("approval_result".to_string()),
             OutputData::ConfirmationPrompt(request) => {
                 match &request.key {
                     Some(key) => Some(format!("confirmation_{}", key)),
@@ -876,12 +884,87 @@ impl InteractiveRenderer {
             OutputData::StackAbsentInfo(ref info) => self.render_stack_absent_info(info).await,
             OutputData::CostEstimate(ref estimate) => self.render_cost_estimate(estimate).await,
             OutputData::StackTemplate(ref template) => self.render_stack_template(template).await,
+            OutputData::ApprovalRequestResult(ref result) => self.render_approval_request_result(result).await,
+            OutputData::TemplateValidation(ref validation) => self.render_template_validation(validation).await,
+            OutputData::ApprovalStatus(ref status) => self.render_approval_status(status).await,
+            OutputData::TemplateDiff(ref diff) => self.render_template_diff(diff).await,
+            OutputData::ApprovalResult(ref result) => self.render_approval_result(result).await,
         }
     }
     
 }
 
 impl InteractiveRenderer {
+    /// Render a single stack event with proper formatting
+    fn render_single_stack_event(&self, event_with_timing: &StackEventWithTiming, status_padding: usize, resource_type_padding: usize) {
+        let event = &event_with_timing.event;
+        
+        // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
+        let timestamp = if let Some(ts) = &event.timestamp {
+            self.format_timestamp(&self.render_event_timestamp(ts))
+        } else {
+            self.format_timestamp("                         ")
+        };
+        
+        // Format status with padding (apply padding before coloring to avoid ANSI length issues)
+        let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
+        let status = if self.colors_enabled() {
+            self.colorize_resource_status(&status_padded, None)
+        } else {
+            status_padded
+        };
+        
+        // Format resource type with padding (plain white for events, not muted)
+        let resource_type_padded = format!("{:<width$}", 
+            event.resource_type, 
+            width = resource_type_padding
+        );
+        let resource_type = if self.colors_enabled() {
+            resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
+        } else {
+            resource_type_padded
+        };
+        
+        // Format logical ID (no padding needed as it's the last column before duration)
+        let logical_id = self.format_logical_id(&event.logical_resource_id);
+        
+        // Format duration if available
+        let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
+            format!(" ({}s)", duration)
+        } else {
+            String::new()
+        };
+        
+        // iidy-js column order: timestamp status resource_type logical_id duration
+        println!(" {} {} {} {}{}",
+            timestamp,
+            status,
+            resource_type,
+            logical_id,
+            duration_text.color(self.theme.muted)
+        );
+        
+        // Show resource status reason on new line for failed events (like iidy-js)
+        if let Some(reason) = &event.resource_status_reason {
+            if !reason.is_empty() && event.resource_status.contains("FAILED") {
+                // Remove ".*Initiated" from reason like iidy-js does
+                let cleaned_reason = reason.replace("Initiated", "").trim().to_string();
+                if !cleaned_reason.is_empty() {
+                    // Use 2-space indent
+                    let indent = "  ";
+                    
+                    // Wrap long messages at terminal width
+                    let max_width = self.terminal_width.saturating_sub(2); // Account for indent
+                    let wrapped_lines = textwrap::wrap(&cleaned_reason, max_width);
+                    
+                    for line in wrapped_lines {
+                        println!("{}{}", indent, line.to_string().color(self.theme.error));
+                    }
+                }
+            }
+        }
+    }
+
     /// Render command metadata (exact iidy-js showCommandSummary implementation)
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
         // Print section heading unless suppressed (section ordering system handles this)
@@ -963,7 +1046,20 @@ impl InteractiveRenderer {
         }
         
         // Status
-        self.print_section_entry("Status:", &self.colorize_resource_status(&data.status, None))?;
+        let status_display = if let Some(ref reason) = data.status_reason {
+            if !reason.is_empty() && (data.status.contains("FAILED") || 
+                                     data.status == "ROLLBACK_COMPLETE" || 
+                                     data.status == "UPDATE_ROLLBACK_COMPLETE") {
+                format!("{} {}", 
+                    self.colorize_resource_status(&data.status, None),
+                    reason.color(self.theme.muted))
+            } else {
+                self.colorize_resource_status(&data.status, None)
+            }
+        } else {
+            self.colorize_resource_status(&data.status, None)
+        };
+        self.print_section_entry("Status:", &status_display)?;
         
         // Capabilities
         let capabilities = if data.capabilities.is_empty() {
@@ -1056,52 +1152,7 @@ impl InteractiveRenderer {
         let resource_type_padding = self.calc_padding(&events_to_show, |e| &e.event.resource_type);
         
         for event_with_timing in &events_to_show {
-            let event = &event_with_timing.event;
-            
-            // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
-            let timestamp = if let Some(ts) = &event.timestamp {
-                self.format_timestamp(&self.render_event_timestamp(ts))
-            } else {
-                self.format_timestamp("                         ")
-            };
-            
-            // Format status with padding (apply padding before coloring to avoid ANSI length issues)
-            let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
-            let status = if self.colors_enabled() {
-                self.colorize_resource_status(&status_padded, None)
-            } else {
-                status_padded
-            };
-            
-            // Format resource type with padding (plain white for events, not muted)
-            let resource_type_padded = format!("{:<width$}", 
-                event.resource_type, 
-                width = resource_type_padding
-            );
-            let resource_type = if self.colors_enabled() {
-                resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
-            } else {
-                resource_type_padded
-            };
-            
-            // Format logical ID (no padding needed as it's the last column before duration)
-            let logical_id = self.format_logical_id(&event.logical_resource_id);
-            
-            // Format duration if available
-            let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
-                format!(" ({}s)", duration)
-            } else {
-                String::new()
-            };
-            
-            // iidy-js column order: timestamp status resource_type logical_id duration
-            println!(" {} {} {} {}{}",
-                timestamp,
-                status,
-                resource_type,
-                logical_id,
-                duration_text.color(self.theme.muted)
-            );
+            self.render_single_stack_event(event_with_timing, status_padding, resource_type_padding);
         }
         
         // Show truncation info if present
@@ -1411,11 +1462,13 @@ impl InteractiveRenderer {
                 tags_display
             );
             
-            // Failure reason on next line
-            if stack.stack_status.contains("FAILED") {
+            // Failure reason on next line for failed and rollback complete statuses
+            if stack.stack_status.contains("FAILED") || 
+               stack.stack_status == "ROLLBACK_COMPLETE" || 
+               stack.stack_status == "UPDATE_ROLLBACK_COMPLETE" {
                 if let Some(reason) = &stack.status_reason {
                     if !reason.is_empty() {
-                        println!("   {}", reason.color(self.theme.muted));
+                        println!("  {}", reason.color(self.theme.muted));
                     }
                 }
             }
@@ -1595,52 +1648,7 @@ impl InteractiveRenderer {
         let resource_type_padding = self.calc_padding(events, |e| &e.event.resource_type);
         
         for event_with_timing in events {
-            let event = &event_with_timing.event;
-            
-            // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
-            let timestamp = if let Some(ts) = &event.timestamp {
-                self.format_timestamp(&self.render_event_timestamp(ts))
-            } else {
-                self.format_timestamp("                         ")
-            };
-            
-            // Format status with padding (apply padding before coloring to avoid ANSI length issues)
-            let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
-            let status = if self.colors_enabled() {
-                self.colorize_resource_status(&status_padded, None)
-            } else {
-                status_padded
-            };
-            
-            // Format resource type with padding (plain white for events, not muted)
-            let resource_type_padded = format!("{:<width$}", 
-                event.resource_type, 
-                width = resource_type_padding
-            );
-            let resource_type = if self.colors_enabled() {
-                resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
-            } else {
-                resource_type_padded
-            };
-            
-            // Format logical ID (no padding needed as it's the last column before duration)
-            let logical_id = self.format_logical_id(&event.logical_resource_id);
-            
-            // Format duration if available
-            let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
-                format!(" ({}s)", duration)
-            } else {
-                String::new()
-            };
-            
-            // iidy-js column order: timestamp status resource_type logical_id duration
-            println!(" {} {} {} {}{}",
-                timestamp,
-                status,
-                resource_type,
-                logical_id,
-                duration_text.color(self.theme.muted)
-            );
+            self.render_single_stack_event(event_with_timing, status_padding, resource_type_padding);
         }
         
         // Restart the spinner AND timing task for continued live events polling
@@ -1732,15 +1740,25 @@ impl InteractiveRenderer {
             false // Always decline in non-interactive mode for safety
         } else {
             // Interactive mode: prompt user with bold bright red text (matching iidy-js)
-            print!("? {} (y/N) ", request.message.bold().bright_red());
             use std::io::{self, Write};
-            io::stdout().flush()?;
             
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            let input = input.trim().to_lowercase();
-            
-            matches!(input.as_str(), "y" | "yes")
+            loop {
+                print!("? {} (y/N) ", request.message.bold().bright_red());
+                io::stdout().flush()?;
+                
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                let input = input.trim().to_lowercase();
+                
+                match input.as_str() {
+                    "y" | "yes" => break true,
+                    "n" | "no" | "" => break false, // Empty input defaults to No
+                    _ => {
+                        println!("Please enter 'y' (yes) or 'n' (no)");
+                        continue;
+                    }
+                }
+            }
         };
         
         // Handle post-confirmation actions based on key BEFORE sending response
@@ -2073,6 +2091,90 @@ impl InteractiveRenderer {
         let arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
         
         Ok((account, arn))
+    }
+    
+    /// Render approval request result
+    async fn render_approval_request_result(&mut self, data: &crate::output::ApprovalRequestResult) -> Result<()> {
+        if data.already_approved {
+            println!("{}", "👍 Your template has already been approved".color(self.theme.success));
+        } else {
+            self.print_section_heading_with_newline("Template Approval Request");
+            println!("Successfully uploaded template to: {}", data.pending_location.color(self.theme.muted));
+            println!();
+            println!("Approve template with:");
+            for step in &data.next_steps {
+                println!("  {}", step.color(self.theme.primary));
+            }
+        }
+        Ok(())
+    }
+    
+    /// Render template validation results
+    async fn render_template_validation(&mut self, data: &crate::output::TemplateValidation) -> Result<()> {
+        if !data.enabled {
+            return Ok(());
+        }
+        
+        if !data.errors.is_empty() {
+            self.print_section_heading_with_newline("Template Validation Errors");
+            for error in &data.errors {
+                println!("{} {}", "✗".color(self.theme.error), error.color(self.theme.error));
+            }
+        }
+        
+        if !data.warnings.is_empty() {
+            self.print_section_heading_with_newline("Template Validation Warnings");
+            for warning in &data.warnings {
+                println!("{} {}", "⚠".color(self.theme.warning), warning.color(self.theme.warning));
+            }
+        }
+        
+        if data.errors.is_empty() && data.warnings.is_empty() {
+            println!("{}", "✓ Template validation passed".color(self.theme.success));
+        }
+        
+        Ok(())
+    }
+    
+    /// Render approval status
+    async fn render_approval_status(&mut self, data: &crate::output::ApprovalStatus) -> Result<()> {
+        if data.already_approved {
+            println!("{}", "👍 The template has already been approved".color(self.theme.success));
+        } else {
+            self.print_section_heading_with_newline("Approval Status");
+            println!("Pending template: {}", data.pending_location.color(self.theme.muted));
+            if let Some(approved) = &data.approved_location {
+                println!("Current approved: {}", approved.color(self.theme.muted));
+            } else {
+                println!("No previously approved template found");
+            }
+        }
+        Ok(())
+    }
+    
+    /// Render template diff
+    async fn render_template_diff(&mut self, data: &crate::output::TemplateDiff) -> Result<()> {
+        if !data.has_changes {
+            println!("{}", "Templates are identical".color(self.theme.success));
+        } else {
+            self.print_section_heading_with_newline("Template Changes");
+            print!("{}", data.diff_output);
+        }
+        Ok(())
+    }
+    
+    /// Render approval result
+    async fn render_approval_result(&mut self, data: &crate::output::ApprovalResult) -> Result<()> {
+        if data.approved {
+            println!();
+            println!("{}", "Template has been successfully approved!".color(self.theme.success));
+            if let Some(location) = &data.approved_location {
+                println!("Approved template: {}", location.color(self.theme.muted));
+            }
+        } else {
+            println!("{}", "Approval cancelled".color(self.theme.warning));
+        }
+        Ok(())
     }
     
 }

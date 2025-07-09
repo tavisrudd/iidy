@@ -50,6 +50,7 @@ fn test_stack_definition_with_times() {
         stackset_name: None,
         description: Some("Test stack description".to_string()),
         status: "CREATE_COMPLETE".to_string(),
+        status_reason: None,
         capabilities: vec!["CAPABILITY_IAM".to_string()],
         service_role: None,
         tags: [("Environment".to_string(), "test".to_string())].into_iter().collect(),
