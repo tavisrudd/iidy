@@ -12,7 +12,8 @@ use crate::output::{
     aws_conversion::{create_command_metadata, create_final_command_summary, convert_token_info, convert_stack_to_definition}
 };
 use crate::cfn::stack_operations::collect_stack_contents;
-use crate::cfn::watch_stack::{DEFAULT_POLL_INTERVAL_SECS, watch_stack_with_data_output};
+use crate::cfn::watch_stack::{watch_stack_with_data_output};
+use crate::cfn::constants::DEFAULT_POLL_INTERVAL_SECS;
 use crate::run_command_handler;
 
 async fn update_stack_impl(

@@ -2,7 +2,7 @@ use anyhow::Result;
 use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, watch_stack::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, constants::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager,
@@ -334,7 +334,7 @@ async fn update_stack_with_changeset_data(
     };
     let exec_cli = crate::cli::Cli {
         global_opts: crate::cli::GlobalOpts {
-            environment: "development".to_string(), // Default fallback
+            environment: environment.to_string(),
             output_mode: None, 
             color: crate::cli::ColorChoice::Auto,
             theme: crate::cli::Theme::Auto,

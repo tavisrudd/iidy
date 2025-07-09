@@ -8,7 +8,7 @@ use aws_sdk_cloudformation::operation::create_change_set::CreateChangeSetOutput;
 use aws_sdk_cloudformation::error::{SdkError, ProvideErrorMetadata};
 use tokio::time::{sleep, Duration};
 
-use crate::cfn::{CfnContext, CfnOperation, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}};
+use crate::cfn::{CfnContext, CfnOperation, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, constants::{MAX_CHANGESET_CREATION_TIMEOUT_SECS, CHANGESET_POLL_INTERVAL_SECS}};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::convert_token_info,
@@ -447,8 +447,9 @@ async fn wait_for_changeset_completion(
     changeset_name: &str,
 ) -> Result<()> {
     let stack_id = response.stack_id().unwrap_or("");
-    let max_attempts = 30; // Wait up to 30 seconds
-    let poll_interval = Duration::from_secs(1);
+    
+    let poll_interval = Duration::from_secs(CHANGESET_POLL_INTERVAL_SECS);
+    let max_attempts = MAX_CHANGESET_CREATION_TIMEOUT_SECS / CHANGESET_POLL_INTERVAL_SECS;
     
     for _ in 0..max_attempts {
         let describe_response = context.client

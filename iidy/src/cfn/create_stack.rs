@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, watch_stack::DEFAULT_POLL_INTERVAL_SECS},
+    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS}},
     cli::{CreateStackArgs, GlobalOpts, Cli},
     stack_args::{load_stack_args, StackArgs},
     aws::AwsSettings,
@@ -66,7 +66,7 @@ async fn create_stack_impl(
             &stack_id, 
             manager_output,
             std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-            std::time::Duration::from_secs(3600),
+            std::time::Duration::from_secs(DEFAULT_POLL_TIMEOUT_SECS),
             vec![]
         ).await {
             Ok(status) => status,

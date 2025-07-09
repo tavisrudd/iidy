@@ -86,12 +86,12 @@ Analysis of duplicate code patterns reveals **6 critical categories of bugs** ca
 
 ### 3. **Argument Data Inconsistencies**
 
-#### **A. CLI Context Reconstruction Critical Bug**
+#### **A. CLI Context Reconstruction Bug**
 - **Location**: `create_or_update.rs` lines 329-346 vs `update_stack.rs` lines 198-202
 - **Issue**: Complete loss of original CLI context in one path
 - **Code Comparison**:
   ```rust
-  // create_or_update.rs:329-346 - BROKEN
+  // create_or_update.rs:329-346 - Manual reconstruction
   let aws_opts = crate::cli::AwsOpts {
       region: context.client.config().region().map(|r| r.to_string()),
       profile: None, // Profile info is not easily accessible from context
@@ -100,7 +100,7 @@ Analysis of duplicate code patterns reveals **6 critical categories of bugs** ca
   };
   let exec_cli = crate::cli::Cli {
       global_opts: crate::cli::GlobalOpts {
-          environment: "development".to_string(), // DEFAULT FALLBACK - BUG!
+          environment: environment.to_string(),
           output_mode: None, 
           color: crate::cli::ColorChoice::Auto,
           theme: crate::cli::Theme::Auto,
@@ -110,14 +110,14 @@ Analysis of duplicate code patterns reveals **6 critical categories of bugs** ca
       // ...
   };
   
-  // update_stack.rs:198-202 - CORRECT
+  // update_stack.rs:198-202 - Direct cloning
   let exec_cli = crate::cli::Cli {
       global_opts: cli.global_opts.clone(),
       aws_opts: cli.aws_opts.clone(),
       command: crate::cli::Commands::ExecChangeset(exec_args.clone()),
   };
   ```
-- **Bug Impact**: **CRITICAL** - Environment hardcoded to "development", losing user's actual environment settings
+- **Bug Impact**: **MEDIUM** - Manual reconstruction loses some CLI context like output_mode, color, theme, debug flags
 
 ### 4. **Behavioral Differences**
 
@@ -180,50 +180,36 @@ Analysis of duplicate code patterns reveals **6 critical categories of bugs** ca
   ```
 - **Bug Impact**: Parameter passing inconsistency could lead to compilation errors
 
-### 6. **Critical Environment Variable Loss Bug**
-
-**Location**: `create_or_update.rs` line 337  
-**Issue**: Environment hardcoded to "development"  
-**Code**:
-```rust
-global_opts: crate::cli::GlobalOpts {
-    environment: "development".to_string(), // Default fallback
-    // ...
-}
-```
-**Bug Impact**: **CRITICAL** - When using `create-or-update --changeset`, the exec_changeset step runs with "development" environment regardless of user's actual environment setting. This could deploy to wrong environment or use wrong configuration.
 
 ## Risk Assessment
 
 ### High Risk Bugs
-1. **Environment hardcoding** - Could cause production deployments to wrong environment
-2. **CLI context loss** - Breaks user's AWS profile, region, and other settings
-3. **Token usage inconsistency** - May cause duplicate operation detection failures
+- **CLI context loss** - Breaks user's AWS profile, region, and other settings
+- **Token usage inconsistency** - May cause duplicate operation detection failures
 
 ### Medium Risk Bugs
-4. **Success state differences** - Could cause false positive/negative operation results
-5. **Confirmation method mismatch** - May break section-based rendering
-6. **Stack events inconsistency** - Users get different information levels
+- **Success state differences** - Could cause false positive/negative operation results
+- **Confirmation method mismatch** - May break section-based rendering
+- **Stack events inconsistency** - Users get different information levels
 
 ### Low Risk Bugs
-7. **Template validation missing** - Causes late failures with unclear errors
-8. **Parameter passing inconsistency** - Compilation issue, would be caught in CI
+- **Template validation missing** - Causes late failures with unclear errors
+- **Parameter passing inconsistency** - Compilation issue, would be caught in CI
 
 ## Immediate Actions Required
 
-1. **Fix environment propagation** in `create_or_update.rs` CLI reconstruction
-2. **Standardize CLI context preservation** across all changeset execution paths
-3. **Unify confirmation method usage** - use consistent method signatures
-4. **Extract shared success determination logic**
-5. **Add missing template validation** to `exec_changeset.rs`
-6. **Standardize DELETE_COMPLETE handling** across all operations
+- **Standardize CLI context preservation** across all changeset execution paths
+- **Unify confirmation method usage** - use consistent method signatures
+- **Extract shared success determination logic**
+- **Add missing template validation** to `exec_changeset.rs`
+- **Standardize DELETE_COMPLETE handling** across all operations
 
 ## Long-term Recommendations
 
-1. **Extract common patterns** into shared utility functions
-2. **Implement integration tests** that verify consistent behavior across all execution paths
-3. **Add linting rules** to prevent future CLI context reconstruction bugs
-4. **Create standardized error handling patterns** for all CloudFormation operations
+- **Extract common patterns** into shared utility functions
+- **Implement integration tests** that verify consistent behavior across all execution paths
+- **Add linting rules** to prevent future CLI context reconstruction bugs
+- **Create standardized error handling patterns** for all CloudFormation operations
 
 These bugs represent significant operational risks that should be addressed before any production deployments.
 
@@ -241,17 +227,7 @@ These bugs represent significant operational risks that should be addressed befo
 **Issue**: `used_tokens` vector grows indefinitely without cleanup
 **Bug Impact**: **MEDIUM** - Memory consumption increases over time during long-running operations
 
-### 9. **New Bug: Inconsistent Timeout Handling**
-
-**Locations**: 
-- `src/cfn/create_stack.rs` line 76: `std::time::Duration::from_secs(3600)`
-- `src/cfn/delete_stack.rs` line 176: `std::time::Duration::from_secs(3600)`
-- Other files use `DEFAULT_POLL_INTERVAL_SECS`
-
-**Issue**: Hardcoded timeout values vs centralized constants
-**Bug Impact**: **LOW** - Different timeout behaviors, no centralized configuration
-
-### 10. **New Bug: Inconsistent Error Message Formatting**
+### 9. **New Bug: Inconsistent Error Message Formatting**
 
 **Locations**:
 - `src/cfn/get_stack_template.rs` `handle_aws_error` function
@@ -260,7 +236,7 @@ These bugs represent significant operational risks that should be addressed befo
 **Issue**: Duplicate error handling functions with potential for format drift
 **Bug Impact**: **LOW** - Inconsistent error message formatting across operations
 
-### 11. **New Bug: S3 Error Detection Inconsistency**
+### 10. **New Bug: S3 Error Detection Inconsistency**
 
 **Locations**:
 - `src/cfn/template_approval_request.rs` lines 107-122
@@ -277,14 +253,14 @@ if e.to_string().contains("NotFound") {
 
 **Bug Impact**: **MEDIUM** - Fragile error detection that could break with AWS SDK changes
 
-### 12. **New Bug: Incomplete Parameter Validation**
+### 11. **New Bug: Incomplete Parameter Validation**
 
 **Location**: `src/cfn/template_approval_request.rs` line 162
 **Issue**: TODO comment indicates incomplete validation
 **Code**: `// TODO: Validate template parameters`
 **Bug Impact**: **MEDIUM** - Template approval may proceed with invalid parameters
 
-### 13. **New Bug: Stack Events Pagination Inconsistency**
+### 12. **New Bug: Stack Events Pagination Inconsistency**
 
 **Locations**:
 - `src/cfn/describe_stack.rs` lines 41-75 (custom pagination logic)
@@ -293,54 +269,49 @@ if e.to_string().contains("NotFound") {
 **Issue**: Different approaches to stack events fetching
 **Bug Impact**: **LOW** - Different event limits and ordering across operations
 
-### 14. **New Bug: Mixed Async Patterns**
+### 13. **Mixed Async Patterns (By Design)**
 
-**Locations**: Multiple files show inconsistent async patterns
+**Locations**: Multiple files show different async patterns
 - Some use `tokio::spawn` with `await??`
 - Others use direct `.await` calls
 - Some use `ManagerOutput` wrapper, others don't
 
-**Issue**: Inconsistent async patterns across similar operations
-**Bug Impact**: **LOW** - Code maintenance issues, potential performance differences
+**Issue**: Different async patterns across operations
+**Bug Impact**: **NONE** - This is intentional design as documented in `notes/ADR-2025-07-06-output-sequencing-architecture.md`. Different patterns are used for different use cases: `spawn` for true parallelism with progressive rendering, direct await for simple sequential operations.
 
 ## Updated Risk Assessment
 
 ### Critical Risk Bugs (New)
-1. **Token management race condition** - Could cause operation conflicts
-2. **Environment hardcoding** - Could cause production deployments to wrong environment
+- **Token management race condition** - Could cause operation conflicts
 
 ### High Risk Bugs
-3. **CLI context loss** - Breaks user's AWS profile, region, and other settings
-4. **Token usage inconsistency** - May cause duplicate operation detection failures
-5. **S3 error detection fragility** - Could break with AWS SDK changes
+- **CLI context loss** - Breaks user's AWS profile, region, and other settings
+- **Token usage inconsistency** - May cause duplicate operation detection failures
+- **S3 error detection fragility** - Could break with AWS SDK changes
 
 ### Medium Risk Bugs  
-6. **Memory leak in token tracking** - Long-running operations consume increasing memory
-7. **Incomplete parameter validation** - Template approval may proceed with invalid parameters
-8. **Success state differences** - Could cause false positive/negative operation results
+- **Memory leak in token tracking** - Long-running operations consume increasing memory
+- **Incomplete parameter validation** - Template approval may proceed with invalid parameters
+- **Success state differences** - Could cause false positive/negative operation results
 
 ### Low Risk Bugs
-9. **Confirmation method mismatch** - May break section-based rendering
-10. **Stack events inconsistency** - Users get different information levels
-11. **Template validation missing** - Causes late failures with unclear errors
-12. **Inconsistent timeout handling** - Different timeout behaviors
-13. **Mixed async patterns** - Code maintenance and potential performance issues
+- **Confirmation method mismatch** - May break section-based rendering
+- **Stack events inconsistency** - Users get different information levels
+- **Template validation missing** - Causes late failures with unclear errors
 
 ## Additional Immediate Actions Required
 
-7. **Fix token management race condition** in `CfnContext`
-8. **Implement token cleanup mechanism** to prevent memory leaks
-9. **Replace string-based S3 error detection** with proper error code checking
-10. **Complete parameter validation** in template approval workflow
-11. **Standardize async patterns** across all CloudFormation operations
-12. **Centralize timeout configuration** instead of hardcoded values
+- **Fix token management race condition** in `CfnContext`
+- **Implement token cleanup mechanism** to prevent memory leaks
+- **Replace string-based S3 error detection** with proper error code checking
+- **Complete parameter validation** in template approval workflow
 
 ## Updated Metrics
 
-- **Total bugs identified**: 14 (increased from 8)
-- **Critical risk bugs**: 2 (increased from 1)
-- **High risk bugs**: 5 (increased from 3)
-- **Medium risk bugs**: 3 (increased from 3)
-- **Low risk bugs**: 4 (increased from 2)
+- **Total bugs identified**: 10
+- **Critical risk bugs**: 1
+- **High risk bugs**: 3
+- **Medium risk bugs**: 3
+- **Low risk bugs**: 3
 
 The expanded analysis reveals additional systemic issues that compound the operational risks identified in the initial analysis.

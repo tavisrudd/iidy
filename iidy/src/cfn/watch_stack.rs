@@ -5,15 +5,11 @@ use chrono::Utc;
 use std::collections::HashSet;
 use std::time::Duration;
 
-// Default number of previous events to show when watching a stack
-const DEFAULT_PREVIOUS_EVENTS_COUNT: usize = 10;
 
-// Default poll interval for watch operations (seconds)
-pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 2;
 
 
 use crate::cli::WatchArgs;
-use crate::cfn::{CfnContext, stack_operations::collect_stack_contents};
+use crate::cfn::{CfnContext, stack_operations::collect_stack_contents, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT}};
 use crate::output::{
     DynamicOutputManager, OutputData,
     StackEventWithTiming,
@@ -300,7 +296,7 @@ pub async fn watch_stack_with_data_output(
         stack_identifier, 
         manager_output, 
         poll_interval, 
-        Duration::from_secs(3600), // 1 hour timeout 
+        Duration::from_secs(DEFAULT_POLL_TIMEOUT_SECS), 
         vec![] // No previous events
     ).await
 }

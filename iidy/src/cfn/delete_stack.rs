@@ -17,7 +17,8 @@ use crate::output::{
     data::StackAbsentInfo
 };
 use crate::stack_args::StackArgs;
-use crate::cfn::watch_stack::{ManagerOutput, watch_stack_live_events_with_seen_events, DEFAULT_POLL_INTERVAL_SECS};
+use crate::cfn::watch_stack::{ManagerOutput, watch_stack_live_events_with_seen_events};
+use crate::cfn::constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT};
 use crate::run_command_handler;
 
 use super::CfnContext;
@@ -129,8 +130,8 @@ async fn delete_stack_impl(
             let events = StackEventsService::fetch_events(&client, &stack_id).await?;
             let events_display = convert_stack_events_to_display_with_max(
                 events,
-                "Previous Stack Events (max 10):",
-                Some(10),
+                &format!("Previous Stack Events (max {}):", DEFAULT_PREVIOUS_EVENTS_COUNT),
+                Some(DEFAULT_PREVIOUS_EVENTS_COUNT),
             );
             Ok::<OutputData, anyhow::Error>(events_display)
         })
@@ -173,7 +174,7 @@ async fn delete_stack_impl(
             &stack_id_for_deletion, 
             manager_output,
             std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS), 
-            std::time::Duration::from_secs(3600),
+            std::time::Duration::from_secs(DEFAULT_POLL_TIMEOUT_SECS),
             vec![]
         ).await {
             Ok(status) => status,

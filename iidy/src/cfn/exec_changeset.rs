@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, watch_stack::DEFAULT_POLL_INTERVAL_SECS};
+use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT}};
 use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
     DynamicOutputManager,
@@ -75,9 +75,9 @@ async fn exec_changeset_impl(
                 .collect();
             
             let events_display = StackEventsDisplay {
-                title: "Previous Stack Events (max 10):".to_string(),
+                title: format!("Previous Stack Events (max {}):", DEFAULT_PREVIOUS_EVENTS_COUNT),
                 events: events_with_timing,
-                max_events: Some(10),
+                max_events: Some(DEFAULT_PREVIOUS_EVENTS_COUNT),
                 truncated: None,
             };
             Ok::<OutputData, anyhow::Error>(OutputData::StackEvents(events_display))

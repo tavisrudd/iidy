@@ -93,6 +93,7 @@ macro_rules! run_command_handler {
 // CloudFormation operation modules
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod changeset_operations; // Shared changeset functionality
+pub mod constants;
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;
