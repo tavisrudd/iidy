@@ -1,20 +1,67 @@
 # iidy Development Makefile
 
-.PHONY: test coverage coverage-html coverage-report clean help
+.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed
+
+# Test markers directory
+TEST_MARKERS_DIR := .make-markers
+TEST_LAST_RUN_FILE := $(TEST_MARKERS_DIR)/test-last-run
+TEST_NEXTEST_LAST_RUN_FILE := $(TEST_MARKERS_DIR)/nextest-last-run
+
+# Find all relevant source files
+RUST_FILES := $(shell find src -name "*.rs" 2>/dev/null)
+TOML_FILES := $(shell find . -maxdepth 1 -name "*.toml" 2>/dev/null)
+TEST_FILES := $(shell find tests -name "*.rs" 2>/dev/null)
+ALL_TRACKED_FILES := $(RUST_FILES) $(TOML_FILES) $(TEST_FILES)
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  test           - Run all tests"
+	@echo "  check          - Run cargo check for lib, bins, tests, and benches"
+	@echo "  test           - Run tests only if source files changed"
+	@echo "  test-force     - Force run all tests regardless of changes"
+	@echo "  test-nextest   - Run tests with nextest only if source files changed"
 	@echo "  coverage       - Generate test coverage summary"
 	@echo "  coverage-html  - Generate HTML coverage report"
 	@echo "  coverage-report- Open HTML coverage report in browser"
 	@echo "  clean          - Clean build artifacts and coverage files"
 	@echo "  help           - Show this help message"
 
-# Run all tests
-test:
-	cargo test --all-features
+# Create markers directory if it doesn't exist
+$(TEST_MARKERS_DIR):
+	@mkdir -p $(TEST_MARKERS_DIR)
+
+# Run cargo check for fast sanity check
+check:
+	@echo "🔍 Running cargo check..."
+	cargo check --all-targets
+
+# Run tests only if source files have changed
+test: test-if-changed
+
+# Conditional test target based on file changes
+test-if-changed: $(TEST_MARKERS_DIR)
+	@if [ ! -f "$(TEST_LAST_RUN_FILE)" ] || [ -n "$$(find $(ALL_TRACKED_FILES) -newer $(TEST_LAST_RUN_FILE) 2>/dev/null)" ]; then \
+		echo "🔄 Source files changed, running tests..."; \
+		if [ "$$CLAUDECODE" = "1" ]; then \
+			cargo nextest r --color=never --hide-progress-bar && touch $(TEST_LAST_RUN_FILE); \
+		else \
+			cargo nextest r && touch $(TEST_LAST_RUN_FILE); \
+		fi \
+	else \
+		echo "✅ No changes detected, skipping tests"; \
+	fi
+
+# Force run all tests regardless of changes
+test-force: $(TEST_MARKERS_DIR)
+	@echo "🔄 Force running all tests..."
+	@if [ "$$CLAUDECODE" = "1" ]; then \
+		cargo nextest r --color=never --hide-progress-bar && touch $(TEST_LAST_RUN_FILE); \
+	else \
+		cargo nextest r && touch $(TEST_LAST_RUN_FILE); \
+	fi
+
+# Run nextest only if source files have changed (alias for test-if-changed)
+test-nextest: test-if-changed
 
 # Generate coverage summary (fast)
 coverage:
@@ -54,7 +101,15 @@ clean:
 	rm -f tarpaulin-report.html
 	rm -f cobertura.json  
 	rm -f lcov.info
-	rm -rf target/tarpaulin
+	@if [ -d "target/tarpaulin" ]; then \
+		echo "Removing target/tarpaulin..."; \
+		rm -rf target/tarpaulin; \
+	fi
+	@if [ -d ".make-markers" ]; then \
+		echo "Removing .make-markers..."; \
+		rm -f .make-markers/*; \
+		rmdir .make-markers; \
+	fi
 
 # Quick coverage check (for CI/development)
 coverage-quick:

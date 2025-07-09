@@ -15,3 +15,6 @@ tarpaulin-report.html
 cobertura.json
 lcov.info
 /target/tarpaulin/
+
+# Makefile markers
+.make-markers/
