@@ -5,9 +5,10 @@ use aws_sdk_s3::types::ObjectCannedAcl;
 use crate::cli::{Cli, ApprovalRequestArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnOperation, 
+    CfnOperation,
     template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES},
     template_hash::generate_versioned_location,
+    s3_utils::check_template_exists,
 };
 use crate::output::aws_conversion::create_command_metadata;
 use crate::stack_args::load_stack_args;
@@ -103,22 +104,6 @@ async fn template_approval_request_impl(
     Ok(0)
 }
 
-/// Check if a template exists in S3
-async fn check_template_exists(s3_client: &aws_sdk_s3::Client, bucket: &str, key: &str) -> Result<bool> {
-    match s3_client.head_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            if e.to_string().contains("NotFound") {
-                return Ok(false);
-            }
-            Err(e.into())
-        }
-    }
-}
 
 /// Upload template to S3 with appropriate ACL
 async fn upload_template_to_s3(s3_client: &aws_sdk_s3::Client, bucket: &str, key: &str, content: &str) -> Result<()> {

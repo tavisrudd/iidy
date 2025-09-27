@@ -95,6 +95,7 @@ macro_rules! run_command_handler {
 pub mod changeset_operations; // Shared changeset functionality
 pub mod constants;
 pub mod error_handling;
+pub mod s3_utils;
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;

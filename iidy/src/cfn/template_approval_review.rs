@@ -7,8 +7,9 @@ use owo_colors::OwoColorize;
 use crate::cli::{Cli, ApprovalReviewArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnOperation, 
+    CfnOperation,
     template_hash::parse_s3_url,
+    s3_utils::check_template_exists,
 };
 use crate::output::aws_conversion::create_command_metadata;
 use crate::stack_args::load_stack_args;
@@ -131,22 +132,6 @@ async fn template_approval_review_impl(
     }
 }
 
-/// Check if a template exists in S3
-async fn check_template_exists(s3_client: &aws_sdk_s3::Client, bucket: &str, key: &str) -> Result<bool> {
-    match s3_client.head_object()
-        .bucket(bucket)
-        .key(key)
-        .send()
-        .await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            if e.to_string().contains("NotFound") {
-                return Ok(false);
-            }
-            Err(e.into())
-        }
-    }
-}
 
 /// Download template content from S3
 async fn download_template(s3_client: &aws_sdk_s3::Client, bucket: &str, key: &str) -> Result<String> {
