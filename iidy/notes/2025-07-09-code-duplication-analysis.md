@@ -468,3 +468,313 @@ let template_result = if let Some(ref template_location) = final_stack_args.temp
 5. Remove obsolete duplicate code
 
 This analysis should guide the creation of a systematic cleanup plan to eliminate duplication while maintaining current functionality.
+
+## AWS API Operations Analysis
+
+The following comprehensive analysis catalogs all AWS API method calls found in the src/cfn/ directory, organized by AWS service and operation type.
+
+### CloudFormation Operations
+
+#### describe_stacks
+
+```bash
+rg -n "\.describe_stacks\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/changeset_operations.rs::29][changeset_operations.rs:29 - check_stack_state]]
+- [[file:src/cfn/changeset_operations.rs::74][changeset_operations.rs:74 - check_stack_exists]]
+- [[file:src/cfn/create_or_update.rs::169][create_or_update.rs:169 - check_stack_exists]]
+- [[file:src/cfn/delete_stack.rs::27][delete_stack.rs:27 - check_stack_exists_for_delete]]
+- [[file:src/cfn/describe_stack.rs::25][describe_stack.rs:25 - describe_stack_impl]]
+- [[file:src/cfn/describe_stack_drift.rs::30][describe_stack_drift.rs:30 - describe_stack_drift_impl]]
+- [[file:src/cfn/list_stacks.rs::82][list_stacks.rs:82 - list_stacks_impl]]
+- [[file:src/cfn/stack_operations.rs::43][stack_operations.rs:43 - collect_stack_contents]]
+- [[file:src/cfn/stack_operations.rs::288][stack_operations.rs:288 - StackInfoService::get_stack]]
+
+#### create_stack
+
+```bash
+rg -n "\.create_stack\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/request_builder.rs::60][request_builder.rs:60 - CfnRequestBuilder::build_create_stack]]
+
+#### update_stack
+
+```bash
+rg -n "\.update_stack\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/request_builder.rs::208][request_builder.rs:208 - CfnRequestBuilder::build_update_stack]]
+
+#### delete_stack
+
+```bash
+rg -n "\.delete_stack\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/delete_stack.rs::63][delete_stack.rs:63 - perform_stack_deletion_without_output]]
+
+#### create_change_set
+
+```bash
+rg -n "\.create_change_set\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/changeset_operations.rs::216][changeset_operations.rs:216 - perform_changeset_creation]]
+- [[file:src/cfn/request_builder.rs::316][request_builder.rs:316 - CfnRequestBuilder::build_create_changeset]]
+
+#### describe_change_set
+
+```bash
+rg -n "\.describe_change_set\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/changeset_operations.rs::386][changeset_operations.rs:386 - fetch_pending_changesets]]
+- [[file:src/cfn/changeset_operations.rs::456][changeset_operations.rs:456 - wait_for_changeset_completion]]
+- [[file:src/cfn/changeset_operations.rs::494][changeset_operations.rs:494 - build_existing_changeset_result]]
+- [[file:src/cfn/stack_operations.rs::116][stack_operations.rs:116 - collect_pending_changesets]]
+
+#### execute_change_set
+
+```bash
+rg -n "\.execute_change_set\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/request_builder.rs::410][request_builder.rs:410 - CfnRequestBuilder::build_execute_changeset]]
+
+#### list_change_sets
+
+```bash
+rg -n "\.list_change_sets\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/changeset_operations.rs::58][changeset_operations.rs:58 - check_existing_changesets]]
+- [[file:src/cfn/changeset_operations.rs::374][changeset_operations.rs:374 - fetch_pending_changesets]]
+- [[file:src/cfn/stack_operations.rs::99][stack_operations.rs:99 - collect_pending_changesets]]
+
+#### describe_stack_events
+
+```bash
+rg -n "\.describe_stack_events\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/describe_stack.rs::46][describe_stack.rs:46 - describe_stack_impl events_task]]
+- [[file:src/cfn/describe_stack.rs::56][describe_stack.rs:56 - describe_stack_impl events_task pagination]]
+- [[file:src/cfn/stack_operations.rs::177][stack_operations.rs:177 - StackEventsService::fetch_events]]
+
+#### describe_stack_resources
+
+```bash
+rg -n "\.describe_stack_resources\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/stack_operations.rs::34][stack_operations.rs:34 - collect_stack_contents]]
+
+#### get_template
+
+```bash
+rg -n "\.get_template\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/get_stack_template.rs::132][get_stack_template.rs:132 - get_stack_template]]
+
+#### estimate_template_cost
+
+```bash
+rg -n "\.estimate_template_cost\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/estimate_cost.rs::59][estimate_cost.rs:59 - estimate_cost_impl]]
+
+#### validate_template
+
+```bash
+rg -n "\.validate_template\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/template_approval_request.rs::137][template_approval_request.rs:137 - validate_template]]
+
+#### detect_stack_drift
+
+```bash
+rg -n "\.detect_stack_drift\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/describe_stack_drift.rs::75][describe_stack_drift.rs:75 - describe_stack_drift_impl]]
+
+#### describe_stack_drift_detection_status
+
+```bash
+rg -n "\.describe_stack_drift_detection_status\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/describe_stack_drift.rs::84][describe_stack_drift.rs:84 - describe_stack_drift_impl]]
+
+#### describe_stack_resource_drifts
+
+```bash
+rg -n "\.describe_stack_resource_drifts\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/describe_stack_drift.rs::115][describe_stack_drift.rs:115 - collect_stack_drift_data]]
+
+### S3 Operations
+
+#### head_object
+
+```bash
+rg -n "\.head_object\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/template_approval_request.rs::108][template_approval_request.rs:108 - check_template_exists]]
+- [[file:src/cfn/template_approval_review.rs::136][template_approval_review.rs:136 - check_template_exists]]
+
+#### get_object
+
+```bash
+rg -n "\.get_object\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/template_approval_review.rs::153][template_approval_review.rs:153 - download_template]]
+- [[file:src/cfn/template_loader.rs::320][template_loader.rs:320 - maybe_sign_s3_http_url]]
+
+#### put_object
+
+```bash
+rg -n "\.put_object\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/template_approval_request.rs::125][template_approval_request.rs:125 - upload_template_to_s3]]
+- [[file:src/cfn/template_approval_review.rs::198][template_approval_review.rs:198 - approve_template (approved location)]]
+- [[file:src/cfn/template_approval_review.rs::207][template_approval_review.rs:207 - approve_template (latest copy)]]
+
+#### delete_object
+
+```bash
+rg -n "\.delete_object\(" src/cfn/
+```
+
+Locations:
+- [[file:src/cfn/template_approval_review.rs::216][template_approval_review.rs:216 - approve_template (cleanup)]]
+
+### Operation Summary by File
+
+#### changeset_operations.rs
+CloudFormation operations for changeset management:
+- describe_stacks: Stack existence checks
+- list_change_sets: Finding existing changesets
+- create_change_set: Creating new changesets
+- describe_change_set: Fetching changeset details and monitoring status
+
+#### create_or_update.rs
+Primary stack lifecycle operations:
+- describe_stacks: Stack existence detection for create vs update logic
+
+#### create_stack.rs
+Stack creation operations:
+- Uses CfnRequestBuilder which internally calls create_stack
+
+#### update_stack.rs
+Stack update operations:
+- Uses CfnRequestBuilder which internally calls update_stack
+
+#### delete_stack.rs
+Stack deletion operations:
+- describe_stacks: Pre-deletion existence check
+- delete_stack: Actual deletion operation
+
+#### describe_stack.rs
+Stack information retrieval:
+- describe_stacks: Basic stack information
+- describe_stack_events: Stack event history with pagination
+
+#### describe_stack_drift.rs
+Stack drift detection and analysis:
+- describe_stacks: Stack information for drift analysis
+- detect_stack_drift: Initiate drift detection
+- describe_stack_drift_detection_status: Monitor drift detection progress
+- describe_stack_resource_drifts: Retrieve detailed drift information
+
+#### estimate_cost.rs
+Cost estimation:
+- estimate_template_cost: Generate cost estimation URLs
+
+#### get_stack_template.rs
+Template retrieval:
+- get_template: Download stack templates in various formats
+
+#### list_stacks.rs
+Stack listing and filtering:
+- describe_stacks: Retrieve all stacks with pagination
+
+#### request_builder.rs
+Request building utilities:
+- create_stack: Stack creation request building
+- update_stack: Stack update request building
+- create_change_set: Changeset creation request building
+- execute_change_set: Changeset execution request building
+
+#### stack_operations.rs
+Shared stack operations:
+- describe_stacks: Stack information retrieval
+- describe_stack_resources: Resource information
+- describe_stack_events: Event retrieval
+- list_change_sets: Changeset listing
+- describe_change_set: Changeset details
+
+#### template_approval_request.rs
+Template approval workflow (S3 integration):
+- validate_template: Template validation
+- head_object: Check template existence in S3
+- put_object: Upload pending templates to S3
+
+#### template_approval_review.rs
+Template approval review workflow:
+- head_object: Check template existence
+- get_object: Download templates for comparison
+- put_object: Upload approved templates
+- delete_object: Cleanup pending templates
+
+#### template_loader.rs
+Template loading with S3 support:
+- get_object: Download templates from S3 (with presigned URLs)
+
+### Usage Patterns
+
+#### Authentication and Token Management
+All CloudFormation operations use client_request_token or client_token fields for idempotency, managed by the CfnRequestBuilder pattern.
+
+#### Error Handling
+Consistent error handling pattern using SdkError::ServiceError for distinguishing between different error types (e.g., "ValidationError" for non-existent resources).
+
+#### Pagination
+Several operations implement pagination:
+- describe_stacks in list_stacks.rs
+- describe_stack_events in describe_stack.rs
+- describe_stack_resource_drifts in describe_stack_drift.rs
+
+#### Async Operations
+All AWS operations are async and use tokio::spawn for concurrent execution where appropriate.
+
+#### S3 Integration
+Template approval system uses S3 for storing and managing CloudFormation templates with proper ACL settings (BucketOwnerFullControl).

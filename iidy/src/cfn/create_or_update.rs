@@ -2,7 +2,7 @@ use anyhow::Result;
 use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, constants::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations};
+use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, collect_stack_contents}, determine_operation_success, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, constants::DEFAULT_POLL_INTERVAL_SECS, StackChangeType, UpdateResult, changeset_operations::{self, check_stack_exists}};
 use crate::cli::{UpdateStackArgs, Cli, AwsOpts, Commands};
 use crate::output::{
     DynamicOutputManager,
@@ -164,24 +164,6 @@ async fn watch_and_summarize_stack_operation(
     Ok(if success { 0 } else { 1 })
 }
 
-/// Check if a CloudFormation stack exists.
-async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Result<bool> {
-    let describe_request = context.client.describe_stacks().stack_name(stack_name);
-
-    match describe_request.send().await {
-        Ok(_) => Ok(true),
-        Err(SdkError::ServiceError(e)) => {
-            let service_err = e.err();
-            if service_err.code() == Some("ValidationError") &&
-               service_err.message().unwrap_or("").contains("does not exist") {
-                Ok(false)
-            } else {
-                Err(SdkError::ServiceError(e).into())
-            }
-        }
-        Err(e) => Err(e.into()),
-    }
-}
 
 /// Create a new stack directly with data-driven output.
 async fn create_stack_direct_data(
