@@ -1,9 +1,8 @@
 use crate::cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli};
-use crate::cfn::create_context_for_operation;
+use crate::cfn::{create_context_for_operation, error_handling::handle_aws_error};
 use crate::output::{
-    DynamicOutputManager, OutputData, 
+    DynamicOutputManager, OutputData,
     data::StackTemplate,
-    aws_conversion::convert_aws_error_to_error_info,
     manager::OutputOptions
 };
 use anyhow::Result;
@@ -12,17 +11,6 @@ use aws_sdk_cloudformation::types::TemplateStage;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 
-/// Helper function to handle AWS errors with consistent pattern
-async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(e) => {
-            let error_info = convert_aws_error_to_error_info(&e);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            Ok(None) // Signal failure
-        }
-    }
-}
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {

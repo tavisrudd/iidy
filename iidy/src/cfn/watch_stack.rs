@@ -9,27 +9,16 @@ use std::time::Duration;
 
 
 use crate::cli::WatchArgs;
-use crate::cfn::{CfnContext, stack_operations::collect_stack_contents, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT}};
+use crate::cfn::{CfnContext, stack_operations::collect_stack_contents, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT}, error_handling::handle_aws_error};
 use crate::output::{
     DynamicOutputManager, OutputData,
     StackEventWithTiming,
     OperationCompleteInfo, InactivityTimeoutInfo,
     convert_stack_to_definition,
-    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event, convert_aws_error_to_error_info}
+    aws_conversion::{convert_stack_events_to_display_with_max, convert_aws_stack_event}
 };
 use crate::run_command_handler;
 
-/// Helper function to handle AWS errors with consistent pattern
-async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut DynamicOutputManager) -> Result<Option<T>> {
-    match result {
-        Ok(value) => Ok(Some(value)),
-        Err(e) => {
-            let error_info = convert_aws_error_to_error_info(&e);
-            output_manager.render(OutputData::Error(error_info)).await?;
-            Ok(None) // Signal failure
-        }
-    }
-}
 
 use super::{stack_operations::{StackEventsService, StackInfoService}};
 
