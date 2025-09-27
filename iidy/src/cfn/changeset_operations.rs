@@ -522,3 +522,40 @@ async fn build_existing_changeset_result(
     })
 }
 
+/// Shared function for confirming changeset execution
+pub async fn confirm_changeset_execution(
+    output_manager: &mut crate::output::DynamicOutputManager,
+    context: &crate::cfn::CfnContext,
+    yes_flag: bool,
+    use_key: bool,
+) -> Result<bool> {
+    let confirmed = if yes_flag {
+        true
+    } else {
+        if use_key {
+            output_manager.request_confirmation_with_key(
+                "Do you want to execute this changeset now?".to_string(),
+                "execute_changeset".to_string()
+            ).await?
+        } else {
+            output_manager.request_confirmation(
+                "Do you want to execute this changeset now?".to_string()
+            ).await?
+        }
+    };
+
+    if !confirmed {
+        let elapsed = context.elapsed_seconds().await?;
+        if use_key {
+            use crate::output::aws_conversion::create_command_result;
+            output_manager.render(create_command_result(true, elapsed, Some("Changeset execution declined".to_string()))).await?;
+        } else {
+            use crate::output::aws_conversion::create_final_command_summary;
+            let final_summary = create_final_command_summary(true, elapsed);
+            output_manager.render(final_summary).await?;
+        }
+    }
+
+    Ok(confirmed)
+}
+

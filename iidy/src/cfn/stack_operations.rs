@@ -8,10 +8,11 @@ use aws_sdk_cloudformation::{Client, types::{StackEvent, Stack}};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
-use super::{CfnContext, is_terminal_status::is_terminal_resource_status};
+use super::{CfnContext, is_terminal_status::is_terminal_resource_status, determine_operation_success, constants::DEFAULT_POLL_INTERVAL_SECS};
 use crate::output::{
-    StackContents, StackStatusInfo, ChangeSetInfo, ChangeInfo, ChangeDetail,
-    aws_conversion::{convert_stack_resources, convert_stack_outputs, convert_outputs_to_exports}
+    StackContents, StackStatusInfo, ChangeSetInfo, ChangeInfo, ChangeDetail, DynamicOutputManager,
+    aws_conversion::{convert_stack_resources, convert_stack_outputs, convert_outputs_to_exports, convert_stack_to_definition, create_final_command_summary},
+    data::OutputData
 };
 
 /// Collect stack contents data (controller pattern - no display logic)
@@ -323,4 +324,74 @@ impl StackInfoService {
             }
         }
     }
+}
+
+/// Watch stack operation and summarize results - shared pattern across multiple commands
+///
+/// This function implements the common pattern of:
+/// 1. Fetching and displaying stack definition
+/// 2. Watching stack operation progress with live events
+/// 3. Handling DELETE_COMPLETE early exit
+/// 4. Collecting and displaying final stack contents
+/// 5. Creating final command summary
+///
+/// Used by create_or_update, exec_changeset, and update_stack commands.
+pub async fn watch_stack_operation_and_summarize(
+    context: &CfnContext,
+    stack_id: &str,
+    output_manager: &mut DynamicOutputManager,
+    success_states: &[&str],
+) -> Result<i32> {
+    // Start stack definition task
+    let stack_task = {
+        let client = context.client.clone();
+        let stack_id = stack_id.to_string();
+        tokio::spawn(async move {
+            let stack = StackInfoService::get_stack(&client, &stack_id).await?;
+            let output_data = convert_stack_to_definition(&stack, true);
+            Ok::<OutputData, anyhow::Error>(output_data)
+        })
+    };
+
+    // Await and render stack definition first
+    crate::await_and_render!(stack_task, output_manager);
+
+    // Then handle live events watching using the existing helper function
+    use super::watch_stack::watch_stack_with_data_output;
+    let final_status = match watch_stack_with_data_output(
+        context,
+        stack_id,
+        output_manager,
+        std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
+    ).await {
+        Ok(status) => status,
+        Err(error) => {
+            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
+            return Ok(1);
+        }
+    };
+
+    let elapsed_seconds = context.elapsed_seconds().await?;
+    let success = determine_operation_success(&final_status, success_states);
+
+    // Skip stack contents if the stack was deleted (can happen with failed operations)
+    if let Some(ref status) = final_status {
+        if status == "DELETE_COMPLETE" {
+            let final_command_summary = create_final_command_summary(
+                false, // Mark as failed since stack was deleted
+                elapsed_seconds
+            );
+            output_manager.render(final_command_summary).await?;
+            return Ok(1); // Return exit code 1 for failure
+        }
+    }
+
+    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    output_manager.render(OutputData::StackContents(stack_contents)).await?;
+
+    let final_command_summary = create_final_command_summary(success, elapsed_seconds);
+    output_manager.render(final_command_summary).await?;
+
+    Ok(if success { 0 } else { 1 })
 }

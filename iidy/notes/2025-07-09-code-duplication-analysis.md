@@ -1,7 +1,8 @@
 # Code Duplication Analysis - CloudFormation Command Handlers
 
-**Date**: 2025-07-09  
-**Status**: Analysis Complete  
+**Date**: 2025-07-09
+**Last Updated**: 2025-09-26
+**Status**: Ready for Refactoring
 **Priority**: High  
 
 ## Executive Summary
@@ -469,6 +470,44 @@ let template_result = if let Some(ref template_location) = final_stack_args.temp
 
 This analysis should guide the creation of a systematic cleanup plan to eliminate duplication while maintaining current functionality.
 
+## Progress Update (2025-09-26)
+
+### ✅ Completed Since Analysis
+- **Constants Centralization**: Created `src/cfn/constants.rs` to centralize timing constants
+- **Environment Hardcoding Bug**: Fixed environment hardcoding bug (commit `bded080`)
+- **Template Approval System**: Implemented S3-based template approval workflow
+- **Repository Health**: All tests passing (593/593), no compiler warnings
+
+### ✅ Completed Work (2025-09-26)
+**Phase 1: Function Duplications** - COMPLETED ✅
+1. **`check_stack_exists` functions** - ✅ CONSOLIDATED:
+   - Removed duplicate from `src/cfn/create_or_update.rs:168`
+   - Using shared function from `src/cfn/changeset_operations.rs:73`
+
+2. **`handle_aws_error` functions** - ✅ CONSOLIDATED:
+   - Created shared module `src/cfn/error_handling.rs`
+   - Removed duplicates from `src/cfn/get_stack_template.rs` and `src/cfn/watch_stack.rs`
+
+3. **`check_template_exists` functions** - ✅ CONSOLIDATED:
+   - Created shared module `src/cfn/s3_utils.rs`
+   - Removed duplicates from `src/cfn/template_approval_request.rs` and `src/cfn/template_approval_review.rs`
+
+**Phase 2: Pattern Duplications** - IN PROGRESS 🚧
+4. **Stack watching/summarization pattern** - 🚧 IN PROGRESS:
+   - ✅ Created shared function `watch_stack_operation_and_summarize` in `src/cfn/stack_operations.rs`
+   - ✅ Updated `src/cfn/create_or_update.rs` - removed ~55 lines of duplicate code
+   - ✅ Updated `src/cfn/update_stack.rs` - removed ~45 lines of duplicate code
+   - ✅ Updated `src/cfn/exec_changeset.rs` - removed ~40 lines while preserving unique previous events display
+   - ⚠️ **STATUS**: Has unused import warnings that need cleanup before testing
+   - ⚠️ **NEXT**: Clean up imports, run tests, commit if passing
+
+### ❌ Remaining Duplications
+5. **Changeset confirmation pattern** - User confirmation logic still duplicated across 3 locations
+6. **CLI context reconstruction pattern** - Complex `exec_changeset` calling pattern still duplicated
+7. **Changeset processing logic** - Complex changeset processing still duplicated
+
+**Current Impact**: ~200-250 lines of duplicate code remain (down from ~500+ originally)
+
 ## AWS API Operations Analysis
 
 The following comprehensive analysis catalogs all AWS API method calls found in the src/cfn/ directory, organized by AWS service and operation type.
@@ -778,3 +817,214 @@ All AWS operations are async and use tokio::spawn for concurrent execution where
 
 #### S3 Integration
 Template approval system uses S3 for storing and managing CloudFormation templates with proper ACL settings (BucketOwnerFullControl).
+
+---
+
+## TODO: Code Duplication Cleanup Plan
+
+**Prerequisites**: Repository is in good state (all tests passing, no compiler warnings)
+
+### EXECUTION PLAN
+
+**Single Agent Sequential Approach**: Complete Phase 1 (quick wins) first, then Phase 2 (complex patterns)
+
+**Total Estimated Time**: 7-9 hours
+**Strategy**: Start with low-risk function duplications, then tackle complex patterns
+
+---
+
+## Phase 1: Function Duplications (Quick Wins)
+
+**Estimated Time**: 1.5 hours
+**Risk Level**: Low (simple function moves/deletions)
+
+#### TODO-1: Remove duplicate `check_stack_exists` function
+**Estimated Effort**: 15 minutes
+**Files to modify**:
+- `src/cfn/create_or_update.rs` - Remove lines 168-184 (private duplicate function)
+- `src/cfn/create_or_update.rs` - Add import: `use crate::cfn::changeset_operations::check_stack_exists;`
+- Verify call on line 52 still works with public function
+
+**Verification**:
+```bash
+# Ensure only one check_stack_exists remains
+rg -n "fn check_stack_exists" src/cfn/ --type rust
+# Should only show changeset_operations.rs
+
+# Run tests
+cargo nextest r --color=never --hide-progress-bar
+```
+
+#### TODO-2: Consolidate `handle_aws_error` functions
+**Estimated Effort**: 30 minutes
+**Strategy**: Create shared utility in `src/cfn/error_handling.rs`
+
+**Files to create**:
+- `src/cfn/error_handling.rs` - Move the function here, make it public
+
+**Files to modify**:
+- `src/cfn/get_stack_template.rs` - Remove lines 16-25, add import
+- `src/cfn/watch_stack.rs` - Remove lines 23-32, add import
+- `src/cfn/mod.rs` - Add `pub mod error_handling;`
+
+**Function signature to extract**:
+```rust
+pub async fn handle_aws_error<T>(
+    result: anyhow::Result<T>,
+    output_manager: &mut DynamicOutputManager
+) -> anyhow::Result<Option<T>>
+```
+
+#### TODO-3: Consolidate S3 `check_template_exists` functions
+**Estimated Effort**: 30 minutes
+**Strategy**: Create shared S3 utilities module
+
+**Files to create**:
+- `src/cfn/s3_utils.rs` - Move the function here, make it public
+
+**Files to modify**:
+- `src/cfn/template_approval_request.rs` - Remove lines 107-122, add import
+- `src/cfn/template_approval_review.rs` - Remove lines 135-149, add import
+- `src/cfn/mod.rs` - Add `pub mod s3_utils;`
+
+**Function signature to extract**:
+```rust
+pub async fn check_template_exists(
+    s3_client: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str
+) -> anyhow::Result<bool>
+```
+
+---
+
+## Phase 2: Pattern Duplications (Medium Priority)
+
+**Estimated Time**: 6-8 hours
+**Risk Level**: Medium (complex pattern extraction)
+
+#### TODO-4: Extract stack watching pattern
+**Estimated Effort**: 2-3 hours
+**Strategy**: Create shared function in `src/cfn/stack_operations.rs`
+
+**Pattern to extract** (found in multiple files):
+- `src/cfn/create_or_update.rs` - `watch_and_summarize_stack_operation` lines 107-165
+- `src/cfn/exec_changeset.rs` - inline in `exec_changeset_impl` lines 43-123
+- `src/cfn/update_stack.rs` - inline in `update_stack_impl` lines 54-100
+
+**Target function signature**:
+```rust
+pub async fn watch_stack_operation_and_summarize(
+    context: &CfnContext,
+    stack_id: &str,
+    output_manager: &mut DynamicOutputManager,
+    success_states: &[&str],
+) -> anyhow::Result<i32>
+```
+
+#### TODO-5: Extract changeset confirmation pattern
+**Estimated Effort**: 1 hour
+**Strategy**: Create shared function in `src/cfn/changeset_operations.rs`
+
+**Pattern locations**:
+- `src/cfn/create_or_update.rs` - `update_stack_with_changeset_data` lines 302-315
+- `src/cfn/create_or_update.rs` - `create_stack_with_changeset_data` lines 380-394
+- `src/cfn/update_stack.rs` - `update_stack_with_changeset` lines 177-188
+
+**Target function signature**:
+```rust
+pub async fn confirm_changeset_execution(
+    output_manager: &mut DynamicOutputManager,
+    context: &CfnContext,
+    yes_flag: bool,
+) -> anyhow::Result<bool>
+```
+
+#### TODO-6: Refactor CLI context reconstruction
+**Estimated Effort**: 3-4 hours
+**Problem**: Complex pattern for reconstructing CLI context to call `exec_changeset`
+**Strategy**: This suggests a design issue - consider creating a direct function call instead
+
+**Pattern locations**:
+- `src/cfn/create_or_update.rs` - `update_stack_with_changeset_data` lines 319-349
+- `src/cfn/create_or_update.rs` - `create_stack_with_changeset_data` lines 398-420
+- `src/cfn/update_stack.rs` - `update_stack_with_changeset` lines 192-204
+
+**Investigation needed**: Determine if `exec_changeset` can be called directly without CLI reconstruction
+
+---
+
+## Phase 3: Advanced Pattern Duplications (Lower Priority)
+
+**Note**: These can be tackled later after Phases 1 & 2 are complete
+
+#### TODO-7: Consolidate changeset processing logic
+**Estimated Effort**: 2-3 hours
+**Files affected**:
+- `src/cfn/changeset_operations.rs` - `fetch_pending_changesets` lines 369-435
+- `src/cfn/stack_operations.rs` - `collect_pending_changesets` lines 94-168
+
+#### TODO-8: Extract stack definition fetching pattern
+**Estimated Effort**: 1-2 hours
+**Pattern**: Spawning tasks to fetch stack info appears 4+ times across files
+
+---
+
+## Testing & Commit Instructions
+
+**Before starting any phase**:
+```bash
+cargo check --all
+cargo nextest r --color=never --hide-progress-bar
+```
+
+**After each TODO task**:
+```bash
+cargo check --all
+cargo nextest r --color=never --hide-progress-bar
+git add -A && git commit -m "refactor: [specific change description]"
+```
+
+**Phase 1 completion verification**:
+```bash
+rg -n "fn check_stack_exists" src/cfn/ --type rust  # Should show only 1
+rg -n "fn handle_aws_error" src/cfn/ --type rust    # Should show only 1
+rg -n "fn check_template_exists" src/cfn/ --type rust # Should show only 1
+```
+
+**Final commit message examples**:
+```bash
+# After Phase 1
+git commit -m "refactor: consolidate duplicate functions across CFN modules
+
+- Remove duplicate check_stack_exists from create_or_update.rs
+- Consolidate handle_aws_error functions into error_handling.rs
+- Consolidate S3 check_template_exists into s3_utils.rs
+- All tests passing, no functional changes"
+
+# After Phase 2
+git commit -m "refactor: extract shared patterns from CFN command handlers
+
+- Extract stack watching pattern into shared function
+- Extract changeset confirmation pattern
+- Refactor CLI context reconstruction for exec_changeset
+- All tests passing, improved maintainability"
+```
+
+### Success Metrics
+
+**Phase 1 completion**:
+- Remove ~50-80 lines of duplicate code
+- Consolidate 3 duplicate functions
+- No functional changes, all tests pass
+
+**Phase 2 completion**:
+- Remove ~150-200 lines of duplicate code
+- Extract 3 major shared patterns
+- Improved maintainability
+
+**Overall success**:
+- Remove ~300-400 lines of duplicate code
+- Create 6-8 new shared utility functions
+- Maintain 100% test pass rate
+- Zero compiler warnings

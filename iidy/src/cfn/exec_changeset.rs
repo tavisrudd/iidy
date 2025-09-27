@@ -1,17 +1,17 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackInfoService, collect_stack_contents, StackEventsService}, determine_operation_success, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT}};
+use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackEventsService, StackInfoService, watch_stack_operation_and_summarize}, constants::DEFAULT_PREVIOUS_EVENTS_COUNT};
 use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
     DynamicOutputManager,
-    aws_conversion::{convert_token_info, create_command_metadata, create_final_command_summary, convert_stack_to_definition},
+    aws_conversion::{convert_token_info, create_command_metadata},
     data::{OutputData, StackEventsDisplay}
 };
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
-async fn exec_changeset_impl(
+pub async fn exec_changeset_impl(
     output_manager: &mut DynamicOutputManager,
     context: &crate::cfn::CfnContext,
     cli: &Cli,
@@ -40,16 +40,7 @@ async fn exec_changeset_impl(
 
     let stack_id = perform_changeset_execution(context, &final_stack_args, args, output_manager).await?;
 
-    let stack_task = {
-        let client = context.client.clone();
-        let stack_id = stack_id.clone();
-        tokio::spawn(async move {
-            let stack = StackInfoService::get_stack(&client, &stack_id).await?;
-            let output_data = convert_stack_to_definition(&stack, true);
-            Ok::<OutputData, anyhow::Error>(output_data)
-        })
-    };
-    
+    // Display previous events first (unique to exec_changeset)
     let previous_events_task = {
         let client = context.client.clone();
         let stack_id = stack_id.clone();
@@ -73,7 +64,7 @@ async fn exec_changeset_impl(
                     duration_seconds: None,
                 })
                 .collect();
-            
+
             let events_display = StackEventsDisplay {
                 title: format!("Previous Stack Events (max {}):", DEFAULT_PREVIOUS_EVENTS_COUNT),
                 events: events_with_timing,
@@ -83,45 +74,12 @@ async fn exec_changeset_impl(
             Ok::<OutputData, anyhow::Error>(OutputData::StackEvents(events_display))
         })
     };
-    
-    output_manager.render(stack_task.await??).await?;
+
     output_manager.render(previous_events_task.await??).await?;
-    
-    use super::watch_stack::watch_stack_with_data_output;
-    let final_status = match watch_stack_with_data_output(
-        context,
-        &stack_id,
-        output_manager,
-        std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
-    ).await {
-        Ok(status) => status,
-        Err(error) => {
-            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
-            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
-            return Ok(1);
-        }
-    };
-    
-    let elapsed_seconds = context.elapsed_seconds().await?;
-    
+
+    // Use shared pattern for stack definition, watching, and summary
     const CHANGESET_EXECUTE_SUCCESS_STATES: &[&str] = &["UPDATE_COMPLETE", "CREATE_COMPLETE"];
-    let success = determine_operation_success(&final_status, CHANGESET_EXECUTE_SUCCESS_STATES);
-    
-    if let Some(ref status) = final_status {
-        if status == "DELETE_COMPLETE" {
-            let final_command_summary = create_final_command_summary(success, elapsed_seconds);
-            output_manager.render(final_command_summary).await?;
-            return Ok(1);
-        }
-    }
-    
-    let stack_contents = collect_stack_contents(context, &stack_id).await?;
-    output_manager.render(OutputData::StackContents(stack_contents)).await?;
-    
-    let final_summary = create_final_command_summary(success, elapsed_seconds);
-    output_manager.render(final_summary).await?;
-    
-    Ok(if success { 0 } else { 1 })
+    watch_stack_operation_and_summarize(context, &stack_id, output_manager, CHANGESET_EXECUTE_SUCCESS_STATES).await
 }
 
 pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> {
@@ -143,8 +101,35 @@ async fn perform_changeset_execution(
 
     let _response = execute_request.send().await?;
 
-    let stack_id = StackInfoService::get_stack_id(&context.client, 
+    let stack_id = StackInfoService::get_stack_id(&context.client,
         stack_args.stack_name.as_ref().unwrap()).await?;
 
     Ok(stack_id)
+}
+
+/// Helper to create CLI and call exec_changeset - avoids duplicating CLI reconstruction
+pub async fn call_exec_changeset_with_reconstruction(
+    changeset_name: String,
+    stack_name: String,
+    argsfile: Option<String>,
+    global_opts: &crate::cli::GlobalOpts,
+    aws_opts: &crate::cli::AwsOpts,
+) -> Result<i32> {
+    use super::exec_changeset;
+
+    // Create exec_changeset args from the changeset result
+    let exec_args = ExecChangeSetArgs {
+        changeset_name,
+        argsfile: argsfile.unwrap_or_default(),
+        stack_name: Some(stack_name),
+    };
+
+    // Reconstruct CLI - this is the pattern we're extracting
+    let exec_cli = Cli {
+        global_opts: global_opts.clone(),
+        aws_opts: aws_opts.clone(),
+        command: crate::cli::Commands::ExecChangeset(exec_args.clone()),
+    };
+
+    exec_changeset::exec_changeset(&exec_cli, &exec_args).await
 }

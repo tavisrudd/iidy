@@ -1,19 +1,18 @@
 use anyhow::Result;
 
 use crate::cfn::{
-    CfnRequestBuilder, stack_operations::StackInfoService, 
-    CfnOperation, determine_operation_success, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate
+    CfnRequestBuilder, stack_operations::watch_stack_operation_and_summarize,
+    changeset_operations::confirm_changeset_execution,
+    exec_changeset::call_exec_changeset_with_reconstruction,
+    CfnOperation, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate
 };
 use crate::cli::{UpdateStackArgs, Cli};
 use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::output::{
     DynamicOutputManager, OutputData,
-    aws_conversion::{create_command_metadata, create_final_command_summary, convert_token_info, convert_stack_to_definition}
+    aws_conversion::{create_command_metadata, convert_token_info}
 };
-use crate::cfn::stack_operations::collect_stack_contents;
-use crate::cfn::watch_stack::{watch_stack_with_data_output};
-use crate::cfn::constants::DEFAULT_POLL_INTERVAL_SECS;
 use crate::run_command_handler;
 
 async fn update_stack_impl(
@@ -51,54 +50,8 @@ async fn update_stack_impl(
     }
 
     let stack_id = perform_stack_update(context, &final_stack_args, args, &global_opts.environment, output_manager).await?;
-    
-    let stack_task = {
-        let client = context.client.clone();
-        let stack_id = stack_id.clone();
-        tokio::spawn(async move {
-            let stack = StackInfoService::get_stack(&client, &stack_id).await?;
-            let output_data = convert_stack_to_definition(&stack, true);
-            Ok::<OutputData, anyhow::Error>(output_data)
-        })
-    };
-    
-    output_manager.render(stack_task.await??).await?;
-    
-    let final_status = match watch_stack_with_data_output(
-        context,
-        &stack_id,
-        output_manager,
-        std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
-    ).await {
-        Ok(status) => status,
-        Err(error) => {
-            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
-            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
-            return Ok(1);
-        }
-    };
-    
-    let elapsed_seconds = context.elapsed_seconds().await?;
-    let success = determine_operation_success(&final_status, UPDATE_SUCCESS_STATES);
-    
-    if let Some(ref status) = final_status {
-        if status == "DELETE_COMPLETE" {
-            let final_command_summary = create_final_command_summary(
-                false,
-                elapsed_seconds
-            );
-            output_manager.render(final_command_summary).await?;
-            return Ok(1);
-        }
-    }
-    
-    let stack_contents = collect_stack_contents(context, &stack_id).await?;
-    output_manager.render(OutputData::StackContents(stack_contents)).await?;
-    
-    let final_summary = create_final_command_summary(success, elapsed_seconds);
-    output_manager.render(final_summary).await?;
-    
-    Ok(if success { 0 } else { 1 })
+
+    watch_stack_operation_and_summarize(context, &stack_id, output_manager, UPDATE_SUCCESS_STATES).await
 }
 
 pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
@@ -175,32 +128,17 @@ async fn update_stack_with_changeset(
 
     output_manager.render(OutputData::ChangeSetResult(changeset_result.clone())).await?;
 
-    let confirmed = if args.yes {
-        true
-    } else {
-        output_manager.request_confirmation("Do you want to execute this changeset now?".to_string()).await?
-    };
-    
+    let confirmed = confirm_changeset_execution(output_manager, context, args.yes, false).await?;
+
     if !confirmed {
-        let elapsed = context.elapsed_seconds().await?;
-        let final_summary = create_final_command_summary(true, elapsed);
-        output_manager.render(final_summary).await?;
         return Ok(130);
     }
 
-    use super::exec_changeset;
-    
-    let exec_args = crate::cli::ExecChangeSetArgs {
-        changeset_name: changeset_result.changeset_name,
-        argsfile: args.base.argsfile.clone(),
-        stack_name: Some(changeset_result.stack_name),
-    };
-    
-    let exec_cli = crate::cli::Cli {
-        global_opts: cli.global_opts.clone(),
-        aws_opts: cli.aws_opts.clone(),
-        command: crate::cli::Commands::ExecChangeset(exec_args.clone()),
-    };
-    
-    exec_changeset::exec_changeset(&exec_cli, &exec_args).await
+    call_exec_changeset_with_reconstruction(
+        changeset_result.changeset_name,
+        changeset_result.stack_name,
+        Some(args.base.argsfile.clone()),
+        &cli.global_opts,
+        &cli.aws_opts
+    ).await
 }
