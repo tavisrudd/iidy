@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use crossterm::{style::{Stylize, Color}, terminal::size};
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
@@ -122,40 +123,15 @@ fn normalize_raw_command(raw: RawCommand) -> DemoCommand {
 }
 
 fn substitute_iidy_command(cmd: &str, iidy_exe: &str) -> String {
-    // Replace 'iidy' at word boundaries with the current executable path
-    // This handles cases like:
-    // - "iidy help" -> "/path/to/iidy help"
-    // - "iidy create-stack file.yaml" -> "/path/to/iidy create-stack file.yaml"
-    // - "some-other-command | iidy render" -> "some-other-command | /path/to/iidy render"
-    
-    // Use regex-like pattern matching for word boundaries
-    let mut result = String::new();
-    let mut i = 0;
-    
-    while i < cmd.len() {
-        if cmd[i..].starts_with("iidy") {
-            // Check if this is a word boundary (start of string or preceded by whitespace/special chars)
-            let is_word_start = i == 0 || 
-                cmd.chars().nth(i - 1).map_or(false, |c| !c.is_alphanumeric() && c != '_');
-            
-            // Check if this is followed by a word boundary (end of string or followed by whitespace/special chars)
-            let is_word_end = i + 4 >= cmd.len() ||
-                cmd.chars().nth(i + 4).map_or(false, |c| !c.is_alphanumeric() && c != '_');
-            
-            if is_word_start && is_word_end {
-                result.push_str(iidy_exe);
-                i += 4; // Skip "iidy"
-            } else {
-                result.push(cmd.chars().nth(i).unwrap());
-                i += 1;
-            }
-        } else {
-            result.push(cmd.chars().nth(i).unwrap());
-            i += 1;
-        }
-    }
-    
-    result
+    // Replace 'iidy' only when it appears as a command at the beginning or after shell operators
+    // Pattern matches:
+    // - Start of string (with optional whitespace): ^\s*iidy\b
+    // - After pipe or shell operators: [|;&(]\s*iidy\b
+    let re = Regex::new(r"(^|\||\|\||&&|;|\(|\{)(\s*)(iidy)\b").unwrap();
+
+    re.replace_all(cmd, |caps: &regex::Captures| {
+        format!("{}{}{}", &caps[1], &caps[2], iidy_exe)
+    }).to_string()
 }
 
 fn is_iidy_on_path_same_as_current_exe(current_exe_path: &str) -> bool {
@@ -289,10 +265,32 @@ mod tests {
             "/path/to/iidy create && /path/to/iidy update"
         );
 
-        // Test with quotes
+        // Test that iidy in arguments is NOT substituted (the bug case)
         assert_eq!(
-            substitute_iidy_command("echo 'running iidy'", exe_path),
-            "echo 'running /path/to/iidy'"
+            substitute_iidy_command("iidy list-stacks | grep iidy-demo-foobar", exe_path),
+            "/path/to/iidy list-stacks | grep iidy-demo-foobar"
+        );
+
+        // Test more argument cases where iidy should NOT be substituted
+        assert_eq!(
+            substitute_iidy_command("grep 'iidy-test' file.txt", exe_path),
+            "grep 'iidy-test' file.txt"
+        );
+
+        assert_eq!(
+            substitute_iidy_command("echo iidy-stack-name", exe_path),
+            "echo iidy-stack-name"
+        );
+
+        // Test with shell operators where iidy SHOULD be substituted
+        assert_eq!(
+            substitute_iidy_command("echo hello; iidy help", exe_path),
+            "echo hello; /path/to/iidy help"
+        );
+
+        assert_eq!(
+            substitute_iidy_command("(iidy help)", exe_path),
+            "(/path/to/iidy help)"
         );
     }
 
