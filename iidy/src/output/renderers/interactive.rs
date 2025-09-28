@@ -493,46 +493,62 @@ impl InteractiveRenderer {
             
             // Modification operations with monitoring (include command_metadata as first section)
             CfnOperation::CreateStack => vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"],
-            CfnOperation::DeleteStack => vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "confirmation", "live_stack_events"],
+            CfnOperation::DeleteStack => {
+                // Check if --yes flag is set to skip confirmation section
+                if let Commands::DeleteStack(args) = &cli.command {
+                    if args.yes {
+                        // Skip confirmation section when --yes is used
+                        vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "live_stack_events"]
+                    } else {
+                        // Include confirmation section when --yes is not used
+                        vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "confirmation", "live_stack_events"]
+                    }
+                } else {
+                    // Fallback (shouldn't happen)
+                    vec!["command_metadata", "stack_definition", "stack_events", "stack_contents", "confirmation", "live_stack_events"]
+                }
+            },
             CfnOperation::UpdateStack => {
-                // Check if --changeset flag is set by examining the CLI context
-                if let Some(ref cli_ctx) = self.cli_context {
-                    if let Commands::UpdateStack(args) = &cli_ctx.command {
-                        if args.changeset {
-                            // Phase 1: Changeset creation (show current stack first, then changeset)
-                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
+                // Check if --changeset flag is set
+                if let Commands::UpdateStack(args) = &cli.command {
+                    if args.changeset {
+                        // Phase 1: Changeset creation
+                        if args.yes {
+                            // Skip confirmation section when --yes is used
+                            vec!["command_metadata", "stack_definition", "changeset_result"]
                         } else {
-                            // Regular update-stack flow
-                            vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
+                            // Include confirmation section when --yes is not used
+                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
                         }
                     } else {
-                        // Fallback (shouldn't happen)
+                        // Regular update-stack flow (no confirmation needed)
                         vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
                     }
                 } else {
-                    // No CLI context available, use regular flow
+                    // Fallback (shouldn't happen)
                     vec!["command_metadata", "stack_definition", "live_stack_events", "stack_contents"]
                 }
             },
             CfnOperation::CreateChangeset => vec!["command_metadata", "changeset_result"],
             CfnOperation::ExecuteChangeset => vec!["command_metadata", "stack_definition", "stack_events", "live_stack_events", "stack_contents"],
             CfnOperation::CreateOrUpdate => {
-                // Check if --changeset flag is set by examining the CLI context
-                if let Some(ref cli_ctx) = self.cli_context {
-                    if let Commands::CreateOrUpdate(args) = &cli_ctx.command {
-                        if args.changeset {
-                            // Phase 1: Changeset creation (show current stack first if exists, then changeset)
-                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
+                // Check if --changeset flag is set
+                if let Commands::CreateOrUpdate(args) = &cli.command {
+                    if args.changeset {
+                        // Phase 1: Changeset creation
+                        if args.yes {
+                            // Skip confirmation section when --yes is used
+                            vec!["command_metadata", "stack_definition", "changeset_result"]
                         } else {
-                            // Regular create-or-update flow
-                            vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
+                            // Include confirmation section when --yes is not used
+                            vec!["command_metadata", "stack_definition", "changeset_result", "confirmation"]
                         }
                     } else {
-                        // Fallback (shouldn't happen)
+                        // Regular create-or-update flow (no confirmation needed)
                         vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
                     }
                 } else {
-                    // No CLI context available, use regular flow
+                    // Fallback (shouldn't happen)
                     vec!["command_metadata", "stack_change_details", "stack_definition", "live_stack_events", "stack_contents"]
                 }
             },
