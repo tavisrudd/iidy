@@ -1,0 +1,5 @@
+---
+source: tests/example_templates_snapshots.rs
+expression: formatted_output
+---
+output: final-prefix-1234-suffix

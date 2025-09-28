@@ -1,0 +1,7 @@
+# Direct circular reference - should produce error
+$defs:
+  a: !$ b
+  b: !$ a
+
+output: !$ a
+# Expected: Error showing cycle: a → b → a

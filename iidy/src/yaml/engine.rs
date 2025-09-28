@@ -26,7 +26,7 @@ use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
-use crate::yaml::parsing::ast::{PreprocessingTag, YamlAst};
+use crate::yaml::parsing::ast::YamlAst;
 use crate::yaml::parsing;
 use crate::yaml::resolution::{TagContext, VariableSource};
 
@@ -96,12 +96,8 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     import_loader: L,
     /// Enable YAML 1.1 boolean compatibility for CloudFormation
     yaml_11_compatibility: bool,
-    /// Map of preprocessing tag unique identifiers to their actual tags
-    preprocessing_tag_map: std::collections::HashMap<String, PreprocessingTag>,
     /// Variable metadata for scope tracking
     variable_metadata: std::collections::HashMap<String, VariableMetadata>,
-    /// Performance optimization: incremental counter instead of UUID generation
-    tag_counter: std::sync::atomic::AtomicUsize,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -110,9 +106,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Self {
             import_loader,
             yaml_11_compatibility,
-            preprocessing_tag_map: std::collections::HashMap::new(),
             variable_metadata: std::collections::HashMap::new(),
-            tag_counter: std::sync::atomic::AtomicUsize::new(1),
         }
     }
 
@@ -198,7 +192,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         Ok(())
     }
 
-    /// Process $defs by copying values to environment (unprocessed)
+    /// Process $defs with sequential resolution (like let* semantics)
     fn process_defs(
         &mut self,
         defs_ast: &YamlAst,
@@ -206,7 +200,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         base_location: &str,
     ) -> Result<()> {
         if let YamlAst::Mapping(pairs, _) = defs_ast {
-            for (key, value) in pairs {
+            for (key, value_ast) in pairs {
                 if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key {
                     // Check for collisions with existing imports
                     if env_values.contains_key(key_str) {
@@ -216,10 +210,17 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                         ));
                     }
 
-                    // Convert AST to Value for storage (will be processed later in Phase 2)
-                    // TODO double check that we should really be doing this
-                    let value_raw = self.ast_to_value_unprocessed(value.clone())?;
-                    env_values.insert(key_str.clone(), value_raw);
+                    // Create context with variables defined so far for sequential resolution
+                    let mut context = TagContext::new().with_input_uri(base_location.to_string());
+                    for (existing_key, existing_value) in env_values.iter() {
+                        context = context.with_variable(existing_key, existing_value.clone());
+                    }
+
+                    // Resolve current variable using existing variables
+                    let resolved_value = resolve_ast(value_ast, &context)?;
+
+                    // Store resolved value (not raw AST)
+                    env_values.insert(key_str.clone(), resolved_value);
 
                     // Store variable metadata for scope tracking
                     self.variable_metadata.insert(
@@ -417,63 +418,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         hex::encode(hasher.finalize())
     }
 
-    /// Convert AST to Value without processing (for Phase 1 storage)
-    fn ast_to_value_unprocessed(&mut self, ast: YamlAst) -> Result<Value> {
-        match ast {
-            YamlAst::Null(_) => Ok(Value::Null),
-            YamlAst::Bool(b, _) => Ok(Value::Bool(b)),
-            YamlAst::Number(n, _) => Ok(Value::Number(n)),
-            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s)),
-            YamlAst::Sequence(seq, _) => {
-                let mut result = Vec::with_capacity(seq.len());
-                for item in seq {
-                    result.push(self.ast_to_value_unprocessed(item)?);
-                }
-                Ok(Value::Sequence(result))
-            }
-            YamlAst::Mapping(pairs, _) => {
-                let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
-                for (key, value) in pairs {
-                    let key_val = self.ast_to_value_unprocessed(key)?;
-                    let value_val = self.ast_to_value_unprocessed(value)?;
-                    result.insert(key_val, value_val);
-                }
-                Ok(Value::Mapping(result))
-            }
-            YamlAst::PreprocessingTag(tag, _) => {
-                // Store preprocessing tags with unique identifiers to prevent collision
-                let tag_id = format!(
-                    "__PREPROCESSING_TAG_{}__",
-                    self.tag_counter
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                );
-                self.preprocessing_tag_map
-                    .insert(tag_id.clone(), tag.clone());
-                Ok(Value::String(tag_id))
-            }
-            YamlAst::CloudFormationTag(cfn_tag, _) => {
-                // Store CloudFormation tags as placeholders for later processing
-                // The inner value will be processed during Phase 2
-                let tag_id = format!(
-                    "__CFN_TAG_{}__{}__",
-                    cfn_tag.tag_name(),
-                    self.tag_counter
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                );
-                // Note: We don't store CloudFormation tags in preprocessing_tag_map since they have different processing
-                // They will be handled directly in the resolve_ast_with_context method
-                Ok(Value::String(tag_id))
-            }
-            YamlAst::UnknownYamlTag(tag, _) => {
-                // Store unknown tags by converting their value
-                self.ast_to_value_unprocessed(*tag.value)
-            }
-            YamlAst::ImportedDocument(doc, _) => {
-                // Convert the imported document's content
-                self.ast_to_value_unprocessed(*doc.content)
-            }
-        }
-    }
 
     /// Convert YAML 1.2 values to YAML 1.1 equivalents for CloudFormation compatibility
     ///

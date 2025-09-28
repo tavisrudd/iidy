@@ -1,0 +1,7 @@
+# Handlebars circular reference - should produce error
+$defs:
+  a: "{{ b }}"
+  b: "{{ a }}"
+
+output: !$ a
+# Expected: Error with helpful message

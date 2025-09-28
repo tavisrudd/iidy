@@ -1,0 +1,8 @@
+# Complex circular reference - should produce error
+$defs:
+  a: !$ b
+  b: "value-{{ c }}"
+  c: !$ a
+
+output: !$ a
+# Expected: Error showing cycle: a → b → c → a

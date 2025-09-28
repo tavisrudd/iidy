@@ -1,0 +1,7 @@
+---
+source: tests/example_templates_snapshots.rs
+expression: formatted_output
+---
+outer:
+  - outer-middle-1
+  - outer-middle-2

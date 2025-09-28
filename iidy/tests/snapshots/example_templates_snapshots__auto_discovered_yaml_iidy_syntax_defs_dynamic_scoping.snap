@@ -1,0 +1,8 @@
+---
+source: tests/example_templates_snapshots.rs
+expression: formatted_output
+---
+output:
+  - item-1
+  - item-2
+  - item-3
