@@ -4,7 +4,7 @@
 //! with various YAML document types and sizes.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use iidy::yaml::parsing::{parse_and_convert_to_original, parse_yaml_ast_with_diagnostics};
+use iidy::yaml::parsing::{parse_yaml_from_file, parse_yaml_ast_with_diagnostics};
 use serde_yaml::Value;
 use tree_sitter::Parser;
 use tree_sitter_yaml::LANGUAGE;
@@ -45,7 +45,7 @@ fn bench_tree_sitter_baseline(c: &mut Criterion, yaml_content: &str, name: &str)
 fn bench_custom_parser(c: &mut Criterion, yaml_content: &str, name: &str) {
     c.bench_function(&format!("custom_parser_{}", name), |b| {
         b.iter(|| {
-            parse_and_convert_to_original(black_box(yaml_content), black_box("test.yaml")).unwrap()
+            parse_yaml_from_file(black_box(yaml_content), black_box("test.yaml")).unwrap()
         })
     });
 }
@@ -180,7 +180,7 @@ results:
 
     group.bench_function("array_syntax_parsing", |b| {
         b.iter(|| {
-            parse_and_convert_to_original(
+            parse_yaml_from_file(
                 black_box(array_syntax), 
                 black_box("array.yaml")
             ).unwrap()
@@ -239,7 +239,7 @@ config_d: !$mapListToHash
 
     group.bench_function("mapping_heavy_parsing", |b| {
         b.iter(|| {
-            parse_and_convert_to_original(
+            parse_yaml_from_file(
                 black_box(mapping_heavy),
                 black_box("mapping.yaml"),
             ).unwrap()
@@ -279,7 +279,7 @@ level1: !$let
 
     group.bench_function("deep_nesting", |b| {
         b.iter(|| {
-            parse_and_convert_to_original(
+            parse_yaml_from_file(
                 black_box(deep_nesting), 
                 black_box("deep.yaml")
             ).unwrap()

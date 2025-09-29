@@ -9,7 +9,7 @@ use proptest::strategy::BoxedStrategy;
 use std::collections::HashSet;
 use url::Url;
 
-use super::{parse_and_convert_to_original, parse_yaml_ast_with_diagnostics};
+use super::{parse_yaml_from_file, parse_yaml_ast_with_diagnostics};
 
 /// Preset configurations for common use cases
 #[derive(Debug, Clone, Copy)]
@@ -210,7 +210,7 @@ fn test_generated_yaml_robustness(yaml_doc: String, context: &str) -> Result<(),
     let test_uri = Url::parse("file:///proptest.yaml").unwrap();
     
     // Test main parsing API - should not panic
-    let parse_result = parse_and_convert_to_original(&yaml_doc, "proptest.yaml");
+    let parse_result = parse_yaml_from_file(&yaml_doc, "proptest.yaml");
     
     // Test diagnostic API - should not panic
     let diagnostic_result = parse_yaml_ast_with_diagnostics(&yaml_doc, test_uri);
@@ -244,7 +244,7 @@ fn test_edge_case_robustness(yaml_doc: String) -> Result<(), TestCaseError> {
     
     // These should not panic regardless of input
     let _parse_result = std::panic::catch_unwind(|| {
-        parse_and_convert_to_original(&yaml_doc, "edge_case.yaml")
+        parse_yaml_from_file(&yaml_doc, "edge_case.yaml")
     });
     
     let _diagnostic_result = std::panic::catch_unwind(|| {
@@ -342,7 +342,7 @@ mod tests {
         ];
 
         for yaml_doc in test_cases {
-            let result = parse_and_convert_to_original(yaml_doc, "manual_test.yaml");
+            let result = parse_yaml_from_file(yaml_doc, "manual_test.yaml");
             
             // Should either succeed or fail gracefully (no panic)
             match result {
@@ -367,7 +367,7 @@ mod tests {
         println!("Testing: {}", yaml_doc);
         
         // Test main parsing API
-        let parse_result = parse_and_convert_to_original(yaml_doc, "proptest.yaml");
+        let parse_result = parse_yaml_from_file(yaml_doc, "proptest.yaml");
         println!("Main parser result: {:?}", parse_result.is_ok());
         if let Err(e) = &parse_result {
             println!("Main parser error: {}", e);
@@ -407,7 +407,7 @@ mod tests {
 
         for yaml_doc in problematic_cases {
             let result = std::panic::catch_unwind(|| {
-                parse_and_convert_to_original(yaml_doc, "problematic_test.yaml")
+                parse_yaml_from_file(yaml_doc, "problematic_test.yaml")
             });
             
             assert!(result.is_ok(), "Parser should not panic on problematic input: {:?}", yaml_doc);

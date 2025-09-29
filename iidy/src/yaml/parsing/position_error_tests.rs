@@ -1,6 +1,6 @@
 //! Tests for error reporting with accurate line/column positions
 
-use super::parse_yaml_with_custom_tags_from_file;
+use super::parse_yaml_from_file;
 
 #[test]
 fn test_unknown_tag_error_position() {
@@ -10,7 +10,7 @@ fn test_unknown_tag_error_position() {
     Properties:
       BucketName: !$unknownTag value"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -34,7 +34,7 @@ fn test_missing_required_field_error_position() {
         items: [1, 2, 3]
         # missing required 'template' field"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -58,7 +58,7 @@ fn test_wrong_field_name_suggestion_error_position() {
         items: [1, 2, 3]
         source: "{{item}}"  # should be 'template'"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -85,7 +85,7 @@ fn test_if_tag_missing_field_error_position() {
     then: true
     else: false"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -109,7 +109,7 @@ fn test_nested_tag_error_position() {
         Deep:
           Value: !$invalidTag test"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -129,7 +129,7 @@ fn test_multiple_errors_first_one_reported() {
   First: !$badTag1 value1
   Second: !$badTag2 value2"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -150,7 +150,7 @@ fn test_tag_in_array_error_position() {
     - !$wrongTag value
     - item3"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -172,7 +172,7 @@ fn test_malformed_yaml_syntax_error_position() {
     Properties
       BucketName: test"#; // Missing colon after Properties
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -196,7 +196,7 @@ fn test_error_with_complex_yaml_path() {
             items: [1, 2, 3]
             # missing template field"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -215,7 +215,7 @@ fn test_eq_tag_wrong_number_of_elements_error() {
     let yaml_content = r#"Conditions:
   TestCondition: !$eq [value1, value2, value3]"#; // Should have exactly 2 elements
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -233,7 +233,7 @@ fn test_join_tag_wrong_format_error() {
     let yaml_content = r#"Transform:
   JoinResult: !$join [","]"#; // Missing second element (array)
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -252,7 +252,7 @@ fn test_split_tag_missing_delimiter_error() {
   SplitResult: !$split ["a,b,c"]
     # missing second element (string), only has one element"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "test.yaml");
+    let result = parse_yaml_from_file(yaml_content, "test.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();

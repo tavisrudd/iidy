@@ -1,18 +1,9 @@
-// Main public API - used by yaml::engine
-pub use convert::parse_and_convert_to_original;
 
 // Diagnostic APIs for future LSP/linter integration
-pub use convert::{parse_and_convert_to_original_with_diagnostics, validate_yaml_only};
 pub use error::{ParseDiagnostics, ParseWarning, error_codes};
 
-// New diagnostic parsing function
-pub fn parse_yaml_ast_with_diagnostics(source: &str, uri: url::Url) -> ParseDiagnostics {
-    let mut parser = parser::YamlParser::new().expect("Failed to create YAML parser");
-    parser.validate_with_diagnostics(source, uri)
-}
-
-// Compatibility functions for external tests and benchmarks
-pub fn parse_yaml_with_custom_tags_from_file(source: &str, file_path: &str) -> anyhow::Result<ast::YamlAst> {
+// Main public API - used by yaml::engine
+pub fn parse_yaml_from_file(source: &str, file_path: &str) -> anyhow::Result<ast::YamlAst> {
     let uri = if file_path.starts_with("file://") {
         url::Url::parse(file_path)?
     } else {
@@ -25,11 +16,14 @@ pub fn parse_yaml_with_custom_tags_from_file(source: &str, file_path: &str) -> a
     Ok(parser.parse(source, uri)?)
 }
 
-// ParseContext is not needed for new tests - remove this line
+// New diagnostic parsing function
+pub fn parse_yaml_ast_with_diagnostics(source: &str, uri: url::Url) -> ParseDiagnostics {
+    let mut parser = parser::YamlParser::new().expect("Failed to create YAML parser");
+    parser.validate_with_diagnostics(source, uri)
+}
 
 // Internal modules - ast types needed for public API
 pub mod ast;
-pub(crate) mod convert;
 pub(crate) mod error;
 pub mod parser;
 

@@ -1,10 +1,7 @@
 use url::Url;
 
 // Import the diagnostic API functions
-use crate::yaml::parsing::{
-error_codes, parse_and_convert_to_original_with_diagnostics,
-parse_yaml_ast_with_diagnostics, validate_yaml_only,
-};
+use crate::yaml::parsing::{error_codes, parse_yaml_ast_with_diagnostics};
 use super::parser::YamlParser;
 
 fn test_uri() -> Url {
@@ -187,36 +184,6 @@ test2: !$unknownTag2 value
 
     // Should be one of the unknown tag errors
     assert!(error.message.contains("unknownTag"));
-}
-
-#[test]
-fn test_convert_module_diagnostic_api() {
-    let source = r#"
-test1: !$unknownTag1 value
-test2: !$unknownTag2 value  
-"#;
-
-    let diagnostics = parse_and_convert_to_original_with_diagnostics(source, "file:///test.yaml");
-    assert!(diagnostics.has_errors());
-    assert_eq!(diagnostics.error_count(), 2);
-}
-
-#[test]
-fn test_validate_yaml_only() {
-    let source = r#"
-test: !$let
-  var1: value1
-  # Missing 'in' field
-"#;
-
-    let diagnostics = validate_yaml_only(source, "file:///test.yaml");
-    assert!(diagnostics.has_errors());
-    assert!(
-        diagnostics
-            .errors
-            .iter()
-            .any(|e| e.message.contains("missing required 'in' field"))
-    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Test to demonstrate the issue with finding the correct occurrence in error reporting
 
-use super::parse_yaml_with_custom_tags_from_file;
+use super::parse_yaml_from_file;
 
 #[test]
 fn test_thirteenth_if_tag_error_position() {
@@ -27,7 +27,7 @@ fn test_thirteenth_if_tag_error_position() {
   Condition19: !$if { test: false, then: "ok19", else: "fail19" }
   Condition20: !$if { test: true, then: "ok20", else: "fail20" }"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "multiple_if.yaml");
+    let result = parse_yaml_from_file(yaml_content, "multiple_if.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -82,7 +82,7 @@ fn test_nested_if_tags_error_position() {
       else: "outer_then_failure"
     else: "outer_failure""#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "nested_if.yaml");
+    let result = parse_yaml_from_file(yaml_content, "nested_if.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();

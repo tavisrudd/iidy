@@ -2,7 +2,7 @@
 //! This test proves that when the 13th !$if out of 20 is missing the 'test' field,
 //! the error points to the correct line (13th occurrence), not the first occurrence.
 
-use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_from_file;
 
 #[test]
 fn proof_thirteenth_if_error_points_to_correct_line() {
@@ -38,7 +38,7 @@ fn proof_thirteenth_if_error_points_to_correct_line() {
         }
     }
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "proof.yaml");
+    let result = parse_yaml_from_file(yaml_content, "proof.yaml");
 
     assert!(
         result.is_err(),
@@ -95,7 +95,7 @@ fn proof_different_occurrence_different_error() {
   Cond9: !$if { test: false, then: "ok9", else: "fail9" }
   Cond10: !$if { test: true, then: "ok10", else: "fail10" }"#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "proof7.yaml");
+    let result = parse_yaml_from_file(yaml_content, "proof7.yaml");
 
     assert!(
         result.is_err(),

@@ -1,6 +1,6 @@
 //! Test to verify the context-aware position finding works correctly
 
-use super::parse_yaml_with_custom_tags_from_file;
+use super::parse_yaml_from_file;
 
 #[test]
 fn test_multiple_map_tags_with_missing_template() {
@@ -21,7 +21,7 @@ fn test_multiple_map_tags_with_missing_template() {
     items: [p, q, r]
     template: "suffix-{{item}}""#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "multiple_maps.yaml");
+    let result = parse_yaml_from_file(yaml_content, "multiple_maps.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -65,7 +65,7 @@ fn test_different_tag_types_mixed() {
     then: "ok"
     else: "fail""#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "mixed_tags.yaml");
+    let result = parse_yaml_from_file(yaml_content, "mixed_tags.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -101,7 +101,7 @@ fn test_array_context_positioning() {
       then: "maybe"
       else: "no""#;
 
-    let result = parse_yaml_with_custom_tags_from_file(yaml_content, "array_context.yaml");
+    let result = parse_yaml_from_file(yaml_content, "array_context.yaml");
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();

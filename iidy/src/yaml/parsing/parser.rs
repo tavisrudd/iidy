@@ -27,6 +27,27 @@ impl YamlParser {
 
         Ok(Self { parser })
     }
+    
+    pub fn parse(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
+        if source.contains("&") && !source.contains("&amp;")
+            || source.contains("*") && !source.contains("**/")
+        {
+            return self.parse_with_serde_yaml_fallback(source, uri);
+        }
+
+        let tree = self
+            .parser
+            .parse(source, None)
+            .ok_or_else(|| ParseError::new("Failed to parse YAML source"))?;
+
+        let root = tree.root_node();
+
+        if root.has_error() {
+            return Err(self.find_syntax_error(&tree, source, &uri));
+        }
+
+        self.build_ast(root, source.as_bytes(), &uri)
+    }
 
     /// New API for collecting all errors without stopping on first error
     pub fn validate_with_diagnostics(&mut self, source: &str, uri: Url) -> ParseDiagnostics {
@@ -76,38 +97,6 @@ impl YamlParser {
         }
 
         diagnostics
-    }
-
-    /// Backward compatibility - existing behavior unchanged
-    pub fn parse(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
-        // For backward compatibility, use the original logic that only checks syntax errors
-        // This maintains the exact same behavior as before the diagnostic API was added
-        self.parse_internal(source, uri)
-    }
-
-    /// Internal method that does actual AST building (current parse logic)
-    fn parse_internal(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
-        // Current parse() implementation goes here
-        // This maintains exact current behavior for backward compatibility
-
-        if source.contains("&") && !source.contains("&amp;")
-            || source.contains("*") && !source.contains("**/")
-        {
-            return self.parse_with_serde_yaml_fallback(source, uri);
-        }
-
-        let tree = self
-            .parser
-            .parse(source, None)
-            .ok_or_else(|| ParseError::new("Failed to parse YAML source"))?;
-
-        let root = tree.root_node();
-
-        if root.has_error() {
-            return Err(self.find_syntax_error(&tree, source, &uri));
-        }
-
-        self.build_ast(root, source.as_bytes(), &uri)
     }
 
     /// Collect ALL syntax errors from tree-sitter parse tree
@@ -314,22 +303,6 @@ impl YamlParser {
             }
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     fn parse_with_serde_yaml_fallback(&self, source: &str, uri: Url) -> ParseResult<YamlAst> {
         // Use serde_yaml to parse and resolve anchors/aliases
@@ -1410,21 +1383,6 @@ impl YamlParser {
         Ok(())
     }
 
-    /// Get example usage for a tag (currently unused but kept for potential future use)
-    #[allow(dead_code)]
-    fn get_tag_example(&self, tag_name: &str) -> String {
-        match tag_name {
-            "!$if" => "!$if\n  test: !$eq [\"{{item}}\", \"value\"]\n  then: \"success\"\n  else: \"default\"".to_string(),
-            "!$map" => "!$map\n  items: [1, 2, 3]\n  template: \"{{item}}\"".to_string(),
-            "!$concatMap" => "!$concatMap\n  items: [1, 2, 3]\n  template: \"Item: {{item}}\"".to_string(),
-            "!$mergeMap" => "!$mergeMap\n  items: [1, 2, 3]\n  template: {key: \"{{item}}\"}".to_string(),
-            "!$mapListToHash" => "!$mapListToHash\n  items: [{\"key\": \"a\", \"value\": 1}, {\"key\": \"b\", \"value\": 2}]\n  template: \"{{item.key}}\"".to_string(),
-            "!$mapValues" => "!$mapValues\n  items: {a: 1, b: 2}\n  template: \"Value: {{item}}\"".to_string(),
-            "!$groupBy" => "!$groupBy\n  items: [{type: \"a\"}, {type: \"b\"}]\n  key: \"{{item.type}}\"".to_string(),
-            _ => tag_name.to_string(),
-        }
-    }
-
     /// Parse MapValues tag content
     fn parse_map_values_tag(
         &self,
@@ -1959,7 +1917,7 @@ fn point_to_position(p: Point) -> Position {
 }
 
 #[inline(always)]
-pub(crate) fn node_meta(node: &Node, uri: &Url) -> SrcMeta {
+fn node_meta(node: &Node, uri: &Url) -> SrcMeta {
     SrcMeta {
         input_uri: uri.clone(),
         start: point_to_position(node.start_position()),

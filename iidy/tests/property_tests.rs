@@ -3,7 +3,7 @@
 //! These tests use proptest to verify invariants and properties of the YAML
 //! preprocessing system across a wide range of inputs.
 
-use iidy::yaml::parsing::parse_yaml_with_custom_tags_from_file;
+use iidy::yaml::parsing::parse_yaml_from_file;
 use proptest::prelude::*;
 use serde_yaml::Value;
 use std::collections::HashMap;
@@ -60,7 +60,7 @@ proptest! {
         let yaml_str = serde_yaml::to_string(&value).unwrap();
 
         // Parse with our custom parser - this tests the parsing layer
-        let ast = parse_yaml_with_custom_tags_from_file(&yaml_str, "prop-test-scalar.yaml");
+        let ast = parse_yaml_from_file(&yaml_str, "prop-test-scalar.yaml");
 
         // Should successfully parse simple scalar values
         prop_assert!(ast.is_ok(), "Failed to parse valid YAML: {}", yaml_str);
@@ -172,8 +172,8 @@ proptest! {
         );
 
         // Parse the same content twice
-        let ast_result1 = parse_yaml_with_custom_tags_from_file(&yaml_content, "prop-test-join.yaml");
-        let ast_result2 = parse_yaml_with_custom_tags_from_file(&yaml_content, "prop-test-join.yaml");
+        let ast_result1 = parse_yaml_from_file(&yaml_content, "prop-test-join.yaml");
+        let ast_result2 = parse_yaml_from_file(&yaml_content, "prop-test-join.yaml");
 
         // Both parsing attempts should have the same outcome
         prop_assert_eq!(ast_result1.is_ok(), ast_result2.is_ok());
@@ -205,7 +205,7 @@ proptest! {
                 delimiter, joined
             );
 
-            let ast = parse_yaml_with_custom_tags_from_file(&split_yaml, "prop-test-split.yaml");
+            let ast = parse_yaml_from_file(&split_yaml, "prop-test-split.yaml");
             prop_assert!(ast.is_ok(), "Failed to parse split tag YAML");
 
             // NOTE: Once AST resolution is implemented, add tests for:
@@ -220,7 +220,7 @@ proptest! {
     #[test]
     fn prop_yaml_parsing_graceful(malformed_yaml in ".*") {
         // Malformed YAML should not panic, just return errors
-        let parse_result = parse_yaml_with_custom_tags_from_file(&malformed_yaml, "prop-test-malformed.yaml");
+        let parse_result = parse_yaml_from_file(&malformed_yaml, "prop-test-malformed.yaml");
 
         // Either succeeds or fails gracefully (no panics)
         match parse_result {

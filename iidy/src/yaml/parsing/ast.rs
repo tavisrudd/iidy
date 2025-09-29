@@ -3,7 +3,7 @@
 //! Defines the abstract syntax tree for YAML documents with custom preprocessing tags
 //! and precise source location information for error reporting.
 
-use serde_yaml::{Number, Value};
+use serde_yaml::{Number};
 use url::Url;
 
 // We'll define a simple Position type instead of using lsp_types for now
@@ -524,52 +524,6 @@ impl YamlAst {
             YamlAst::CloudFormationTag(_, _) => "CloudFormation tag",
             YamlAst::UnknownYamlTag(_, _) => "unknown tag",
             YamlAst::ImportedDocument(_, _) => "imported document",
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn is_preprocessing_tag(&self) -> bool {
-        matches!(self, YamlAst::PreprocessingTag(_, _))
-    }
-
-    /// Convert to a standard YAML Value if possible (no preprocessing tags)
-    /// Used internally and future API for value extraction
-    #[allow(dead_code)]
-    pub fn to_value(&self) -> Option<Value> {
-        match self {
-            YamlAst::Null(_) => Some(Value::Null),
-            YamlAst::Bool(b, _) => Some(Value::Bool(*b)),
-            YamlAst::Number(n, _) => Some(Value::Number(n.clone())),
-            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => {
-                Some(Value::String(s.clone()))
-            }
-            YamlAst::Sequence(seq, _) => {
-                let mut result = Vec::new();
-                for item in seq {
-                    result.push(item.to_value()?);
-                }
-                Some(Value::Sequence(result))
-            }
-            YamlAst::Mapping(map, _) => {
-                let mut result = serde_yaml::Mapping::new();
-                for (key, value) in map {
-                    let key_val = key.to_value()?;
-                    let value_val = value.to_value()?;
-                    result.insert(key_val, value_val);
-                }
-                Some(Value::Mapping(result))
-            }
-            YamlAst::PreprocessingTag(_, _) => None, // Cannot convert preprocessing tags directly
-            YamlAst::CloudFormationTag(_, _) => None, // CloudFormation tags need preprocessing
-            YamlAst::UnknownYamlTag(_, _) => {
-                // Unknown tags cannot be converted to plain values
-                // They need to be preserved as-is in the YAML output
-                None
-            }
-            YamlAst::ImportedDocument(doc, _) => {
-                // Imported documents should use their content
-                doc.content.to_value()
-            }
         }
     }
 }
