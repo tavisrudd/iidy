@@ -4,9 +4,11 @@ $imports:
 
 $defs:
   StackName: "iidy-demo-{{ nameSuffix }}"
-
+  Region: us-west-2
+  Profile: sandbox
+  
 files:
-  cfn-template.yaml: |-
+  cfn-template.yaml: |+
     Parameters:
       Name:
         Type: String
@@ -16,7 +18,7 @@ files:
         Properties:
           DisplayName: !Sub "Hello ${Name}"
 
-  .broken-cfn-template.yaml: |-
+  .broken-cfn-template.yaml: |+
     Parameters:
       Name:
         Type: String
@@ -27,12 +29,12 @@ files:
           DisplayName: !Sub "Hello ${Name}"
           Foo: 1234
 
-  stack-args.yaml: |-
+  stack-args.yaml: |+
     StackName: "{{ StackName }}"  # auto generated name
     Template: ./cfn-template.yaml
 
-    Profile: sandbox
-    Region: us-west-2
+    Profile: "{{ Profile }}"
+    Region: "{{ Region }}"
 
     Parameters:
       Name: world
@@ -42,11 +44,11 @@ files:
       project: iidy-demo
       environment: development
       lifetime: short
-
+    
 demo:
   - setenv:
-      AWS_REGION: us-west-2
-      AWS_PROFILE: sandbox
+      AWS_REGION: "{{ Region }}"
+      AWS_PROFILE: "{{ Profile }}"
       "BASH_FUNC_highlight%%": |
         () {
           GREP_COLOR="1;32" grep --color -E "$1|$";
@@ -56,11 +58,13 @@ demo:
       iidy is a CLI tool for working with the CloudFormation API.
 
       It improves the developer experience, especially the feedback loop.
+      
+      In this *live* demo we will use it to create, update, and then delete a simple stack.
   - sleep: 3
+  - banner: Here are its sub commands.
   - iidy help
   - sleep: 4
 
-  - banner: In this *live* demo we will create, update, and then delete a simple stack.
   - sleep: 3
   - ls .
   - banner: "We'll use these 2 files throughout the demo."
@@ -111,7 +115,7 @@ demo:
   - sleep: 2
   - banner: "We've created and updated the stack. Time to delete it."
   - sleep: 1
-  - "iidy delete-stack --region us-west-2 --profile sandbox --yes {{ StackName }}"
+  - "iidy delete-stack --region {{ Region }} --profile {{ Profile }} --yes {{ StackName }}"
 
   - banner: "That's all for our demo. Thanks for watching!"
   - sleep: 3
