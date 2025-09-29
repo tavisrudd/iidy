@@ -1,4 +1,5 @@
 use serde_yaml::Number;
+use std::collections::HashMap;
 use std::str::FromStr;
 use tree_sitter::{Node, Parser, Point, Tree};
 use tree_sitter_yaml::LANGUAGE;
@@ -10,9 +11,116 @@ use super::ast::{
     NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag, SplitTag, SrcMeta,
     ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
-use super::error::{ParseDiagnostics, ParseError, ParseResult, ParseWarning, error_codes};
+use super::error::{ParseDiagnostics, ParseError, ParseResult, error_codes};
 use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
 
+/// YAML chomping indicator for block scalars
+#[derive(Debug, Clone, Copy)]
+enum ChompingIndicator {
+    /// Clip (default): single trailing newline
+    Clip,
+    /// Strip (-): remove all trailing newlines
+    Strip,
+    /// Keep (+): preserve all trailing newlines
+    Keep,
+}
+
+/// Remove common leading indentation from all content lines
+fn remove_common_indentation<'a>(lines: &[&'a str]) -> Vec<&'a str> {
+    let min_indent = lines
+        .iter()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| line.len() - line.trim_start().len())
+        .min()
+        .unwrap_or(0);
+
+    lines
+        .iter()
+        .map(|&line| {
+            if line.len() >= min_indent {
+                &line[min_indent..]
+            } else {
+                line.trim_start()
+            }
+        })
+        .collect()
+}
+
+/// Fold lines for folded scalars (>): join consecutive non-empty lines with spaces
+fn fold_lines(lines: &[&str]) -> String {
+    // Estimate capacity: total chars + spaces between lines
+    let estimated_capacity = lines.iter().map(|l| l.len()).sum::<usize>() + lines.len();
+    let mut result = String::with_capacity(estimated_capacity);
+    let mut pending_paragraph_break = false;
+
+    for &line in lines {
+        if line.trim().is_empty() {
+            // Empty line creates paragraph break before next content
+            pending_paragraph_break = true;
+        } else {
+            // Non-empty line
+            if !result.is_empty() {
+                if pending_paragraph_break {
+                    result.push_str("\n\n"); // Paragraph break
+                    pending_paragraph_break = false;
+                } else {
+                    result.push(' '); // Fold with space
+                }
+            }
+            result.push_str(line);
+        }
+    }
+    result
+}
+
+/// Apply YAML chomping indicator to handle trailing newlines
+fn apply_chomping(mut content: String, chomping: ChompingIndicator, node: Node, src: &[u8]) -> String {
+    if content.is_empty() {
+        return content;
+    }
+
+    match chomping {
+        ChompingIndicator::Strip => content,
+        ChompingIndicator::Clip => {
+            content.push('\n');
+            content
+        }
+        ChompingIndicator::Keep => {
+            let trailing_newlines = count_trailing_newlines_in_source(node, src);
+            for _ in 0..trailing_newlines {
+                content.push('\n');
+            }
+            content
+        }
+    }
+}
+
+/// Count trailing newlines for keep indicator by examining source
+/// Tree-sitter may not include trailing blank lines in node boundaries for literal scalars
+fn count_trailing_newlines_in_source(node: Node, src: &[u8]) -> usize {
+    let node_end = node.end_byte();
+    let node_start = node.start_byte();
+
+    // Helper to check if byte is whitespace (but not newline)
+    let is_whitespace = |b: u8| b == b'\r' || b == b' ' || b == b'\t';
+
+    // Count trailing newlines within the node (scan backwards)
+    let count_in_node = src[node_start..node_end]
+        .iter()
+        .rev()
+        .take_while(|&&b| b == b'\n' || is_whitespace(b))
+        .filter(|&&b| b == b'\n')
+        .count();
+
+    // Look ahead past node boundary for literal scalars
+    let count_after_node = src[node_end..]
+        .iter()
+        .take_while(|&&b| b == b'\n' || is_whitespace(b))
+        .filter(|&&b| b == b'\n')
+        .count();
+
+    count_in_node + count_after_node
+}
 
 pub struct YamlParser {
     parser: Parser,
@@ -29,12 +137,6 @@ impl YamlParser {
     }
     
     pub fn parse(&mut self, source: &str, uri: Url) -> ParseResult<YamlAst> {
-        if source.contains("&") && !source.contains("&amp;")
-            || source.contains("*") && !source.contains("**/")
-        {
-            return self.parse_with_serde_yaml_fallback(source, uri);
-        }
-
         let tree = self
             .parser
             .parse(source, None)
@@ -46,35 +148,13 @@ impl YamlParser {
             return Err(self.find_syntax_error(&tree, source, &uri));
         }
 
-        self.build_ast(root, source.as_bytes(), &uri)
+        let mut anchor_map = HashMap::new();
+        self.build_ast(root, source.as_bytes(), &uri, &mut anchor_map)
     }
 
     /// New API for collecting all errors without stopping on first error
     pub fn validate_with_diagnostics(&mut self, source: &str, uri: Url) -> ParseDiagnostics {
         let mut diagnostics = ParseDiagnostics::new();
-
-        // Check for anchor/alias fallback scenario
-        if source.contains("&") && !source.contains("&amp;")
-            || source.contains("*") && !source.contains("**/")
-        {
-            // For now, fallback to serde_yaml and convert any error
-            match self.parse_with_serde_yaml_fallback(source, uri.clone()) {
-                Ok(_) => {
-                    // Could add warning about using fallback parser
-                    diagnostics.add_warning(ParseWarning::with_location(
-                        "Using fallback parser for anchor/alias resolution",
-                        uri,
-                        Position::new(0, 0),
-                        Position::new(0, 0),
-                    ));
-                }
-                Err(e) => {
-                    diagnostics.add_error(e);
-                    return diagnostics;
-                }
-            }
-            return diagnostics;
-        }
 
         // Parse with tree-sitter
         let tree = match self.parser.parse(source, None) {
@@ -93,7 +173,8 @@ impl YamlParser {
 
         // If no fatal syntax errors, proceed with semantic validation
         if !self.has_fatal_syntax_errors(&diagnostics) {
-            self.validate_semantics_with_diagnostics(&tree, source, &uri, &mut diagnostics);
+            let mut anchor_map = HashMap::new();
+            self.validate_semantics_with_diagnostics(&tree, source, &uri, &mut diagnostics, &mut anchor_map);
         }
 
         diagnostics
@@ -193,13 +274,14 @@ impl YamlParser {
         source: &str,
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) {
         let root = tree.root_node();
-        
+
         // Use a modified version of build_ast that collects errors instead of stopping
-        self.build_ast_with_error_collection(root, source.as_bytes(), uri, diagnostics);
+        self.build_ast_with_error_collection(root, source.as_bytes(), uri, diagnostics, anchor_map);
     }
-    
+
     /// Build AST but collect all errors instead of stopping on first error
     fn build_ast_with_error_collection(
         &self,
@@ -207,6 +289,7 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         diagnostics: &mut ParseDiagnostics,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) {
         match node.kind() {
             "stream" => {
@@ -214,7 +297,7 @@ impl YamlParser {
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
                         if child.kind() == "document" {
-                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                         }
                     }
                 }
@@ -223,7 +306,7 @@ impl YamlParser {
                 // Process all children in document
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
-                        self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                        self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                     }
                 }
             }
@@ -232,7 +315,7 @@ impl YamlParser {
                 let mut cursor = node.walk();
                 for pair_node in node.named_children(&mut cursor) {
                     if matches!(pair_node.kind(), "block_mapping_pair" | "flow_pair") {
-                        self.build_ast_with_error_collection(pair_node, src, uri, diagnostics);
+                        self.build_ast_with_error_collection(pair_node, src, uri, diagnostics, anchor_map);
                     }
                 }
             }
@@ -240,7 +323,7 @@ impl YamlParser {
                 // Process key and value
                 let mut pair_cursor = node.walk();
                 for child in node.named_children(&mut pair_cursor) {
-                    self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                    self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                 }
             }
             "flow_node" => {
@@ -250,7 +333,7 @@ impl YamlParser {
                 
                 if has_tag {
                     // This is a tagged flow node - validate it
-                    match self.build_ast(node, src, uri) {
+                    match self.build_ast(node, src, uri, anchor_map) {
                         Ok(_) => {
                             // Success, no error to collect
                         }
@@ -263,7 +346,7 @@ impl YamlParser {
                     // Not a tagged node, recurse into children
                     for i in 0..node.named_child_count() {
                         if let Some(child) = node.named_child(i) {
-                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                         }
                     }
                 }
@@ -272,10 +355,10 @@ impl YamlParser {
                 // Check if this block_node contains a tag - if so, validate it
                 let has_tag = (0..node.named_child_count())
                     .any(|i| node.named_child(i).map_or(false, |child| child.kind() == "tag"));
-                
+
                 if has_tag {
                     // This is a tagged block node - validate it
-                    match self.build_ast(node, src, uri) {
+                    match self.build_ast(node, src, uri, anchor_map) {
                         Ok(_) => {
                             // Success, no error to collect
                         }
@@ -288,7 +371,7 @@ impl YamlParser {
                     // Not a tagged node, recurse into children
                     for i in 0..node.named_child_count() {
                         if let Some(child) = node.named_child(i) {
-                            self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                            self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                         }
                     }
                 }
@@ -297,92 +380,8 @@ impl YamlParser {
                 // For other nodes, recurse into children
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
-                        self.build_ast_with_error_collection(child, src, uri, diagnostics);
+                        self.build_ast_with_error_collection(child, src, uri, diagnostics, anchor_map);
                     }
-                }
-            }
-        }
-    }
-
-    fn parse_with_serde_yaml_fallback(&self, source: &str, uri: Url) -> ParseResult<YamlAst> {
-        // Use serde_yaml to parse and resolve anchors/aliases
-        let value: serde_yaml::Value = serde_yaml::from_str(source)
-            .map_err(|e| ParseError::new(&format!("serde_yaml parse error: {}", e)))?;
-
-        // Convert serde_yaml::Value to our YamlAst format
-        self.convert_serde_value_to_ast(value, uri)
-    }
-
-    fn convert_serde_value_to_ast(
-        &self,
-        value: serde_yaml::Value,
-        uri: Url,
-    ) -> ParseResult<YamlAst> {
-        let meta = SrcMeta {
-            input_uri: uri.clone(),
-            start: Position::new(0, 0),
-            end: Position::new(0, 0),
-        };
-
-        match value {
-            serde_yaml::Value::Null => Ok(YamlAst::Null(meta)),
-            serde_yaml::Value::Bool(b) => Ok(YamlAst::Bool(b, meta)),
-            serde_yaml::Value::Number(n) => Ok(YamlAst::Number(n, meta)),
-            serde_yaml::Value::String(s) => {
-                // Check if it's a templated string
-                if s.contains("{{") && s.contains("}}") {
-                    Ok(YamlAst::TemplatedString(s, meta))
-                } else {
-                    Ok(YamlAst::PlainString(s, meta))
-                }
-            }
-            serde_yaml::Value::Sequence(seq) => {
-                let mut items = Vec::with_capacity(seq.len());
-                for item in seq {
-                    items.push(self.convert_serde_value_to_ast(item, uri.clone())?);
-                }
-                Ok(YamlAst::Sequence(items, meta))
-            }
-            serde_yaml::Value::Mapping(map) => {
-                let mut pairs = Vec::with_capacity(map.len());
-                for (key, value) in map {
-                    let key_ast = self.convert_serde_value_to_ast(key, uri.clone())?;
-                    let value_ast = self.convert_serde_value_to_ast(value, uri.clone())?;
-                    pairs.push((key_ast, value_ast));
-                }
-                Ok(YamlAst::Mapping(pairs, meta))
-            }
-            serde_yaml::Value::Tagged(tagged) => {
-                // Handle tagged values - convert to our tag system
-                let tag_name = tagged.tag.to_string();
-                let content = self.convert_serde_value_to_ast(tagged.value, uri.clone())?;
-
-                // Check if it's a preprocessing tag
-                if tag_name.starts_with("!$") {
-                    match self.parse_preprocessing_tag(&tag_name, content.clone(), &meta) {
-                        Ok(preprocessing_tag) => {
-                            Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta))
-                        }
-                        Err(_) => {
-                            // Fall back to unknown tag
-                            let unknown_tag = UnknownTag {
-                                tag: tag_name,
-                                value: Box::new(content),
-                            };
-                            Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
-                        }
-                    }
-                } else if let Some(cf_tag) =
-                    CloudFormationTag::from_tag_name(&tag_name, content.clone())
-                {
-                    Ok(YamlAst::CloudFormationTag(cf_tag, meta))
-                } else {
-                    // Unknown tag
-                    let unknown_tag = UnknownTag {
-                        tag: tag_name,
-                        value: Box::new(content),
-                    };
-                    Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
                 }
             }
         }
@@ -452,7 +451,7 @@ impl YamlParser {
     }
 
     #[inline]
-    fn build_ast(&self, node: Node, src: &[u8], uri: &Url) -> ParseResult<YamlAst> {
+    fn build_ast(&self, node: Node, src: &[u8], uri: &Url, anchor_map: &mut HashMap<String, YamlAst>) -> ParseResult<YamlAst> {
         // Cache the node kind to avoid repeated string comparisons
         let node_kind = node.kind();
         let meta = node_meta(&node, uri);
@@ -463,7 +462,7 @@ impl YamlParser {
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
                         if child.kind() == "document" {
-                            match self.build_ast(child, src, uri) {
+                            match self.build_ast(child, src, uri, anchor_map) {
                                 Ok(result) => {
                                     if !matches!(result, YamlAst::Null(_)) {
                                         return Ok(result);
@@ -487,7 +486,7 @@ impl YamlParser {
                 // Try each child until we find non-null content
                 for i in 0..node.named_child_count() {
                     if let Some(child) = node.named_child(i) {
-                        match self.build_ast(child, src, uri) {
+                        match self.build_ast(child, src, uri, anchor_map) {
                             Ok(result) => {
                                 // Skip null results and try the next child
                                 if !matches!(result, YamlAst::Null(_)) {
@@ -505,12 +504,12 @@ impl YamlParser {
                 // If all children are null or no children, return null
                 Ok(YamlAst::Null(meta))
             }
-            "block_mapping" | "flow_mapping" => self.build_mapping(node, src, uri, meta),
-            "block_sequence" | "flow_sequence" => self.build_sequence(node, src, uri, meta),
+            "block_mapping" | "flow_mapping" => self.build_mapping(node, src, uri, meta, anchor_map),
+            "block_sequence" | "flow_sequence" => self.build_sequence(node, src, uri, meta, anchor_map),
             "block_sequence_item" | "flow_sequence_item" => {
                 // Unwrap sequence items
                 if let Some(child) = node.named_child(0) {
-                    self.build_ast(child, src, uri)
+                    self.build_ast(child, src, uri, anchor_map)
                 } else {
                     Ok(YamlAst::Null(meta))
                 }
@@ -525,30 +524,37 @@ impl YamlParser {
             }
             "flow_node" => {
                 // Handle tagged flow nodes (e.g., "!Ref MyResource")
-                self.build_flow_node(node, src, uri, meta)
+                self.build_flow_node(node, src, uri, meta, anchor_map)
             }
             "block_node" => {
                 // Handle block nodes which may contain tags with block content
-                self.build_block_node(node, src, uri, meta)
+                self.build_block_node(node, src, uri, meta, anchor_map)
             }
-            "tag" => self.build_tagged_node(node, src, uri, meta),
+            "tag" => self.build_tagged_node(node, src, uri, meta, anchor_map),
             "alias" => {
-                let text = self.extract_utf8_text(node, src, &meta, "alias")?;
-                Ok(YamlAst::PlainString(text, meta))
+                // Extract alias name and look up in anchor map
+                let alias_name = self.extract_alias_name(node, src, &meta)?;
+                anchor_map
+                    .get(&alias_name)
+                    .cloned()
+                    .ok_or_else(|| self.undefined_alias_error(&alias_name, &meta))
             }
             "anchor" => {
-                // For now, treat anchors like regular nodes
-                if let Some(child) = node.named_child(0) {
-                    self.build_ast(child, src, uri)
+                // Extract anchor name and value, store in map, return value
+                let anchor_name = self.extract_anchor_name(node, src, &meta)?;
+                let value = if let Some(child) = node.named_child(0) {
+                    self.build_ast(child, src, uri, anchor_map)?
                 } else {
-                    Ok(YamlAst::Null(meta))
-                }
+                    YamlAst::Null(meta.clone())
+                };
+                anchor_map.insert(anchor_name, value.clone());
+                Ok(value)
             }
             _ => {
                 // Handle any remaining node types as null or attempt to parse as text
                 if node.named_child_count() > 0 {
                     if let Some(child) = node.named_child(0) {
-                        self.build_ast(child, src, uri)
+                        self.build_ast(child, src, uri, anchor_map)
                     } else {
                         Ok(YamlAst::Null(meta))
                     }
@@ -565,6 +571,7 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         meta: SrcMeta,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) -> ParseResult<YamlAst> {
         // More accurate sizing for CloudFormation documents
         let total_children = node.named_child_count();
@@ -586,10 +593,17 @@ impl YamlParser {
                     let mut children = pair_node.named_children(&mut pair_cursor);
 
                     let key = if let Some(key_node) = children.next() {
-                        self.build_ast(key_node, src, uri)?
+                        self.build_ast(key_node, src, uri, anchor_map)?
                     } else {
                         return Err(self.syntax_error("Missing key in mapping pair", &meta, ""));
                     };
+
+                    // Detect YAML 1.1 merge keys
+                    if let YamlAst::PlainString(ref key_str, ref key_meta) = key {
+                        if key_str == "<<" {
+                            return Err(self.merge_key_error(key_meta));
+                        }
+                    }
 
                     // Look for value node, skipping any comments
                     let mut value = YamlAst::Null(node_meta(&pair_node, uri));
@@ -597,7 +611,7 @@ impl YamlParser {
                         match val_node.kind() {
                             "comment" => continue, // Skip comments between key and value
                             _ => {
-                                value = self.build_ast(val_node, src, uri)?;
+                                value = self.build_ast(val_node, src, uri, anchor_map)?;
                                 break;
                             }
                         }
@@ -619,6 +633,7 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         meta: SrcMeta,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) -> ParseResult<YamlAst> {
         let child_count = node.named_child_count();
         let mut items = Vec::with_capacity(child_count);
@@ -632,12 +647,12 @@ impl YamlParser {
                 "block_sequence_item" => {
                     // For block sequence items, process their content
                     if let Some(content_child) = child.named_child(0) {
-                        let item = self.build_ast(content_child, src, uri)?;
+                        let item = self.build_ast(content_child, src, uri, anchor_map)?;
                         items.push(item);
                     }
                 }
                 _ => {
-                    let item = self.build_ast(child, src, uri)?;
+                    let item = self.build_ast(child, src, uri, anchor_map)?;
                     // Fast path: most items are not null
                     if !matches!(item, YamlAst::Null(_)) {
                         items.push(item);
@@ -717,88 +732,36 @@ impl YamlParser {
     fn build_block_scalar(&self, node: Node, src: &[u8], meta: SrcMeta) -> ParseResult<YamlAst> {
         let text = self.extract_utf8_text(node, src, &meta, "block scalar")?;
 
-        // For block scalars, we need to extract just the content part
-        // The node text includes the indicator (| or >) and indentation
-        let lines: Vec<&str> = text.lines().collect();
-        if lines.is_empty() {
-            return Ok(YamlAst::PlainString(String::new(), meta));
-        }
-
-        // Skip the first line which contains the block scalar indicator
-        let content_lines: Vec<&str> = lines.into_iter().skip(1).collect();
-
-        // Find the common indentation to remove
-        let min_indent = content_lines
-            .iter()
-            .filter(|line| !line.trim().is_empty()) // Skip empty lines for indent calculation
-            .map(|line| line.len() - line.trim_start().len())
-            .min()
-            .unwrap_or(0);
-
-        // Remove common indentation and join with newlines
-        let content = content_lines
-            .iter()
-            .map(|line| {
-                if line.len() >= min_indent {
-                    &line[min_indent..]
-                } else {
-                    line.trim_start()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        // For literal blocks, handle final newline according to YAML spec and original parser behavior
-        let final_content = if text.starts_with('|') {
-            if content.is_empty() {
-                content
-            } else {
-                // Check for block chomping indicators:
-                // |  - clip (default): single final newline
-                // |- - strip: no final newline
-                // |+ - keep: preserve all final newlines
-                if text.starts_with("|-") {
-                    // Strip indicator: remove final newline
-                    content
-                } else if text.starts_with("|+") {
-                    // Keep indicator: preserve final newlines (already handled by content processing)
-                    content
-                } else {
-                    // Default clip indicator: single final newline
-                    // Based on analysis of the original parser behavior:
-                    // - Most literal blocks get a final newline (clip indicator default)
-                    // - Only specific cases that appear to be at document end (like StackUrls JSON) don't get one
-                    // - Use a more specific heuristic: JSON starting with specific AWS CloudFormation console URLs pattern
-                    if content.trim_start().starts_with('{')
-                        && content.trim_end().ends_with('}')
-                        && content.contains("console.aws.amazon.com")
-                    {
-                        // This looks like the specific StackUrls CloudFormation case - don't add final newline
-                        content
-                    } else {
-                        // All other content gets final newline
-                        format!("{}\n", content)
-                    }
-                }
-            }
-        } else if text.starts_with('>') {
-            // For folded blocks (>), handle chomping indicators similarly
-            if text.starts_with(">-") {
-                // Strip indicator: remove final newline
-                content
-            } else if text.starts_with(">+") {
-                // Keep indicator: preserve final newlines
-                content
-            } else {
-                // Default clip: no final newline for folded blocks (different from literal)
-                content
-            }
-        } else {
-            // For other scalars, don't add final newline
-            content
+        // Parse scalar type and chomping indicator from first line
+        let first_char = text.chars().next().unwrap_or(' ');
+        let is_folded = first_char == '>';
+        let chomping = match text.chars().nth(1) {
+            Some('-') => ChompingIndicator::Strip,
+            Some('+') => ChompingIndicator::Keep,
+            _ => ChompingIndicator::Clip,
         };
 
-        // Check if it's a templated string
+        // Split into lines and skip the indicator line (use slice to avoid allocation)
+        let lines: Vec<&str> = text.lines().collect();
+        if lines.len() <= 1 {
+            return Ok(YamlAst::PlainString(String::new(), meta));
+        }
+        let content_lines = &lines[1..];
+
+        // Remove common indentation from all lines
+        let stripped_lines = remove_common_indentation(content_lines);
+
+        // Build content: fold lines for folded scalars, preserve for literal
+        let content = if is_folded {
+            fold_lines(&stripped_lines)
+        } else {
+            stripped_lines.join("\n")
+        };
+
+        // Apply chomping indicator to add/remove trailing newlines
+        let final_content = apply_chomping(content, chomping, node, src);
+
+        // Detect templated strings
         if final_content.contains("{{") && final_content.contains("}}") {
             Ok(YamlAst::TemplatedString(final_content, meta))
         } else {
@@ -812,26 +775,30 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         meta: SrcMeta,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) -> ParseResult<YamlAst> {
-        // Block nodes can contain either:
-        // 1. Just content (like a regular block mapping/sequence)
-        // 2. A tag followed by content (for block-style tags like !$if)
+        // Block nodes can contain:
+        // 1. An anchor (optional) followed by content
+        // 2. A tag (optional) followed by content
+        // 3. Just content
 
+        let mut anchor_node = None;
         let mut tag_node = None;
         let mut content_node = None;
 
-        // Examine children to find tag and content
+        // Examine children to find anchor, tag, and content
         for i in 0..node.named_child_count() {
             if let Some(child) = node.named_child(i) {
                 match child.kind() {
+                    "anchor" => anchor_node = Some(child),
                     "tag" => tag_node = Some(child),
                     "block_mapping" | "block_sequence" | "flow_mapping" | "flow_sequence"
                     | "literal" | "folded" | "block_scalar" => {
                         content_node = Some(child);
                     }
                     _ => {
-                        // If no tag found yet, try to parse other children as content
-                        if tag_node.is_none() {
+                        // If no tag/anchor found yet, try to parse other children as content
+                        if tag_node.is_none() && anchor_node.is_none() {
                             content_node = Some(child);
                         }
                     }
@@ -839,7 +806,8 @@ impl YamlParser {
             }
         }
 
-        if let Some(tag) = tag_node {
+        // Build the result (handling tags if present)
+        let result = if let Some(tag) = tag_node {
             // This is a block-style tagged node
             let tag_text = self.extract_utf8_text(tag, src, &meta, "tag")?;
 
@@ -847,7 +815,7 @@ impl YamlParser {
 
             // Parse the content
             let tagged_content = if let Some(content) = content_node {
-                self.build_ast(content, src, uri)?
+                self.build_ast(content, src, uri, anchor_map)?
             } else {
                 YamlAst::Null(meta.clone())
             };
@@ -856,7 +824,7 @@ impl YamlParser {
             if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
                 // Preprocessing tag: !$include, !$if, !$let, etc.
                 match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
-                    Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
+                    Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta.clone())),
                     Err(e) => {
                         // All preprocessing tag errors should propagate (including unknown tags)
                         // This ensures typos in tag names are caught
@@ -867,22 +835,30 @@ impl YamlParser {
                 CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
             {
                 // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
-                Ok(YamlAst::CloudFormationTag(cf_tag, meta))
+                Ok(YamlAst::CloudFormationTag(cf_tag, meta.clone()))
             } else {
                 // Unknown tag
                 let unknown_tag = UnknownTag {
                     tag: tag_name.to_string(),
                     value: Box::new(tagged_content),
                 };
-                Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
+                Ok(YamlAst::UnknownYamlTag(unknown_tag, meta.clone()))
             }
         } else if let Some(content) = content_node {
             // No tag, just regular block content
-            self.build_ast(content, src, uri)
+            self.build_ast(content, src, uri, anchor_map)
         } else {
             // Empty block node
-            Ok(YamlAst::Null(meta))
+            Ok(YamlAst::Null(meta.clone()))
+        }?;
+
+        // If there's an anchor, store the result in the anchor map
+        if let Some(anchor) = anchor_node {
+            let anchor_name = self.extract_anchor_name(anchor, src, &meta)?;
+            anchor_map.insert(anchor_name, result.clone());
         }
+
+        Ok(result)
     }
 
     fn build_flow_node(
@@ -891,6 +867,7 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         meta: SrcMeta,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) -> ParseResult<YamlAst> {
         // Flow nodes can contain tags with their values
         let mut tag_node = None;
@@ -924,7 +901,7 @@ impl YamlParser {
 
             // Parse the value
             let tagged_content = if let Some(val_node) = value_node {
-                self.build_ast(val_node, src, uri)?
+                self.build_ast(val_node, src, uri, anchor_map)?
             } else {
                 YamlAst::Null(meta.clone())
             };
@@ -956,7 +933,7 @@ impl YamlParser {
         } else {
             // No tag found, process as regular flow node
             if let Some(child) = node.named_child(0) {
-                self.build_ast(child, src, uri)
+                self.build_ast(child, src, uri, anchor_map)
             } else {
                 Ok(YamlAst::Null(meta))
             }
@@ -969,6 +946,7 @@ impl YamlParser {
         src: &[u8],
         uri: &Url,
         meta: SrcMeta,
+        anchor_map: &mut HashMap<String, YamlAst>,
     ) -> ParseResult<YamlAst> {
         let tag_text = self.extract_utf8_text(node, src, &meta, "tag")?;
 
@@ -977,7 +955,7 @@ impl YamlParser {
 
         // Find the tagged content
         let tagged_content = if let Some(content_node) = node.named_child(0) {
-            self.build_ast(content_node, src, uri)?
+            self.build_ast(content_node, src, uri, anchor_map)?
         } else {
             // Some tags might not have explicit content, treat as null
             YamlAst::Null(meta.clone())
@@ -1747,6 +1725,90 @@ impl YamlParser {
                 // Only allocate error string when there's actually an error
                 Err(self.syntax_error(&format!("Invalid UTF-8 in {}", context), meta, ""))
             }
+        }
+    }
+
+    /// Extract anchor name from anchor node (removes '&' prefix)
+    fn extract_anchor_name(
+        &self,
+        node: Node,
+        src: &[u8],
+        meta: &SrcMeta,
+    ) -> ParseResult<String> {
+        // The anchor node has the full text including children,
+        // but the anchor name itself is just the first line/token
+        // Extract only the bytes for this specific node (not children)
+        let start = node.start_byte();
+        let end = node.end_byte();
+
+        // Get just the first part (the anchor identifier, not the content)
+        // The anchor name ends at the first whitespace or newline
+        let full_text = std::str::from_utf8(&src[start..end])
+            .map_err(|_| self.syntax_error("Invalid UTF-8 in anchor", meta, ""))?;
+
+        // Extract just the anchor name (first word after &)
+        let anchor_part = full_text
+            .lines()
+            .next()
+            .unwrap_or(full_text)
+            .split_whitespace()
+            .next()
+            .unwrap_or(full_text);
+
+        // Remove '&' prefix: "&myanchor" -> "myanchor"
+        Ok(anchor_part.trim_start_matches('&').to_string())
+    }
+
+    /// Extract alias name from alias node (removes '*' prefix)
+    fn extract_alias_name(
+        &self,
+        node: Node,
+        src: &[u8],
+        meta: &SrcMeta,
+    ) -> ParseResult<String> {
+        let text = self.extract_utf8_text(node, src, meta, "alias")?;
+        // Remove '*' prefix and whitespace: "*myalias " -> "myalias"
+        Ok(text.trim_start_matches('*').trim().to_string())
+    }
+
+    /// Generate error for undefined alias reference
+    fn undefined_alias_error(&self, alias_name: &str, meta: &SrcMeta) -> ParseError {
+        let file_location = self.format_file_location(meta);
+        ParseError {
+            message: format!(
+                "Undefined YAML alias: *{}\n\
+                 @ {}\n\n\
+                 Aliases must reference anchors defined earlier in the document.",
+                alias_name, file_location
+            ),
+            location: Some(super::error::ParseLocation {
+                uri: meta.input_uri.clone(),
+                start: meta.start,
+                end: meta.end,
+            }),
+            code: Some("UNDEFINED_ALIAS".to_string()),
+        }
+    }
+
+    /// Generate error for YAML 1.1 merge keys
+    fn merge_key_error(&self, meta: &SrcMeta) -> ParseError {
+        let file_path = self.format_file_path_only(meta);
+        ParseError {
+            message: format!(
+                "YAML merge keys ('<<') are not supported in YAML 1.2\n\
+                 in file '{}'\n\n\
+                 Consider using iidy's !$merge tag instead:\n\n\
+                 result: !$merge\n\
+                   - *base\n\
+                   - override_key: override_value",
+                file_path
+            ),
+            location: Some(super::error::ParseLocation {
+                uri: meta.input_uri.clone(),
+                start: meta.start,
+                end: meta.end,
+            }),
+            code: Some("MERGE_KEY_NOT_SUPPORTED".to_string()),
         }
     }
 
