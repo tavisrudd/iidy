@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
+use crate::cfn::CfnContext;
 use crate::cli::{Cli, ListArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
@@ -73,7 +74,7 @@ impl From<&aws_sdk_cloudformation::types::Stack> for SerializableStack {
 
 async fn list_stacks_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     _cli: &Cli,
     args: &ListArgs,
     _opts: &crate::cli::NormalizedAwsOpts,

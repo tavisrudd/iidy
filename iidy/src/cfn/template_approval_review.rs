@@ -7,18 +7,18 @@ use owo_colors::OwoColorize;
 use crate::cli::{Cli, ApprovalReviewArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnOperation,
+    CfnContext, CfnOperation,
     template_hash::parse_s3_url,
     s3_utils::check_template_exists,
+    stack_args::load_stack_args,
 };
 use crate::output::aws_conversion::create_command_metadata;
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 async fn template_approval_review_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &ApprovalReviewArgs,
     opts: &crate::cli::NormalizedAwsOpts,

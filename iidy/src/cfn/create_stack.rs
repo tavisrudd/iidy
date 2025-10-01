@@ -1,9 +1,8 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS}},
+    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS}, stack_args::{load_stack_args, StackArgs}},
     cli::{CreateStackArgs, GlobalOpts, Cli},
-    stack_args::{load_stack_args, StackArgs},
     aws::AwsSettings,
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,

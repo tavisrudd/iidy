@@ -1,13 +1,13 @@
 use anyhow::Result;
 
 use crate::cfn::{
-    CfnRequestBuilder, stack_operations::watch_stack_operation_and_summarize,
+    CfnContext, CfnRequestBuilder, stack_operations::watch_stack_operation_and_summarize,
     changeset_operations::confirm_changeset_execution,
     exec_changeset::call_exec_changeset_with_reconstruction,
-    CfnOperation, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate
+    CfnOperation, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate,
+    stack_args::{load_stack_args, StackArgs}
 };
 use crate::cli::{UpdateStackArgs, Cli};
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::output::{
     DynamicOutputManager, OutputData,
@@ -17,7 +17,7 @@ use crate::run_command_handler;
 
 async fn update_stack_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &UpdateStackArgs,
     opts: &crate::cli::NormalizedAwsOpts,
@@ -59,8 +59,8 @@ pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
 }
 
 async fn perform_stack_update(
-    context: &crate::cfn::CfnContext,
-    stack_args: &crate::stack_args::StackArgs,
+    context: &CfnContext,
+    stack_args: &StackArgs,
     args: &UpdateStackArgs,
     environment: &str,
     output_manager: &mut DynamicOutputManager,
@@ -92,9 +92,9 @@ async fn perform_stack_update(
 }
 
 async fn update_stack_with_changeset(
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     args: &UpdateStackArgs,
-    stack_args: &crate::stack_args::StackArgs,
+    stack_args: &StackArgs,
     _stack_name: &str,
     output_manager: &mut DynamicOutputManager,
     environment: &str,

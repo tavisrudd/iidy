@@ -3,14 +3,13 @@ use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
 use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, watch_stack_operation_and_summarize}, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, StackChangeType, UpdateResult, changeset_operations::{self, check_stack_exists, confirm_changeset_execution},
-    exec_changeset::call_exec_changeset_with_reconstruction};
+    exec_changeset::call_exec_changeset_with_reconstruction, stack_args::{load_stack_args, StackArgs}};
 use crate::cli::{UpdateStackArgs, Cli};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::{convert_token_info, create_command_metadata, convert_stack_to_definition},
     data::{OutputData, StackChangeDetails}
 };
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
@@ -109,7 +108,7 @@ async fn create_or_update_impl(
 /// Create a new stack directly with data-driven output.
 async fn create_stack_direct_data(
     context: &CfnContext,
-    stack_args: &crate::stack_args::StackArgs,
+    stack_args: &StackArgs,
     argsfile: &str,
     environment: &str,
     output_manager: &mut DynamicOutputManager,
@@ -144,7 +143,7 @@ async fn create_stack_direct_data(
 async fn try_update_stack(
     context: &CfnContext,
     args: &UpdateStackArgs,
-    stack_args: &crate::stack_args::StackArgs,
+    stack_args: &StackArgs,
     environment: &str,
 ) -> Result<UpdateResult> {
     let builder = CfnRequestBuilder::new(&context, stack_args);
@@ -182,7 +181,7 @@ async fn try_update_stack(
 async fn update_stack_with_changeset_data(
     context: &CfnContext,
     args: &UpdateStackArgs,
-    stack_args: &crate::stack_args::StackArgs,
+    stack_args: &StackArgs,
     output_manager: &mut DynamicOutputManager,
     global_opts: &crate::cli::GlobalOpts,
     aws_opts: &crate::cli::AwsOpts,
@@ -243,7 +242,7 @@ async fn update_stack_with_changeset_data(
 async fn create_stack_with_changeset_data(
     context: &CfnContext,
     args: &UpdateStackArgs,
-    stack_args: &crate::stack_args::StackArgs,
+    stack_args: &StackArgs,
     output_manager: &mut DynamicOutputManager,
     global_opts: &crate::cli::GlobalOpts,
     opts: &crate::cli::NormalizedAwsOpts,

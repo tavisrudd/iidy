@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use crate::{
     cli::NormalizedAwsOpts,
     aws::{timing::{ReliableTimeProvider, TimeProvider, SystemTimeProvider}, client_req_token::TokenInfo, config_from_normalized_opts},
-    stack_args::StackArgs,
 };
 
 /// Macro to consistently await tasks and handle errors via the output system
@@ -111,6 +110,7 @@ pub mod is_terminal_status;
 pub mod list_stacks;
 pub mod operations;
 pub mod request_builder;
+pub mod stack_args;
 pub mod stack_operations;
 pub mod template_loader;
 pub mod update_stack;
@@ -123,6 +123,7 @@ pub mod template_hash;
 // Re-exports
 pub use operations::CfnOperation;
 pub use request_builder::CfnRequestBuilder;
+pub use stack_args::StackArgs;
 pub use stack_change_type::{StackChangeType, UpdateResult};
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
 

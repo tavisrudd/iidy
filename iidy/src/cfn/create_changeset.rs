@@ -1,19 +1,18 @@
 use anyhow::Result;
 
-use crate::cfn::{apply_stack_name_override_and_validate, changeset_operations};
+use crate::cfn::{CfnContext, apply_stack_name_override_and_validate, changeset_operations, stack_args::load_stack_args};
 use crate::cli::{Cli, CreateChangeSetArgs};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::{create_command_metadata, create_final_command_summary},
     data::OutputData
 };
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 async fn create_changeset_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &CreateChangeSetArgs,
     opts: &crate::cli::NormalizedAwsOpts,

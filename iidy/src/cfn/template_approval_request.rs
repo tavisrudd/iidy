@@ -5,19 +5,19 @@ use aws_sdk_s3::types::ObjectCannedAcl;
 use crate::cli::{Cli, ApprovalRequestArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnOperation,
+    CfnContext, CfnOperation,
     template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES},
     template_hash::generate_versioned_location,
     s3_utils::check_template_exists,
+    stack_args::{load_stack_args, StackArgs},
 };
 use crate::output::aws_conversion::create_command_metadata;
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 async fn template_approval_request_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &ApprovalRequestArgs,
     opts: &crate::cli::NormalizedAwsOpts,
@@ -118,7 +118,7 @@ async fn upload_template_to_s3(s3_client: &aws_sdk_s3::Client, bucket: &str, key
 }
 
 /// Validate template using CloudFormation
-async fn validate_template(context: &crate::cfn::CfnContext, template_body: &str, stack_args: &crate::stack_args::StackArgs, using_parameters: bool) -> Result<crate::output::data::TemplateValidation> {
+async fn validate_template(context: &CfnContext, template_body: &str, stack_args: &StackArgs, using_parameters: bool) -> Result<crate::output::data::TemplateValidation> {
     let mut validation_request = context.client.validate_template();
     
     if template_body.len() > 51200 {

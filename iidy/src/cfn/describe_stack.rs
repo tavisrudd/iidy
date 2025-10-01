@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow};
 
-use crate::cfn::stack_operations::collect_stack_contents;
+use crate::cfn::{CfnContext, stack_operations::collect_stack_contents};
 use crate::cli::{Cli, DescribeArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, convert_stack_to_definition,
@@ -11,7 +11,7 @@ use crate::run_command_handler;
 
 async fn describe_stack_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     _cli: &Cli,
     args: &DescribeArgs,
     _opts: &crate::cli::NormalizedAwsOpts,

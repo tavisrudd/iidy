@@ -1,6 +1,6 @@
 use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
-use crate::stack_args::StackArgs;
+use crate::cfn::StackArgs;
 use crate::aws::client_req_token::TokenInfo;
 #[cfg(test)]
 use crate::aws::client_req_token::TokenSource;

@@ -1,19 +1,18 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackEventsService, StackInfoService, watch_stack_operation_and_summarize}, constants::DEFAULT_PREVIOUS_EVENTS_COUNT};
+use crate::cfn::{CfnContext, CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackEventsService, StackInfoService, watch_stack_operation_and_summarize}, constants::DEFAULT_PREVIOUS_EVENTS_COUNT, stack_args::{load_stack_args, StackArgs}};
 use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::{convert_token_info, create_command_metadata},
     data::{OutputData, StackEventsDisplay}
 };
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 pub async fn exec_changeset_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &ExecChangeSetArgs,
     opts: &crate::cli::NormalizedAwsOpts,
@@ -87,8 +86,8 @@ pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> 
 }
 
 async fn perform_changeset_execution(
-    context: &crate::cfn::CfnContext,
-    stack_args: &crate::stack_args::StackArgs,
+    context: &CfnContext,
+    stack_args: &StackArgs,
     args: &ExecChangeSetArgs,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {

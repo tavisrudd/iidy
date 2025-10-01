@@ -14,7 +14,7 @@ use crate::output::{
     aws_conversion::convert_token_info,
     data::{OutputData, ChangeSetCreationResult, ChangeSetInfo, ChangeInfo}
 };
-use crate::stack_args::StackArgs;
+use crate::cfn::stack_args::StackArgs;
 use crate::yaml::imports::loaders::random::generate_dashed_name;
 
 /// Check if a CloudFormation stack exists.
@@ -525,7 +525,7 @@ async fn build_existing_changeset_result(
 /// Shared function for confirming changeset execution
 pub async fn confirm_changeset_execution(
     output_manager: &mut crate::output::DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     yes_flag: bool,
     use_key: bool,
 ) -> Result<bool> {

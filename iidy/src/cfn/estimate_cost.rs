@@ -1,18 +1,17 @@
 use anyhow::Result;
 
-use crate::cfn::{apply_stack_name_override_and_validate, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}};
+use crate::cfn::{CfnContext, apply_stack_name_override_and_validate, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, stack_args::load_stack_args};
 use crate::cli::{Cli, StackFileArgs};
 use crate::output::{
     DynamicOutputManager,
     OutputData, data::{CostEstimate, CostEstimateInfo}
 };
-use crate::stack_args::load_stack_args;
 use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 async fn estimate_cost_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     cli: &Cli,
     args: &StackFileArgs,
     opts: &crate::cli::NormalizedAwsOpts,

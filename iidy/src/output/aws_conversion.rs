@@ -4,7 +4,7 @@
 //! and internal iidy data structures to OutputData for the data-driven output system.
 
 use crate::{
-    cfn::CfnContext,
+    cfn::{CfnContext, StackArgs},
     output::{
         CommandMetadata, CommandResult, StatusUpdate, StatusLevel, OutputData,
         TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
@@ -14,7 +14,6 @@ use crate::{
         data::ErrorInfo,
     },
     cli::NormalizedAwsOpts,
-    stack_args::StackArgs,
     aws::client_req_token::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
 };
 use aws_sdk_cloudformation::types::{Stack, StackEvent as AwsStackEvent, StackResource, Output};
@@ -465,10 +464,9 @@ mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
     use crate::{
-        cfn::CfnContext,
+        cfn::{CfnContext, StackArgs},
         aws::{client_req_token::TokenInfo, timing::MockTimeProvider},
         cli::NormalizedAwsOpts,
-        stack_args::StackArgs,
     };
     use aws_sdk_cloudformation::Client;
     use std::sync::Arc;

@@ -4,6 +4,7 @@ use aws_sdk_cloudformation::{
     types::{StackDriftDetectionStatus, StackResourceDrift, StackResourceDriftStatus},
 };
 
+use crate::cfn::CfnContext;
 use crate::cli::{Cli, DriftArgs};
 use crate::output::{
     DynamicOutputManager, OutputData, convert_stack_to_definition,
@@ -16,7 +17,7 @@ use crate::run_command_handler;
 
 async fn describe_stack_drift_impl(
     output_manager: &mut DynamicOutputManager,
-    context: &crate::cfn::CfnContext,
+    context: &CfnContext,
     _cli: &Cli,
     args: &DriftArgs,
     _opts: &crate::cli::NormalizedAwsOpts,

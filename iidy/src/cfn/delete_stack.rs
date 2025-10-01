@@ -16,7 +16,7 @@ use crate::output::{
     },
     data::StackAbsentInfo
 };
-use crate::stack_args::StackArgs;
+use crate::cfn::stack_args::StackArgs;
 use crate::cfn::watch_stack::{ManagerOutput, watch_stack_live_events_with_seen_events};
 use crate::cfn::constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS, DEFAULT_PREVIOUS_EVENTS_COUNT};
 use crate::run_command_handler;
