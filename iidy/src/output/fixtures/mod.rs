@@ -196,9 +196,13 @@ impl FixtureLoader {
             notification_arns: Vec::new(),
             stack_policy: None,
             arn: stack.get("stack_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            console_url: format!("https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stack/detail?stackId={}", 
+            console_url: format!("https://us-east-1.console.aws.amazon.com/cloudformation/home?region=us-east-1#/stack/detail?stackId={}",
                 stack.get("stack_id").and_then(|v| v.as_str()).unwrap_or("").replace(":", "%3A").replace("/", "%2F")),
-            region: "us-east-1".to_string(),
+            region: stack.get("stack_id")
+                .and_then(|v| v.as_str())
+                .and_then(|arn| arn.split(':').nth(3))
+                .unwrap_or("us-east-1")
+                .to_string(),
         })
     }
     

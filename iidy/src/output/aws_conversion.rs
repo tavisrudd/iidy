@@ -72,7 +72,10 @@ pub async fn create_command_metadata(
 
     Ok(CommandMetadata {
         iidy_environment: environment.to_string(),
-        region: opts.region.clone().unwrap_or_else(|| "us-east-1".to_string()),
+        region: context.aws_config.region()
+            .expect("Region must be configured - validated in create_context_for_operation")
+            .as_ref()
+            .to_string(),
         profile: opts.profile.clone(),
         cli_arguments,
         iam_service_role: stack_args.role_arn.clone(),
@@ -252,6 +255,14 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
         })
         .collect();
 
+    let stack_id = stack.stack_id().unwrap_or("unknown");
+
+    // Extract region from stack ARN: arn:aws:cloudformation:REGION:account:stack/name/id
+    // Note: stack_id should always be present for existing stacks returned by AWS API.
+    // It would only be None in edge cases (malformed response, local testing).
+    // Fallback to us-east-1 only if ARN parsing fails.
+    let region_from_arn = stack_id.split(':').nth(3).unwrap_or("us-east-1");
+
     let stack_definition = StackDefinition {
         name: stack.stack_name().unwrap_or("unknown").to_string(),
         stackset_name: None, // TODO: Determine if this is a StackSet stack
@@ -274,10 +285,10 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
         timeout_in_minutes: stack.timeout_in_minutes(),
         notification_arns: stack.notification_arns().iter().map(|s| s.to_string()).collect(),
         stack_policy: None, // TODO: Fetch separately if needed
-        arn: stack.stack_id().unwrap_or("unknown").to_string(), // Stack ARN is typically the ID
-        console_url: format!("https://console.aws.amazon.com/cloudformation/home#/stacks/stackinfo?stackId={}", 
-                           stack.stack_id().unwrap_or("unknown")),
-        region: "current".to_string(), // TODO: Get actual region
+        arn: stack_id.to_string(),
+        console_url: format!("https://{}.console.aws.amazon.com/cloudformation/home?region={}#/stacks/stackinfo?stackId={}",
+                           region_from_arn, region_from_arn, stack_id),
+        region: region_from_arn.to_string(),
     };
 
     OutputData::StackDefinition(stack_definition, show_times)
@@ -466,18 +477,17 @@ mod tests {
     async fn test_create_command_metadata() {
         let fixed_time = chrono::Utc::now();
         let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
-        let config = aws_config::SdkConfig::builder()
-            .region(aws_types::region::Region::new("us-east-1"))
-            .behavior_version(aws_config::BehaviorVersion::latest())
-            .build();
-        let client = Client::new(&config);
-        let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
+
+        // The region in aws_config is what will be used for API calls and displayed
         let aws_config = aws_config::SdkConfig::builder()
-            .region(aws_types::region::Region::new("us-east-1"))
+            .region(aws_types::region::Region::new("us-west-2"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
+        let client = Client::new(&aws_config);
+        let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
         let context = CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap();
 
+        // opts.region is just what was passed on CLI - may or may not match aws_config
         let opts = NormalizedAwsOpts {
             profile: Some("test-profile".to_string()),
             region: Some("us-west-2".to_string()),
@@ -495,14 +505,47 @@ mod tests {
 
         let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env").await.unwrap();
 
-        // cfn_operation is now derived from CLI context, not stored in metadata
         assert_eq!(metadata.iidy_environment, "test-env");
+        // Region should come from context.aws_config, not opts
         assert_eq!(metadata.region, "us-west-2");
         assert_eq!(metadata.profile, Some("test-profile".to_string()));
         assert_eq!(metadata.iam_service_role, Some("arn:aws:iam::123456789012:role/TestRole".to_string()));
         assert_eq!(metadata.primary_token.value, "test-token-123");
         assert!(metadata.cli_arguments.contains_key("profile"));
         assert!(metadata.cli_arguments.contains_key("region"));
+    }
+
+    #[tokio::test]
+    async fn test_create_command_metadata_region_from_aws_config() {
+        // Test that region comes from aws_config, not opts.region
+        // This validates the fix for the region display bug
+        let fixed_time = chrono::Utc::now();
+        let time_provider = Arc::new(MockTimeProvider::new(fixed_time));
+
+        // aws_config has region set to eu-west-1
+        let aws_config = aws_config::SdkConfig::builder()
+            .region(aws_types::region::Region::new("eu-west-1"))
+            .behavior_version(aws_config::BehaviorVersion::latest())
+            .build();
+        let client = Client::new(&aws_config);
+        let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
+        let context = CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap();
+
+        // opts.region is None (simulating region from stack-args or AWS config files)
+        let opts = NormalizedAwsOpts {
+            profile: Some("test-profile".to_string()),
+            region: None, // No CLI region specified
+            assume_role_arn: None,
+            client_request_token: TokenInfo::user_provided("test-token".to_string(), "test-op".to_string()),
+            fixture_set: None,
+        };
+
+        let stack_args = StackArgs::default();
+
+        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env").await.unwrap();
+
+        // Should display the region from aws_config, not default to us-east-1
+        assert_eq!(metadata.region, "eu-west-1");
     }
 
     #[test]

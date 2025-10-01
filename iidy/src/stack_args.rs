@@ -131,9 +131,17 @@ pub async fn load_stack_args(
 
     // Configure AWS BEFORE preprocessing (enables $imports with AWS calls)
     let aws_config = config_from_merged_settings(&merged_aws_settings).await?;
+
+    // Validate that a region is configured (needed for AWS API calls in $imports and CommandsBefore)
     let current_region = aws_config.region()
         .map(|r| r.as_ref())
-        .unwrap_or("us-east-1"); // Default fallback
+        .ok_or_else(|| anyhow::anyhow!(
+            "No AWS region configured. Please specify a region via:\n\
+             - CLI flag: --region us-east-1\n\
+             - Stack args: Region: us-east-1\n\
+             - Environment variable: AWS_REGION or AWS_DEFAULT_REGION\n\
+             - AWS config file: ~/.aws/config"
+        ))?;
     
     // Create and inject $envValues
     let env_values = create_env_values(

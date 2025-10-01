@@ -1088,7 +1088,9 @@ impl InteractiveRenderer {
         // Service Role
         let service_role = data.service_role.as_deref().unwrap_or("None");
         self.print_section_entry("Service Role:", &service_role.color(self.theme.muted).to_string())?;
-        
+
+        self.print_section_entry("Region:", &data.region.color(self.theme.primary).to_string())?;
+
         // Tags
         let tags_str = self.pretty_format_tags(&data.tags);
         self.print_section_entry("Tags:", &tags_str.color(self.theme.muted).to_string())?;
@@ -2071,13 +2073,17 @@ impl InteractiveRenderer {
     
     /// Get context information from CLI context
     async fn get_stack_absent_context_info(&self) -> (String, String, String, String) {
+        // TODO: Remove "unknown" fallback by ensuring region is always available in renderer context.
+        // Since create_context_for_operation validates region exists, we should propagate the
+        // validated region to OutputOptions/renderer instead of relying on CLI opts which may be None
+        // when region comes from stack-args, env vars, or AWS config.
         let (environment, region) = if let Some(ref cli) = self.cli_context {
             (
                 cli.global_opts.environment.clone(),
-                cli.aws_opts.region.clone().unwrap_or_else(|| "us-east-1".to_string())
+                cli.aws_opts.region.clone().unwrap_or_else(|| "unknown".to_string())
             )
         } else {
-            ("development".to_string(), "us-east-1".to_string())
+            ("development".to_string(), "unknown".to_string())
         };
         
         // For account and auth_arn, we'll make a simple STS call or use placeholders

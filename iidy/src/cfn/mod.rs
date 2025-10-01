@@ -140,6 +140,18 @@ pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResu
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: CfnOperation) -> Result<CfnContext> {
     let config = config_from_normalized_opts(opts).await?;
+
+    // Validate that a region is configured before proceeding
+    if config.region().is_none() {
+        anyhow::bail!(
+            "No AWS region configured. Please specify a region via:\n\
+             - CLI flag: --region us-east-1\n\
+             - Stack args: Region: us-east-1\n\
+             - Environment variable: AWS_REGION or AWS_DEFAULT_REGION\n\
+             - AWS config file: ~/.aws/config"
+        );
+    }
+
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
         Arc::new(SystemTimeProvider::new())

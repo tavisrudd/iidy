@@ -94,7 +94,9 @@ pub async fn get_stack_instances(cli: &Cli, args: &GetStackInstancesArgs) -> Res
     }
 
     // Show console URL at the end (following iidy-js pattern)
-    let region = opts.region.as_deref().unwrap_or("us-east-1");
+    let region = context.aws_config.region()
+        .expect("Region validated in create_context_for_operation")
+        .as_ref();
     let console_url = format!(
         "https://console.aws.amazon.com/ec2/v2/home?region={}#Instances:tag:aws:cloudformation:stack-name={};sort=desc:launchTime",
         region, args.stackname
