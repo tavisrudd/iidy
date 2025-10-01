@@ -1,7 +1,8 @@
-//! Interactive renderer with exact iidy-js formatting
+//! Interactive renderer
 //!
-//! This renderer provides pixel-perfect output matching the original iidy-js implementation,
-//! including colors, spacing, timestamps, and all formatting details.
+//! This renderer handles all console output and interactions,
+//! including colors, spacing, timestamps, other formatting details,
+//! spinners, and confirmations.
 
 use crate::output::data::*;
 use crate::output::renderer::OutputRenderer;
@@ -20,9 +21,7 @@ use std::time::Duration;
 use std::sync::{Arc, Mutex};
 use textwrap;
 
-// Core constants matching iidy-js exactly (from complete implementation spec)
 pub const COLUMN2_START: usize = 25;
-// Removed DEFAULT_STATUS_PADDING as it's not used in this exact implementation
 pub const MIN_STATUS_PADDING: usize = 17;
 pub const MAX_PADDING: usize = 60;
 pub const RESOURCE_TYPE_PADDING: usize = 40;
@@ -72,12 +71,10 @@ impl InteractiveOptions {
     }
 }
 
-/// Interactive renderer with exact iidy-js formatting and colors
 pub struct InteractiveRenderer {
     options: InteractiveOptions,
     theme: IidyTheme,
-    #[allow(dead_code)] // Will be used for text wrapping in future
-    terminal_width: usize,
+    terminal_width: usize,      // for text wrapping
     has_rendered_content: bool,
     // Async ordering state
     current_operation: Option<String>,
@@ -131,17 +128,15 @@ impl InteractiveRenderer {
         renderer
     }
     
-    /// Check if colors are enabled
-    fn colors_enabled(&self) -> bool {
+    fn are_colors_enabled(&self) -> bool {
         self.theme.colors_enabled
     }
     
-    /// Format section heading (exact iidy-js implementation)
     fn format_section_heading(&self, text: &str) -> String {
         // Remove trailing colon if present to avoid double colons
         let clean_text = text.trim_end_matches(':');
         
-        if self.colors_enabled() {
+        if self.are_colors_enabled() {
             format!("{}:", clean_text.color(self.theme.section_heading).bold())
         } else {
             format!("{}:", clean_text)
@@ -165,7 +160,6 @@ impl InteractiveRenderer {
         println!();
     }
     
-    /// Add appropriate spacing before content if needed
     fn add_content_spacing(&mut self) {
         if self.has_rendered_content {
             println!();
@@ -173,16 +167,16 @@ impl InteractiveRenderer {
         self.has_rendered_content = true;
     }
     
-    /// Format section label (exact iidy-js implementation) 
+    /// Format section label
     fn format_section_label(&self, text: &str) -> String {
-        if self.colors_enabled() {
+        if self.are_colors_enabled() {
             text.color(self.theme.muted).to_string() // iidy-js: truecolor(128, 128, 128) - blackBright for section labels
         } else {
             text.to_string()
         }
     }
     
-    /// Format section entry (exact iidy-js implementation)
+    /// Format section entry
     fn format_section_entry(&self, label: &str, data: &str) -> String {
         format!(" {}{}\n", 
             self.format_section_label(&format!("{:<width$} ", label, width = COLUMN2_START - 1)),
@@ -190,44 +184,40 @@ impl InteractiveRenderer {
         )
     }
     
-    /// Print section entry to stdout (exact iidy-js implementation)
+    /// Print section entry to stdout
     fn print_section_entry(&self, label: &str, data: &str) -> Result<()> {
         print!("{}", self.format_section_entry(label, data));
         io::stdout().flush()?;
         Ok(())
     }
     
-    /// Format logical ID (exact iidy-js implementation)
     fn format_logical_id(&self, text: &str) -> String {
-        if self.colors_enabled() {
+        if self.are_colors_enabled() {
             text.color(self.theme.resource_id).to_string() // iidy-js: xterm color 252 - light gray for logical resource IDs
         } else {
             text.to_string()
         }
     }
     
-    /// Format timestamp (exact iidy-js implementation)
     fn format_timestamp(&self, text: &str) -> String {
-        if self.colors_enabled() {
+        if self.are_colors_enabled() {
             text.color(self.theme.timestamp).to_string() // iidy-js: xterm color 253 - light gray for timestamps
         } else {
             text.to_string()
         }
     }
     
-    /// Render timestamp in iidy-js format (canonical format for all timestamps)
+    /// Render timestamp in canonical format for all timestamps
     fn render_timestamp(&self, dt: &DateTime<Utc>) -> String {
         dt.format("%a %b %d %Y %H:%M:%S").to_string()
     }
     
-    /// Render timestamp for stack events in iidy-js format
     fn render_event_timestamp(&self, dt: &DateTime<Utc>) -> String {
         self.render_timestamp(dt)
     }
     
-    /// Colorize resource status (exact iidy-js implementation)
     fn colorize_resource_status(&self, status: &str, padding: Option<usize>) -> String {
-        if !self.colors_enabled() {
+        if !self.are_colors_enabled() {
             return match padding {
                 Some(width) => format!("{:<width$}", status, width = width),
                 None => status.to_string(),
@@ -252,7 +242,7 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Calculate padding for a collection of items (exact iidy-js implementation)
+    /// Calculate padding for a collection of items
     fn calc_padding<T, F>(&self, items: &[T], extractor: F) -> usize 
     where
         F: Fn(&T) -> &str,
@@ -265,7 +255,6 @@ impl InteractiveRenderer {
         std::cmp::min(std::cmp::max(max_len, MIN_STATUS_PADDING), MAX_PADDING)
     }
     
-    /// Pretty format tags (exact iidy-js implementation)
     fn pretty_format_tags(&self, tags: &HashMap<String, String>) -> String {
         self.pretty_format_tags_with_truncation(tags, None)
     }
@@ -307,7 +296,6 @@ impl InteractiveRenderer {
         formatted_tags.join(", ")
     }
     
-    /// Pretty format parameters (exact iidy-js implementation)
     fn pretty_format_parameters(&self, params: &HashMap<String, String>) -> String {
         if params.is_empty() {
             return String::new();
@@ -320,7 +308,6 @@ impl InteractiveRenderer {
         formatted_params.join(", ")
     }
     
-    /// Pretty format small map (exact iidy-js implementation)
     fn pretty_format_small_map(&self, map: &HashMap<String, String>) -> String {
         if map.is_empty() {
             return String::new();
@@ -333,11 +320,8 @@ impl InteractiveRenderer {
         items.join(", ")
     }
     
-    // Color methods removed - using theme.field.color() directly for clarity
-    
-    /// Apply environment-based coloring (exact iidy-js implementation)
     fn color_by_environment(&self, text: &str, env_name: &str) -> String {
-        if !self.colors_enabled() {
+        if !self.are_colors_enabled() {
             return text.to_string();
         }
         
@@ -349,7 +333,6 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Format token source (exact iidy-js implementation)
     fn format_token_source(&self, source: &TokenSource) -> String {
         match source {
             TokenSource::UserProvided => "user-provided".to_string(),
@@ -358,10 +341,9 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Create spinner for API waiting periods (iidy-js style) - only in TTY and if enabled
+    /// Create spinner for API waiting periods if in TTY and enabled
     fn create_api_spinner(&self, message: &str) -> Option<Spinner> {
-        if self.options.enable_spinners && self.colors_enabled() && io::stdout().is_terminal() {
-            // Style spinner text with muted color (brightblack) like iidy-js
+        if self.options.enable_spinners && self.are_colors_enabled() && io::stdout().is_terminal() {
             let styled_message = self.style_muted_text(message);
             Some(Spinner::with_style(SpinnerStyle::Dots12, &styled_message))
         } else {
@@ -371,7 +353,6 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Format timing text for live events (helper method)
     fn format_timing_text(total_elapsed: i64, last_live_event: Option<DateTime<Utc>>, now: DateTime<Utc>) -> String {
         if let Some(last_event_time) = last_live_event {
             let since_last_event = (now - last_event_time).num_seconds();
@@ -382,14 +363,11 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Apply muted theme styling to text (helper method)
     fn style_muted_text(&self, text: &str) -> String {
         text.color(self.theme.muted).to_string()
     }
     
-    /// Start live events timing with background updates (like iidy-js setInterval)
     fn start_live_events_timing(&mut self, start_time: DateTime<Utc>) {
-        // Only start if we have an active spinner and spinners are enabled
         if let Some(spinner) = &self.current_spinner {
             if let Some(spinner_ref) = spinner.get_spinner_ref() {
                 // Create shared state for timing info (start_time, last_live_event_time)
@@ -397,7 +375,6 @@ impl InteractiveRenderer {
                 let timing_state = Arc::new(Mutex::new((start_time, None)));
                 let timing_ref = Arc::clone(&timing_state);
                 
-                // Get theme color for styling
                 let muted_color = self.theme.muted;
                 
                 // Spawn background task that updates spinner every second
@@ -409,28 +386,22 @@ impl InteractiveRenderer {
                         
                         let timing_guard = timing_ref.lock().unwrap();
                         let (start, last_live_event): (DateTime<Utc>, Option<DateTime<Utc>>) = *timing_guard;
-                        drop(timing_guard); // Release the lock
+                        drop(timing_guard);
                         
                         let now = Utc::now();
                         let total_elapsed = (now - start).num_seconds();
-                        
-                        // Format and style timing text
                         let timing_text = Self::format_timing_text(total_elapsed, last_live_event, now);
                         let styled_text = timing_text.color(muted_color).to_string();
-                        
-                        // Update spinner message
                         spinner_ref.set_message(styled_text);
                     }
                 });
                 
-                // Store task handle and timing state
                 self.timing_task_handle = Some(task);
                 self.timing_state = Some(timing_state);
             }
         }
     }
     
-    /// Update last event time when new live events arrive
     fn update_last_event_time(&mut self, event_time: DateTime<Utc>) {
         if let Some(timing_state) = &self.timing_state {
             if let Ok(mut state) = timing_state.lock() {
@@ -439,7 +410,6 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Stop live events timing and clean up
     fn stop_live_events_timing(&mut self) {
         if let Some(handle) = self.timing_task_handle.take() {
             handle.abort();
@@ -617,7 +587,6 @@ impl InteractiveRenderer {
         self.section_titles.insert("live_stack_events".to_string(), "Live Stack Events".to_string());
         self.section_titles.insert("cost_estimate".to_string(), "Cost Estimate".to_string());
         
-        // Configure stack events title based on operation
         match operation {
             CfnOperation::DescribeStack => {
                 if let Commands::DescribeStack(args) = &cli.command {
@@ -667,7 +636,6 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Get the section title for display
     fn get_section_title(&self, section_key: &str) -> &str {
         // Confirmation sections have no title (empty string)
         if section_key == "confirmation" || section_key.starts_with("confirmation_") {
@@ -713,7 +681,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Advance through sections that have data ready
     async fn advance_through_ready_sections(&mut self) -> Result<()> {
         while self.next_section_index < self.expected_sections.len() {
             let section_key = self.expected_sections[self.next_section_index];
@@ -729,26 +696,16 @@ impl InteractiveRenderer {
         Ok(())
     }
 
-    /// Render a single section with its data
     async fn render_section(&mut self, data: OutputData) -> Result<()> {
-        // Clear current spinner
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
-        
-        // Set flag to suppress main section heading (already shown)
         self.suppress_main_heading = true;
-        
-        // Render content (main heading will be suppressed)
         self.render_data_immediately(data).await?;
-        
-        // Reset flag
         self.suppress_main_heading = false;
-        
         Ok(())
     }
 
-    /// Start next section if it exists
     fn start_next_section_if_exists(&mut self) {
         if self.next_section_index < self.expected_sections.len() {
             self.start_next_section();
@@ -757,7 +714,6 @@ impl InteractiveRenderer {
         }
     }
     
-    /// Flush any buffered live events
     async fn flush_buffered_live_events(&mut self) -> Result<()> {
         let events_to_render: Vec<OutputData> = self.buffered_live_events.drain(..).collect();
         for buffered_event in events_to_render {
@@ -766,9 +722,7 @@ impl InteractiveRenderer {
         Ok(())
     }
 
-    /// Handle live events data (special streaming section)
     async fn handle_live_events_data(&mut self, data: OutputData) -> Result<()> {
-        // Advance through any ready sections first
         self.advance_through_ready_sections().await?;
         
         // Find the index of live_stack_events in expected sections
@@ -784,15 +738,10 @@ impl InteractiveRenderer {
             
             // We're at the live_stack_events section
             if self.next_section_index == target_index {
-                // Start live_stack_events section if not already started
-                if !self.section_already_started("live_stack_events") {
+                if !self.has_section_already_started("live_stack_events") {
                     self.start_next_section();
-                    
-                    // Render any buffered events first
                     self.flush_buffered_live_events().await?;
                 }
-                
-                // Render the current event immediately (streaming)
                 self.render_data_immediately(data).await?;
             }
         }
@@ -800,7 +749,6 @@ impl InteractiveRenderer {
         Ok(())
     }
 
-    /// Handle non-section data
     async fn handle_non_section_data(&mut self, data: OutputData) -> Result<()> {
         match data {
             OutputData::OperationComplete(ref info) => {
@@ -823,13 +771,11 @@ impl InteractiveRenderer {
         Ok(())
     }
 
-    /// Check if a section has already been started
-    fn section_already_started(&self, section_key: &str) -> bool {
+    fn has_section_already_started(&self, section_key: &str) -> bool {
         let section_title = self.get_section_title(section_key);
         self.printed_sections.contains(&section_title.to_string())
     }
     
-    /// Get section key for OutputData type
     fn get_section_key(&self, data: &OutputData) -> Option<String> {
         match data {
             OutputData::CommandMetadata(..) => Some("command_metadata".to_string()),
@@ -907,24 +853,21 @@ impl InteractiveRenderer {
             OutputData::ApprovalResult(ref result) => self.render_approval_result(result).await,
         }
     }
-    
 }
 
 impl InteractiveRenderer {
-    /// Render a single stack event with proper formatting
     fn render_single_stack_event(&self, event_with_timing: &StackEventWithTiming, status_padding: usize, resource_type_padding: usize) {
         let event = &event_with_timing.event;
         
-        // Format timestamp (iidy-js format: "Sun Jul 10 2016 14:00:12")
         let timestamp = if let Some(ts) = &event.timestamp {
             self.format_timestamp(&self.render_event_timestamp(ts))
         } else {
             self.format_timestamp("                         ")
         };
         
-        // Format status with padding (apply padding before coloring to avoid ANSI length issues)
+        // apply padding before coloring to avoid ANSI length issues
         let status_padded = format!("{:<width$}", event.resource_status, width = status_padding);
-        let status = if self.colors_enabled() {
+        let status = if self.are_colors_enabled() {
             self.colorize_resource_status(&status_padded, None)
         } else {
             status_padded
@@ -935,7 +878,7 @@ impl InteractiveRenderer {
             event.resource_type, 
             width = resource_type_padding
         );
-        let resource_type = if self.colors_enabled() {
+        let resource_type = if self.are_colors_enabled() {
             resource_type_padded.color(self.theme.info).to_string() // Use info color (white) for events
         } else {
             resource_type_padded
@@ -944,14 +887,12 @@ impl InteractiveRenderer {
         // Format logical ID (no padding needed as it's the last column before duration)
         let logical_id = self.format_logical_id(&event.logical_resource_id);
         
-        // Format duration if available
         let duration_text = if let Some(duration) = event_with_timing.duration_seconds {
             format!(" ({}s)", duration)
         } else {
             String::new()
         };
         
-        // iidy-js column order: timestamp status resource_type logical_id duration
         println!(" {} {} {} {}{}",
             timestamp,
             status,
@@ -960,13 +901,12 @@ impl InteractiveRenderer {
             duration_text.color(self.theme.muted)
         );
         
-        // Show resource status reason on new line for failed events (like iidy-js)
+        // Show resource status reason on new line for failed events
         if let Some(reason) = &event.resource_status_reason {
             if !reason.is_empty() && event.resource_status.contains("FAILED") {
-                // Remove ".*Initiated" from reason like iidy-js does
+                // TODO: review: Remove ".*Initiated" from reason like iidy-js does
                 let cleaned_reason = reason.replace("Initiated", "").trim().to_string();
                 if !cleaned_reason.is_empty() {
-                    // Use 2-space indent
                     let indent = "  ";
                     
                     // Wrap long messages at terminal width
@@ -981,14 +921,11 @@ impl InteractiveRenderer {
         }
     }
 
-    /// Render command metadata (exact iidy-js showCommandSummary implementation)
     async fn render_command_metadata(&mut self, data: &CommandMetadata) -> Result<()> {
-        // Print section heading unless suppressed (section ordering system handles this)
         if !self.suppress_main_heading {
             self.print_section_heading_with_newline("Command Metadata:");
         }
         
-        // Get CFN operation from CLI context
         if let Some(ref cli) = self.cli_context {
             let operation = cli.command.to_cfn_operation();
             self.print_section_entry("CFN Operation:", &operation.to_string().color(self.theme.primary).to_string())?;
@@ -1011,13 +948,11 @@ impl InteractiveRenderer {
         self.print_section_entry("Current IAM Principal:", &data.current_iam_principal.color(self.theme.muted).to_string())?;
         self.print_section_entry("iidy Version:", &data.iidy_version.color(self.theme.muted).to_string())?;
         
-        // Client Request Token (following iidy-js pattern)
         self.print_section_entry("Client Req Token:", &format!("{} ({})", 
             data.primary_token.value.color(self.theme.muted), 
             self.format_token_source(&data.primary_token.source)
         ))?;
         
-        // Derived Tokens (following iidy-js pattern) - only show if present
         if !data.derived_tokens.is_empty() {
             self.print_section_entry("Derived Tokens:", &format!("{} tokens", data.derived_tokens.len()))?;
             for (i, token) in data.derived_tokens.iter().enumerate() {
@@ -1031,7 +966,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render stack definition (exact iidy-js summarizeStackDefinition implementation)
     async fn render_stack_definition(&mut self, data: &StackDefinition, show_times: bool) -> Result<()> {
         if !self.suppress_main_heading {
             self.print_section_heading_with_newline("Stack Details");
@@ -1039,7 +973,6 @@ impl InteractiveRenderer {
         // Note: When suppress_main_heading is true, the heading was already printed with newline
         // by the spinner logic since Stack Details is always multi-line
         
-        // Handle StackSet name display
         if let Some(stackset_name) = data.tags.get("StackSetName") {
             self.print_section_entry("Name (StackSet):", 
                 &format!("{} {}", 
@@ -1051,7 +984,6 @@ impl InteractiveRenderer {
             self.print_section_entry("Name:", &data.name.color(self.theme.primary).to_string())?;
         }
         
-        // Description
         if let Some(description) = &data.description {
             let description_color = if data.name.starts_with("StackSet") {
                 description.color(self.theme.primary).to_string()
@@ -1061,7 +993,6 @@ impl InteractiveRenderer {
             self.print_section_entry("Description:", &description_color)?;
         }
         
-        // Status
         let status_display = if let Some(ref reason) = data.status_reason {
             if !reason.is_empty() && (data.status.contains("FAILED") || 
                                      data.status == "ROLLBACK_COMPLETE" || 
@@ -1077,7 +1008,6 @@ impl InteractiveRenderer {
         };
         self.print_section_entry("Status:", &status_display)?;
         
-        // Capabilities
         let capabilities = if data.capabilities.is_empty() {
             "None".to_string()
         } else {
@@ -1085,31 +1015,25 @@ impl InteractiveRenderer {
         };
         self.print_section_entry("Capabilities:", &capabilities.color(self.theme.muted).to_string())?;
         
-        // Service Role
         let service_role = data.service_role.as_deref().unwrap_or("None");
         self.print_section_entry("Service Role:", &service_role.color(self.theme.muted).to_string())?;
 
         self.print_section_entry("Region:", &data.region.color(self.theme.primary).to_string())?;
 
-        // Tags
         let tags_str = self.pretty_format_tags(&data.tags);
         self.print_section_entry("Tags:", &tags_str.color(self.theme.muted).to_string())?;
         
-        // Parameters
         let params_str = self.pretty_format_parameters(&data.parameters);
         self.print_section_entry("Parameters:", &params_str.color(self.theme.muted).to_string())?;
         
-        // DisableRollback
         self.print_section_entry("DisableRollback:", &data.disable_rollback.to_string().color(self.theme.muted).to_string())?;
         
-        // TerminationProtection
         let protection_text = format!("{}{}", 
             data.termination_protection.to_string().color(self.theme.muted),
             if data.termination_protection { " 🔒" } else { "" }
         );
         self.print_section_entry("TerminationProtection:", &protection_text)?;
         
-        // Times (conditional)
         if show_times {
             if let Some(creation_time) = &data.creation_time {
                 self.print_section_entry("Creation Time:", 
@@ -1121,13 +1045,11 @@ impl InteractiveRenderer {
             }
         }
         
-        // Timeout
         if let Some(timeout) = data.timeout_in_minutes {
             self.print_section_entry("Timeout In Minutes:", 
                 &timeout.to_string().color(self.theme.muted).to_string())?;
         }
         
-        // NotificationARNs
         let notification_arns = if data.notification_arns.is_empty() {
             "None".to_string()
         } else {
@@ -1135,25 +1057,20 @@ impl InteractiveRenderer {
         };
         self.print_section_entry("NotificationARNs:", &notification_arns.color(self.theme.muted).to_string())?;
         
-        // Stack Policy
         if let Some(policy) = &data.stack_policy {
             self.print_section_entry("Stack Policy Source:", &policy.color(self.theme.muted).to_string())?;
         }
         
-        // ARN
         self.print_section_entry("ARN:", &data.arn.color(self.theme.muted).to_string())?;
         
-        // Console URL
         self.print_section_entry("Console URL:", &data.console_url.color(self.theme.muted).to_string())?;
         
         Ok(())
     }
     
-    /// Render stack events (exact iidy-js implementation)
     async fn render_stack_events(&mut self, data: &StackEventsDisplay) -> Result<()> {
         // Section heading already shown with correct title during start_next_section()
         // No need to rewrite it with ANSI escapes
-        
         if data.events.is_empty() {
             // Only show "No events found" for previous events, not for live events title-only display
             if !data.title.contains("Live Stack Events") {
@@ -1162,10 +1079,8 @@ impl InteractiveRenderer {
             return Ok(());
         }
         
-        // Sort events and apply limiting using the helper method
         let (events_to_show, truncation_info) = data.get_sorted_limited_events();
         
-        // Calculate padding for status and resource type columns
         let status_padding = self.calc_padding(&events_to_show, |e| &e.event.resource_status);
         let resource_type_padding = self.calc_padding(&events_to_show, |e| &e.event.resource_type);
         
@@ -1173,7 +1088,6 @@ impl InteractiveRenderer {
             self.render_single_stack_event(event_with_timing, status_padding, resource_type_padding);
         }
         
-        // Show truncation info if present
         if let Some(truncation) = &truncation_info {
             println!("  {}", format!(
                 "showing {} of {} events", 
@@ -1185,12 +1099,9 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render stack contents (exact iidy-js summarizeStackContents implementation)
     async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()> {
         // TODO fix the handling of titles in here.
-        // Stack Resources
         if !data.resources.is_empty() {
-            // Only show heading if not suppressed (i.e., not called from ordering logic)
             if !self.suppress_main_heading {
                 self.print_section_heading_with_newline("Stack Resources");
             }
@@ -1214,7 +1125,6 @@ impl InteractiveRenderer {
             }
         }
         
-        // Stack Outputs
         if data.outputs.is_empty() {
             self.print_section_heading("Stack Outputs");
             println!(" {}", "None".color(self.theme.muted));
@@ -1233,7 +1143,6 @@ impl InteractiveRenderer {
             }
         }
         
-        // Stack Exports
         if !data.exports.is_empty() {
             // Check if we have importing stacks or multiple exports - if so, use multi-line
             let has_imports = data.exports.iter().any(|export| !export.importing_stacks.is_empty());
@@ -1256,21 +1165,18 @@ impl InteractiveRenderer {
                     export.value.color(self.theme.muted)
                 );
                 
-                // Show imports
                 for import in &export.importing_stacks {
                     println!("  {}", format!("imported by {}", import).color(self.theme.muted));
                 }
             }
         }
         
-        // Current Stack Status
         self.print_section_heading("Current Stack Status");
         println!(" {} {}",
             self.colorize_resource_status(&data.current_status.status, None),
             data.current_status.status_reason.as_deref().unwrap_or("").color(self.theme.muted)
         );
         
-        // Pending Changesets
         if !data.pending_changesets.is_empty() {
             self.print_section_heading_with_newline("Pending Changesets");
             
@@ -1295,7 +1201,6 @@ impl InteractiveRenderer {
                     }
                 }
                 
-                // Show changeset changes (exact iidy-js formatting)
                 for change in &changeset.changes {
                     self.render_changeset_change(change)?;
                 }
@@ -1307,7 +1212,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render status update (exact iidy-js implementation)
     async fn render_status_update(&mut self, data: &StatusUpdate) -> Result<()> {
         let timestamp = if self.options.show_timestamps {
             format!("{} ", self.format_timestamp(&self.render_timestamp(&data.timestamp)))
@@ -1317,7 +1221,7 @@ impl InteractiveRenderer {
         
         let message = match data.level {
             StatusLevel::Error => data.message.color(self.theme.error).to_string(),
-            StatusLevel::Warning => if self.colors_enabled() { 
+            StatusLevel::Warning => if self.are_colors_enabled() { 
                 data.message.color(self.theme.warning).to_string()
             } else { 
                 data.message.to_string() 
@@ -1330,7 +1234,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render command result (exact iidy-js implementation)
     async fn render_command_result(&mut self, data: &CommandResult) -> Result<()> {
         self.add_content_spacing();
         
@@ -1349,26 +1252,21 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render final command summary (exact iidy-js showFinalComandSummary implementation)
     async fn render_final_command_summary(&mut self, data: &crate::output::data::FinalCommandSummary) -> Result<()> {
         use crate::output::data::CommandSummaryResult;
         
-        // Add spacing before final summary
         self.add_content_spacing();
         
-        // Print section heading (exact iidy-js: "Command Summary:" with column2_start padding)
         let summary_text = match data.result {
             CommandSummaryResult::Success => {
-                if self.colors_enabled() {
-                    // Success with green background and thumbs up emoji (exact iidy-js pattern)
+                if self.are_colors_enabled() {
                     format!("{} 👍", "Success".on_green().black())
                 } else {
                     "Success 👍".to_string()
                 }
             },
             CommandSummaryResult::Failure => {
-                if self.colors_enabled() {
-                    // Failure with red background and table flip emoji (exact iidy-js pattern)
+                if self.are_colors_enabled() {
                     format!("{} (╯°□°）╯︵ ┻━┻", "Failure".on_red().white())
                 } else {
                     "Failure (╯°□°）╯︵ ┻━┻".to_string()
@@ -1377,7 +1275,6 @@ impl InteractiveRenderer {
         };
         self.print_section_entry("Command Summary:", &summary_text)?;
         
-        // Show "Fix and try again" message for failures (exact iidy-js pattern)
         if matches!(data.result, CommandSummaryResult::Failure) {
             println!("Fix and try again.");
         }
@@ -1385,18 +1282,15 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render stack list (exact iidy-js listStacks implementation)
     async fn render_stack_list(&mut self, data: &StackListDisplay) -> Result<()> {
         if data.stacks.is_empty() {
             println!("No stacks found");
             return Ok(());
         }
         
-        // Calculate padding for proper column alignment (exact iidy-js constants)
-        const TIME_PADDING: usize = 24; // Fixed padding like iidy-js
+        const TIME_PADDING: usize = 24;
         let status_padding = self.calc_padding(&data.stacks, |s| &s.stack_status);
         
-        // Header with exact spacing to match column alignment
         let header = if data.show_tags {
             format!("{:<width1$} {:<width2$} Name, Tags", 
                 "Creation/Update Time,", 
@@ -1413,7 +1307,6 @@ impl InteractiveRenderer {
         println!("{}", header.color(self.theme.muted));
         
         for stack in &data.stacks {
-            // Lifecycle icons
             let lifecycle_icon = if stack.termination_protection || stack.tags.get("lifetime") == Some(&"protected".to_string()) {
                 "🔒 "
             } else if stack.tags.get("lifetime") == Some(&"long".to_string()) {
@@ -1424,7 +1317,6 @@ impl InteractiveRenderer {
                 ""
             };
             
-            // Base stack name (handle StackSet)
             let base_stack_name = if stack.stack_name.starts_with("StackSet-") {
                 format!("{} {}", 
                     stack.stack_name.color(self.theme.muted).to_string(),
@@ -1435,7 +1327,6 @@ impl InteractiveRenderer {
                 stack.stack_name.clone()
             };
             
-            // Environment-based coloring
             let env_name = if stack.stack_name.contains("production") || stack.tags.get("environment") == Some(&"production".to_string()) {
                 "production"
             } else if stack.stack_name.contains("integration") || stack.tags.get("environment") == Some(&"integration".to_string()) {
@@ -1448,7 +1339,6 @@ impl InteractiveRenderer {
             
             let stack_name = self.color_by_environment(&base_stack_name, env_name);
             
-            // Format timestamp with exact padding (iidy-js format)
             let timestamp = if let Some(time) = &stack.last_updated_time {
                 format!("{:>width$}", self.render_event_timestamp(time), width = TIME_PADDING)
             } else if let Some(time) = &stack.creation_time {
@@ -1466,7 +1356,7 @@ impl InteractiveRenderer {
             
             // Format status with proper padding (avoid ANSI color issues)
             let status_padded = format!("{:<width$}", stack.stack_status, width = status_padding);
-            let status_colored = if self.colors_enabled() {
+            let status_colored = if self.are_colors_enabled() {
                 self.colorize_resource_status(&status_padded, None)
             } else {
                 status_padded
@@ -1480,7 +1370,6 @@ impl InteractiveRenderer {
                 tags_display
             );
             
-            // Failure reason on next line for failed and rollback complete statuses
             if stack.stack_status.contains("FAILED") || 
                stack.stack_status == "ROLLBACK_COMPLETE" || 
                stack.stack_status == "UPDATE_ROLLBACK_COMPLETE" {
@@ -1495,23 +1384,19 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render changeset result (exact iidy-js implementation)
     async fn render_changeset_result(&mut self, data: &ChangeSetCreationResult) -> Result<()> {
         if !self.suppress_main_heading {
             self.add_content_spacing();
         }
         
-        // Show AWS Console URL for full changeset review (exact iidy-js format)
         println!();
         println!("AWS Console URL for full changeset review: {}",
             data.console_url.color(self.theme.muted));
         
-        // Show Pending Changesets section
         println!();
         self.print_section_heading_with_newline("Pending Changesets");
         
         for changeset in &data.pending_changesets {
-            // Format creation time, changeset name, and status (exact iidy-js format)
             let creation_time = if let Some(ct) = &changeset.creation_time {
                 self.render_timestamp(ct)
             } else {
@@ -1526,13 +1411,11 @@ impl InteractiveRenderer {
                 )
             )?;
             
-            // Show changes using the same formatting as pending changesets
             for change in &changeset.changes {
                 self.render_changeset_change(change)?;
             }
         }
         
-        // Show next steps (exact iidy-js format)
         println!();
         for step in &data.next_steps {
             println!("{}", step);
@@ -1541,14 +1424,12 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render stack drift (exact iidy-js implementation)
     async fn render_stack_drift(&mut self, data: &StackDrift) -> Result<()> {
         if data.drifted_resources.is_empty() {
             println!("No drift detected. Stack resources are in sync with template.");
         } else {
             self.print_section_heading_with_newline("Drifted Resources");
             
-            // Calculate padding for aligned output (similar to iidy-js calcPadding)
             let id_padding = data.drifted_resources.iter()
                 .map(|d| d.logical_resource_id.len())
                 .max()
@@ -1559,7 +1440,6 @@ impl InteractiveRenderer {
                 .unwrap_or(0);
                 
             for drift in &data.drifted_resources {
-                // Following iidy-js formatting pattern 
                 println!(" {:<width1$} {:<width2$} {}", 
                     drift.logical_resource_id.color(self.theme.resource_id),
                     drift.resource_type.color(self.theme.muted),
@@ -1570,7 +1450,7 @@ impl InteractiveRenderer {
                 println!("  {}", drift.drift_status.color(self.theme.error));
                 
                 if !drift.property_differences.is_empty() {
-                    // Format as YAML with indentation (matching iidy-js pattern)
+                    // Format as YAML with indentation
                     for diff in &drift.property_differences {
                         println!("   - property_path: {}", diff.property_path);
                         if let Some(expected) = &diff.expected_value {
@@ -1590,9 +1470,7 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render error (exact iidy-js implementation)
     async fn render_error(&mut self, data: &ErrorInfo) -> Result<()> {
-        // Clear any active spinner before showing the error
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
@@ -1600,21 +1478,18 @@ impl InteractiveRenderer {
         // Add blank line to separate error from prior output
         println!();
         
-        // Special handling for "Stack with id X does not exist" ValidationError
         if self.is_stack_absent_error(&data.message) {
             self.render_stack_absent_error(&data.message).await?;
         } else {
-            // Display generic error message with ERROR: prefix in bold bright red (user-friendly format)
-            if self.colors_enabled() {
+            if self.are_colors_enabled() {
                 println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
             } else {
                 println!("ERROR: {}", data.message);
             }
             
-            // Show suggestions if available (in muted color)
             if !data.suggestions.is_empty() {
                 for suggestion in &data.suggestions {
-                    if self.colors_enabled() {
+                    if self.are_colors_enabled() {
                         println!("  • {}", suggestion.color(self.theme.muted));
                     } else {
                         println!("  • {}", suggestion);
@@ -1626,7 +1501,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render token info - typically only shown in debug/verbose modes
     async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
         // In interactive mode, only show tokens in debug scenarios
         // For now, we'll keep it simple and not display by default
@@ -1635,7 +1509,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render new stack events (batch of events for live watch - no title/header)
     async fn render_new_stack_events(&mut self, events: &[StackEventWithTiming]) -> Result<()> {
         if events.is_empty() {
             return Ok(());
@@ -1648,19 +1521,11 @@ impl InteractiveRenderer {
             None
         };
         
-        // Stop timing task and clear spinner for clean event output
         self.stop_live_events_timing();
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
-        
-        // Update last event time with the most recent event
-        if let Some(latest_event) = events.last() {
-            if let Some(_event_time) = latest_event.event.timestamp {
-                // We'll restore timing after creating new spinner, so just track the event time
-            }
-        }
-        
+                
         // Calculate padding for status and resource type columns (same as stack events)
         let status_padding = self.calc_padding(events, |e| &e.event.resource_status);
         let resource_type_padding = self.calc_padding(events, |e| &e.event.resource_type);
@@ -1690,17 +1555,12 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Handle operation completion (control flow only - no display)
     async fn handle_operation_complete(&mut self, info: &OperationCompleteInfo) -> Result<()> {
-        // Stop live events timing task
         self.stop_live_events_timing();
-        
-        // Clear any active spinner (live events spinner)
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
         
-        // Show final elapsed time message (like iidy-js line 89)
         let message = format!(" {} seconds elapsed total.", info.elapsed_seconds);
         println!("{}", self.style_muted_text(&message));
         
@@ -1714,19 +1574,13 @@ impl InteractiveRenderer {
     
     /// Handle inactivity timeout (show message and signal completion)
     async fn handle_inactivity_timeout(&mut self, info: &InactivityTimeoutInfo) -> Result<()> {
-        // Stop live events timing task
         self.stop_live_events_timing();
-        
-        // Clear any active spinner (live events spinner)
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
-        
-        // Show timeout message (properly indented like other status messages)
         let timeout_message = format!(" Inactivity timeout of {} seconds reached. Stopping watch.", 
             info.timeout_seconds);
         println!("{}", self.style_muted_text(&timeout_message));
-        
         // This signals that live events are done - advance to next section
         self.advance_to_next_section();
         
@@ -1735,18 +1589,13 @@ impl InteractiveRenderer {
     
     /// Advance to the next section (non-recursive)
     fn advance_to_next_section(&mut self) {
-        // Move to next section
         if self.next_section_index < self.expected_sections.len() {
             self.next_section_index += 1;
-            
-            // Start next section (title + spinner if enabled)
             self.start_next_section();
         }
     }
     
-    /// Render confirmation prompt
     async fn render_confirmation_prompt(&mut self, mut request: ConfirmationRequest) -> Result<()> {
-        // Clear any active spinner (standard pattern for all sections)
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
@@ -1757,7 +1606,6 @@ impl InteractiveRenderer {
             println!("Use --yes flag to proceed automatically in non-interactive mode");
             false // Always decline in non-interactive mode for safety
         } else {
-            // Interactive mode: prompt user with bold bright red text (matching iidy-js)
             use std::io::{self, Write};
             
             loop {
@@ -1802,12 +1650,9 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Post-confirmation handler for changeset execution
     fn post_confirmation_execute_changeset(&mut self) {
-        // Clear current operation state
         self.cleanup_operation();
         
-        // Set up expected sections for execution phase
         self.expected_sections = vec!["command_metadata", "stack_definition", "stack_events", "live_stack_events", "stack_contents"];
         self.next_section_index = 0;
         
@@ -1822,19 +1667,15 @@ impl InteractiveRenderer {
         // This prevents spinner conflicts between changeset creation and execution phases
     }
     
-    /// Render stack absent info with iidy-js styling (green "info" prefix and structured data)
     async fn render_stack_absent_info(&mut self, info: &crate::output::data::StackAbsentInfo) -> Result<()> {
-        // Clear any active spinner before showing the message
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
         
-        // Get context information dynamically (same as stack_absent_error case)
         let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
         
-        // Format message exactly like iidy-js: green "info" prefix + structured message
         let (info_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
-            if self.colors_enabled() {
+            if self.are_colors_enabled() {
                 (
                     "info".color(self.theme.success).bold().to_string(),
                     info.stack_name.color(self.theme.info).bold().to_string(),
@@ -1881,15 +1722,14 @@ impl InteractiveRenderer {
             },
             StackChangeType::UpdateNoChanges => {
                 println!(" {}", "No changes detected so no stack update needed.".color(self.theme.success));
-                
-                // Handle early exit for UpdateNoChanges case
+                // early exit
                 self.cleanup_operation();
             },
         }
         Ok(())
     }
     
-    /// Render a single changeset change (exact iidy-js formatting from summarizeChangeSet)
+    /// Render a single changeset change
     fn render_changeset_change(&self, change: &ChangeInfo) -> Result<()> {
         // Use padding based on length of "Modify  " (8 characters) to accommodate all actions
         let action_width = 8; // len("Modify  ") - fits "Replace?" which is the longest action
@@ -1897,7 +1737,6 @@ impl InteractiveRenderer {
         
         match change.action.as_str() {
             "Add" => {
-                // Add: green action, logical ID, muted resource type
                 let action_padded = format!("{:<width$}", change.action, width = action_width);
                 println!("  {} {:<width$} {}", 
                     action_padded.color(self.theme.success),
@@ -1907,7 +1746,6 @@ impl InteractiveRenderer {
                 );
             },
             "Remove" => {
-                // Remove: red action, logical ID, muted resource type + physical ID
                 let resource_info = if let Some(ref physical_id) = change.physical_resource_id {
                     format!("{} {}", change.resource_type, physical_id)
                 } else {
@@ -1938,7 +1776,6 @@ impl InteractiveRenderer {
                     change.resource_type.clone()
                 };
                 
-                // For Modify without replacement, show scope in yellow if available
                 if change.replacement.is_none() || change.replacement.as_deref() == Some("False") {
                     let scope_text = if let Some(ref scope) = change.scope {
                         scope.join(", ")
@@ -1964,7 +1801,7 @@ impl InteractiveRenderer {
                     );
                 }
                 
-                // Show details as YAML for Modify operations (like iidy-js)
+                // Show details as YAML for Modify operations
                 if !change.details.is_empty() {
                     for detail in &change.details {
                         println!("    {}: {}", 
@@ -1989,47 +1826,35 @@ impl InteractiveRenderer {
         Ok(())
     }
 
-    /// Render cost estimate (exact iidy-js estimateStackCost implementation)
     async fn render_cost_estimate(&mut self, data: &crate::output::data::CostEstimate) -> Result<()> {
         if !self.suppress_main_heading {
             self.print_section_heading_with_newline("Cost Estimate");
         }
-        
-        // Display the URL exactly like iidy-js: "Stack cost estimator: {URL}"
         self.print_section_entry("Stack cost estimator:", &data.info.url.color(self.theme.primary).to_string())?;
         
         Ok(())
     }
 
-    /// Render stack template - matches original get-stack-template behavior exactly
     async fn render_stack_template(&mut self, data: &crate::output::data::StackTemplate) -> Result<()> {
-        // Print stderr lines to stderr (like original implementation)
         for line in &data.stderr_lines {
             eprintln!("{}", line);
         }
         
-        // Print template body to stdout (like original implementation) 
         println!("{}", data.template_body);
         
         Ok(())
     }
     
-    /// Check if error message indicates a stack does not exist
     fn is_stack_absent_error(&self, error_message: &str) -> bool {
         error_message.contains("Stack with id") && error_message.contains("does not exist")
     }
     
     /// Render stack absent error with structured formatting like delete-stack but with ERROR prefix
     async fn render_stack_absent_error(&mut self, error_message: &str) -> Result<()> {
-        // Extract stack name from error message
         let stack_name = self.extract_stack_name_from_error(error_message);
-        
-        // Get context information from CLI
         let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
-        
-        // Format message exactly like delete-stack StackAbsentInfo but with red ERROR prefix
         let (error_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
-            if self.colors_enabled() {
+            if self.are_colors_enabled() {
                 (
                     "ERROR".color(self.theme.error).bold().to_string(),
                     stack_name.color(self.theme.info).bold().to_string(),
@@ -2087,6 +1912,7 @@ impl InteractiveRenderer {
         };
         
         // For account and auth_arn, we'll make a simple STS call or use placeholders
+        // TODO: get rid of this call here and pass it in with the error
         let (account, auth_arn) = self.get_aws_identity().await;
         
         (environment, region, account, auth_arn)
@@ -2095,6 +1921,7 @@ impl InteractiveRenderer {
     /// Get AWS account and auth ARN from STS
     async fn get_aws_identity(&self) -> (String, String) {
         // Try to get identity from AWS STS
+        // DEPRECATED. See the TODO note in get_stack_absent_context_info
         match self.try_get_sts_identity().await {
             Ok((account, arn)) => (account, arn),
             Err(_) => ("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string()),
@@ -2115,7 +1942,6 @@ impl InteractiveRenderer {
         Ok((account, arn))
     }
     
-    /// Render approval request result
     async fn render_approval_request_result(&mut self, data: &crate::output::ApprovalRequestResult) -> Result<()> {
         if data.already_approved {
             println!("{}", "👍 Your template has already been approved".color(self.theme.success));
@@ -2131,7 +1957,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render template validation results
     async fn render_template_validation(&mut self, data: &crate::output::TemplateValidation) -> Result<()> {
         if !data.enabled {
             return Ok(());
@@ -2158,7 +1983,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render approval status
     async fn render_approval_status(&mut self, data: &crate::output::ApprovalStatus) -> Result<()> {
         if data.already_approved {
             println!("{}", "👍 The template has already been approved".color(self.theme.success));
@@ -2174,7 +1998,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render template diff
     async fn render_template_diff(&mut self, data: &crate::output::TemplateDiff) -> Result<()> {
         if !data.has_changes {
             println!("{}", "Templates are identical".color(self.theme.success));
@@ -2185,7 +2008,6 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    /// Render approval result
     async fn render_approval_result(&mut self, data: &crate::output::ApprovalResult) -> Result<()> {
         if data.approved {
             println!();
