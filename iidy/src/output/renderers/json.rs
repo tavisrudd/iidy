@@ -471,9 +471,9 @@ mod tests {
         let error = ErrorInfo {
             error_type: "TestError".to_string(),
             message: "Test error message".to_string(),
-            details: Some("Error details".to_string()),
             timestamp: Utc::now(),
             suggestions: vec!["Try again".to_string()],
+            error_details: ErrorDetails::Generic(Some("Error details".to_string())),
         };
 
         renderer

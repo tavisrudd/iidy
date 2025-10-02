@@ -290,12 +290,12 @@ fn test_error_info_structure() {
     let error_info = ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Stack does not exist".to_string(),
-        details: Some("The stack 'missing-stack' was not found in region us-east-1".to_string()),
         timestamp: Utc::now(),
         suggestions: vec!["Check the stack name and region".to_string()],
+        error_details: ErrorDetails::Generic(Some("The stack 'missing-stack' was not found in region us-east-1".to_string())),
     };
-    
-    assert!(error_info.details.is_some());
+
+    assert!(matches!(error_info.error_details, ErrorDetails::Generic(Some(_))));
     assert_eq!(error_info.error_type, "ValidationError".to_string());
     
     // Test Clone and serialization

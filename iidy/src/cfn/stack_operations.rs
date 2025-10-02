@@ -366,7 +366,7 @@ pub async fn watch_stack_operation_and_summarize(
     ).await {
         Ok(status) => status,
         Err(error) => {
-            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
             output_manager.render(crate::output::OutputData::Error(error_info)).await?;
             return Ok(1);
         }

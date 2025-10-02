@@ -196,12 +196,12 @@ async fn test_json_renderer_error_handling() {
     let error_info = ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Invalid parameter value".to_string(),
-        details: Some("Parameter 'InstanceType' must be a valid EC2 instance type".to_string()),
         timestamp: chrono::Utc::now(),
         suggestions: vec![
             "Check the parameter value in your stack-args.yaml".to_string(),
             "Verify instance types available in your region".to_string(),
         ],
+        error_details: ErrorDetails::Generic(Some("Parameter 'InstanceType' must be a valid EC2 instance type".to_string())),
     };
     
     renderer.render_output_data(OutputData::Error(error_info.clone()), None).await

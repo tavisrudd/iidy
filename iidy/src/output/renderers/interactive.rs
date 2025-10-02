@@ -1475,29 +1475,36 @@ impl InteractiveRenderer {
             spinner.clear();
         }
         
-        // Add blank line to separate error from prior output
         println!();
-        
-        if self.is_stack_absent_error(&data.message) {
-            self.render_stack_absent_error(&data.message).await?;
-        } else {
-            if self.are_colors_enabled() {
-                println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
-            } else {
-                println!("ERROR: {}", data.message);
+
+        match &data.error_details {
+            ErrorDetails::StackAbsent(context) => {
+                self.render_stack_absent_error_with_context(context).await?;
             }
-            
-            if !data.suggestions.is_empty() {
-                for suggestion in &data.suggestions {
-                    if self.are_colors_enabled() {
-                        println!("  • {}", suggestion.color(self.theme.muted));
-                    } else {
-                        println!("  • {}", suggestion);
+            ErrorDetails::Generic(details) => {
+                if self.are_colors_enabled() {
+                    println!("{}: {}", "ERROR".bold().bright_red(), data.message.bold().bright_red());
+                } else {
+                    println!("ERROR: {}", data.message);
+                }
+
+                if let Some(details_text) = details {
+                    println!();
+                    println!("{}", details_text);
+                }
+
+                if !data.suggestions.is_empty() {
+                    for suggestion in &data.suggestions {
+                        if self.are_colors_enabled() {
+                            println!("  • {}", suggestion.color(self.theme.muted));
+                        } else {
+                            println!("  • {}", suggestion);
+                        }
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
     
@@ -1671,37 +1678,35 @@ impl InteractiveRenderer {
         if let Some(spinner) = self.current_spinner.take() {
             spinner.clear();
         }
-        
-        let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
-        
-        let (info_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
+
+        let (info_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) =
             if self.are_colors_enabled() {
                 (
                     "info".color(self.theme.success).bold().to_string(),
                     info.stack_name.color(self.theme.info).bold().to_string(),
-                    environment.color(self.theme.primary).to_string(),
-                    region.color(self.theme.primary).to_string(),
-                    account.color(self.theme.primary).to_string(),
-                    auth_arn.color(self.theme.primary).to_string(),
+                    info.environment.color(self.theme.primary).to_string(),
+                    info.region.color(self.theme.primary).to_string(),
+                    info.account.color(self.theme.primary).to_string(),
+                    info.auth_arn.color(self.theme.primary).to_string(),
                 )
             } else {
                 (
                     "info".to_string(),
                     info.stack_name.clone(),
-                    environment.clone(),
-                    region.clone(),
-                    account.clone(),
-                    auth_arn.clone(),
+                    info.environment.clone(),
+                    info.region.clone(),
+                    info.account.clone(),
+                    info.auth_arn.clone(),
                 )
             };
 
-        println!("{} The stack {} is absent", 
+        println!("{} The stack {} is absent",
             info_prefix, stack_name_colored);
         println!("      env = {}", env_colored);
-        println!("      region = {}", region_colored);  
+        println!("      region = {}", region_colored);
         println!("      account = {}", account_colored);
         println!("      auth_arn = {}.", auth_arn_colored);
-        
+
         Ok(())
     }
 
@@ -1845,101 +1850,36 @@ impl InteractiveRenderer {
         Ok(())
     }
     
-    fn is_stack_absent_error(&self, error_message: &str) -> bool {
-        error_message.contains("Stack with id") && error_message.contains("does not exist")
-    }
-    
-    /// Render stack absent error with structured formatting like delete-stack but with ERROR prefix
-    async fn render_stack_absent_error(&mut self, error_message: &str) -> Result<()> {
-        let stack_name = self.extract_stack_name_from_error(error_message);
-        let (environment, region, account, auth_arn) = self.get_stack_absent_context_info().await;
-        let (error_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) = 
+    async fn render_stack_absent_error_with_context(&mut self, context: &StackAbsentInfo) -> Result<()> {
+        let (error_prefix, stack_name_colored, env_colored, region_colored, account_colored, auth_arn_colored) =
             if self.are_colors_enabled() {
                 (
                     "ERROR".color(self.theme.error).bold().to_string(),
-                    stack_name.color(self.theme.info).bold().to_string(),
-                    environment.color(self.theme.primary).to_string(),
-                    region.color(self.theme.primary).to_string(),
-                    account.color(self.theme.primary).to_string(),
-                    auth_arn.color(self.theme.primary).to_string(),
+                    context.stack_name.color(self.theme.info).bold().to_string(),
+                    context.environment.color(self.theme.primary).to_string(),
+                    context.region.color(self.theme.primary).to_string(),
+                    context.account.color(self.theme.primary).to_string(),
+                    context.auth_arn.color(self.theme.primary).to_string(),
                 )
             } else {
                 (
                     "ERROR".to_string(),
-                    stack_name.clone(),
-                    environment.clone(),
-                    region.clone(),
-                    account.clone(),
-                    auth_arn.clone(),
+                    context.stack_name.clone(),
+                    context.environment.clone(),
+                    context.region.clone(),
+                    context.account.clone(),
+                    context.auth_arn.clone(),
                 )
             };
 
-        println!("{} The stack {} is absent", 
+        println!("{} The stack {} is absent",
             error_prefix, stack_name_colored);
         println!("      env = {}", env_colored);
-        println!("      region = {}", region_colored);  
+        println!("      region = {}", region_colored);
         println!("      account = {}", account_colored);
         println!("      auth_arn = {}.", auth_arn_colored);
-        
+
         Ok(())
-    }
-    
-    /// Extract stack name from AWS error message
-    fn extract_stack_name_from_error(&self, error_message: &str) -> String {
-        // Pattern: "Stack with id STACK_NAME does not exist"
-        if let Some(start) = error_message.find("Stack with id ") {
-            let after_prefix = &error_message[start + "Stack with id ".len()..];
-            if let Some(end) = after_prefix.find(" does not exist") {
-                return after_prefix[..end].to_string();
-            }
-        }
-        "unknown-stack".to_string()
-    }
-    
-    /// Get context information from CLI context
-    async fn get_stack_absent_context_info(&self) -> (String, String, String, String) {
-        // TODO: Remove "unknown" fallback by ensuring region is always available in renderer context.
-        // Since create_context_for_operation validates region exists, we should propagate the
-        // validated region to OutputOptions/renderer instead of relying on CLI opts which may be None
-        // when region comes from stack-args, env vars, or AWS config.
-        let (environment, region) = if let Some(ref cli) = self.cli_context {
-            (
-                cli.global_opts.environment.clone(),
-                cli.aws_opts.region.clone().unwrap_or_else(|| "unknown".to_string())
-            )
-        } else {
-            ("development".to_string(), "unknown".to_string())
-        };
-        
-        // For account and auth_arn, we'll make a simple STS call or use placeholders
-        // TODO: get rid of this call here and pass it in with the error
-        let (account, auth_arn) = self.get_aws_identity().await;
-        
-        (environment, region, account, auth_arn)
-    }
-    
-    /// Get AWS account and auth ARN from STS
-    async fn get_aws_identity(&self) -> (String, String) {
-        // Try to get identity from AWS STS
-        // DEPRECATED. See the TODO note in get_stack_absent_context_info
-        match self.try_get_sts_identity().await {
-            Ok((account, arn)) => (account, arn),
-            Err(_) => ("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string()),
-        }
-    }
-    
-    /// Try to get STS caller identity
-    async fn try_get_sts_identity(&self) -> Result<(String, String)> {
-        let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-        let sts_client = aws_sdk_sts::Client::new(&config);
-        
-        let response = sts_client.get_caller_identity().send().await
-            .map_err(|e| anyhow::anyhow!("STS call failed: {}", e))?;
-        
-        let account = response.account().unwrap_or("unknown").to_string();
-        let arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
-        
-        Ok((account, arn))
     }
     
     async fn render_approval_request_result(&mut self, data: &crate::output::ApprovalRequestResult) -> Result<()> {

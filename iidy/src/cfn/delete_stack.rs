@@ -10,9 +10,10 @@ use crate::cli::{DeleteArgs, Cli};
 use crate::output::{
     DynamicOutputManager, OutputData,
     aws_conversion::{
-        create_command_metadata, 
+        create_command_metadata,
         convert_stack_to_definition, convert_stack_events_to_display_with_max,
-        create_final_command_summary, convert_aws_error_to_error_info
+        create_final_command_summary, convert_aws_error_to_error_info,
+        get_caller_identity
     },
     data::StackAbsentInfo
 };
@@ -79,20 +80,27 @@ async fn perform_stack_deletion_without_output(
 async fn delete_stack_impl(
     output_manager: &mut DynamicOutputManager,
     context: &CfnContext,
-    _cli: &Cli,
+    cli: &Cli,
     args: &DeleteArgs,
     opts: &crate::cli::NormalizedAwsOpts,
 ) -> Result<i32> {
     let stack_name = &args.stackname;
-    
+
     let (stack, stack_id) = match check_stack_exists_for_delete(context, stack_name).await {
         Ok(Some(stack)) => {
             let stack_id = StackInfoService::get_stack_id(&context.client, stack_name).await?;
             (stack, stack_id)
         }
         Ok(None) => {
+            let (account, auth_arn) = get_caller_identity(context).await?;
             let stack_absent_info = StackAbsentInfo {
                 stack_name: stack_name.clone(),
+                environment: cli.global_opts.environment.clone(),
+                region: context.aws_config.region()
+                    .map(|r| r.as_ref().to_string())
+                    .unwrap_or_else(|| "unknown".to_string()),
+                account,
+                auth_arn,
             };
             output_manager.render(OutputData::StackAbsentInfo(stack_absent_info)).await?;
             let elapsed_seconds = context.elapsed_seconds().await?;
@@ -104,7 +112,7 @@ async fn delete_stack_impl(
             return Ok(0);
         }
         Err(e) => {
-            let error_info = convert_aws_error_to_error_info(&e);
+            let error_info = convert_aws_error_to_error_info(&e, Some((context, cli))).await;
             output_manager.render(OutputData::Error(error_info)).await?;
             return Ok(1);
         }
@@ -117,7 +125,7 @@ async fn delete_stack_impl(
         profile: opts.profile.clone(),
         ..Default::default()
     };
-    let command_metadata = create_command_metadata(context, opts, &minimal_stack_args, &_cli.global_opts.environment).await?;
+    let command_metadata = create_command_metadata(context, opts, &minimal_stack_args, &cli.global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;
     
     let stack_definition = convert_stack_to_definition(&stack, true);
@@ -179,7 +187,7 @@ async fn delete_stack_impl(
         ).await {
             Ok(status) => status,
             Err(error) => {
-                let error_info = convert_aws_error_to_error_info(&error);
+                let error_info = convert_aws_error_to_error_info(&error, Some((context, cli))).await;
                 output_manager.render(OutputData::Error(error_info)).await?;
                 return Ok(1);
             }

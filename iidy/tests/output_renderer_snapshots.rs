@@ -354,24 +354,22 @@ async fn test_error_info_rendering() {
     let error_info = ErrorInfo {
         error_type: "InvalidParameterValue".to_string(),
         message: "Parameter 'InstanceType' has invalid value 't3.invalid'".to_string(),
-        details: Some("Valid values are: t3.nano, t3.micro, t3.small, t3.medium, t3.large".to_string()),
         timestamp: Utc::now(),
         suggestions: vec![
             "Check the parameter value in your stack-args.yaml".to_string(),
             "Verify the instance type is available in your region".to_string(),
         ],
+        error_details: ErrorDetails::Generic(Some("Valid values are: t3.nano, t3.micro, t3.small, t3.medium, t3.large".to_string())),
     };
-    
-    // Test both renderers
+
     plain_renderer.init().await.expect("Should initialize");
     plain_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
-    
+
     interactive_renderer.init().await.expect("Should initialize");
     interactive_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
-    
-    // Verify data structure
+
     assert_eq!(error_info.error_type, "InvalidParameterValue");
-    assert!(error_info.details.is_some());
+    assert!(matches!(error_info.error_details, ErrorDetails::Generic(Some(_))));
     assert_eq!(error_info.suggestions.len(), 2);
 }
 

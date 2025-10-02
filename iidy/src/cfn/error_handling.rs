@@ -6,7 +6,7 @@ pub async fn handle_aws_error<T>(result: Result<T>, output_manager: &mut Dynamic
     match result {
         Ok(value) => Ok(Some(value)),
         Err(e) => {
-            let error_info = convert_aws_error_to_error_info(&e);
+            let error_info = convert_aws_error_to_error_info(&e, None).await;
             output_manager.render(OutputData::Error(error_info)).await?;
             Ok(None) // Signal failure
         }

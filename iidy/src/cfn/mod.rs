@@ -26,12 +26,12 @@ macro_rules! await_and_render {
         match $task.await {
             Ok(Ok(data)) => $output_manager.render(data).await?,
             Ok(Err(error)) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
                 $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 return Ok(1);
             }
             Err(join_error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&join_error.into());
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&join_error.into(), None).await;
                 $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 return Ok(1);
             }
@@ -65,12 +65,11 @@ macro_rules! run_command_handler {
             output_options
         ).await?;
 
-        // Create context and handle any errors through output manager
         let operation = $cli.command.to_cfn_operation();
         let context = match $crate::cfn::create_context_for_operation(&opts, operation).await {
             Ok(ctx) => ctx,
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
                 output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 return Ok(1);
             }
@@ -79,7 +78,7 @@ macro_rules! run_command_handler {
         match $impl_fn(&mut output_manager, &context, $cli, $args, &opts).await {
             Ok(exit_code) => Ok(exit_code),
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, Some((&context, $cli))).await;
                 output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 Ok(1)
             }
@@ -126,13 +125,12 @@ macro_rules! run_command_handler_with_stack_args {
         ).await {
             Ok(result) => result,
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
                 output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 return Ok(1);
             }
         };
 
-        // Create context from merged config (not CLI-only opts)
         let context = match $crate::cfn::create_context_from_config(
             aws_config,
             operation,
@@ -140,7 +138,7 @@ macro_rules! run_command_handler_with_stack_args {
         ).await {
             Ok(ctx) => ctx,
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
                 output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 return Ok(1);
             }
@@ -149,7 +147,7 @@ macro_rules! run_command_handler_with_stack_args {
         match $impl_fn(&mut output_manager, &context, $cli, $args, &opts, &stack_args).await {
             Ok(exit_code) => Ok(exit_code),
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, Some((&context, $cli))).await;
                 output_manager.render($crate::output::OutputData::Error(error_info)).await?;
                 Ok(1)
             }

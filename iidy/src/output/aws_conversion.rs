@@ -11,7 +11,7 @@ use crate::{
         StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
         StackEventsDisplay, StackEvent, StackEventWithTiming,
         StackResourceInfo, StackOutputInfo, StackExportInfo,
-        data::ErrorInfo,
+        data::{ErrorInfo, ErrorDetails},
     },
     cli::NormalizedAwsOpts,
     aws::client_req_token::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
@@ -86,20 +86,25 @@ pub async fn create_command_metadata(
 }
 
 /// Get the current IAM principal from AWS STS
-async fn get_current_iam_principal(_context: &CfnContext) -> Result<String, anyhow::Error> {
-    // Create STS client - we need to get the SDK config from somewhere else
-    // For now, we'll create a basic config
-    let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    let sts_client = aws_sdk_sts::Client::new(&config);
-    
+async fn get_current_iam_principal(context: &CfnContext) -> Result<String, anyhow::Error> {
+    let (_, arn) = get_caller_identity(context).await?;
+    Ok(arn)
+}
+
+/// Get AWS account ID and IAM principal ARN from STS GetCallerIdentity
+pub async fn get_caller_identity(context: &CfnContext) -> Result<(String, String), anyhow::Error> {
+    let sts_client = aws_sdk_sts::Client::new(&context.aws_config);
+
     match sts_client.get_caller_identity().send().await {
         Ok(response) => {
-            Ok(response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string())
+            let account = response.account().unwrap_or("unknown").to_string();
+            let arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
+            Ok((account, arn))
         }
         Err(e) => {
-            // Fall back to placeholder if STS call fails (e.g., no internet, permissions issue)
-            eprintln!("Warning: Could not get current IAM principal: {}", e);
-            Ok("arn:aws:iam::unknown:user/current".to_string())
+            // Fall back to placeholders if STS call fails (e.g., no internet, permissions issue)
+            eprintln!("Warning: Could not get caller identity: {}", e);
+            Ok(("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string()))
         }
     }
 }
@@ -651,20 +656,66 @@ mod tests {
     }
 }
 
-/// Convert AWS errors to ErrorInfo for proper display formatting
-pub fn convert_aws_error_to_error_info(error: &anyhow::Error) -> ErrorInfo {
+pub async fn convert_aws_error_to_error_info(
+    error: &anyhow::Error,
+    context: Option<(&CfnContext, &crate::cli::Cli)>,
+) -> ErrorInfo {
     let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
-    
-    // Look for common AWS error patterns and provide user-friendly messages
     let (error_type, message, suggestions) = analyze_aws_error(&error_chain);
-    
+
+    let error_details = if let Some((ctx, cli)) = context {
+        if is_stack_absent_error(&message) {
+            match create_stack_absent_context(ctx, cli, &message).await {
+                Ok(context_info) => ErrorDetails::StackAbsent(context_info),
+                Err(_) => ErrorDetails::Generic(None),
+            }
+        } else {
+            ErrorDetails::Generic(None)
+        }
+    } else {
+        ErrorDetails::Generic(None)
+    };
+
     ErrorInfo {
         error_type,
         message,
-        details: None, // Keep it simple, don't expose internal error details
         timestamp: Utc::now(),
         suggestions,
+        error_details,
     }
+}
+
+fn is_stack_absent_error(message: &str) -> bool {
+    message.contains("Stack with id") && message.contains("does not exist")
+}
+
+async fn create_stack_absent_context(
+    context: &CfnContext,
+    cli: &crate::cli::Cli,
+    error_message: &str,
+) -> anyhow::Result<crate::output::data::StackAbsentInfo> {
+    let stack_name = extract_stack_name_from_error(error_message);
+    let (account, auth_arn) = get_caller_identity(context).await?;
+
+    Ok(crate::output::data::StackAbsentInfo {
+        stack_name,
+        environment: cli.global_opts.environment.clone(),
+        region: context.aws_config.region()
+            .map(|r| r.as_ref().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        account,
+        auth_arn,
+    })
+}
+
+fn extract_stack_name_from_error(error_message: &str) -> String {
+    if let Some(start) = error_message.find("Stack with id ") {
+        let after_prefix = &error_message[start + "Stack with id ".len()..];
+        if let Some(end) = after_prefix.find(" does not exist") {
+            return after_prefix[..end].to_string();
+        }
+    }
+    "unknown-stack".to_string()
 }
 
 /// Analyze AWS error chain and return structured error information

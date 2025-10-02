@@ -350,18 +350,17 @@ pub fn sample_changeset_result() -> ChangeSetCreationResult {
     }
 }
 
-/// Create sample error info for testing
 pub fn sample_error_info() -> ErrorInfo {
     ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Template validation failed: Resource 'MyBucket' property 'BucketName' is invalid".to_string(),
-        details: Some("The bucket name 'MyBucket' does not conform to S3 naming conventions. Bucket names must be lowercase and contain only letters, numbers, and hyphens.".to_string()),
         timestamp: Utc.with_ymd_and_hms(2025, 6, 17, 11, 30, 0).unwrap(),
         suggestions: vec![
             "Update the BucketName property to use lowercase letters".to_string(),
             "Consider using the !Ref function to generate a unique bucket name".to_string(),
             "Review the S3 bucket naming guidelines in the AWS documentation".to_string(),
         ],
+        error_details: ErrorDetails::Generic(Some("The bucket name 'MyBucket' does not conform to S3 naming conventions. Bucket names must be lowercase and contain only letters, numbers, and hyphens.".to_string())),
     }
 }
 

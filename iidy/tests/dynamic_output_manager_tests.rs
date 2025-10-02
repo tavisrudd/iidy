@@ -301,13 +301,12 @@ async fn test_all_output_data_types_rendering() {
     manager.render(OutputData::CommandResult(result)).await
         .expect("Should render CommandResult");
     
-    // Test ErrorInfo
     let error = ErrorInfo {
         error_type: "TestError".to_string(),
         message: "Test error message".to_string(),
-        details: Some("Error details".to_string()),
         timestamp: Utc::now(),
         suggestions: vec!["Try again".to_string()],
+        error_details: ErrorDetails::Generic(Some("Error details".to_string())),
     };
     manager.render(OutputData::Error(error)).await
         .expect("Should render ErrorInfo");
@@ -490,16 +489,15 @@ async fn test_error_handling_during_rendering() {
     let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
         .expect("Should create manager");
     
-    // Test rendering error information
     let error_info = ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Stack parameter validation failed".to_string(),
-        details: Some("Parameter 'InstanceType' has invalid value".to_string()),
         timestamp: Utc::now(),
         suggestions: vec![
             "Check parameter values in stack-args.yaml".to_string(),
             "Verify instance types are available in your region".to_string(),
         ],
+        error_details: ErrorDetails::Generic(Some("Parameter 'InstanceType' has invalid value".to_string())),
     };
     
     manager.render(OutputData::Error(error_info)).await

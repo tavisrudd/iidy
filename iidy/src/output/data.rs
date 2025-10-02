@@ -325,14 +325,21 @@ pub struct ChangeSetCreationResult {
     pub next_steps: Vec<String>,
 }
 
+/// Additional context for specific error types
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ErrorDetails {
+    Generic(Option<String>),
+    StackAbsent(StackAbsentInfo),
+}
+
 /// Error information for display
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ErrorInfo {
     pub error_type: String,
     pub message: String,
-    pub details: Option<String>,
     pub timestamp: DateTime<Utc>,
     pub suggestions: Vec<String>,
+    pub error_details: ErrorDetails,
 }
 
 /// Operation completion information for live operations
@@ -362,6 +369,10 @@ pub struct StackChangeDetails {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StackAbsentInfo {
     pub stack_name: String,
+    pub environment: String,
+    pub region: String,
+    pub account: String,
+    pub auth_arn: String,
 }
 
 
