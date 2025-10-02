@@ -87,12 +87,16 @@ fn ensure_environment_tag(root: &mut Mapping, env: &str) {
 }
 
 /// Load stack args with full iidy-js compatibility including AWS credential merging and $envValues injection
+///
+/// Returns both the parsed StackArgs and the merged AWS config (from CLI + stack-args.yaml).
+/// The returned AWS config should be used to create the CfnContext to ensure consistency
+/// between preprocessing and CloudFormation operations.
 pub async fn load_stack_args(
     argsfile: &str,
     environment: &str,
     operation: &CfnOperation,
     cli_aws_settings: &AwsSettings,
-) -> Result<StackArgs> {    
+) -> Result<(StackArgs, aws_config::SdkConfig)> {    
     let path = Path::new(argsfile);
     let contents = fs::read_to_string(path)?;
     
@@ -206,8 +210,8 @@ pub async fn load_stack_args(
     // Apply global configuration from SSM parameter store
     // TODO disable behind feature flag
     apply_global_configuration(&mut stack_args, &aws_config).await?;
-    
-    Ok(stack_args)
+
+    Ok((stack_args, aws_config))
 }
 
 
@@ -531,13 +535,13 @@ mod tests {
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
         
-        let result = load_stack_args(
-            temp_path, 
-            "dev", 
-            &CfnOperation::CreateStack, 
+        let (result, _aws_config) = load_stack_args(
+            temp_path,
+            "dev",
+            &CfnOperation::CreateStack,
             &aws_settings
         ).await.expect("failed to load");
-        
+
         assert_eq!(result.stack_name.as_deref(), Some("test"));
         assert_eq!(result.template.as_deref(), Some("foo.yaml"));
         assert_eq!(
@@ -568,13 +572,13 @@ Template: t
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
         
-        let result = load_stack_args(
-            temp_path, 
-            "prod", 
-            &CfnOperation::UpdateStack, 
+        let (result, _aws_config) = load_stack_args(
+            temp_path,
+            "prod",
+            &CfnOperation::UpdateStack,
             &aws_settings
         ).await.unwrap();
-        
+
         assert_eq!(result.region.as_deref(), Some("us-west-2"));
         assert_eq!(result.profile.as_deref(), Some("default"));
     }
@@ -600,9 +604,9 @@ Region: us-west-2
         let aws_settings = AwsSettings::default();
         
         let result = load_stack_args(
-            temp_path, 
-            "prod", 
-            &CfnOperation::CreateStack, 
+            temp_path,
+            "prod",
+            &CfnOperation::CreateStack,
             &aws_settings
         ).await;
 
@@ -612,7 +616,7 @@ Region: us-west-2
             "Stack args with custom tags should parse successfully"
         );
 
-        let stack_args = result.unwrap();
+        let (stack_args, _aws_config) = result.unwrap();
         // Currently custom tags become null since AST resolution isn't implemented yet
         // But parsing should succeed
         assert_eq!(stack_args.template.as_deref(), Some("template.yaml"));

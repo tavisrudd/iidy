@@ -87,6 +87,75 @@ macro_rules! run_command_handler {
     }};
 }
 
+/// Macro to run a command handler that requires stack args with automatic setup and error handling
+///
+/// This macro handles:
+/// 1. Normalizing AWS options
+/// 2. Creating the output manager
+/// 3. Loading stack args with merged AWS config (CLI + stack-args.yaml)
+/// 4. Creating the AWS context from merged config (with error handling)
+/// 5. Running the implementation function with both context and stack_args
+/// 6. Converting and rendering any errors
+///
+/// # Usage
+/// ```rust
+/// pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
+///     crate::run_command_handler_with_stack_args!(create_stack_impl, cli, args, args.argsfile)
+/// }
+/// ```
+#[macro_export]
+macro_rules! run_command_handler_with_stack_args {
+    ($impl_fn:ident, $cli:expr, $args:expr, $argsfile:expr) => {{
+        let opts = $cli.aws_opts.clone().normalize();
+
+        let output_options = $crate::output::manager::OutputOptions::new($cli.clone());
+        let mut output_manager = $crate::output::DynamicOutputManager::new(
+            $cli.global_opts.effective_output_mode(),
+            output_options
+        ).await?;
+
+        let operation = $cli.command.to_cfn_operation();
+
+        // Load stack args with merged AWS settings (CLI + stack-args.yaml)
+        let cli_aws_settings = $crate::aws::AwsSettings::from_normalized_opts(&opts);
+        let (stack_args, aws_config) = match $crate::cfn::stack_args::load_stack_args(
+            $argsfile,
+            &$cli.global_opts.environment,
+            &operation,
+            &cli_aws_settings,
+        ).await {
+            Ok(result) => result,
+            Err(error) => {
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+        };
+
+        // Create context from merged config (not CLI-only opts)
+        let context = match $crate::cfn::create_context_from_config(
+            aws_config,
+            operation,
+            opts.client_request_token.clone()
+        ).await {
+            Ok(ctx) => ctx,
+            Err(error) => {
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                return Ok(1);
+            }
+        };
+
+        match $impl_fn(&mut output_manager, &context, $cli, $args, &opts, &stack_args).await {
+            Ok(exit_code) => Ok(exit_code),
+            Err(error) => {
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error);
+                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                Ok(1)
+            }
+        }
+    }};
+}
 
 
 // CloudFormation operation modules
@@ -126,6 +195,44 @@ pub use request_builder::CfnRequestBuilder;
 pub use stack_args::StackArgs;
 pub use stack_change_type::{StackChangeType, UpdateResult};
 pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
+
+/// Create a CfnContext from an existing AWS config with operation-aware time provider selection.
+///
+/// This helper is used when the AWS config has already been created (e.g., from merged
+/// CLI + stack-args.yaml settings). It ensures that the same config used for preprocessing
+/// is also used for the CloudFormation client.
+///
+/// # Arguments
+/// * `aws_config` - Pre-configured AWS SDK config
+/// * `operation` - The CloudFormation operation to determine time provider needs
+/// * `client_request_token` - Optional client request token for idempotency
+///
+/// # Returns
+/// A fully initialized CfnContext ready for CloudFormation operations
+pub async fn create_context_from_config(
+    aws_config: aws_config::SdkConfig,
+    operation: CfnOperation,
+    client_request_token: TokenInfo,
+) -> Result<CfnContext> {
+    // Validate that a region is configured before proceeding
+    if aws_config.region().is_none() {
+        anyhow::bail!(
+            "No AWS region configured. Please specify a region via:\n\
+             - CLI flag: --region us-east-1\n\
+             - Stack args: Region: us-east-1\n\
+             - Environment variable: AWS_REGION or AWS_DEFAULT_REGION\n\
+             - AWS config file: ~/.aws/config"
+        );
+    }
+
+    let client = Client::new(&aws_config);
+    let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
+        Arc::new(SystemTimeProvider::new())
+    } else {
+        Arc::new(ReliableTimeProvider::new())
+    };
+    CfnContext::new(client, aws_config, time_provider, client_request_token).await
+}
 
 /// Create a CfnContext from NormalizedAwsOpts with operation-aware time provider selection.
 ///

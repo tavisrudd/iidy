@@ -1,14 +1,13 @@
 use anyhow::Result;
 
 use crate::{
-    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS}, stack_args::{load_stack_args, StackArgs}},
+    cfn::{CfnRequestBuilder, CfnContext, stack_operations::{StackInfoService, collect_stack_contents}, CfnOperation, determine_operation_success, CREATE_SUCCESS_STATES, apply_stack_name_override_and_validate, constants::{DEFAULT_POLL_INTERVAL_SECS, DEFAULT_POLL_TIMEOUT_SECS}, StackArgs},
     cli::{CreateStackArgs, GlobalOpts, Cli},
-    aws::AwsSettings,
     output::{
         DynamicOutputManager, OutputData, convert_stack_to_definition,
         aws_conversion::{create_command_metadata, convert_token_info, create_final_command_summary}
     },
-    run_command_handler,
+    run_command_handler_with_stack_args,
 };
 
 async fn create_stack_impl(
@@ -17,18 +16,11 @@ async fn create_stack_impl(
     cli: &Cli,
     args: &CreateStackArgs,
     opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = cli.command.to_cfn_operation();
-    let stack_args = load_stack_args(
-        &args.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
 
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
@@ -104,7 +96,7 @@ async fn create_stack_impl(
 }
 
 pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
-    run_command_handler!(create_stack_impl, cli, args)
+    run_command_handler_with_stack_args!(create_stack_impl, cli, args, &args.argsfile)
 }
 
 async fn perform_stack_creation(

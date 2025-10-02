@@ -7,13 +7,11 @@ use owo_colors::OwoColorize;
 use crate::cli::{Cli, ApprovalReviewArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnContext, CfnOperation,
+    CfnContext, StackArgs,
     template_hash::parse_s3_url,
     s3_utils::check_template_exists,
-    stack_args::load_stack_args,
 };
 use crate::output::aws_conversion::create_command_metadata;
-use crate::aws::AwsSettings;
 use crate::run_command_handler;
 
 async fn template_approval_review_impl(
@@ -24,27 +22,24 @@ async fn template_approval_review_impl(
     opts: &crate::cli::NormalizedAwsOpts,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = CfnOperation::TemplateApprovalReview;
-    
+
     // Parse S3 URL
     let (bucket, pending_key) = parse_s3_url(&args.url)?;
-    
+
     // Derive the approved key (remove .pending suffix)
     let approved_key = if pending_key.ends_with(".pending") {
         pending_key[..pending_key.len() - 8].to_string()
     } else {
         anyhow::bail!("URL must end with .pending suffix");
     };
-    
-    // Create dummy stack args for command metadata
-    let stack_args = load_stack_args(
-        "dummy.yaml", // This won't be used since we're parsing from URL
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await.unwrap_or_default();
-    
+
+    // This command doesn't use stack-args.yaml (it operates on S3 URLs directly).
+    // We use StackArgs::default() for command metadata because:
+    // - create_command_metadata() needs stack_args.role_arn for IAM service role display
+    // - Default has role_arn: None, accurately representing "no stack args for this command"
+    // - This is cleaner than attempting to load_stack_args() from a non-existent file
+    let stack_args = StackArgs::default();
+
     // Render command metadata
     let command_metadata = create_command_metadata(context, opts, &stack_args, &global_opts.environment).await?;
     output_manager.render(OutputData::CommandMetadata(command_metadata)).await?;

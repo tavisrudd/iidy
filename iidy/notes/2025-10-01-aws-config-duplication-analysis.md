@@ -1,7 +1,22 @@
 # AWS Config Duplication Analysis
 
 **Date:** 2025-10-01
-**Issue:** We create AWS config twice - once in `load_stack_args()` and once in `create_context_for_operation()`, with potential for inconsistency
+**Issue:** We create AWS config twice - once in `load_stack_args()` and once in `create_context_for_operation()`, with **actual inconsistency**
+
+## Critical Correctness Issue
+
+This is **not just duplication** - it's a **correctness bug**:
+
+1. **Config #1 (CfnContext)**: Created from CLI opts only → Used for CloudFormation API calls
+2. **Config #2 (load_stack_args)**: Created from merged CLI + stack-args.yaml → Used for preprocessing ($imports, CommandsBefore), then discarded
+
+**The Problem:** The CloudFormation client could be using **different AWS credentials/region/profile** than:
+- What's displayed to the user
+- What's used for template preprocessing ($imports)
+- What's used for CommandsBefore execution
+- What's configured in stack-args.yaml
+
+This violates the principle of least surprise and could cause silent failures or operations in wrong regions.
 
 ## Current Architecture
 
@@ -38,20 +53,31 @@ run_command_handler! macro
 
 ### The Problem
 
-1. **Two separate configs with potentially different settings:**
-   - Config #1: Only knows about CLI flags
-   - Config #2: Knows about CLI flags + stack-args.yaml + environment resolution
+1. **Two separate configs with DIFFERENT settings:**
+   - Config #1 (CfnContext): Only contains CLI flags (--region, --profile, --assume-role-arn)
+   - Config #2 (preprocessing): Contains CLI flags + stack-args.yaml + environment map resolution
 
-2. **Config #2 has richer information but is thrown away:**
+2. **Config #2 has correct information but is thrown away:**
    - It resolves environment maps (e.g., `Region: {dev: us-east-1, prod: us-west-2}`)
-   - It merges stack-args.yaml settings with CLI
-   - It's used for preprocessing, then discarded
-   - The CloudFormation client uses Config #1 which lacks this context
+   - It merges stack-args.yaml settings with CLI (CLI takes precedence)
+   - It's used for preprocessing and CommandsBefore execution
+   - **Then it's discarded**
+   - The CloudFormation client uses Config #1 which **lacks the stack-args.yaml settings**
 
-3. **Current workaround is fragile:**
-   - We now validate region in both places
-   - But they could theoretically resolve to different regions (if merging logic differs)
-   - We duplicate the AWS config creation logic
+3. **Actual Impact Examples:**
+
+   | Scenario | Config #2 (preprocessing) | Config #1 (CFN client) | Match? |
+   |----------|---------------------------|------------------------|---------|
+   | CLI: `--region us-west-2` | us-west-2 | us-west-2 | ✅ |
+   | stack-args: `Region: us-west-2` | us-west-2 | (from env/default) | ❌ |
+   | stack-args: `Region: {prod: us-west-2}` + `--environment prod` | us-west-2 | (from env/default) | ❌ |
+   | stack-args: `Profile: my-profile` (which has region in ~/.aws/config) | region from my-profile | (from env/default) | ❌ |
+
+4. **Current state is NOT safe:**
+   - We validate region exists in both places (prevents crashes)
+   - But they could be **different regions** (correctness bug)
+   - Same for profile and assume_role_arn
+   - We duplicate AWS config creation logic
 
 ## Commands That Use stack_args
 
@@ -248,27 +274,144 @@ run_command_handler_with_stack_args! macro:
   - `update_stack.rs`: `args.base.argsfile`
   - `describe_stack.rs`: no argsfile
 
-## Recommendation
+## Recommendation (UPDATED)
 
-### Short Term (Now)
-**Keep Option 4 (Status Quo with Validation)**
+### Immediate Fix (Now) - MUST FIX
+**Implement modified Option 1: Return AWS Config from load_stack_args()**
 
-Reasons:
-1. Already implemented and working
-2. Commands have different needs (some need stack args, some don't)
-3. Minimal disruption
-4. Safe for the current commit
+**Why this is urgent:**
+1. **Correctness bug**: CloudFormation operations could use wrong region/profile/credentials
+2. **User confusion**: Display might show different settings than what's actually used
+3. **Not just duplication**: Active inconsistency between configs
+4. **Relatively simple fix**: Change return type and call sites
+
+**Implementation:**
+```rust
+// Change load_stack_args signature
+pub async fn load_stack_args(...) -> Result<(StackArgs, SdkConfig)> {
+    // ... existing logic ...
+    let aws_config = config_from_merged_settings(&merged_aws_settings).await?;
+    // ... use config for preprocessing ...
+    Ok((stack_args, aws_config))  // Return both
+}
+
+// In command handlers (create_stack, update_stack, etc.)
+let (stack_args, merged_aws_config) = load_stack_args(...).await?;
+// Create context using the merged config, not opts
+let context = create_context_from_config(merged_aws_config, operation, opts.client_request_token).await?;
+
+// Add new helper to cfn/mod.rs
+pub async fn create_context_from_config(
+    aws_config: SdkConfig,
+    operation: CfnOperation,
+    client_request_token: Option<String>,
+) -> Result<CfnContext> {
+    // Validate region
+    if aws_config.region().is_none() {
+        anyhow::bail!("No AWS region configured...");
+    }
+
+    let client = Client::new(&aws_config);
+    let time_provider: Arc<dyn TimeProvider> = if operation.is_read_only() {
+        Arc::new(SystemTimeProvider::new())
+    } else {
+        Arc::new(ReliableTimeProvider::new())
+    };
+
+    CfnContext::new(client, aws_config, time_provider, client_request_token.unwrap_or_else(TokenInfo::auto_generated)).await
+}
+```
+
+**Commands to update (8 total):**
+1. `create_stack.rs`
+2. `update_stack.rs`
+3. `create_changeset.rs`
+4. `exec_changeset.rs`
+5. `estimate_cost.rs`
+6. `create_or_update.rs`
+7. `template_approval_request.rs`
+8. `template_approval_review.rs` (uses different pattern with URL)
+
+**Commands unchanged (don't use stack_args):**
+- `describe_stack.rs`, `watch_stack.rs`, `delete_stack.rs`, `list_stacks.rs`, etc.
+- These continue using `create_context_for_operation(opts, operation)` directly
 
 ### Medium Term (Future PR)
-**Implement Option 3 (StackContext wrapper)**
+**Consider Option 3 (StackContext wrapper) for further cleanup**
 
 Reasons:
 1. Clean separation of concerns
 2. Eliminates AWS config duplication for stack-based operations
-3. Doesn't break commands that don't use stack args
-4. Could introduce gradually:
-   - Phase 1: Create StackContext for create/update operations
-   - Phase 2: Migrate other stack-based operations
+
+## Implementation Plan - Incremental Approach
+
+### Strategy
+Create new `run_command_handler_with_stack_args!` macro that:
+1. Loads stack_args with merged AWS config
+2. Creates context from merged config (not CLI-only opts)
+3. Passes both context AND stack_args to impl function
+
+Migrate commands one at a time, starting with `create_stack.rs`, to validate the pattern before rolling out.
+
+### Step 1: Core infrastructure changes
+- [x] Change `src/cfn/stack_args.rs::load_stack_args()` return type to `Result<(StackArgs, SdkConfig)>`
+- [x] Return the `aws_config` along with `stack_args`
+- [x] Add `create_context_from_config()` helper to `src/cfn/mod.rs`
+- [x] Export `create_context_from_config` in module exports (public function)
+
+### Step 2: Create new macro
+- [x] Add `run_command_handler_with_stack_args!` macro to `src/cfn/mod.rs`
+- [x] Macro takes: `($impl_fn:ident, $cli:expr, $args:expr, $argsfile:expr)`
+- [x] Macro handles: normalize opts, load stack_args, create context from merged config, call impl_fn
+
+### Step 3: Migrate create_stack.rs (pilot command)
+- [x] Update `src/cfn/create_stack.rs` to use new macro
+- [x] Change impl function signature to receive `stack_args: &StackArgs` parameter
+- [x] Remove duplicate `load_stack_args()` call from impl function
+- [ ] Test thoroughly to validate the pattern (needs manual testing)
+
+### Step 4: Fix all call sites that still use old signature
+All existing commands that call `load_stack_args()` need temporary fix to destructure tuple:
+- [x] `src/cfn/update_stack.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/create_changeset.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/exec_changeset.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/estimate_cost.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/create_or_update.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/template_approval_request.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] `src/cfn/template_approval_review.rs` - Add `let (stack_args, _aws_config) = ...`
+- [x] Fix tests in `src/cfn/stack_args.rs` to destructure tuple
+
+### Step 5: Verify pilot works
+- [x] `cargo check --all` passes with no warnings
+- [x] `cargo nextest r --color=never --hide-progress-bar` - all tests pass (591/591)
+- [ ] Manual test: `create_stack` with stack-args.yaml `Region: us-west-2` uses that region
+- [ ] Verify displayed region matches what CFN operations use
+
+### Step 6: Migrate remaining commands (one by one)
+After validating the pattern with `create_stack.rs`:
+- [x] `src/cfn/update_stack.rs` - Convert to use new macro
+- [x] `src/cfn/create_changeset.rs` - Convert to use new macro
+- [x] `src/cfn/exec_changeset.rs` - Convert to use new macro
+- [x] `src/cfn/estimate_cost.rs` - Convert to use new macro
+- [x] `src/cfn/create_or_update.rs` - Convert to use new macro
+- [x] `src/cfn/template_approval_request.rs` - Convert to use new macro
+- [x] `src/cfn/template_approval_review.rs` - **Cleaned up** (uses URL, not argsfile - removed dummy load_stack_args, uses StackArgs::default())
+
+### Step 7: Final validation
+- [x] All tests pass (591/591)
+- [x] No compiler warnings
+- [ ] Manual test migrated commands
+- [ ] Consider folding `run_command_handler_with_stack_args` back into main macro if pattern is clean
+
+## Success Criteria
+✅ CloudFormation client uses the SAME config as preprocessing
+✅ Displayed region/profile/credentials match what's actually used
+✅ Single AWS config creation for stack-based commands
+✅ Duplicate `load_stack_args()` calls removed from command implementations
+✅ All tests pass
+✅ No compiler warnings
+✅ Region from stack-args.yaml is respected (not just CLI)
+✅ Doesn't break commands that don't use stack args
    - Phase 3: Consider consolidation if patterns emerge
 
 **Implementation Plan:**

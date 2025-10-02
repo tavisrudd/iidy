@@ -1,14 +1,13 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnContext, CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackEventsService, StackInfoService, watch_stack_operation_and_summarize}, constants::DEFAULT_PREVIOUS_EVENTS_COUNT, stack_args::{load_stack_args, StackArgs}};
+use crate::cfn::{CfnContext, CfnRequestBuilder, apply_stack_name_override_and_validate, CfnOperation, stack_operations::{StackEventsService, StackInfoService, watch_stack_operation_and_summarize}, constants::DEFAULT_PREVIOUS_EVENTS_COUNT, StackArgs};
 use crate::cli::{Cli, ExecChangeSetArgs};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::{convert_token_info, create_command_metadata},
     data::{OutputData, StackEventsDisplay}
 };
-use crate::aws::AwsSettings;
-use crate::run_command_handler;
+use crate::run_command_handler_with_stack_args;
 
 pub async fn exec_changeset_impl(
     output_manager: &mut DynamicOutputManager,
@@ -16,18 +15,11 @@ pub async fn exec_changeset_impl(
     cli: &Cli,
     args: &ExecChangeSetArgs,
     opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = cli.command.to_cfn_operation();
-    let stack_args = load_stack_args(
-        &args.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
 
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
 
     let _stack_name = final_stack_args
         .stack_name
@@ -82,7 +74,7 @@ pub async fn exec_changeset_impl(
 }
 
 pub async fn exec_changeset(cli: &Cli, args: &ExecChangeSetArgs) -> Result<i32> {
-    run_command_handler!(exec_changeset_impl, cli, args)
+    run_command_handler_with_stack_args!(exec_changeset_impl, cli, args, &args.argsfile)
 }
 
 async fn perform_changeset_execution(

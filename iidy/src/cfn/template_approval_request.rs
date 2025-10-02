@@ -5,15 +5,14 @@ use aws_sdk_s3::types::ObjectCannedAcl;
 use crate::cli::{Cli, ApprovalRequestArgs};
 use crate::output::{DynamicOutputManager, OutputData};
 use crate::cfn::{
-    CfnContext, CfnOperation,
+    CfnContext,
     template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES},
     template_hash::generate_versioned_location,
     s3_utils::check_template_exists,
-    stack_args::{load_stack_args, StackArgs},
+    StackArgs,
 };
 use crate::output::aws_conversion::create_command_metadata;
-use crate::aws::AwsSettings;
-use crate::run_command_handler;
+use crate::run_command_handler_with_stack_args;
 
 async fn template_approval_request_impl(
     output_manager: &mut DynamicOutputManager,
@@ -21,18 +20,9 @@ async fn template_approval_request_impl(
     cli: &Cli,
     args: &ApprovalRequestArgs,
     opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = CfnOperation::TemplateApprovalRequest;
-    
-    // Load stack args
-    let stack_args = load_stack_args(
-        &args.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
     
     // Validate required fields
     if stack_args.approved_template_location.is_none() {
@@ -156,5 +146,5 @@ async fn validate_template(context: &CfnContext, template_body: &str, stack_args
 }
 
 pub async fn template_approval_request(cli: &Cli, args: &ApprovalRequestArgs) -> Result<i32> {
-    run_command_handler!(template_approval_request_impl, cli, args)
+    run_command_handler_with_stack_args!(template_approval_request_impl, cli, args, &args.argsfile)
 }

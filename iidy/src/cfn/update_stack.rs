@@ -5,15 +5,14 @@ use crate::cfn::{
     changeset_operations::confirm_changeset_execution,
     exec_changeset::call_exec_changeset_with_reconstruction,
     CfnOperation, UPDATE_SUCCESS_STATES, apply_stack_name_override_and_validate,
-    stack_args::{load_stack_args, StackArgs}
+    StackArgs
 };
 use crate::cli::{UpdateStackArgs, Cli};
-use crate::aws::AwsSettings;
 use crate::output::{
     DynamicOutputManager, OutputData,
     aws_conversion::{create_command_metadata, convert_token_info}
 };
-use crate::run_command_handler;
+use crate::run_command_handler_with_stack_args;
 
 async fn update_stack_impl(
     output_manager: &mut DynamicOutputManager,
@@ -21,18 +20,11 @@ async fn update_stack_impl(
     cli: &Cli,
     args: &UpdateStackArgs,
     opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = cli.command.to_cfn_operation();
-    let stack_args = load_stack_args(
-        &args.base.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
 
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.base.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
@@ -55,7 +47,7 @@ async fn update_stack_impl(
 }
 
 pub async fn update_stack(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
-    run_command_handler!(update_stack_impl, cli, args)
+    run_command_handler_with_stack_args!(update_stack_impl, cli, args, &args.base.argsfile)
 }
 
 async fn perform_stack_update(

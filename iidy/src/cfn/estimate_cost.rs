@@ -1,32 +1,24 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnContext, apply_stack_name_override_and_validate, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, stack_args::load_stack_args};
+use crate::cfn::{CfnContext, apply_stack_name_override_and_validate, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, StackArgs};
 use crate::cli::{Cli, StackFileArgs};
 use crate::output::{
     DynamicOutputManager,
     OutputData, data::{CostEstimate, CostEstimateInfo}
 };
-use crate::aws::AwsSettings;
-use crate::run_command_handler;
+use crate::run_command_handler_with_stack_args;
 
 async fn estimate_cost_impl(
     output_manager: &mut DynamicOutputManager,
     context: &CfnContext,
     cli: &Cli,
     args: &StackFileArgs,
-    opts: &crate::cli::NormalizedAwsOpts,
+    _opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
-    let cli_aws_settings = AwsSettings::from_normalized_opts(opts);
-    let operation = crate::cfn::CfnOperation::EstimateCost;
-    let stack_args = load_stack_args(
-        &args.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
 
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.stack_name.as_ref())?;
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
@@ -86,5 +78,5 @@ async fn estimate_cost_impl(
 }
 
 pub async fn estimate_cost(cli: &Cli, args: &StackFileArgs) -> Result<i32> {
-    run_command_handler!(estimate_cost_impl, cli, args)
+    run_command_handler_with_stack_args!(estimate_cost_impl, cli, args, &args.argsfile)
 }

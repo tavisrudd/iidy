@@ -3,19 +3,18 @@ use aws_sdk_cloudformation::error::SdkError;
 use aws_sdk_cloudformation::error::ProvideErrorMetadata;
 
 use crate::cfn::{CfnContext, CfnRequestBuilder, CfnOperation, apply_stack_name_override_and_validate, stack_operations::{StackInfoService, watch_stack_operation_and_summarize}, CREATE_SUCCESS_STATES, UPDATE_SUCCESS_STATES, StackChangeType, UpdateResult, changeset_operations::{self, check_stack_exists, confirm_changeset_execution},
-    exec_changeset::call_exec_changeset_with_reconstruction, stack_args::{load_stack_args, StackArgs}};
+    exec_changeset::call_exec_changeset_with_reconstruction, StackArgs};
 use crate::cli::{UpdateStackArgs, Cli};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::{convert_token_info, create_command_metadata, convert_stack_to_definition},
     data::{OutputData, StackChangeDetails}
 };
-use crate::aws::AwsSettings;
-use crate::run_command_handler;
+use crate::run_command_handler_with_stack_args;
 
 /// Create or update a CloudFormation stack using intelligent detection with data-driven output.
 pub async fn create_or_update(cli: &Cli, args: &UpdateStackArgs) -> Result<i32> {
-    run_command_handler!(create_or_update_impl, cli, args)
+    run_command_handler_with_stack_args!(create_or_update_impl, cli, args, &args.base.argsfile)
 }
 
 async fn create_or_update_impl(
@@ -24,19 +23,11 @@ async fn create_or_update_impl(
     cli: &Cli,
     args: &UpdateStackArgs,
     opts: &crate::cli::NormalizedAwsOpts,
+    stack_args: &StackArgs,
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
 
-    let cli_aws_settings = AwsSettings::from_normalized_opts(&opts);
-    let operation = cli.command.to_cfn_operation();
-    let stack_args = load_stack_args(
-        &args.base.argsfile,
-        &global_opts.environment,
-        &operation,
-        &cli_aws_settings,
-    ).await?;
-
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
+    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.base.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
