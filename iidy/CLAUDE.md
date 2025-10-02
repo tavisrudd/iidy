@@ -76,6 +76,7 @@
 - Use our local ./tmp/ dir instead of the system level /tmp
 - Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making
   a backup of the uncommitted changes and asking for user confirmation.
+- we have a `language-server` MCP connection to rust-analyzer. Use it
 
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.
