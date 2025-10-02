@@ -219,15 +219,15 @@ pub async fn load_stack_args(
 fn create_env_values(
     environment: Option<&str>,
     operation: &CfnOperation,
-    current_region: &str,
-    current_profile: Option<&str>,
+    current_aws_region: &str,
+    current_aws_profile: Option<&str>,
 ) -> Value {
     use std::collections::BTreeMap;
     
     let mut env_values = BTreeMap::new();
     
     // Legacy bare values (TODO: deprecate in iidy-js compatibility)
-    env_values.insert("region".to_string(), Value::String(current_region.to_string()));
+    env_values.insert("region".to_string(), Value::String(current_aws_region.to_string()));
     if let Some(env) = environment {
         env_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
@@ -238,8 +238,8 @@ fn create_env_values(
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
-    iidy_values.insert("region".to_string(), Value::String(current_region.to_string()));
-    if let Some(profile) = current_profile {
+    iidy_values.insert("region".to_string(), Value::String(current_aws_region.to_string()));
+    if let Some(profile) = current_aws_profile {
         iidy_values.insert("profile".to_string(), Value::String(profile.to_string()));
     }
     
