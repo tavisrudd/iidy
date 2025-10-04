@@ -1,16 +1,28 @@
 use anyhow::{Context, Result};
 use crossterm::{style::{Stylize, Color}, terminal::size};
+use once_cell::sync::Lazy;
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Write, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
 use tempfile::tempdir;
 use tokio::time::{Duration, sleep};
 
 use iidy::yaml::preprocess_yaml_v11;
+
+// Compile regexes once at startup for performance
+static RE_ACCOUNT_STANDALONE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b(\d{12})\b").expect("invalid regex pattern")
+});
+
+static RE_ACCOUNT_IN_ARN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(arn:aws:[^:]*:[^:]*:)(\d{12})([:/])").expect("invalid regex pattern")
+});
 
 #[derive(Debug, Clone)]
 enum DemoCommand {
@@ -40,7 +52,25 @@ struct DemoScript {
     demo: Vec<RawCommand>,
 }
 
-pub async fn run(script_path: &str, timescaling: f64) -> Result<()> {
+/// Mask AWS account numbers in text output
+///
+/// Patterns masked:
+/// - Standalone 12-digit account numbers: "account = 123456789012" → "account = ************"
+/// - Account numbers in ARNs: "arn:aws:iam::123456789012:role/Foo" → "arn:aws:iam::************:role/Foo"
+///
+/// Uses pre-compiled regex patterns for performance.
+fn mask_aws_account_numbers(text: &str) -> String {
+    // Apply standalone pattern first
+    let masked = RE_ACCOUNT_STANDALONE.replace_all(text, "************");
+
+    // Then apply ARN pattern (though standalone will have caught most)
+    // This ensures we preserve ARN structure
+    let masked = RE_ACCOUNT_IN_ARN.replace_all(&masked, "${1}************${3}");
+
+    masked.to_string()
+}
+
+pub async fn run(script_path: &str, timescaling: f64, mask_secrets: bool) -> Result<()> {
     let data = fs::read_to_string(script_path).with_context(|| format!("reading {script_path}"))?;
     
     // Preprocess YAML with imports and template variables
@@ -90,11 +120,11 @@ pub async fn run(script_path: &str, timescaling: f64) -> Result<()> {
             DemoCommand::Shell(cmd) => {
                 let substituted_cmd = substitute_iidy_command(&cmd, &iidy_exe);
                 print_command(&substituted_cmd, timescaling).await?;
-                exec(&substituted_cmd, tmp.path(), &env)?;
+                exec(&substituted_cmd, tmp.path(), &env, mask_secrets)?;
             }
             DemoCommand::Silent(cmd) => {
                 let substituted_cmd = substitute_iidy_command(&cmd, &iidy_exe);
-                exec(&substituted_cmd, tmp.path(), &env)?;
+                exec(&substituted_cmd, tmp.path(), &env, mask_secrets)?;
             }
             DemoCommand::Sleep(secs) => {
                 let scaled_duration = (secs as f64 * timescaling) as u64;
@@ -190,18 +220,130 @@ fn unpack_files(files: &HashMap<String, String>, tmp_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn exec(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<()> {
-    let status = Command::new("/usr/bin/env")
+fn exec(cmd: &str, cwd: &Path, env: &HashMap<String, String>, mask_secrets: bool) -> Result<()> {
+    let exit_code = if mask_secrets {
+        exec_with_masking(cmd, cwd, env)?
+    } else {
+        exec_direct(cmd, cwd, env)?
+    };
+
+    if !exit_code.success() {
+        anyhow::bail!("command failed: {}", cmd);
+    }
+
+    Ok(())
+}
+
+/// Execute command directly with inherited stdout/stderr (no masking, fastest)
+fn exec_direct(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<std::process::ExitStatus> {
+    Command::new("/usr/bin/env")
         .arg("bash")
         .arg("-c")
         .arg(cmd)
         .current_dir(cwd)
         .envs(env)
-        .status()?;
-    if !status.success() {
-        anyhow::bail!("command failed: {}", cmd);
+        .status()
+        .context("failed to execute command")
+}
+
+/// Execute command in PTY with output masking
+fn exec_with_masking(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<std::process::ExitStatus> {
+    let pty_system = native_pty_system();
+
+    // Use actual terminal size for proper line wrapping
+    let (term_cols, term_rows) = size().unwrap_or((80, 24));
+    let pair = pty_system.openpty(PtySize {
+        rows: term_rows,
+        cols: term_cols,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+
+    // Build and spawn command in PTY
+    let mut cmd_builder = CommandBuilder::new("/usr/bin/env");
+    cmd_builder.arg("bash");
+    cmd_builder.arg("-c");
+    cmd_builder.arg(cmd);
+    cmd_builder.cwd(cwd);
+    for (k, v) in env {
+        cmd_builder.env(k, v);
     }
-    Ok(())
+
+    let mut child = pair.slave.spawn_command(cmd_builder)?;
+    drop(pair.slave); // Close slave to trigger EOF when child exits
+
+    // Stream and mask PTY output
+    stream_and_mask_pty_output(pair.master.try_clone_reader()?)?;
+
+    // Convert portable_pty::ExitStatus to std::process::ExitStatus
+    let pty_status = child.wait().context("failed to wait for child process")?;
+
+    // Reconstruct std::process::ExitStatus from exit code
+    // We need to run a dummy command with the same exit code
+    let exit_code = pty_status.exit_code();
+    Command::new("/usr/bin/env")
+        .arg("sh")
+        .arg("-c")
+        .arg(format!("exit {}", exit_code))
+        .status()
+        .context("failed to create exit status")
+}
+
+/// Read from PTY, apply masking, write to stdout
+fn stream_and_mask_pty_output(mut reader: Box<dyn Read + Send>) -> Result<()> {
+    let output_handle = thread::spawn(move || {
+        const BUFFER_SIZE: usize = 8192;
+        const MAX_PENDING: usize = 4096;
+
+        let mut buffer = [0u8; BUFFER_SIZE];
+        let mut pending = String::new();
+        let mut stdout = std::io::stdout();
+
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => {
+                    // EOF - flush remaining data
+                    if !pending.is_empty() {
+                        let masked = mask_aws_account_numbers(&pending);
+                        let _ = stdout.write_all(masked.as_bytes());
+                        let _ = stdout.flush();
+                    }
+                    break;
+                }
+                Ok(n) => {
+                    if let Ok(text) = std::str::from_utf8(&buffer[0..n]) {
+                        pending.push_str(text);
+
+                        // Output complete lines for correct masking
+                        if let Some(last_newline) = pending.rfind('\n') {
+                            let to_output = &pending[..=last_newline];
+                            let masked = mask_aws_account_numbers(to_output);
+                            if stdout.write_all(masked.as_bytes()).is_ok() {
+                                let _ = stdout.flush();
+                            }
+                            pending = pending[last_newline + 1..].to_string();
+                        } else if pending.len() > MAX_PENDING {
+                            // Prevent unbounded growth on very long lines
+                            let masked = mask_aws_account_numbers(&pending);
+                            if stdout.write_all(masked.as_bytes()).is_ok() {
+                                let _ = stdout.flush();
+                            }
+                            pending.clear();
+                        }
+                    } else {
+                        // Binary data - pass through unmasked (known limitation)
+                        if stdout.write_all(&buffer[0..n]).is_ok() {
+                            let _ = stdout.flush();
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    output_handle.join()
+        .map_err(|e| anyhow::anyhow!("output handler thread panicked: {:?}", e))
 }
 
 async fn print_command(cmd: &str, timescaling: f64) -> Result<()> {
@@ -301,7 +443,7 @@ mod tests {
             is_iidy_on_path_same_as_current_exe("/non/existent/path"),
             false
         );
-        
+
         // Test with current executable if we can determine it
         if let Ok(current_exe) = std::env::current_exe() {
             if let Some(current_path) = current_exe.to_str() {
@@ -312,6 +454,124 @@ mod tests {
                 let _ = result;
             }
         }
+    }
+
+    #[test]
+    fn test_mask_aws_account_numbers_standalone() {
+        // Standalone account numbers
+        assert_eq!(
+            mask_aws_account_numbers("account = 123456789012"),
+            "account = ************"
+        );
+
+        assert_eq!(
+            mask_aws_account_numbers("Account: 123456789012"),
+            "Account: ************"
+        );
+
+        // With leading/trailing whitespace
+        assert_eq!(
+            mask_aws_account_numbers("  account = 123456789012  "),
+            "  account = ************  "
+        );
+    }
+
+    #[test]
+    fn test_mask_aws_account_numbers_in_arns() {
+        // ARNs with role
+        assert_eq!(
+            mask_aws_account_numbers("arn:aws:iam::123456789012:role/MyRole"),
+            "arn:aws:iam::************:role/MyRole"
+        );
+
+        // ARNs with assumed-role
+        assert_eq!(
+            mask_aws_account_numbers("arn:aws:sts::999888777666:assumed-role/Foo"),
+            "arn:aws:sts::************:assumed-role/Foo"
+        );
+
+        // ARN with user
+        assert_eq!(
+            mask_aws_account_numbers("arn:aws:iam::111222333444:user/admin"),
+            "arn:aws:iam::************:user/admin"
+        );
+    }
+
+    #[test]
+    fn test_mask_multiple_account_numbers() {
+        // Multiple in one line
+        assert_eq!(
+            mask_aws_account_numbers("Account: 123456789012, ARN: arn:aws:sts::987654321098:assumed-role/Foo"),
+            "Account: ************, ARN: arn:aws:sts::************:assumed-role/Foo"
+        );
+
+        // Same account number twice
+        assert_eq!(
+            mask_aws_account_numbers("account = 123456789012 and 123456789012"),
+            "account = ************ and ************"
+        );
+    }
+
+    #[test]
+    fn test_mask_does_not_mask_non_account_numbers() {
+        // 10-digit numbers (Unix timestamps)
+        assert_eq!(
+            mask_aws_account_numbers("Timestamp: 1234567890"),
+            "Timestamp: 1234567890"
+        );
+
+        // 11-digit numbers
+        assert_eq!(
+            mask_aws_account_numbers("Number: 12345678901"),
+            "Number: 12345678901"
+        );
+
+        // 13-digit numbers
+        assert_eq!(
+            mask_aws_account_numbers("Number: 1234567890123"),
+            "Number: 1234567890123"
+        );
+
+        // Numbers with separators (not 12 consecutive digits)
+        assert_eq!(
+            mask_aws_account_numbers("Phone: 123-456-7890"),
+            "Phone: 123-456-7890"
+        );
+    }
+
+    #[test]
+    fn test_mask_preserves_line_structure() {
+        // Multi-field line
+        let input = "      env = production\n      region = us-west-2\n      account = 123456789012";
+        let expected = "      env = production\n      region = us-west-2\n      account = ************";
+        assert_eq!(mask_aws_account_numbers(input), expected);
+
+        // Line with no account number
+        assert_eq!(
+            mask_aws_account_numbers("      env = production"),
+            "      env = production"
+        );
+    }
+
+    #[test]
+    fn test_mask_empty_and_edge_cases() {
+        // Empty string
+        assert_eq!(mask_aws_account_numbers(""), "");
+
+        // Just the account number
+        assert_eq!(mask_aws_account_numbers("123456789012"), "************");
+
+        // Account number at start of line
+        assert_eq!(
+            mask_aws_account_numbers("123456789012 is the account"),
+            "************ is the account"
+        );
+
+        // Account number at end of line
+        assert_eq!(
+            mask_aws_account_numbers("The account is 123456789012"),
+            "The account is ************"
+        );
     }
 }
 

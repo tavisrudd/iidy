@@ -640,6 +640,8 @@ pub struct DemoArgs {
     pub demoscript: String,
     #[arg(long, default_value_t = 1.0)]
     pub timescaling: f64,
+    #[arg(long, default_value_t = false, help = "Mask secrets (AWS account numbers, ARNs) in command output")]
+    pub mask_secrets: bool,
 }
 
 #[derive(Args, Debug, Clone)]

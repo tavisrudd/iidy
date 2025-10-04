@@ -13,9 +13,9 @@ files:
       Name:
         Type: String
     Resources:
-      HelloWorld:
-        Type: AWS::SNS::Topic
-        Properties:
+      TestWaitHandle:
+        Type: AWS::CloudFormation::WaitConditionHandle
+        Metadata:
           DisplayName: !Sub "Hello ${Name}"
 
   .broken-cfn-template.yaml: |+
@@ -23,9 +23,9 @@ files:
       Name:
         Type: String
     Resources:
-      HelloWorld:
-        Type: AWS::SNS::Topic
-        Properties:
+      TestWaitHandle:
+        Type: AWS::CloudFormation::WaitConditionHandle
+        Metadata:
           DisplayName: !Sub "Hello ${Name}"
           Foo: 1234
 
@@ -69,7 +69,7 @@ demo:
   - ls .
   - banner: "We'll use these 2 files throughout the demo."
   - sleep: 3
-  - banner: "'cfn-template.yaml' is a very simple CloudFormation Template. It creates an SNS Topic."
+  - banner: "'cfn-template.yaml' is a very simple CloudFormation Template. It creates a WaitConditionHandle."
   - cat cfn-template.yaml
   - sleep: 3
 

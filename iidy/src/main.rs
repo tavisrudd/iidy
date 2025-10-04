@@ -166,7 +166,7 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::Demo(args) => {
-            if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling)) {
+            if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling, args.mask_secrets)) {
                 eprintln!("demo failed: {e:?}");
                 std::process::exit(1);
             }
