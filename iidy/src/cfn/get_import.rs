@@ -35,7 +35,7 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
     
     // Configure AWS SDK for AWS-based imports (cfn, ssm, s3)
     let aws_config = match config_from_normalized_opts(&normalized_opts).await {
-        Ok(config) => Some(config),
+        Ok((config, _credential_sources)) => Some(config),
         Err(e) => {
             // Handle AWS configuration errors gracefully
             eprintln!("{}", format_aws_error(&e));

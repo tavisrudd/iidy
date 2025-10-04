@@ -9,6 +9,18 @@ use crate::cli::NormalizedAwsOpts;
 
 pub mod timing;
 pub mod client_req_token;
+mod credential_source;
+
+pub use credential_source::{
+    CredentialSource,
+    CredentialSourceStack,
+    CredentialDetectionContext,
+    ProfileSource,
+    AssumeRoleSource,
+    EnvVarProvider,
+    SystemEnv,
+    detect_credential_sources,
+};
 
 /// Custom error type for user-friendly AWS errors that have already been displayed
 #[derive(Debug)]
@@ -92,7 +104,13 @@ impl AwsSettings {
 }
 
 /// Load AWS SDK configuration from merged settings (iidy-js configureAWS equivalent)
-pub async fn config_from_merged_settings(merged_settings: &AwsSettings) -> Result<SdkConfig> {
+pub async fn config_from_merged_settings(
+    merged_settings: &AwsSettings,
+    detection_ctx: &CredentialDetectionContext,
+) -> Result<(SdkConfig, CredentialSourceStack)> {
+    // Detect credential sources BEFORE loading config
+    let credential_sources = detect_credential_sources(detection_ctx, &SystemEnv);
+
     // Set AWS_SDK_LOAD_CONFIG if ~/.aws exists (matching iidy-js behavior)
     if let Some(home) = std::env::var_os("HOME") {
         let aws_dir = std::path::Path::new(&home).join(".aws");
@@ -134,7 +152,7 @@ pub async fn config_from_merged_settings(merged_settings: &AwsSettings) -> Resul
 
     let config = builder.build();
 
-    Ok(config)
+    Ok((config, credential_sources))
 }
 
 /// Load AWS SDK configuration using values from [`NormalizedAwsOpts`].
@@ -142,7 +160,19 @@ pub async fn config_from_merged_settings(merged_settings: &AwsSettings) -> Resul
 /// This honors the `region`, `profile`, and `assume_role_arn` fields of
 /// `AwsOpts`. The returned [`SdkConfig`] can be used to construct AWS service
 /// clients.
-pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<SdkConfig> {
+///
+/// Note: This is used for commands that don't use stack-args.yaml. All settings
+/// are treated as coming from CLI flags for credential source detection.
+pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<(SdkConfig, CredentialSourceStack)> {
     let settings = AwsSettings::from_normalized_opts(opts);
-    config_from_merged_settings(&settings).await
+
+    // Create detection context - all settings come from CLI in this path
+    let detection_ctx = CredentialDetectionContext {
+        cli_profile: opts.profile.clone(),
+        stack_args_profile: None,
+        cli_assume_role_arn: opts.assume_role_arn.clone(),
+        stack_args_assume_role_arn: None,
+    };
+
+    config_from_merged_settings(&settings, &detection_ctx).await
 }

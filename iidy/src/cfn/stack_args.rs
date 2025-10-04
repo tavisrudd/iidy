@@ -96,7 +96,7 @@ pub async fn load_stack_args(
     environment: &str,
     operation: &CfnOperation,
     cli_aws_settings: &AwsSettings,
-) -> Result<(StackArgs, aws_config::SdkConfig)> {    
+) -> Result<(StackArgs, aws_config::SdkConfig, crate::aws::CredentialSourceStack)> {    
     let path = Path::new(argsfile);
     let contents = fs::read_to_string(path)?;
     
@@ -133,8 +133,16 @@ pub async fn load_stack_args(
         assume_role_arn: cli_aws_settings.assume_role_arn.clone().or_else(|| argsfile_aws_settings.assume_role_arn.clone()),
         };
 
+    // Create detection context with unmerged settings for provenance tracking
+    let detection_ctx = crate::aws::CredentialDetectionContext {
+        cli_profile: cli_aws_settings.profile.clone(),
+        stack_args_profile: argsfile_aws_settings.profile.clone(),
+        cli_assume_role_arn: cli_aws_settings.assume_role_arn.clone(),
+        stack_args_assume_role_arn: argsfile_aws_settings.assume_role_arn.clone(),
+    };
+
     // Configure AWS BEFORE preprocessing (enables $imports with AWS calls)
-    let aws_config = config_from_merged_settings(&merged_aws_settings).await?;
+    let (aws_config, credential_sources) = config_from_merged_settings(&merged_aws_settings, &detection_ctx).await?;
 
     // Validate that a region is configured (needed for AWS API calls in $imports and CommandsBefore)
     let current_region = aws_config.region()
@@ -211,7 +219,7 @@ pub async fn load_stack_args(
     // TODO disable behind feature flag
     apply_global_configuration(&mut stack_args, &aws_config).await?;
 
-    Ok((stack_args, aws_config))
+    Ok((stack_args, aws_config, credential_sources))
 }
 
 
@@ -535,7 +543,7 @@ mod tests {
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
         
-        let (result, _aws_config) = load_stack_args(
+        let (result, _aws_config, _credential_sources) = load_stack_args(
             temp_path,
             "dev",
             &CfnOperation::CreateStack,
@@ -572,7 +580,7 @@ Template: t
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
         
-        let (result, _aws_config) = load_stack_args(
+        let (result, _aws_config, _credential_sources) = load_stack_args(
             temp_path,
             "prod",
             &CfnOperation::UpdateStack,
@@ -616,7 +624,7 @@ Region: us-west-2
             "Stack args with custom tags should parse successfully"
         );
 
-        let (stack_args, _aws_config) = result.unwrap();
+        let (stack_args, _aws_config, _credential_sources) = result.unwrap();
         // Currently custom tags become null since AST resolution isn't implemented yet
         // But parsing should succeed
         assert_eq!(stack_args.template.as_deref(), Some("template.yaml"));

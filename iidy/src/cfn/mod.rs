@@ -6,7 +6,12 @@ use std::sync::{Arc, Mutex};
 
 use crate::{
     cli::NormalizedAwsOpts,
-    aws::{timing::{ReliableTimeProvider, TimeProvider, SystemTimeProvider}, client_req_token::TokenInfo, config_from_normalized_opts},
+    aws::{
+        timing::{ReliableTimeProvider, TimeProvider, SystemTimeProvider},
+        client_req_token::TokenInfo,
+        config_from_normalized_opts,
+        CredentialSourceStack,
+    },
 };
 
 /// Macro to consistently await tasks and handle errors via the output system
@@ -117,7 +122,7 @@ macro_rules! run_command_handler_with_stack_args {
 
         // Load stack args with merged AWS settings (CLI + stack-args.yaml)
         let cli_aws_settings = $crate::aws::AwsSettings::from_normalized_opts(&opts);
-        let (stack_args, aws_config) = match $crate::cfn::stack_args::load_stack_args(
+        let (stack_args, aws_config, credential_sources) = match $crate::cfn::stack_args::load_stack_args(
             $argsfile,
             &$cli.global_opts.environment,
             &operation,
@@ -133,6 +138,7 @@ macro_rules! run_command_handler_with_stack_args {
 
         let context = match $crate::cfn::create_context_from_config(
             aws_config,
+            credential_sources,
             operation,
             opts.client_request_token.clone()
         ).await {
@@ -209,6 +215,7 @@ pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResu
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context_from_config(
     aws_config: aws_config::SdkConfig,
+    credential_sources: CredentialSourceStack,
     operation: CfnOperation,
     client_request_token: TokenInfo,
 ) -> Result<CfnContext> {
@@ -229,7 +236,7 @@ pub async fn create_context_from_config(
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
-    CfnContext::new(client, aws_config, time_provider, client_request_token).await
+    CfnContext::new(client, aws_config, credential_sources, time_provider, client_request_token).await
 }
 
 /// Create a CfnContext from NormalizedAwsOpts with operation-aware time provider selection.
@@ -245,7 +252,7 @@ pub async fn create_context_from_config(
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: CfnOperation) -> Result<CfnContext> {
-    let config = config_from_normalized_opts(opts).await?;
+    let (config, credential_sources) = config_from_normalized_opts(opts).await?;
 
     // Validate that a region is configured before proceeding
     if config.region().is_none() {
@@ -264,7 +271,7 @@ pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: C
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
-    CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(client, config, credential_sources, time_provider, opts.client_request_token.clone()).await
 }
 
 /// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
@@ -279,14 +286,14 @@ pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: C
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
 pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Result<CfnContext> {
-    let config = config_from_normalized_opts(opts).await?;
+    let (config, credential_sources) = config_from_normalized_opts(opts).await?;
     let client = Client::new(&config);
     let time_provider: Arc<dyn TimeProvider> = if need_ntp_sync {
         Arc::new(ReliableTimeProvider::new())
     } else {
         Arc::new(SystemTimeProvider::new())
     };
-    CfnContext::new(client, config, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(client, config, credential_sources, time_provider, opts.client_request_token.clone()).await
 }
 
 /// Context object that carries shared state for CloudFormation operations.
@@ -298,6 +305,7 @@ pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Re
 pub struct CfnContext {
     pub client: Client,
     pub aws_config: aws_config::SdkConfig,
+    pub credential_sources: CredentialSourceStack,
     pub time_provider: Arc<dyn TimeProvider>,
     pub start_time: DateTime<Utc>,
     pub token_info: TokenInfo,
@@ -321,6 +329,7 @@ impl CfnContext {
     pub async fn new(
         client: Client,
         aws_config: aws_config::SdkConfig,
+        credential_sources: CredentialSourceStack,
         time_provider: Arc<dyn TimeProvider>,
         token_info: TokenInfo,
     ) -> Result<Self> {
@@ -330,6 +339,7 @@ impl CfnContext {
         Ok(CfnContext {
             client,
             aws_config,
+            credential_sources,
             time_provider,
             start_time,
             token_info,
@@ -504,6 +514,17 @@ mod tests {
         TokenInfo::user_provided("test-token-123".to_string(), "test-op-1".to_string())
     }
 
+    fn mock_credential_sources() -> CredentialSourceStack {
+        use crate::aws::{CredentialSource, ProfileSource};
+        CredentialSourceStack::new(vec![
+            CredentialSource::Profile {
+                name: "test".to_string(),
+                source: ProfileSource::Default,
+                profile_role_arn: None,
+            }
+        ])
+    }
+
     #[tokio::test]
     async fn cfn_context_sets_start_time() {
         let fixed_time = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
@@ -511,7 +532,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info)
+        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info)
             .await
             .unwrap();
 
@@ -526,7 +547,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let mut ctx = CfnContext::new(client, create_test_aws_config(), time_provider.clone(), token_info)
+        let mut ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider.clone(), token_info)
             .await
             .unwrap();
 
@@ -545,7 +566,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info.clone())
+        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info.clone())
             .await
             .unwrap();
 
@@ -569,7 +590,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info).await.unwrap();
+        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info).await.unwrap();
 
         // Derive tokens for different steps
         let create_token = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
@@ -605,7 +626,7 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), time_provider, token_info).await.unwrap();
+        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info).await.unwrap();
 
         // Derive the same token multiple times
         let token1 = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);

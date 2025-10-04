@@ -944,8 +944,9 @@ impl InteractiveRenderer {
         
         let service_role = data.iam_service_role.as_deref().unwrap_or("None");
         self.print_section_entry("IAM Service Role:", &service_role.color(self.theme.muted).to_string())?;
-        
+
         self.print_section_entry("Current IAM Principal:", &data.current_iam_principal.color(self.theme.muted).to_string())?;
+        self.print_section_entry("Credential Source:", &data.credential_source.color(self.theme.muted).to_string())?;
         self.print_section_entry("iidy Version:", &data.iidy_version.color(self.theme.muted).to_string())?;
         
         self.print_section_entry("Client Req Token:", &format!("{} ({})", 

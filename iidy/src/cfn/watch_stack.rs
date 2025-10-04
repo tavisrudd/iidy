@@ -298,6 +298,17 @@ mod tests {
     use aws_smithy_types::DateTime;
     use std::sync::Arc;
 
+    fn mock_credential_sources() -> crate::aws::CredentialSourceStack {
+        use crate::aws::{CredentialSource, ProfileSource};
+        crate::aws::CredentialSourceStack::new(vec![
+            CredentialSource::Profile {
+                name: "test".to_string(),
+                source: ProfileSource::Default,
+                profile_role_arn: None,
+            }
+        ])
+    }
+
     fn sample_event(id: &str, ts: i64, status: ResourceStatus) -> StackEvent {
         StackEvent::builder()
             .stack_id("arn:aws:cloudformation:us-east-1:123456789012:stack/demo/1")
@@ -364,7 +375,7 @@ mod tests {
             .region(aws_types::region::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        let ctx = CfnContext::new(client, aws_config, time_provider, temp_token)
+        let ctx = CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, temp_token)
             .await
             .unwrap();
         // Test that start time is 500ms before the fixed time

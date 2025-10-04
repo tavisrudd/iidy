@@ -22,6 +22,7 @@ fn test_command_metadata_serialization() {
         cli_arguments: [("argsfile".to_string(), "stack-args.yaml".to_string())].into_iter().collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
+        credential_source: "profile 'test-profile' (default)".to_string(),
         iidy_version: "0.1.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token-123".to_string(),
@@ -128,6 +129,7 @@ fn test_output_data_enum_variants() {
         cli_arguments: HashMap::new(),
         iam_service_role: None,
         current_iam_principal: "test".to_string(),
+        credential_source: "profile 'default' (default)".to_string(),
         iidy_version: "0.1.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token-456".to_string(),

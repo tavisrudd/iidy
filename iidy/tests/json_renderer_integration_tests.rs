@@ -74,6 +74,7 @@ async fn test_json_output_structure() {
         ].into_iter().collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
+        credential_source: "profile 'test-profile' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token-001".to_string(),
@@ -220,6 +221,7 @@ async fn test_json_serialization_compatibility() {
         cli_arguments: std::collections::HashMap::new(),
         iam_service_role: None,
         current_iam_principal: "test-principal".to_string(),
+        credential_source: "profile 'test-profile' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token".to_string(),

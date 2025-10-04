@@ -350,6 +350,7 @@ mod tests {
             .collect(),
             iam_service_role: None,
             current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
+            credential_source: "profile 'test-profile' (default)".to_string(),
             iidy_version: "2.0.0".to_string(),
             primary_token: TokenInfo {
                 value: "test-token-001".to_string(),

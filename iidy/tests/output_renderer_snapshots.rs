@@ -60,6 +60,7 @@ async fn test_plain_renderer_command_metadata() {
         ].into_iter().collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/developer".to_string(),
+        credential_source: "profile 'dev' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token-abc123".to_string(),
@@ -205,6 +206,7 @@ async fn test_interactive_renderer_command_metadata_colors() {
         ].into_iter().collect(),
         iam_service_role: Some("arn:aws:iam::123456789012:role/CloudFormationServiceRole".to_string()),
         current_iam_principal: "arn:aws:iam::123456789012:role/DeploymentRole".to_string(),
+        credential_source: "profile 'production' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
         primary_token: TokenInfo {
             value: "prod-token-xyz789".to_string(),
@@ -389,6 +391,7 @@ async fn test_renderer_lifecycle() {
         cli_arguments: HashMap::new(),
         iam_service_role: None,
         current_iam_principal: "test-principal".to_string(),
+        credential_source: "profile 'test' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
         primary_token: TokenInfo {
             value: "test-token".to_string(),

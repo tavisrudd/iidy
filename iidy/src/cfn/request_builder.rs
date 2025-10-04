@@ -425,12 +425,22 @@ mod tests {
     use super::*;
     use crate::{
         cfn::CfnContext,
-        aws::{timing::MockTimeProvider, client_req_token::TokenInfo},
+        aws::{timing::MockTimeProvider, client_req_token::TokenInfo, CredentialSourceStack, CredentialSource, ProfileSource},
     };
     use aws_sdk_cloudformation::Client;
     use chrono::TimeZone;
     use std::collections::BTreeMap;
     use std::sync::Arc;
+
+    fn mock_credential_sources() -> CredentialSourceStack {
+        CredentialSourceStack::new(vec![
+            CredentialSource::Profile {
+                name: "test".to_string(),
+                source: ProfileSource::Default,
+                profile_role_arn: None,
+            }
+        ])
+    }
 
     fn mock_client() -> Client {
         let config = aws_config::SdkConfig::builder()
@@ -451,7 +461,7 @@ mod tests {
             .region(aws_types::region::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap()
+        CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap()
     }
 
     fn mock_stack_args() -> StackArgs {

@@ -79,6 +79,7 @@ pub async fn create_command_metadata(
         cli_arguments,
         iam_service_role: stack_args.role_arn.clone(),
         current_iam_principal,
+        credential_source: context.credential_sources.display_name(),
         iidy_version: env!("CARGO_PKG_VERSION").to_string(),
         primary_token,
         derived_tokens,
@@ -470,11 +471,21 @@ mod tests {
     use chrono::{DateTime, Utc};
     use crate::{
         cfn::{CfnContext, StackArgs},
-        aws::{client_req_token::TokenInfo, timing::MockTimeProvider},
+        aws::{client_req_token::TokenInfo, timing::MockTimeProvider, CredentialSourceStack, CredentialSource, ProfileSource},
         cli::NormalizedAwsOpts,
     };
     use aws_sdk_cloudformation::Client;
     use std::sync::Arc;
+
+    fn mock_credential_sources() -> CredentialSourceStack {
+        CredentialSourceStack::new(vec![
+            CredentialSource::Profile {
+                name: "test".to_string(),
+                source: ProfileSource::Default,
+                profile_role_arn: None,
+            }
+        ])
+    }
 
     #[tokio::test]
     async fn test_create_command_metadata() {
@@ -488,7 +499,7 @@ mod tests {
             .build();
         let client = Client::new(&aws_config);
         let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
-        let context = CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap();
+        let context = CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap();
 
         // opts.region is just what was passed on CLI - may or may not match aws_config
         let opts = NormalizedAwsOpts {
@@ -532,7 +543,7 @@ mod tests {
             .build();
         let client = Client::new(&aws_config);
         let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
-        let context = CfnContext::new(client, aws_config, time_provider, token_info).await.unwrap();
+        let context = CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap();
 
         // opts.region is None (simulating region from stack-args or AWS config files)
         let opts = NormalizedAwsOpts {

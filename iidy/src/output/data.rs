@@ -34,6 +34,7 @@ pub struct CommandMetadata {
     pub cli_arguments: HashMap<String, String>,
     pub iam_service_role: Option<String>,
     pub current_iam_principal: String,
+    pub credential_source: String,
     pub iidy_version: String,
     pub primary_token: TokenInfo,
     pub derived_tokens: Vec<TokenInfo>,
