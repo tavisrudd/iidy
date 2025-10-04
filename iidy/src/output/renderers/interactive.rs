@@ -938,28 +938,29 @@ impl InteractiveRenderer {
                 self.print_section_entry("Profile:", &profile.color(self.theme.primary).to_string())?;
             }
         }
-        
+
+        let service_role = data.iam_service_role.as_deref().unwrap_or("None");
+        self.print_section_entry("IAM Service Role:", &service_role.color(self.theme.primary).to_string())?;
+
+        self.print_section_entry("Current IAM Principal:", &data.current_iam_principal.color(self.theme.primary).to_string())?;
+        self.print_section_entry("Credential Source:", &data.credential_source.color(self.theme.muted).to_string())?;
+
         let cli_args = self.pretty_format_small_map(&data.cli_arguments);
         self.print_section_entry("CLI Arguments:", &cli_args.color(self.theme.muted).to_string())?;
-        
-        let service_role = data.iam_service_role.as_deref().unwrap_or("None");
-        self.print_section_entry("IAM Service Role:", &service_role.color(self.theme.muted).to_string())?;
 
-        self.print_section_entry("Current IAM Principal:", &data.current_iam_principal.color(self.theme.muted).to_string())?;
-        self.print_section_entry("Credential Source:", &data.credential_source.color(self.theme.muted).to_string())?;
         self.print_section_entry("iidy Version:", &data.iidy_version.color(self.theme.muted).to_string())?;
         
-        self.print_section_entry("Client Req Token:", &format!("{} ({})", 
-            data.primary_token.value.color(self.theme.muted), 
-            self.format_token_source(&data.primary_token.source)
+        self.print_section_entry("Client Req Token:", &format!("{} {}",
+            data.primary_token.value.color(self.theme.muted),
+            format!("({})", self.format_token_source(&data.primary_token.source)).color(self.theme.muted)
         ))?;
         
         if !data.derived_tokens.is_empty() {
             self.print_section_entry("Derived Tokens:", &format!("{} tokens", data.derived_tokens.len()))?;
             for (i, token) in data.derived_tokens.iter().enumerate() {
-                self.print_section_entry(&format!("  [{}]", i + 1), &format!("{} ({})", 
+                self.print_section_entry(&format!("  [{}]", i + 1), &format!("{} {}",
                     token.value.color(self.theme.muted),
-                    self.format_token_source(&token.source)
+                    format!("({})", self.format_token_source(&token.source)).color(self.theme.muted)
                 ))?;
             }
         }
