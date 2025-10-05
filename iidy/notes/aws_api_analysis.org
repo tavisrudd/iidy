@@ -1,168 +1,172 @@
-* AWS API Operation Analysis - src/cfn/ Directory
+#+BASE_DIR: ../
 
-This document catalogs all AWS API method calls found in the src/cfn/ directory, organized by AWS service and operation type.
+* AWS API Operation Analysis - ../src/cfn/ Directory
+
+This document catalogs all AWS API method calls found in the ../src/cfn/ directory, organized by AWS service and operation type.
 
 ** CloudFormation Operations
 
 *** describe_stacks
 
 #+begin_src bash
-rg -n "\.describe_stacks\(" src/cfn/
+rg -n "\.describe_stacks\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/changeset_operations.rs::29][changeset_operations.rs:29 - check_stack_state]]
-- [[file:src/cfn/changeset_operations.rs::74][changeset_operations.rs:74 - check_stack_exists]]
-- [[file:src/cfn/create_or_update.rs::169][create_or_update.rs:169 - check_stack_exists]]
-- [[file:src/cfn/delete_stack.rs::27][delete_stack.rs:27 - check_stack_exists_for_delete]]
-- [[file:src/cfn/describe_stack.rs::25][describe_stack.rs:25 - describe_stack_impl]]
-- [[file:src/cfn/describe_stack_drift.rs::30][describe_stack_drift.rs:30 - describe_stack_drift_impl]]
-- [[file:src/cfn/list_stacks.rs::82][list_stacks.rs:82 - list_stacks_impl]]
-- [[file:src/cfn/stack_operations.rs::43][stack_operations.rs:43 - collect_stack_contents]]
-- [[file:src/cfn/stack_operations.rs::288][stack_operations.rs:288 - StackInfoService::get_stack]]
+- [[file:../src/cfn/changeset_operations.rs::29][changeset_operations.rs:29 - check_stack_state]]
+- [[file:../src/cfn/changeset_operations.rs::74][changeset_operations.rs:74 - check_stack_exists]]
+- [[file:../src/cfn/create_or_update.rs::169][create_or_update.rs:169 - check_stack_exists]]
+- [[file:../src/cfn/delete_stack.rs::27][delete_stack.rs:27 - check_stack_exists_for_delete]]
+- [[file:../src/cfn/describe_stack.rs::25][describe_stack.rs:25 - describe_stack_impl]]
+- [[file:../src/cfn/describe_stack_drift.rs::30][describe_stack_drift.rs:30 - describe_stack_drift_impl]]
+- [[file:../src/cfn/list_stacks.rs::82][list_stacks.rs:82 - list_stacks_impl]]
+- [[file:../src/cfn/stack_operations.rs::43][stack_operations.rs:43 - collect_stack_contents]]
+- [[file:../src/cfn/stack_operations.rs::288][stack_operations.rs:288 - StackInfoService::get_stack]]
 
 *** create_stack
 
 #+begin_src bash
-rg -n "\.create_stack\(" src/cfn/
+rg -n "\.create_stack\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/request_builder.rs::60][request_builder.rs:60 - CfnRequestBuilder::build_create_stack]]
+- [[file:../src/cfn/request_builder.rs::60][request_builder.rs:60 - CfnRequestBuilder::build_create_stack]]
 
 *** update_stack
 
 #+begin_src bash
-rg -n "\.update_stack\(" src/cfn/
+rg -n "\.update_stack\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/request_builder.rs::208][request_builder.rs:208 - CfnRequestBuilder::build_update_stack]]
+- [[file:../src/cfn/request_builder.rs::208][request_builder.rs:208 - CfnRequestBuilder::build_update_stack]]
 
 *** delete_stack
 
 #+begin_src bash
-rg -n "\.delete_stack\(" src/cfn/
+rg -n "\.delete_stack\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/delete_stack.rs::63][delete_stack.rs:63 - perform_stack_deletion_without_output]]
+- [[file:../src/cfn/delete_stack.rs::63][delete_stack.rs:63 - perform_stack_deletion_without_output]]
 
 *** create_change_set
 
 #+begin_src bash
-rg -n "\.create_change_set\(" src/cfn/
+rg -n "\.create_change_set\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/changeset_operations.rs::216][changeset_operations.rs:216 - perform_changeset_creation]]
-- [[file:src/cfn/request_builder.rs::316][request_builder.rs:316 - CfnRequestBuilder::build_create_changeset]]
+- [[file:../src/cfn/changeset_operations.rs::216][changeset_operations.rs:216 - perform_changeset_creation]]
+- [[file:../src/cfn/request_builder.rs::316][request_builder.rs:316 - CfnRequestBuilder::build_create_changeset]]
 
 *** describe_change_set
 
 #+begin_src bash
-rg -n "\.describe_change_set\(" src/cfn/
+rg -n "\.describe_change_set\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/changeset_operations.rs::386][changeset_operations.rs:386 - fetch_pending_changesets]]
-- [[file:src/cfn/changeset_operations.rs::456][changeset_operations.rs:456 - wait_for_changeset_completion]]
-- [[file:src/cfn/changeset_operations.rs::494][changeset_operations.rs:494 - build_existing_changeset_result]]
-- [[file:src/cfn/stack_operations.rs::116][stack_operations.rs:116 - collect_pending_changesets]]
+- [[file:../src/cfn/changeset_operations.rs::386][changeset_operations.rs:386 - fetch_pending_changesets]]
+- [[file:../src/cfn/changeset_operations.rs::456][changeset_operations.rs:456 - wait_for_changeset_completion]]
+- [[file:../src/cfn/changeset_operations.rs::494][changeset_operations.rs:494 - build_existing_changeset_result]]
+- [[file:../src/cfn/stack_operations.rs::116][stack_operations.rs:116 - collect_pending_changesets]]
 
 *** execute_change_set
 
 #+begin_src bash
-rg -n "\.execute_change_set\(" src/cfn/
+rg -n "\.execute_change_set\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/request_builder.rs::410][request_builder.rs:410 - CfnRequestBuilder::build_execute_changeset]]
+- [[file:../src/cfn/request_builder.rs::410][request_builder.rs:410 - CfnRequestBuilder::build_execute_changeset]]
 
 *** list_change_sets
 
 #+begin_src bash
-rg -n "\.list_change_sets\(" src/cfn/
+rg -n "\.list_change_sets\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/changeset_operations.rs::58][changeset_operations.rs:58 - check_existing_changesets]]
-- [[file:src/cfn/changeset_operations.rs::374][changeset_operations.rs:374 - fetch_pending_changesets]]
-- [[file:src/cfn/stack_operations.rs::99][stack_operations.rs:99 - collect_pending_changesets]]
+- [[file:../src/cfn/changeset_operations.rs::58][changeset_operations.rs:58 - check_existing_changesets]]
+- [[file:../src/cfn/changeset_operations.rs::374][changeset_operations.rs:374 - fetch_pending_changesets]]
+- [[file:../src/cfn/stack_operations.rs::99][stack_operations.rs:99 - collect_pending_changesets]]
 
 *** describe_stack_events
 
 #+begin_src bash
-rg -n "\.describe_stack_events\(" src/cfn/
+rg -n "\.describe_stack_events\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/describe_stack.rs::46][describe_stack.rs:46 - describe_stack_impl events_task]]
-- [[file:src/cfn/describe_stack.rs::56][describe_stack.rs:56 - describe_stack_impl events_task pagination]]
-- [[file:src/cfn/stack_operations.rs::177][stack_operations.rs:177 - StackEventsService::fetch_events]]
+- [[file:../src/cfn/describe_stack.rs::46][describe_stack.rs:46 - describe_stack_impl events_task]]
+- [[file:../src/cfn/describe_stack.rs::56][describe_stack.rs:56 - describe_stack_impl events_task pagination]]
+- [[file:../src/cfn/stack_operations.rs::177][stack_operations.rs:177 - StackEventsService::fetch_events]]
 
 *** describe_stack_resources
 
 #+begin_src bash
-rg -n "\.describe_stack_resources\(" src/cfn/
+rg -n "\.describe_stack_resources\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/stack_operations.rs::34][stack_operations.rs:34 - collect_stack_contents]]
+- [[file:../src/cfn/stack_operations.rs::34][stack_operations.rs:34 - collect_stack_contents]]
 
 *** get_template
 
 #+begin_src bash
-rg -n "\.get_template\(" src/cfn/
+rg -n "\.get_template\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/get_stack_template.rs::132][get_stack_template.rs:132 - get_stack_template]]
+- [[file:../src/cfn/get_stack_template.rs::132][get_stack_template.rs:132 - get_stack_template]]
 
 *** estimate_template_cost
 
 #+begin_src bash
-rg -n "\.estimate_template_cost\(" src/cfn/
+rg -n "\.estimate_template_cost\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/estimate_cost.rs::59][estimate_cost.rs:59 - estimate_cost_impl]]
+- [[file:../src/cfn/estimate_cost.rs::59][estimate_cost.rs:59 - estimate_cost_impl]]
 
 *** validate_template
 
 #+begin_src bash
-rg -n "\.validate_template\(" src/cfn/
+rg -n "\.validate_template\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/template_approval_request.rs::137][template_approval_request.rs:137 - validate_template]]
+- [[file:../src/cfn/template_approval_request.rs::137][template_approval_request.rs:137 - validate_template]]
 
 *** detect_stack_drift
 
 #+begin_src bash
-rg -n "\.detect_stack_drift\(" src/cfn/
+rg -n "\.detect_stack_drift\(" ../src/cfn/
 #+end_src
 
+#+RESULTS:
+
 Locations:
-- [[file:src/cfn/describe_stack_drift.rs::75][describe_stack_drift.rs:75 - describe_stack_drift_impl]]
+- [[file:../src/cfn/describe_stack_drift.rs::75][describe_stack_drift.rs:75 - describe_stack_drift_impl]]
 
 *** describe_stack_drift_detection_status
 
 #+begin_src bash
-rg -n "\.describe_stack_drift_detection_status\(" src/cfn/
+rg -n "\.describe_stack_drift_detection_status\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/describe_stack_drift.rs::84][describe_stack_drift.rs:84 - describe_stack_drift_impl]]
+- [[file:../src/cfn/describe_stack_drift.rs::84][describe_stack_drift.rs:84 - describe_stack_drift_impl]]
 
 *** describe_stack_resource_drifts
 
 #+begin_src bash
-rg -n "\.describe_stack_resource_drifts\(" src/cfn/
+rg -n "\.describe_stack_resource_drifts\(" ../src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/describe_stack_drift.rs::115][describe_stack_drift.rs:115 - collect_stack_drift_data]]
+- [[file:../src/cfn/describe_stack_drift.rs::115][describe_stack_drift.rs:115 - collect_stack_drift_data]]
 
 ** S3 Operations
 
@@ -173,8 +177,8 @@ rg -n "\.head_object\(" src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/template_approval_request.rs::108][template_approval_request.rs:108 - check_template_exists]]
-- [[file:src/cfn/template_approval_review.rs::136][template_approval_review.rs:136 - check_template_exists]]
+- [[file:../src/cfn/template_approval_request.rs::108][template_approval_request.rs:108 - check_template_exists]]
+- [[file:../src/cfn/template_approval_review.rs::136][template_approval_review.rs:136 - check_template_exists]]
 
 *** get_object
 
@@ -183,8 +187,8 @@ rg -n "\.get_object\(" src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/template_approval_review.rs::153][template_approval_review.rs:153 - download_template]]
-- [[file:src/cfn/template_loader.rs::320][template_loader.rs:320 - maybe_sign_s3_http_url]]
+- [[file:../src/cfn/template_approval_review.rs::153][template_approval_review.rs:153 - download_template]]
+- [[file:../src/cfn/template_loader.rs::320][template_loader.rs:320 - maybe_sign_s3_http_url]]
 
 *** put_object
 
@@ -193,9 +197,9 @@ rg -n "\.put_object\(" src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/template_approval_request.rs::125][template_approval_request.rs:125 - upload_template_to_s3]]
-- [[file:src/cfn/template_approval_review.rs::198][template_approval_review.rs:198 - approve_template (approved location)]]
-- [[file:src/cfn/template_approval_review.rs::207][template_approval_review.rs:207 - approve_template (latest copy)]]
+- [[file:../src/cfn/template_approval_request.rs::125][template_approval_request.rs:125 - upload_template_to_s3]]
+- [[file:../src/cfn/template_approval_review.rs::198][template_approval_review.rs:198 - approve_template (approved location)]]
+- [[file:../src/cfn/template_approval_review.rs::207][template_approval_review.rs:207 - approve_template (latest copy)]]
 
 *** delete_object
 
@@ -204,7 +208,7 @@ rg -n "\.delete_object\(" src/cfn/
 #+end_src
 
 Locations:
-- [[file:src/cfn/template_approval_review.rs::216][template_approval_review.rs:216 - approve_template (cleanup)]]
+- [[file:../src/cfn/template_approval_review.rs::216][template_approval_review.rs:216 - approve_template (cleanup)]]
 
 ** Operation Summary by File
 
