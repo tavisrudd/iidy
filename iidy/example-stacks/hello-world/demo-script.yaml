@@ -27,6 +27,7 @@ files:
         Type: AWS::CloudFormation::WaitConditionHandle
         Metadata:
           DisplayName: !Sub "Hello ${Name}"
+        Properties:
           Foo: 1234
 
   stack-args.yaml: |+
@@ -117,11 +118,12 @@ demo:
   - sleep: 1
   - "iidy delete-stack --region {{ Region }} --profile {{ Profile }} --yes {{ StackName }}"
 
-  - banner: "That's all for our demo. Thanks for watching!"
-  - sleep: 3
   - banner: |-
       In addition to what you just saw, iidy:
-        - is integrated with AWS Parameter Store for secrets management.
-          This is a replacement for Ansible Vault.
-
-        - supports CFN changesets for safe updates to long-lived stacks.
+        - supports CFN changesets for safe updates to long-lived stacks,
+        - is integrated with AWS Parameter Store for basic secrets management,
+        - can be use with other tools based on CFN, such as the CDK,
+        - has a powerful YAML extension language and templating system,
+          which can also be used for non-CFN related documents such as Kubernetes manifests.
+  - sleep: 3
+  - banner: "That's all for our demo. Thanks for watching!"
