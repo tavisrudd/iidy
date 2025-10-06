@@ -122,7 +122,7 @@ demo:
       In addition to what you just saw, iidy:
         - supports CFN changesets for safe updates to long-lived stacks,
         - is integrated with AWS Parameter Store for basic secrets management,
-        - can be use with other tools based on CFN, such as the CDK,
+        - can be used with other tools based on CFN, such as the CDK,
         - has a powerful YAML extension language and templating system,
           which can also be used for non-CFN related documents such as Kubernetes manifests.
   - sleep: 3
