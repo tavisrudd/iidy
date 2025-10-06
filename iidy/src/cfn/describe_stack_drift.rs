@@ -12,9 +12,6 @@ use crate::output::{
 };
 use crate::run_command_handler;
 
-// REMOVED: format_resource_drifts function - Legacy formatting logic replaced by data-driven output architecture
-// Drift formatting is now handled by the renderers through OutputData::StackDrift
-
 async fn describe_stack_drift_impl(
     output_manager: &mut DynamicOutputManager,
     context: &CfnContext,
@@ -22,7 +19,6 @@ async fn describe_stack_drift_impl(
     args: &DriftArgs,
     _opts: &crate::cli::NormalizedAwsOpts,
 ) -> Result<i32> {
-    // 1. Show stack definition (following iidy-js pattern)
     let stack_task = {
         let client = context.client.clone();
         let stack_name = args.stackname.clone();
@@ -43,16 +39,14 @@ async fn describe_stack_drift_impl(
         })
     };
 
-    // Get the stack for drift checking
     let (stack_definition, stack) = stack_task.await??;
     output_manager.render(stack_definition).await?;
 
-    // 2. Update drift data if needed (following iidy-js updateStackDriftData pattern)
     let needs_drift_check = stack.drift_information()
         .map(|drift| {
             drift.stack_drift_status() == Some(&aws_sdk_cloudformation::types::StackDriftStatus::NotChecked) ||
             drift.last_check_timestamp().map(|ts| {
-                // Check if older than cache period (default 5 minutes in iidy-js)
+                // Check if older than cache period (default 5 minutes)
                 let cache_seconds = args.drift_cache as i64;
                 let cache_cutoff = chrono::Utc::now() - chrono::Duration::seconds(cache_seconds);
                 let check_time = chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
@@ -63,7 +57,6 @@ async fn describe_stack_drift_impl(
         .unwrap_or(true);
 
     if needs_drift_check {
-        // Send status update for drift detection progress
         let drift_start_msg = StatusUpdate {
             message: "Checking for stack drift...".to_string(),
             timestamp: chrono::Utc::now(),
@@ -71,7 +64,6 @@ async fn describe_stack_drift_impl(
         };
         output_manager.render(OutputData::StatusUpdate(drift_start_msg)).await?;
         
-        // Start drift detection
         let detect = context.client
             .detect_stack_drift()
             .stack_name(&args.stackname)
@@ -95,23 +87,20 @@ async fn describe_stack_drift_impl(
         }
     }
 
-    // 3. Collect and send drift data
     let drift_data = collect_stack_drift_data(&context.client, &args.stackname).await?;
     output_manager.render(OutputData::StackDrift(drift_data)).await?;
 
-    Ok(0) // Return success exit code
+    Ok(0)
 }
 
 pub async fn describe_stack_drift(cli: &Cli, args: &DriftArgs) -> Result<i32> {
     run_command_handler!(describe_stack_drift_impl, cli, args)
 }
 
-/// Collect stack drift data (controller pattern - no display logic)
 async fn collect_stack_drift_data(
     client: &Client,
     stack_name: &str,
 ) -> Result<StackDrift> {
-    // Retrieve all drifted resources
     let pages: Vec<_> = client
         .describe_stack_resource_drifts()
         .stack_name(stack_name)
@@ -154,37 +143,4 @@ async fn collect_stack_drift_data(
     Ok(StackDrift {
         drifted_resources,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn drift_data_conversion_no_drift() {
-        // Test that empty drift list is handled correctly
-        let drift_data = StackDrift {
-            drifted_resources: vec![],
-        };
-        assert_eq!(drift_data.drifted_resources.len(), 0);
-    }
-
-    #[test]
-    fn drift_data_conversion_with_drift() {
-        // Test that drift data structure contains expected information
-        let drift_data = StackDrift {
-            drifted_resources: vec![
-                DriftedResource {
-                    logical_resource_id: "TestResource".to_string(),
-                    physical_resource_id: "test-resource-123".to_string(),
-                    resource_type: "AWS::S3::Bucket".to_string(),
-                    drift_status: "MODIFIED".to_string(),
-                    property_differences: vec![],
-                }
-            ],
-        };
-        assert_eq!(drift_data.drifted_resources.len(), 1);
-        assert_eq!(drift_data.drifted_resources[0].logical_resource_id, "TestResource");
-        assert_eq!(drift_data.drifted_resources[0].drift_status, "MODIFIED");
-    }
 }
