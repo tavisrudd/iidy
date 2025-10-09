@@ -8,9 +8,19 @@ This document catalogs all AWS API method calls found in the ../src/cfn/ directo
 
 *** describe_stacks
 
-#+begin_src bash
+#+begin_src bash :results output :results block
 rg -n "\.describe_stacks\(" ../src/cfn/
 #+end_src
+
+#+RESULTS:
+: ../src/cfn/describe_stack_drift.rs:27:                .describe_stacks()
+: ../src/cfn/delete_stack.rs:28:    let describe_request = context.client.describe_stacks().stack_name(stack_name);
+: ../src/cfn/changeset_operations.rs:29:    let describe_request = context.client.describe_stacks().stack_name(stack_name);
+: ../src/cfn/changeset_operations.rs:74:    let describe_request = context.client.describe_stacks().stack_name(stack_name);
+: ../src/cfn/describe_stack.rs:25:                .describe_stacks()
+: ../src/cfn/stack_operations.rs:44:            .describe_stacks()
+: ../src/cfn/stack_operations.rs:289:            .describe_stacks()
+: ../src/cfn/list_stacks.rs:83:        .describe_stacks()
 
 Locations:
 - [[file:../src/cfn/changeset_operations.rs::29][changeset_operations.rs:29 - check_stack_state]]
@@ -29,6 +39,9 @@ Locations:
 rg -n "\.create_stack\(" ../src/cfn/
 #+end_src
 
+#+RESULTS:
+: ../src/cfn/request_builder.rs:60:            .create_stack()
+
 Locations:
 - [[file:../src/cfn/request_builder.rs::60][request_builder.rs:60 - CfnRequestBuilder::build_create_stack]]
 
@@ -37,6 +50,9 @@ Locations:
 #+begin_src bash
 rg -n "\.update_stack\(" ../src/cfn/
 #+end_src
+
+#+RESULTS:
+: ../src/cfn/request_builder.rs:208:            .update_stack()
 
 Locations:
 - [[file:../src/cfn/request_builder.rs::208][request_builder.rs:208 - CfnRequestBuilder::build_update_stack]]
@@ -55,6 +71,10 @@ Locations:
 #+begin_src bash
 rg -n "\.create_change_set\(" ../src/cfn/
 #+end_src
+
+#+RESULTS:
+| ../src/cfn/changeset_operations.rs:216: | .create_change_set() |
+| ../src/cfn/request_builder.rs:316:      | .create_change_set() |
 
 Locations:
 - [[file:../src/cfn/changeset_operations.rs::216][changeset_operations.rs:216 - perform_changeset_creation]]

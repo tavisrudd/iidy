@@ -1,6 +1,8 @@
 # iidy Proof of Concepts (POCs)
 
-This directory contains proof-of-concept demonstrations and experimental features for iidy.
+This directory contains proof-of-concept demonstrations and
+experimental features for iidy. We remove them after the experiment or
+feature they are related to has been completed.
 
 ## Running POCs
 
@@ -11,40 +13,13 @@ Use the dedicated `iidy-pocs` binary to run demonstrations:
 cargo build
 
 # Run a specific demo
-cargo run --bin iidy-pocs detect-background
-cargo run --bin iidy-pocs theme-demo
-cargo run --bin iidy-pocs spinner-demo
-cargo run --bin iidy-pocs ratatui-demo
+cargo run --bin iidy-pocs foobar-demo
 
 # See all available demos
 cargo run --bin iidy-pocs --help
 ```
 
 ## Available Demonstrations
-
-### `detect-background`
-Terminal background detection and theme validation featuring:
-- Multiple detection strategies (COLORFGBG, TERM_PROGRAM, theme variables)
-- Comprehensive environment variable analysis
-- Detection strategy voting and priority system
-- Theme color comparison across Dark, Light, and High Contrast themes
-- Testing recommendations for different terminal configurations
-- Validates the auto-detection logic used by `--theme=auto`
-
-### `theme-demo`
-Demonstrates the color theming system including:
-- Terminal capability detection (TTY, 24-bit color, width)
-- All available color themes (Auto, Light, Dark, High Contrast)
-- Semantic color markup (success, error, warning, info, etc.)
-- CloudFormation status colorization
-- Progress indicators and spinners
-
-### `spinner-demo`
-Showcases the ora-like progress indicator API:
-- Different spinner styles (Dots, Dots12, Line, Arrow, Pulse)
-- Spinner lifecycle methods (succeed, fail, warn, info)
-- Dynamic text updates during operations
-- CloudFormation operation simulation
 
 ### `ratatui-demo`
 Interactive terminal UI demonstration featuring:
@@ -60,9 +35,6 @@ Interactive terminal UI demonstration featuring:
 
 - `main.rs` - POCs binary entry point
 - `mod.rs` - Module declarations
-- `detect_background.rs` - Terminal background detection and theme validation
-- `theme_demo.rs` - Color theming demonstrations
-- `spinner_demo.rs` - Progress indicator demonstrations  
 - `ratatui_demo.rs` - Terminal UI demonstrations
 
 ## Development

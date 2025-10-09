@@ -1,82 +1,70 @@
 # CLAUDE.md
 
 ## 🔧 CURRENT WORK CONTEXT
+n/a
 
-**Current Task**: Available for new tasks
-
-### **ARCHITECTURE FOUNDATION (Reference)**
-- **`notes/2025-06-17-data-driven-output-architecture.md`** - Core architecture design
-- **`notes/2025-06-17-console-output-modes.md`** - Output modes specification
-- **`notes/2025-06-17-complete-iidy-implementation-spec.md`** - Pixel-perfect iidy-js spec
-
-### **Key Implementation Details**
-- **Theme System**: `src/output/theme.rs` with exact iidy-js colors (NOT old src/terminal.rs/color.rs)
-- **Data Structures**: `src/output/data.rs` - Complete OutputData enum matching design spec
-- **Renderers**: `src/output/renderers/` - Interactive (pixel-perfect), Plain (CI-friendly)  
-- **Testing**: Three-layer strategy using `insta` snapshots and YAML fixtures
-- **Architecture**: Data-driven separation of collection from presentation, supports mode switching
-
-### **Important Notes**
-- Ignore old `src/terminal.rs` and `src/color.rs` modules (from pre-design spike)
-- All tests must be offline/deterministic using fixture data
+### **Architecture References**
+- **`notes/2025-06-17-data-driven-output-architecture.md`** - Core TUI architecture design
 - **ALWAYS review `notes/2025-06-17-data-driven-output-architecture.md` when working on `src/cfn/` command handlers**
 
 ---
 
-## General requirements 
-- Work to completion of your goal with 100% of tests passing, no regressions, and no new code warnings. 
-- Don't stop to brag or celebrate. Keep going until you have completely reached the goal and completed all tasks.
+## General requirements and workflow.
+- Act like a staff/principal engineer not a juniour or
+  intermediate. 
+  - Analyze, think, and plan first.
+  - Consider edge cases, performance, and security.
+- Each commit or larger series of commits, will have a timestamped plan
+  file in the notes/ dir.
+- Review our plan critically before starting. If the user is
+  discussing the plan with you, ask for confirmation before switching
+  into coding mode.
+- Review our changes critically as you go. Document findings and
+  progress in the plan file as you work.
+- Work to completion of your goal with 100% of tests passing, no
+  regressions, and no new code warnings.
+- Don't stop to brag or celebrate. Keep going until you have
+  completely reached the goal and completed all tasks.
 - Use your Write tool to write files rather than echo or cat.
 - 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is, but without reward hacks. 
-- Do not claim that failing tests are edge cases or not important. That is for the user to determine.
-- Do not create duplicate code.
+- DO NOT claim that failing tests are edge cases or not important. That is for the user to determine.
+- DO NOT create duplicate code.
 - Use the correct existing constructors rather than creating new ones.
+- When removing code, do NOT leave a comment saying it was removed. We have git.
 
 ## Coding standards
-- Act like a staff/principal engineer not a juniour or
-  intermediate. Think and plan first. Review your changes critically
-  as you go.
-- use meaningful variable and fn names and omit useless comments. If a
+- Use meaningful variable and fn names and DO NOT add useless comments. If a
   fn's purpose is clear there is no need for comment above it unless
   we are documenting it for the public api.
-- comment only the non-obvious
-- keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
+- Comment only the non-obvious.
+- Keep public APIs small. Do not bloat them or re-export what doesn't need exporting.
 - Always import deps at the module level (use ...) at the top of the
   file. Do not import locally inside of fns or refer to types using
   the long 'crate::foo::Bar' / 'dep_crate::baz::Foo' syntax. That
   clutters the code.
+- All tests must be offline/deterministic using fixture data.
 
 ## Testing
-- run `cargo check --all` for a fast sanity check
-- **All tests**: `cargo nextest r --color=never --hide-progress-bar`
-- **Snapshot testing**: All example templates in `example-templates/` are automatically tested using `insta`
-- Run tests: `cargo test --test example_templates_snapshots`
-- Only the user may accept snapshot changes unless they explicitly tell you to and if valid: `cargo insta accept`, but only if the change is value and not a regression.
-- Rather than creating adhoc rust binaries or tests not in tests/, just use the existing test infrastructure.
-- Do not reward hack by commenting out tests or fudging to make them
+- run `make check` for a fast sanity check
+- `make test`
+- All example templates in `example-templates/` are automatically tested as snapshots using `insta` (via `make test`)
+- Only the user may accept snapshot changes unless they explicitly tell you to and if valid.
+- DO NOT create adhoc rust binaries or tests not in tests/. Just use the existing test infrastructure.
+- DO NOT reward hack by commenting out tests or fudging to make them
   pass. Our goal is working software not tests that pretend to pass.
 
-## Git Commit Requirements
-- **Green commits only**: All tests must pass (100%) before committing.
-- **No compiler warnings**: Fix all 'cargo check --all' warnings before committing
-- **User review requried**: prior to commit, the user wants to review
-  the changes and commit msg. When you are ready to commit, print a formatted commit msg to the user following the instructions below.
-- **Accurate commit summaries**: The first line of the commit message must accurately reflect the full scope of changes
-  - Don't list just 2 items if 5+ things were changed
-  - Lead with the most important/impactful changes
-  - Make the summary line broad enough to encompass all significant changes
-  - Be specific about what was fixed/added/refactored
-  - Do not mention things like 'all tests passing', 'no cargo check errors'. That is assumed.
-  - Do not claim things like 'production ready' or '98%
-    complete'. Keep it factual without judgements or claims.
-
 ## Development Commands
-- Use the standard cargo stuff. 
-- Do not use `rustc` directly. Use cargo.
+- make check, make test, make build
+- DO NOT use `rustc` directly. Use cargo
 - Use our local ./tmp/ dir instead of the system level /tmp
 - Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making
   a backup of the uncommitted changes and asking for user confirmation.
-- we have a `language-server` MCP connection to rust-analyzer. Use it
+- Never create branches.
+
+## Git Commit Requirements
+- **Green commits only**: All tests must pass (100%) before committing.
+- **No compiler warnings**: Fix all `make check` warnings before committing
+- **User review requried**: The user will prompt you explicitly when it is time to commit.
 
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.

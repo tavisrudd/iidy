@@ -32,7 +32,6 @@ $(TEST_MARKERS_DIR):
 
 # Run cargo check for fast sanity check
 check:
-	@echo "🔍 Running cargo check..."
 	cargo check --all-targets
 
 # Run tests only if source files have changed
@@ -62,6 +61,14 @@ test-force: $(TEST_MARKERS_DIR)
 
 # Run nextest only if source files have changed (alias for test-if-changed)
 test-nextest: test-if-changed
+
+# cargo build debug
+build:
+	cargo build
+
+# cargo build --release
+release:
+	cargo release
 
 # Generate coverage summary (fast)
 coverage:
@@ -113,7 +120,6 @@ clean:
 
 # Quick coverage check (for CI/development)
 coverage-quick:
-	@echo "Running quick coverage check..."
 	cargo tarpaulin --skip-clean --engine llvm --out Stdout --timeout 120 \
 		--exclude-files "src/main.rs" "src/demo.rs" "benches/*" "tests/fixtures/*" \
 		--tests --lib
