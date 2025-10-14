@@ -1,7 +1,8 @@
 # Native Anchor/Alias Support in Tree-sitter Parser
 
 **Date**: 2025-09-29
-**Status**: Planning
+**Status**: ✅ COMPLETE
+**Commit**: 5390279f03436661e32f07201f621eb2ac01ca1a
 **Goal**: Remove serde_yaml fallback and implement native YAML anchor/alias resolution in tree-sitter parser
 
 ## Problem Statement
@@ -492,10 +493,22 @@ base: &base
 
 ### Remaining Work
 
-- [ ] Fix merge key error message format (use file path only, not file:line:col)
-- [ ] Verify all 7 tests pass
-- [ ] Run full test suite to ensure no regressions
-- [ ] Optional: Add new error case tests for undefined aliases and forward references
+- [x] Fix merge key error message format (use file path only, not file:line:col)
+- [x] Verify all 7 tests pass
+- [x] Run full test suite to ensure no regressions (590 tests passing)
+- [x] Optional: Add new error case tests for undefined aliases and forward references
+
+## Implementation Complete (2025-09-29)
+
+Successfully implemented in commit 5390279f03436661e32f07201f621eb2ac01ca1a:
+
+✅ **Native anchor/alias resolution** - Single-pass HashMap-based resolution during parsing
+✅ **Removed serde_yaml fallback** - No more dual parser code paths
+✅ **Error detection** - Undefined aliases and YAML 1.1 merge keys properly detected
+✅ **Bonus: Folded scalars** - Implemented proper YAML folded scalar (>) processing
+✅ **Bonus: Chomping indicators** - All YAML 1.2 chomping indicators (|-, >-, |+, >+)
+✅ **Test coverage** - All 590 tests passing with new comprehensive tests
+✅ **No compiler warnings** - Clean build
 
 ## Migration Notes
 
