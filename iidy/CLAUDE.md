@@ -1,6 +1,7 @@
 # CLAUDE.md
+This is a Rust rewrite of `iidy` https://github.com/unbounce/iidy, a CloudFormation deployment tool. 
 
-## 🔧 CURRENT WORK CONTEXT
+## CURRENT WORK CONTEXT
 n/a
 
 ### **Architecture References**
@@ -25,12 +26,13 @@ n/a
   regressions, and no new code warnings.
 - Don't stop to brag or celebrate. Keep going until you have
   completely reached the goal and completed all tasks.
-- Use your Write tool to write files rather than echo or cat.
+- Use your Update/Write tool to write files rather than echo or cat.
 - 96% or 98% or even 99.6% tests passing is not completion of the goal. 100% is, but without reward hacks. 
 - DO NOT claim that failing tests are edge cases or not important. That is for the user to determine.
 - DO NOT create duplicate code.
 - Use the correct existing constructors rather than creating new ones.
 - When removing code, do NOT leave a comment saying it was removed. We have git.
+- DO NOT use emojis anywhere!
 
 ## Coding standards
 - Use meaningful variable and fn names and DO NOT add useless comments. If a
@@ -74,15 +76,15 @@ See [docs/SECURITY.md](docs/SECURITY.md) for comprehensive documentation on the 
 
 ## Architecture Overview
 
-This is a Rust rewrite of `iidy` https://github.com/unbounce/iidy, a CloudFormation deployment tool. The project follows a modular structure:
+The project follows a modular structure:
 
 ### Core Components
 
 - **CLI Layer** (`src/cli.rs`): Complete command-line interface using `clap`, supporting 20+ CloudFormation operations with AWS-specific options and environment-based configuration
 - **AWS Integration** (`src/aws.rs`): AWS SDK configuration and credential management 
 - **CloudFormation Operations** (`src/cfn/`): Individual modules for each CloudFormation operation (create, update, delete, describe, watch, etc.)
-- **Stack Configuration** (`src/stack_args.rs`): YAML-based stack configuration parsing with support for parameters, tags, capabilities, and other CloudFormation options
 - **Template Preprocessing** (`src/yaml/`)
+- **Output and formatting** (`src/output/`)
 
 ### Key Design Patterns
 
@@ -106,6 +108,3 @@ The `src/cfn/` modules implement AWS CloudFormation operations:
 - Yaml !Tags can't be nested directly like !Foo !Bar. You must instead do
 !Foo
   - !Bar
-
-## File Cleanup
-- When I ask you to clean up temp or .bak files always read my instructions carefully and only remove the exact pattern I specifiy. If I say *.rs.bak, don't delete *.bak!
