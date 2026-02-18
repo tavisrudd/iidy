@@ -112,10 +112,7 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::GetStackInstances(ref args) => {
-            if let Err(e) = rt.block_on(cfn::get_stack_instances::get_stack_instances(&cli, &args)) {
-                eprintln!("error getting stack instances: {e:?}");
-                std::process::exit(1);
-            }
+            cfn::get_stack_instances::get_stack_instances(args);
         }
         Commands::ListStacks(ref args) => {
             if let Err(e) = rt.block_on(cfn::list_stacks::list_stacks(&cli, &args)) {

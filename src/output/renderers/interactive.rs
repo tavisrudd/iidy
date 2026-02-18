@@ -525,7 +525,6 @@ impl InteractiveRenderer {
             
             // Other operations
             CfnOperation::EstimateCost => vec!["command_metadata", "cost_estimate"],
-            CfnOperation::GetStackInstances => vec!["stack_instances"],
             CfnOperation::TemplateApprovalRequest => vec!["command_metadata", "template_validation", "approval_request_result"],
             CfnOperation::TemplateApprovalReview => vec!["command_metadata", "approval_status", "template_diff", "confirmation", "approval_result"],
         };

@@ -317,7 +317,8 @@ pub enum Commands {
     DeleteStack(DeleteArgs),
     /// download the template of a live stack
     GetStackTemplate(GetTemplateArgs),
-    /// list the ec2 instances of a live stack
+    /// list the ec2 instances of a live stack [removed]
+    #[command(hide = true)]
     GetStackInstances(GetStackInstancesArgs),
     /// list all stacks within a region
     ListStacks(ListArgs),
@@ -376,7 +377,6 @@ impl Commands {
             Commands::WatchStack(_) => crate::cfn::CfnOperation::WatchStack,
             Commands::DescribeStackDrift(_) => crate::cfn::CfnOperation::DescribeStackDrift,
             Commands::GetStackTemplate(_) => crate::cfn::CfnOperation::GetStackTemplate,
-            Commands::GetStackInstances(_) => crate::cfn::CfnOperation::GetStackInstances,
             Commands::ListStacks(_) => crate::cfn::CfnOperation::ListStacks,
             Commands::TemplateApproval { command } => match command {
                 ApprovalCommands::Request(_) => crate::cfn::CfnOperation::TemplateApprovalRequest,

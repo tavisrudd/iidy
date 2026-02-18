@@ -28,7 +28,6 @@ clap_complete = {version="4.5.51", features=[]} # debug
 # AWS CloudFormation SDK and config helpers
 aws-config = "1"
 aws-sdk-cloudformation = "1"
-aws-sdk-ec2 = "1"
 aws-sdk-s3 = "1"
 aws-sdk-sns = "1"
 aws-sdk-ssm = "1"
