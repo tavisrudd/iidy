@@ -15,7 +15,6 @@
 - [Output Architecture](../docs/dev/output-architecture.md) -- data-driven output system deep dive
 - [AWS Configuration](../docs/dev/aws-config.md) -- credential, region, and profile resolution
 - [JS Compatibility](../docs/dev/js-compatibility.md) -- behavioral differences from iidy-js
-- [Coverage](../docs/dev/COVERAGE.md) -- test coverage reporting
 - [Codebase Guide](../docs/dev/codebase-guide.md) -- quick reference for navigating the codebase
 
 ### Architecture Decision Records (`docs/dev/adr/`)
