@@ -27,6 +27,7 @@ use serde_yaml::value::{Tag, TaggedValue};
 use std::collections::HashMap;
 
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
+use crate::yaml::errors::variable_not_found_error_with_path_tracker;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
 use crate::yaml::parsing::ast::*;
@@ -514,59 +515,12 @@ impl Resolver {
         match interpolate_handlebars_string(&s, &env_values, "split_args_resolver") {
             Ok(interpolated) => Ok(Value::String(interpolated)),
             Err(e) => {
-                // Enhanced error handling for handlebars processing (matching old resolver behavior)
+                let file_path = context.input_uri.as_deref().unwrap_or("unknown location");
                 let error_msg = e.to_string();
 
-                // Extract variable name from handlebars error if possible
-                if error_msg.contains("Variable") && error_msg.contains("not found") {
-                    // Parse the variable name from the error message
-                    let var_name = if let Some(start) = error_msg.find("Variable \"") {
-                        let start = start + 10; // Skip 'Variable "'
-                        if let Some(end) = error_msg[start..].find('"') {
-                            &error_msg[start..start + end]
-                        } else {
-                            "unknown"
-                        }
-                    } else {
-                        "unknown"
-                    };
-
-                    // Get file path and try to find the line number
-                    let file_path = if let Some(input_uri) = &context.input_uri {
-                        input_uri.clone()
-                    } else {
-                        context
-                            .input_uri
-                            .as_deref()
-                            .unwrap_or("unknown location")
-                            .to_string()
-                            .to_string()
-                    };
-
-                    let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
-                        let line_number = content
-                            .lines()
-                            .enumerate()
-                            .find_map(|(idx, line)| {
-                                if line.contains(&format!("{{{{{}}}}}", var_name)) {
-                                    Some(idx + 1)
-                                } else {
-                                    None
-                                }
-                            })
-                            .unwrap_or(0);
-
-                        if line_number > 0 {
-                            format!("{}:{}", file_path, line_number)
-                        } else {
-                            file_path
-                        }
-                    } else {
-                        file_path
-                    };
-
+                if let Some(var_name) = parse_variable_name_from_handlebars_error(&error_msg) {
+                    let location = find_template_variable_location(file_path, var_name);
                     let available_vars: Vec<String> = env_values.keys().cloned().collect();
-                    use crate::yaml::errors::variable_not_found_error_with_path_tracker;
                     return Err(variable_not_found_error_with_path_tracker(
                         var_name,
                         &location,
@@ -574,17 +528,6 @@ impl Resolver {
                         available_vars,
                     ));
                 }
-
-                // Fallback to basic error with file context
-                let file_path = if let Some(input_uri) = &context.input_uri {
-                    input_uri.clone()
-                } else {
-                    context
-                        .input_uri
-                        .as_deref()
-                        .unwrap_or("unknown location")
-                        .to_string()
-                };
 
                 Err(anyhow!(
                     "Failed to process handlebars template in {}: {}",
@@ -640,6 +583,60 @@ impl Resolver {
                 self.ast_to_value_without_preprocessing(&unknown.value)
             }
             YamlAst::ImportedDocument(doc, _) => self.ast_to_value_without_preprocessing(&doc.content),
+        }
+    }
+
+    /// Core map logic shared by resolve_map, resolve_concat_map, and resolve_merge_map
+    fn resolve_map_items(
+        &self,
+        items: &YamlAst,
+        template: &YamlAst,
+        var: Option<&str>,
+        filter: Option<&YamlAst>,
+        tag_name: &str,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        let items_result = self.resolve_ast(items, context, path_tracker)?;
+
+        match items_result {
+            Value::Sequence(seq) => {
+                let mut result = Vec::with_capacity(seq.len());
+                let var_name = var.unwrap_or("item");
+
+                for (idx, item) in seq.into_iter().enumerate() {
+                    let mut item_bindings = HashMap::with_capacity(2);
+                    item_bindings.insert(var_name.to_string(), item);
+                    item_bindings.insert(
+                        format!("{}Idx", var_name),
+                        Value::Number(serde_yaml::Number::from(idx)),
+                    );
+                    let item_context = context.with_bindings_ref(&item_bindings);
+
+                    if let Some(filter) = filter {
+                        let filter_result =
+                            self.resolve_ast(filter, &item_context, path_tracker)?;
+                        if !self.is_truthy(&filter_result) {
+                            continue;
+                        }
+                    }
+
+                    let transformed =
+                        self.resolve_ast(template, &item_context, path_tracker)?;
+                    result.push(transformed);
+                }
+
+                Ok(Value::Sequence(result))
+            }
+            _ => {
+                Err(self.create_type_mismatch_error(
+                    "sequence",
+                    &items_result,
+                    &format!("{} items field", tag_name),
+                    context,
+                    path_tracker,
+                ))
+            }
         }
     }
 }
@@ -1065,51 +1062,15 @@ impl TagResolver for Resolver {
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
-        // Use local implementations instead of private functions
-
-        let items_result = self.resolve_ast(&tag.items, context, path_tracker)?;
-
-        match items_result {
-            Value::Sequence(seq) => {
-                let mut result = Vec::with_capacity(seq.len());
-                let var_name = tag.var.as_deref().unwrap_or("item");
-
-                for (idx, item) in seq.into_iter().enumerate() {
-                    // Create new context with the current item and index bound to variables
-                    let mut item_bindings = HashMap::with_capacity(2);
-                    item_bindings.insert(var_name.to_string(), item);
-                    item_bindings.insert(
-                        format!("{}Idx", var_name),
-                        Value::Number(serde_yaml::Number::from(idx)),
-                    );
-                    let item_context = context.with_bindings_ref(&item_bindings);
-
-                    // Apply filter if present
-                    if let Some(filter) = &tag.filter {
-                        let filter_result =
-                            self.resolve_ast(filter, &item_context, path_tracker)?;
-                        if !self.is_truthy(&filter_result) {
-                            continue; // Skip this item
-                        }
-                    }
-
-                    let transformed =
-                        self.resolve_ast(&tag.template, &item_context, path_tracker)?;
-                    result.push(transformed);
-                }
-
-                Ok(Value::Sequence(result))
-            }
-            _ => {
-                Err(self.create_type_mismatch_error(
-                    "sequence",
-                    &items_result,
-                    "!$map items field",
-                    context,
-                    path_tracker,
-                ))
-            }
-        }
+        self.resolve_map_items(
+            &tag.items,
+            &tag.template,
+            tag.var.as_deref(),
+            tag.filter.as_deref(),
+            "!$map",
+            context,
+            path_tracker,
+        )
     }
 
     /// Resolve a merge tag
@@ -1367,14 +1328,12 @@ impl TagResolver for Resolver {
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
-        // ConcatMap is equivalent to Map followed by Concat
-        let map_result = self.resolve_map(
-            &MapTag {
-                items: tag.items.clone(),
-                template: tag.template.clone(),
-                var: tag.var.clone(),
-                filter: tag.filter.clone(),
-            },
+        let map_result = self.resolve_map_items(
+            &tag.items,
+            &tag.template,
+            tag.var.as_deref(),
+            tag.filter.as_deref(),
+            "!$concatMap",
             context,
             path_tracker,
         )?;
@@ -1412,14 +1371,12 @@ impl TagResolver for Resolver {
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
-        // MergeMap is equivalent to Map followed by Merge
-        let map_result = self.resolve_map(
-            &MapTag {
-                items: tag.items.clone(),
-                template: tag.template.clone(),
-                var: tag.var.clone(),
-                filter: None, // MergeMapTag doesn't have filter field
-            },
+        let map_result = self.resolve_map_items(
+            &tag.items,
+            &tag.template,
+            tag.var.as_deref(),
+            None,
+            "!$mergeMap",
             context,
             path_tracker,
         )?;
@@ -2276,6 +2233,30 @@ fn json_to_yaml_value(json_value: &serde_json::Value) -> Result<Value> {
             Ok(Value::Mapping(yaml_map))
         }
     }
+}
+
+/// Extract variable name from a handlebars strict-mode error message.
+/// The handlebars crate formats these as: `Variable "name" not found in strict mode.`
+fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
+    let marker = "Variable \"";
+    let start = error_msg.find(marker)? + marker.len();
+    let end = start + error_msg[start..].find('"')?;
+    Some(&error_msg[start..end])
+}
+
+/// Try to find which line of a source file contains a handlebars reference to `var_name`.
+/// Returns "file_path:line" if found, otherwise just "file_path".
+fn find_template_variable_location(file_path: &str, var_name: &str) -> String {
+    let needle = format!("{{{{{}}}}}", var_name);
+    if let Ok(content) = std::fs::read_to_string(file_path) {
+        if let Some(line_number) = content
+            .lines()
+            .position(|line| line.contains(&needle))
+        {
+            return format!("{}:{}", file_path, line_number + 1);
+        }
+    }
+    file_path.to_string()
 }
 
 /// Convert serde_yaml::Value to serde_json::Value for handlebars processing

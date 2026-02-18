@@ -125,21 +125,23 @@ resource template work touches the resolver.
 Replaced inline truthiness match blocks in `resolve_if` and `resolve_not`
 with calls to the existing `self.is_truthy()` method.
 
-### 5b. ConcatMap/MergeMap cloning
+### 5b. ConcatMap/MergeMap cloning -- DONE
 
-**File**: `resolver.rs:1384-1426, 1429-1483`
-**Problem**: Clone all fields from `ConcatMapTag`/`MergeMapTag` to construct
-a temporary `MapTag`.
-**Fix**: Extract the shared fields into a trait or accept the fields directly
-rather than requiring a `MapTag` struct.
+Extracted `resolve_map_items` helper on `impl Resolver` that accepts fields
+directly (items, template, var, filter, tag_name). `resolve_map` delegates
+to it; `resolve_concat_map` and `resolve_merge_map` call it directly,
+eliminating the temporary `MapTag` construction and field cloning.
 
-### 5c. Error handling string parsing
+### 5c. Error handling string parsing -- DONE
 
-**File**: `resolver.rs:520-576`
-**Problem**: Parses handlebars error messages by string searching. Brittle.
-**Fix**: Check if the handlebars crate exposes structured error types. If so,
-match on those. If not, at minimum extract the parsing into a helper function
-and add a test that will fail if the error format changes.
+Extracted `parse_variable_name_from_handlebars_error` and
+`find_template_variable_location` helpers. Fixed nonsensical duplicated
+`context.input_uri` extraction (else branch checked the same Option that
+was already None). Moved local `use` import to module level. The handlebars
+crate's `RenderError` has a public `desc` field but `interpolate_handlebars_string`
+wraps it in `anyhow!()` losing the type; changing that would be a larger
+refactor for marginal gain since the string format is stable (`strict_error`
+in handlebars uses `{:?}` formatting).
 
 ---
 
