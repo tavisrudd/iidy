@@ -45,20 +45,23 @@ example templates with snapshot tests.
 Added mapping guard to `parse_map_list_to_hash_tag`. Returns proper error
 instead of panicking on non-mapping input.
 
-### 1d. Engine: process_imported_document round-trip
+### 1d. Engine: process_imported_document cleanup -- DONE
 
-**Files**: `src/yaml/engine.rs:368-397`
-**Problem**: Re-serializes Value to string then re-parses. Destroys source
-locations, loses comments, creates new import loader that lacks parent's
-AWS config. Nested documents with S3/SSM imports silently fail.
-**Fix**: This is the hardest fix. Two options:
-- **Quick**: Pass the parent's import loader (or its AWS config) through to
-  the child preprocessor. This fixes the immediate AWS config loss.
-- **Proper**: Avoid the round-trip entirely by operating on the AST/Value
-  directly. This is a larger change but eliminates the source location loss.
+Removed the unnecessary temp `YamlPreprocessor` + bare `ProductionImportLoader::new()`
+in `process_imported_document`. The temp preprocessor existed as a workaround for a
+mutable borrow conflict when `resolve_ast_with_context` used `self.split_args_resolver`,
+but that was later simplified to call the standalone `resolve_ast()` -- making the
+workaround dead code. Now calls `resolve_ast()` directly.
 
-Start with the quick fix. The proper fix can come later or during the
-custom resource template work.
+Also removed the `resolve_ast_with_context` wrapper method itself (sole remaining caller
+in `process()` inlined to call `resolve_ast()` directly), and a stale `#[ignore]`d
+placeholder test in `tests/yaml_tests.rs` that referenced it.
+
+Note: the Value->string->AST round-trip in `process_imported_document` remains. The
+AWS config propagation issue described in the original writeup was overstated -- Phase 1
+import loading already uses the parent's loader correctly. The round-trip is wasteful
+but not a correctness bug. The proper fix (operating on AST/Value directly) can come
+during the custom resource template work.
 
 ### 1e. Engine: tag classification duplication -- DONE (655b966)
 
@@ -117,12 +120,10 @@ Fixed 3 unnecessary-braces warnings in `get_stack_instances.rs`,
 These are not blockers but reduce maintenance burden before the custom
 resource template work touches the resolver.
 
-### 5a. Truthiness duplication
+### 5a. Truthiness duplication -- DONE
 
-**File**: `resolver.rs:1032-1040, 1207-1215`
-**Problem**: `resolve_if` and `resolve_not` reimplement truthiness inline
-instead of calling `self.is_truthy()`.
-**Fix**: Replace inline match blocks with `self.is_truthy(value)` calls.
+Replaced inline truthiness match blocks in `resolve_if` and `resolve_not`
+with calls to the existing `self.is_truthy()` method.
 
 ### 5b. ConcatMap/MergeMap cloning
 

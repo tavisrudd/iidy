@@ -147,7 +147,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             context.add_scoped_variable(&key, value, source, Some(defined_at));
         }
 
-        let result = self.resolve_ast_with_context(ast, &context)?;
+        let result = resolve_ast(&ast, &context)?;
 
         // Apply YAML 1.1 compatibility for CloudFormation if enabled
         if self.yaml_11_compatibility {
@@ -389,12 +389,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                             doc_context = doc_context.with_variable(&key, value);
                         }
 
-                        // Create a temporary mutable preprocessor for resolving this document
-                        // Inherit configuration from parent preprocessor
-                        let loader = ProductionImportLoader::new();
-                        let mut temp_preprocessor =
-                            YamlPreprocessor::new(loader, self.yaml_11_compatibility);
-                        return temp_preprocessor.resolve_ast_with_context(doc_ast, &doc_context);
+                        return resolve_ast(&doc_ast, &doc_context);
                     }
                 }
 
@@ -520,16 +515,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         false
     }
 
-    /// Phase 2: Resolve AST with complete environment context
-    pub fn resolve_ast_with_context(
-        &mut self,
-        ast: YamlAst,
-        context: &TagContext,
-    ) -> Result<Value> {
-        // let mut path_tracker = PathTracker::new();
-        // self.split_args_resolver.resolve_ast(&ast, context, &mut path_tracker)
-        resolve_ast(&ast, context)
-    }
 }
 
 impl<L: ImportLoader> Default for YamlPreprocessor<L>

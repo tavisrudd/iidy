@@ -1029,17 +1029,7 @@ impl TagResolver for Resolver {
     ) -> Result<Value> {
         let condition_result = self.resolve_ast(&tag.test, context, path_tracker)?;
 
-        let is_truthy = match condition_result {
-            Value::Bool(b) => b,
-            Value::Null => false,
-            Value::String(s) => !s.is_empty(),
-            Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
-            Value::Sequence(ref seq) => !seq.is_empty(),
-            Value::Mapping(ref map) => !map.is_empty(),
-            _ => true,
-        };
-
-        if is_truthy {
+        if self.is_truthy(&condition_result) {
             self.resolve_ast(&tag.then_value, context, path_tracker)
         } else if let Some(ref else_value) = tag.else_value {
             self.resolve_ast(else_value, context, path_tracker)
@@ -1203,18 +1193,7 @@ impl TagResolver for Resolver {
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
         let expr_result = self.resolve_ast(&tag.expression, context, path_tracker)?;
-
-        let is_truthy = match expr_result {
-            Value::Bool(b) => b,
-            Value::Null => false,
-            Value::String(s) => !s.is_empty(),
-            Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
-            Value::Sequence(ref seq) => !seq.is_empty(),
-            Value::Mapping(ref map) => !map.is_empty(),
-            _ => true,
-        };
-
-        Ok(Value::Bool(!is_truthy))
+        Ok(Value::Bool(!self.is_truthy(&expr_result)))
     }
 
     /// Resolve a split tag

@@ -57,9 +57,7 @@ n/a
 
 ## Development Commands
 - make check, make test, make build
-- `make test` tracks source changes and is a noop if nothing changed. Do NOT
-  use `make clean` to force a rebuild. If you need to force tests, use
-  `make test-force`.
+- `make test` tracks source changes and is a noop if nothing changed.
 - DO NOT use `rustc` directly. Use cargo
 - Use our local ./tmp/ dir instead of the system level /tmp
 - Never `git checkout HEAD -- <file>`, `git reset`, or `git restore` without making

@@ -68,7 +68,7 @@ test-if-changed: $(TEST_MARKERS_DIR)
 			cargo nextest r && touch $(TEST_LAST_RUN_FILE); \
 		fi \
 	else \
-		echo "✅ No changes detected, skipping tests"; \
+		echo "OK: no changes since last successful test run"; \
 	fi
 
 # Force run all tests regardless of changes
