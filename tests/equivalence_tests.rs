@@ -81,7 +81,6 @@ result: !$ {}
 "#,
         var_name, yaml_value_str, var_name
     );
-    eprint!("{}", yaml_content);
     let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
 
     // Extract the "result" field from the processed YAML

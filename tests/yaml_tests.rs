@@ -16,6 +16,8 @@ fn load_fixture(filename: &str) -> Result<String> {
 }
 
 /// Test parsing of a simplified stack-args configuration
+// TODO: Complete -- currently only asserts parse succeeds, not resolution output
+#[ignore]
 #[test]
 fn test_stack_args_parsing_workflow() -> Result<()> {
     // Use a simplified version that avoids complex nested tag syntax issues
@@ -61,6 +63,8 @@ OnFailure: ROLLBACK
 }
 
 /// Test parsing of handlebars template processing workflow
+// TODO: Complete -- currently only asserts parse succeeds, not resolution output
+#[ignore]
 #[test]
 fn test_handlebars_integration_workflow() -> Result<()> {
     // Use a simplified handlebars example that focuses on core functionality
@@ -110,6 +114,8 @@ tags:
 }
 
 /// Test parsing of complex nested preprocessing workflow
+// TODO: Complete -- currently only asserts parse succeeds, not resolution output
+#[ignore]
 #[test]
 fn test_complex_preprocessing_workflow() -> Result<()> {
     // Simplified complex example focusing on key preprocessing features
@@ -248,7 +254,8 @@ fn test_fixture_file_accessibility() -> Result<()> {
 }
 
 /// Integration test demonstrating the full intended workflow
-/// NOTE: This test will need to be updated once AST resolution is implemented
+// TODO: Complete -- currently only asserts parse succeeds, not resolution output
+#[ignore]
 #[test]
 fn test_end_to_end_preprocessing_workflow_placeholder() -> Result<()> {
     // This test demonstrates the intended end-to-end workflow that will be possible

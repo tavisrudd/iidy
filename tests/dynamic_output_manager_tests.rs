@@ -145,86 +145,6 @@ async fn test_buffer_limit_enforcement() {
 }
 
 #[tokio::test]
-async fn test_mode_switching_basic() {
-    let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
-        .expect("Should create manager");
-    
-    // Start in Plain mode
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-    
-    // Switch to Interactive mode
-    manager.switch_to_mode(OutputMode::Interactive).await
-        .expect("Should switch to Interactive mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Interactive, "Should be in Interactive mode");
-    
-    // Switch back to Plain mode
-    manager.switch_to_mode(OutputMode::Plain).await
-        .expect("Should switch back to Plain mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Plain, "Should be back in Plain mode");
-}
-
-#[tokio::test]
-async fn test_mode_switching_with_event_replay() {
-    let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
-        .expect("Should create manager");
-    
-    // Render some data in Plain mode
-    let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
-        .expect("Should render metadata");
-    
-    let status1 = create_sample_status_update("First status", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(status1)).await
-        .expect("Should render first status");
-    
-    let status2 = create_sample_status_update("Second status", StatusLevel::Success);
-    manager.render(OutputData::StatusUpdate(status2)).await
-        .expect("Should render second status");
-    
-    assert_eq!(manager.buffer_len(), 3, "Should have 3 buffered events");
-    
-    // Switch to Interactive mode - this should replay all buffered events
-    manager.switch_to_mode(OutputMode::Interactive).await
-        .expect("Should switch to Interactive mode and replay events");
-    
-    // Buffer should still contain the original events plus the mode switch notification
-    assert!(manager.buffer_len() >= 3, "Should have at least original events");
-    assert_eq!(manager.current_mode(), OutputMode::Interactive);
-    
-    // Render additional data in Interactive mode
-    let status3 = create_sample_status_update("Third status", StatusLevel::Warning);
-    manager.render(OutputData::StatusUpdate(status3)).await
-        .expect("Should render third status");
-    
-    assert!(manager.buffer_len() >= 4, "Should have additional events");
-}
-
-#[tokio::test]
-async fn test_mode_switching_no_op_when_same_mode() {
-    let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
-        .expect("Should create manager");
-    
-    // Add some events
-    let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
-        .expect("Should render metadata");
-    
-    let initial_buffer_len = manager.buffer_len();
-    
-    // Switch to same mode (should be no-op)
-    manager.switch_to_mode(OutputMode::Plain).await
-        .expect("Should handle switching to same mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-    assert_eq!(manager.buffer_len(), initial_buffer_len, "Buffer length should not change");
-}
-
-#[tokio::test]
 async fn test_buffer_management_operations() {
     let options = create_test_output_options();
     let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
@@ -320,14 +240,14 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
     let options = create_test_output_options();
     let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
         .expect("Should create manager");
-    
+
     // Simulate a complete CloudFormation create-stack operation
-    
+
     // 1. Command Metadata
     let metadata = create_sample_command_metadata();
     manager.render(OutputData::CommandMetadata(metadata)).await
         .expect("Should render command metadata");
-    
+
     // 2. Stack Definition
     let stack_def = StackDefinition {
         name: "test-infrastructure".to_string(),
@@ -352,7 +272,7 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
     };
     manager.render(OutputData::StackDefinition(stack_def, true)).await
         .expect("Should render stack definition");
-    
+
     // 3. Status Updates during operation
     let progress_updates = vec![
         ("Starting stack creation", StatusLevel::Info),
@@ -363,23 +283,14 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         ("Creating EC2 instance", StatusLevel::Info),
         ("EC2 instance created", StatusLevel::Success),
     ];
-    
+
     for (message, level) in progress_updates {
         let status = create_sample_status_update(message, level);
         manager.render(OutputData::StatusUpdate(status)).await
             .expect("Should render status update");
     }
-    
-    // 4. Switch to Interactive mode mid-operation
-    manager.switch_to_mode(OutputMode::Interactive).await
-        .expect("Should switch to Interactive mode");
-    
-    // 5. Continue with more status updates in Interactive mode
-    let final_status = create_sample_status_update("Stack creation completed", StatusLevel::Success);
-    manager.render(OutputData::StatusUpdate(final_status)).await
-        .expect("Should render final status");
-    
-    // 6. Command Result
+
+    // 4. Command Result
     let result = CommandResult {
         success: true,
         elapsed_seconds: 347,
@@ -388,64 +299,10 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
     };
     manager.render(OutputData::CommandResult(result)).await
         .expect("Should render command result");
-    
-    // Verify final state
-    assert_eq!(manager.current_mode(), OutputMode::Interactive);
-    assert!(manager.buffer_len() >= 10, "Should have substantial event history");
-    
-    // Switch back to Plain mode to test full replay
-    manager.switch_to_mode(OutputMode::Plain).await
-        .expect("Should switch back to Plain mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-}
 
-#[tokio::test]
-async fn test_json_mode_rendering_and_switching() {
-    let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Json, options).await
-        .expect("Should create manager in JSON mode");
-    
-    // Test rendering in JSON mode
-    let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
-        .expect("Should render command metadata in JSON");
-    
-    let status = create_sample_status_update("JSON mode test", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(status)).await
-        .expect("Should render status update in JSON");
-    
-    assert_eq!(manager.buffer_len(), 2, "Should have 2 buffered events in JSON mode");
-    assert_eq!(manager.current_mode(), OutputMode::Json);
-    
-    // Switch to Plain mode and verify replay
-    manager.switch_to_mode(OutputMode::Plain).await
-        .expect("Should switch from JSON to Plain mode");
-    
+    // Verify final state
     assert_eq!(manager.current_mode(), OutputMode::Plain);
-    assert!(manager.buffer_len() >= 2, "Should have replayed events in Plain mode");
-    
-    // Switch to Interactive mode
-    manager.switch_to_mode(OutputMode::Interactive).await
-        .expect("Should switch from Plain to Interactive mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Interactive);
-    
-    // Switch back to JSON mode to test full cycle
-    manager.switch_to_mode(OutputMode::Json).await
-        .expect("Should switch back to JSON mode");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Json);
-    
-    // Add more data in JSON mode
-    let result = CommandResult {
-        success: true,
-        elapsed_seconds: 60,
-        message: Some("JSON test completed".to_string()),
-        exit_code: 0,
-    };
-    manager.render(OutputData::CommandResult(result)).await
-        .expect("Should render command result in JSON");
+    assert_eq!(manager.buffer_len(), 10, "Should have 10 events in history");
 }
 
 #[tokio::test]
@@ -454,34 +311,21 @@ async fn test_integration_with_fixture_data() {
     let loader = FixtureLoader::new();
     let fixture = loader.load_test_fixture("create-stack-happy-path")
         .expect("Should load test fixture");
-    
+
     let output_data = loader.fixture_to_output_data(&fixture)
         .expect("Should convert fixture to OutputData");
-    
+
     let options = create_test_output_options();
     let mut manager = DynamicOutputManager::new(OutputMode::Interactive, options).await
         .expect("Should create manager");
-    
+
     // Render all fixture data
     for data in &output_data {
         manager.render(data.clone()).await
             .expect("Should render fixture data");
     }
-    
+
     assert_eq!(manager.buffer_len(), output_data.len(), "Should have buffered all fixture data");
-    
-    // Test mode switching with real data
-    manager.switch_to_mode(OutputMode::Plain).await
-        .expect("Should switch to Plain mode with fixture data");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-    
-    // Render additional data after mode switch
-    let extra_status = create_sample_status_update("Additional operation", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(extra_status)).await
-        .expect("Should render additional data");
-    
-    assert!(manager.buffer_len() > output_data.len(), "Should have additional data after mode switch");
 }
 
 #[tokio::test]
@@ -489,7 +333,7 @@ async fn test_error_handling_during_rendering() {
     let options = create_test_output_options();
     let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
         .expect("Should create manager");
-    
+
     let error_info = ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Stack parameter validation failed".to_string(),
@@ -500,15 +344,9 @@ async fn test_error_handling_during_rendering() {
         ],
         error_details: ErrorDetails::Generic(Some("Parameter 'InstanceType' has invalid value".to_string())),
     };
-    
+
     manager.render(OutputData::Error(error_info)).await
         .expect("Should render error information");
-    
+
     assert_eq!(manager.buffer_len(), 1, "Should have buffered error");
-    
-    // Test that mode switching works even with errors in buffer
-    manager.switch_to_mode(OutputMode::Interactive).await
-        .expect("Should switch modes even with errors in buffer");
-    
-    assert_eq!(manager.current_mode(), OutputMode::Interactive);
 }

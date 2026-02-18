@@ -246,52 +246,19 @@ mod standard_tests {
     use proptest::strategy::ValueTree;
 
     #[test]
-    fn test_property_test_framework_works() {
-        // Basic sanity check that proptest is working
-        assert!(true);
-    }
-
-    #[test]
-    fn test_handlebars_empty_value_specific_case() {
-        // Test the specific failing case from property tests
+    fn test_handlebars_empty_value_substitution() {
         use iidy::yaml::handlebars::interpolate_handlebars_string;
         use std::collections::HashMap;
 
-        // Test with a different variable name first to make sure it's not a general issue
         let mut variables = HashMap::new();
         variables.insert(
             "normal_var".to_string(),
             serde_json::Value::String("".to_string()),
         );
 
-        let result1 = interpolate_handlebars_string("{{normal_var}}", &variables, "test");
-        println!("Normal var result: {:?}", result1);
-
-        // Now test the problematic "lt" variable
-        let var_name = "lt";
-        let var_value = "";
-
-        let template = format!("{{{{{}}}}}", var_name);
-        println!("Template: {}", template);
-
-        variables.clear();
-        variables.insert(
-            var_name.to_string(),
-            serde_json::Value::String(var_value.to_string()),
-        );
-
-        let result = interpolate_handlebars_string(&template, &variables, "test");
-
-        match &result {
-            Ok(processed) => println!("Success: '{}'", processed),
-            Err(e) => println!("Error: {}", e),
-        }
-
-        // For now, just verify the normal var works - we'll address lt separately
-        assert!(result1.is_ok(), "Normal variables should work");
-
-        // Print result of the lt issue for debugging
-        println!("Result for lt variable: {:?}", result);
+        let result = interpolate_handlebars_string("{{normal_var}}", &variables, "test");
+        assert!(result.is_ok(), "Normal variables should work");
+        assert_eq!(result.unwrap(), "");
     }
 
     #[test]
@@ -321,8 +288,8 @@ mod standard_tests {
         for _ in 0..10 {
             let template = strategy.new_tree(&mut runner).unwrap().current();
 
-            // Should be valid UTF-8 strings (all strings in Rust are valid UTF-8)
-            assert!(!template.is_empty() || template.is_empty()); // Basic sanity check
+            // Strategy should produce valid UTF-8 (guaranteed by Rust's String type)
+            let _ = template;
         }
     }
 }

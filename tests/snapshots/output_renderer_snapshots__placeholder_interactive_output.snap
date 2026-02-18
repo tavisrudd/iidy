@@ -1,5 +1,0 @@
----
-source: tests/output_renderer_snapshots.rs
-expression: "\"Interactive renderer with colors would be captured here\""
----
-Interactive renderer with colors would be captured here

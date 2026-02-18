@@ -10,7 +10,6 @@ use iidy::output::fixtures::FixtureLoader;
 use iidy::output::renderers::interactive::{InteractiveRenderer, InteractiveOptions};
 use iidy::output::renderer::OutputRenderer;
 use iidy::output::theme::IidyTheme;
-use insta::{assert_snapshot, assert_debug_snapshot};
 use chrono::Utc;
 use std::collections::HashMap;
 use tokio;
@@ -451,30 +450,3 @@ async fn test_fixture_integration() {
     renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render from fixture");
 }
 
-// Placeholder tests for future snapshot validation
-// These will be implemented when we have actual output capture working
-
-#[tokio::test]
-async fn test_plain_renderer_output_snapshot() {
-    // TODO: Capture actual renderer output and validate with insta snapshots
-    // This requires implementing proper stdout capture or output redirection
-    
-    // For now, just verify the test framework is working
-    assert_snapshot!("placeholder_plain_output", "Plain renderer output would be captured here");
-}
-
-#[tokio::test]
-async fn test_interactive_renderer_color_snapshot() {
-    // TODO: Capture colored output and validate ANSI codes with snapshots
-    // This will include testing exact iidy-js color matching
-    
-    assert_snapshot!("placeholder_interactive_output", "Interactive renderer with colors would be captured here");
-}
-
-#[tokio::test]
-async fn test_fixture_expected_output_matching() {
-    // TODO: Load fixture expected outputs and compare against actual renderer output
-    // This will enable pixel-perfect validation against the fixture specification
-    
-    assert_debug_snapshot!("placeholder_fixture_comparison", vec!["Expected output comparison would happen here"]);
-}
