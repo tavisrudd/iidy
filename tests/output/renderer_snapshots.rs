@@ -14,8 +14,6 @@ use chrono::Utc;
 use std::collections::HashMap;
 use tokio;
 
-mod output_capture_utils;
-
 /// Test helper to create consistent options for plain mode testing
 fn create_test_plain_options() -> InteractiveOptions {
     InteractiveOptions {

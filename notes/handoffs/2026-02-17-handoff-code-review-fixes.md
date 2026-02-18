@@ -84,25 +84,37 @@ All existing tests pass unchanged.
 Deleted debug-only test files, tautology tests, keyboard switching tests,
 and leftover debug output. Test count went from 608 to 576.
 
-### 3a-followup. Consolidate integration test files to reduce link pressure
+### 3a-followup. Consolidate integration test files to reduce link pressure -- DONE
 
-Still TODO. 27 integration test files in `tests/` = 27 separate binaries
-(down from 33 after dead test cleanup). Each file is a separate crate that
-gets linked independently.
+Consolidated 27 integration test files into 5 test binaries (7 total
+including lib + bin doc tests). Used `tests/<group>/main.rs` coordinator
+pattern (not `tests/<group>.rs`) because crate root module resolution
+looks in the parent directory, not a child directory named after the crate.
 
-**Approach**: Group by domain into a few multi-module test crates:
-- `tests/yaml.rs` with `mod` declarations pulling in yaml_*.rs files
-- `tests/output.rs` grouping output/renderer tests
-- `tests/cfn.rs` grouping cfn-related tests
-- Keep snapshot tests separate (they have different update workflows)
+| What | Before | After |
+|---|---|---|
+| Test binaries | 29 | 7 |
+| Integration test binaries | 27 | 5 |
+| Tests listed | 575 | 570 |
+| Tests passing | 575 | 569 run + 3 skipped |
+| Warnings | 0 | 0 |
 
-**Notes**:
-- `output_capture_utils.rs` is a shared helper (not a test file itself),
-  used by output renderer tests. It should become a module, not a test crate.
-- `cargo nextest` discovers `#[test]` functions regardless of file structure,
-  so consolidation won't affect test selection or filtering.
-- The main win is link time: fewer binaries = less linker pressure.
-  Build time for compilation itself is unchanged (same amount of code).
+The 5-test drop is from `output_capture_utils.rs` tests being double-counted:
+it was both a standalone binary AND imported via dead `mod output_capture_utils;`
+in `output_renderer_snapshots.rs`. No tests were actually lost.
+
+**Structure:**
+- `tests/yaml/main.rs` -- coordinator for 15 yaml test modules
+- `tests/output/main.rs` -- coordinator for 9 output test modules
+- `tests/error_examples_snapshots.rs` -- standalone (auto-discovery, 46 snapshots)
+- `tests/example_templates_snapshots.rs` -- standalone (auto-discovery, 42 snapshots)
+- `tests/template_loading_integration_tests.rs` -- standalone (sole CFN test)
+
+**Also cleaned up:**
+- Deleted dead `tests/yaml_preprocessing/` directory (5 files, never compiled)
+- Removed dead `mod output_capture_utils;` import from renderer snapshots
+- Removed unused `get_load_contexts` method surfaced by consolidation
+- Moved and renamed 13 insta snapshot files to match new module paths
 
 ---
 

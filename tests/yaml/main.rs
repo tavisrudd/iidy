@@ -1,0 +1,15 @@
+mod anchors_aliases;
+mod array_syntax;
+mod boolean_compatibility;
+mod enhanced_error_reporting;
+mod equivalence;
+mod error_reporting;
+mod input_uri_traversal;
+mod preprocessing_integration;
+mod preprocessing_typo_detection;
+mod proof_of_fix;
+mod property;
+mod scalar_formats;
+mod spec_detection;
+mod variable_origin;
+mod workflow;

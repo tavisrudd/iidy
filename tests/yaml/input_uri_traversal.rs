@@ -466,10 +466,6 @@ reflection: "{{myself.data}}"
     pub fn base_path(&self) -> std::path::PathBuf {
         self.temp_dir.path().to_path_buf()
     }
-
-    pub fn get_load_contexts(&self) -> Vec<(String, String)> {
-        self.load_contexts.lock().unwrap().clone()
-    }
 }
 
 #[async_trait]

@@ -1,0 +1,9 @@
+mod capture_utils;
+mod dynamic_manager;
+mod fixture_validation;
+mod json_renderer;
+mod pixel_perfect;
+mod renderer_snapshots;
+mod stack_events_title;
+mod stack_exports_rendering;
+mod unit;
