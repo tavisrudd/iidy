@@ -50,7 +50,7 @@ pub trait OutputRenderer: Send + Sync {
 
 ### InteractiveRenderer
 
-`src/output/renderers/interactive.rs` (~2000 lines). Handles:
+`src/output/renderers/interactive.rs`. Handles:
 - Section headings with consistent formatting
 - Spinners with timing updates (via `indicatif`)
 - Color theming through `IidyTheme` (`src/output/theme.rs`)

@@ -27,10 +27,11 @@ This is the most complex and most complete subsystem.
 
 Two-phase pipeline in `engine.rs`:
 
-**Phase 1** (`load_imports_and_defs`): Parse document, process `$defs` with
-let* semantics (sequential -- each def can reference prior defs), load
-`$imports` with handlebars interpolation on paths, recursively preprocess
-imported documents.
+**Phase 1** (`load_imports_and_defs`): Parse document, process `$defs`
+sequentially (each def can reference prior defs; see
+[js-compatibility.md](js-compatibility.md) for how this differs from JS),
+load `$imports` with handlebars interpolation on paths, recursively
+preprocess imported documents.
 
 **Phase 2** (`resolution/resolver.rs`): Walk the `YamlAst`, resolve all
 preprocessing tags and `{{ }}` handlebars strings using the environment built
@@ -61,17 +62,15 @@ yaml/
 
 ### Preprocessing Tags (PreprocessingTag enum in ast.rs)
 
-All 20 tags: `!$` / `!$include`, `!$if`, `!$let`, `!$map`, `!$merge`,
-`!$concat`, `!$eq`, `!$not`, `!$split`, `!$join`, `!$concatMap`,
-`!$mergeMap`, `!$mapListToHash`, `!$mapValues`, `!$groupBy`, `!$fromPairs`,
-`!$toYamlString`, `!$parseYaml`, `!$toJsonString`, `!$parseJson`, `!$escape`
+`!$` / `!$include`, `!$if`, `!$map`, ... (20+ tags). See
+[architecture.md](architecture.md) for the full listing.
 
 NOT yet implemented: `!$expand` (template expansion with `$params`)
 
 ### Import Types (ImportType enum in imports/mod.rs)
 
-file, env, git, random, filehash, filehash-base64, s3, http/https, cfn, ssm,
-ssm-path
+`file`, `env`, `s3`, ... (11 types). See
+[architecture.md](architecture.md) for the full listing.
 
 ### CloudFormation Tag Pass-through
 
@@ -129,7 +128,7 @@ output/
   color.rs             -- theme system (dark/light/high-contrast)
   aws_conversion.rs    -- AWS SDK types -> output data types
   renderers/
-    interactive.rs     -- primary renderer (~2000 lines), spinners, ANSI, sections
+    interactive.rs     -- primary renderer, spinners, ANSI, sections
     json.rs            -- JSONL output, one object per event
   fixtures/            -- test fixture loading
   test_data.rs         -- sample data for tests
@@ -146,17 +145,17 @@ Plain mode = InteractiveRenderer with spinners/colors/ANSI disabled.
 
 ### Test Infrastructure
 
-- `tests/` -- 33 integration test files
-- `tests/snapshots/` -- 100+ insta snapshots
+- `tests/` -- integration test files
+- `tests/snapshots/` -- insta snapshots
 - `tests/fixtures/` -- YAML fixture data
 - `example-templates/` -- auto-discovered by `example_templates_snapshots.rs`
-- `#[cfg(test)]` modules throughout src/ -- 62 in-source test modules
+- `#[cfg(test)]` modules throughout src/
 
 ### Running Tests
 
 ```
-make check    -- cargo check + clippy (fast, ~300ms)
-make test     -- full test suite (608 tests, ~2 min)
+make check    -- cargo check + clippy (fast)
+make test     -- full test suite
 make build    -- release build
 ```
 
@@ -168,70 +167,15 @@ snapshot-tested.
 
 ## iidy-js Reference (`../iidy-js/`)
 
-### Key Source Files
+Key intentional improvements over iidy-js:
+- **`$defs` sequential resolution** -- each def can reference prior defs (JS evaluates in parallel)
+- **Source-location-aware errors** -- line numbers and context snippets
+- **Tree-sitter parser** -- better error recovery than `js-yaml`
 
-```
-src/
-  main.ts              -- yargs CLI setup, command dispatch
-  preprocess/
-    index.ts           -- loadImports, transformPostImports, import loaders,
-                          validateTemplateParameter, $param type, GlobalAccumulator
-    visitor.ts         -- Visitor class: all tag resolution, custom resource
-                          template expansion, ref rewriting
-  yaml.ts              -- YAML tag class definitions ($include, $expand, etc.)
-  cfn/                 -- CFN operations
-  params/index.ts      -- SSM param CRUD
-  render.ts            -- render command (has directory support, stack-args detection)
-```
+The main remaining feature gap is **custom resource templates** (`!$expand`,
+`$params`, ref rewriting, `GlobalAccumulator`). See
+`notes/2026-02-17-project-review-and-next-steps.md` for full design analysis
+and `notes/2026-02-17-custom-resource-templates-rfc.md` for the RFC.
 
-### Differences from iidy-js
-
-**Intentional improvements:**
-- **`$defs` semantics**: JS copies raw (parallel), Rust resolves sequentially
-  (let*). Strictly more powerful and backward-compatible.
-- **Error messages**: Source-location-aware with line numbers and context.
-- **Tree-sitter parser**: Better error recovery and source location tracking.
-- **Handlebars**: Curated set of ~25 helpers vs JS's full `handlebars-helpers`
-  npm package. Covers helpers actually used in practice.
-
-**Not yet implemented:**
-- **`!$string`**: JS alias for `!$toYamlString`, not registered in Rust.
-- **`!$expand`**: JS has it, Rust does not.
-- **Custom resource templates**: JS has full system, Rust has none of it.
-- **`$envValues` custom values**: Runtime injection works, user-defined values not yet supported.
-
-**Previously incompatible, now fixed to match JS:**
-- **`!$split`**: Now uses array format `[delimiter, string]` matching JS.
-- **`!$let`**: Now uses flat format with `in` key matching JS.
-
-## Custom Resource Template Feature (NOT YET IMPLEMENTED)
-
-This is the main remaining feature. See
-`notes/2026-02-17-project-review-and-next-steps.md` for full design analysis.
-
-### Concepts
-
-- **`$params`**: array of parameter definitions on a template document
-- **Custom resource type**: resource whose `Type` matches an imported template name
-- **`Prefix`**: defaults to the resource's logical name, drives ref rewriting
-- **`NamePrefix`**: caller override for the prefix
-- **`Properties`**: maps to `$params` on the template
-- **`Overrides`**: deep-merged into template before expansion
-- **`$global`**: flag to suppress name-prefixing for shared/singleton items
-- **`$globalRefs`**: set of names exempt from ref rewriting
-- **`GlobalAccumulator`**: collects Parameters/Conditions/Mappings/Outputs from
-  templates, merges into root document after all Resources processed
-- **Ref rewriting**: `!Ref`, `!GetAtt`, `!Sub`, `Condition`, `DependsOn`
-  get Prefix prepended (unless `$global` or `AWS:` prefixed)
-- **`!$expand`**: simpler non-CFN expansion (no prefixing, no promotion)
-
-### JS Source Locations
-
-- Template expansion: `../iidy-js/src/preprocess/visitor.ts:747-827`
-- Global section promotion: `visitor.ts:829-853`
-- Ref rewriting: `visitor.ts:456-547`
-- `$params` validation: `../iidy-js/src/preprocess/index.ts:551-642`
-- `$param` type: `index.ts:92-99`
-- GlobalAccumulator init + merge: `index.ts:650-706`
-- `!$expand` tag: `visitor.ts:182-208`
-- Custom resource detection: `visitor.ts:686-744`
+For the full compatibility breakdown, see
+[js-compatibility.md](js-compatibility.md).

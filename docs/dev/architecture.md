@@ -50,8 +50,9 @@ Orchestrated by `src/yaml/engine.rs`:
 
 **Phase 1** (`load_imports_and_defs`): Parse the document with the
 tree-sitter parser (`src/yaml/parsing/parser.rs`), extract `$defs` and
-`$imports` from the document header, resolve `$defs` with let* semantics
-(each definition can reference prior definitions), load imports with
+`$imports` from the document header, resolve `$defs` sequentially (each definition can reference prior
+definitions; see [js-compatibility.md](js-compatibility.md) for how this
+differs from JS), load imports with
 Handlebars interpolation on paths, and recursively preprocess imported
 documents.
 
@@ -66,11 +67,8 @@ environment built in Phase 1.
   CloudFormation intrinsic function tags. Carries `SrcMeta` for error
   reporting with source locations.
 
-- **`PreprocessingTag`** (`ast.rs`): Enum with variants for all 20+
-  preprocessing tags (`Include`, `If`, `Let`, `Map`, `Merge`, `Concat`,
-  `Eq`, `Not`, `Split`, `Join`, `ConcatMap`, `MergeMap`, `MapListToHash`,
-  `MapValues`, `GroupBy`, `FromPairs`, `ToYamlString`, `ParseYaml`,
-  `ToJsonString`, `ParseJson`, `Escape`).
+- **`PreprocessingTag`** (`ast.rs`): Enum with variants for all
+  preprocessing tags (`Include`, `If`, `Map`, `Merge`, `Concat`, ...).
 
 - **`TagContext`**: Carries the current environment (resolved `$defs` and
   `$imports`), base path for relative imports, and the processing
@@ -81,9 +79,8 @@ environment built in Phase 1.
 
 ### Import system
 
-The `ImportType` enum in `src/yaml/imports/mod.rs` supports: `file`, `env`,
-`git`, `random`, `filehash`, `filehash-base64`, `s3`, `http`/`https`,
-`cfn`, `ssm`, `ssm-path`. Each type has a dedicated loader in
+The `ImportType` enum in `src/yaml/imports/mod.rs` supports `file`, `env`,
+`s3`, `ssm`, and several others. Each type has a loader in
 `src/yaml/imports/loaders/`.
 
 Remote templates (S3, HTTP) are restricted from accessing local import types
@@ -164,8 +161,8 @@ carries a payload struct with the data needed for rendering.
 `OutputRenderer` trait in `src/output/renderer.rs` with
 `render_output_data()` as the core method.
 
-- **InteractiveRenderer** (`src/output/renderers/interactive.rs`, ~2000
-  lines): Rich colored output with spinners, section headings, ANSI
+- **InteractiveRenderer** (`src/output/renderers/interactive.rs`): Rich
+  colored output with spinners, section headings, ANSI
   formatting. Handles section sequencing, out-of-order data buffering,
   and live event streaming.
 
@@ -196,17 +193,17 @@ For the full output system design, see
 
 ### Test infrastructure
 
-- 33 integration test files in `tests/`
-- 100+ insta snapshots in `tests/snapshots/`
+- Integration test files in `tests/`
+- Insta snapshots in `tests/snapshots/`
 - YAML fixtures in `tests/fixtures/`
-- 46 in-source `#[cfg(test)]` modules throughout `src/`
+- In-source `#[cfg(test)]` modules throughout `src/`
 - `example-templates/` auto-discovered by `tests/example_templates_snapshots.rs`
 
 ### Running tests
 
 ```
 make check    -- cargo check + clippy (~300ms)
-make test     -- full suite (~400+ tests, ~2 min)
+make test     -- full suite
 make build    -- release build
 ```
 
@@ -229,4 +226,4 @@ converted to output data types via `src/output/aws_conversion.rs`.
 
 Criterion benchmarks in `benches/` measure handlebars template performance,
 tag resolver overhead, and end-to-end preprocessing pipeline throughput.
-See `make coverage-*` targets for coverage reporting.
+See `Makefile` for coverage targets.
