@@ -533,7 +533,7 @@ mod tests {
         use std::io::Write;
         use crate::aws::AwsSettings;
         
-        let yaml = "StackName: test\nTemplate: foo.yaml\n";
+        let yaml = "StackName: test\nTemplate: foo.yaml\nRegion: us-east-1\n";
         
         // Create temporary file
         let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
