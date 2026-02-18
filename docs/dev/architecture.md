@@ -29,7 +29,7 @@ CLI (src/cli.rs)
 3. **YAML preprocessing**: The stack-args file and the CloudFormation
    template are both preprocessed through the YAML engine, resolving
    `$imports`, `$defs`, preprocessing tags (`!$map`, `!$if`, etc.), and
-   Handlebars `{{ }}` expressions. See [yaml-preprocessing.md](yaml-preprocessing.md).
+   Handlebars `{{ }}` expressions. See [yaml-preprocessing.md](../yaml-preprocessing.md).
 
 4. **CFN operations**: AWS API calls are orchestrated by command handlers
    in `src/cfn/`. Each handler emits `OutputData` variants to a
@@ -88,7 +88,7 @@ The `ImportType` enum in `src/yaml/imports/mod.rs` supports: `file`, `env`,
 
 Remote templates (S3, HTTP) are restricted from accessing local import types
 (file, env, git, filehash) to prevent information disclosure. See
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](../SECURITY.md).
 
 ### Handlebars integration
 

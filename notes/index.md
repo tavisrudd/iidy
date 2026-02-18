@@ -1,22 +1,27 @@
 # Project Notes
 
-## Developer Documentation
+## Documentation
 
-Permanent documentation lives in [`docs/`](../docs/):
+`docs/` is for user-facing documentation. `docs/dev/` is for internal developer and agent reference.
 
-- [Architecture](../docs/architecture.md) -- system overview, pipeline, subsystem descriptions
-- [Output Architecture](../docs/output-architecture.md) -- data-driven output system deep dive
+### User-Facing (`docs/`)
+
 - [YAML Preprocessing](../docs/yaml-preprocessing.md) -- complete tag reference with examples
-- [AWS Configuration](../docs/aws-config.md) -- credential, region, and profile resolution
-- [JS Compatibility](../docs/js-compatibility.md) -- behavioral differences from iidy-js
 - [Security](../docs/SECURITY.md) -- import system security model
-- [Coverage](../docs/COVERAGE.md) -- test coverage reporting
 
-### Architecture Decision Records
+### Developer/Internal (`docs/dev/`)
 
-- [ADR-001: Output Sequencing](../docs/adr/001-output-sequencing.md)
-- [ADR-002: Data-Driven Output](../docs/adr/002-data-driven-output.md)
-- [ADR-003: Template Approval](../docs/adr/003-template-approval.md)
+- [Architecture](../docs/dev/architecture.md) -- system overview, pipeline, subsystem descriptions
+- [Output Architecture](../docs/dev/output-architecture.md) -- data-driven output system deep dive
+- [AWS Configuration](../docs/dev/aws-config.md) -- credential, region, and profile resolution
+- [JS Compatibility](../docs/dev/js-compatibility.md) -- behavioral differences from iidy-js
+- [Coverage](../docs/dev/COVERAGE.md) -- test coverage reporting
+
+### Architecture Decision Records (`docs/dev/adr/`)
+
+- [ADR-001: Output Sequencing](../docs/dev/adr/001-output-sequencing.md)
+- [ADR-002: Data-Driven Output](../docs/dev/adr/002-data-driven-output.md)
+- [ADR-003: Template Approval](../docs/dev/adr/003-template-approval.md)
 
 ## Active Notes
 

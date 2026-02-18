@@ -4,7 +4,7 @@ iidy's YAML preprocessing engine transforms YAML documents through a set
 of custom tags and an import system. It is used for both stack-args files
 and CloudFormation templates.
 
-For the engine architecture, see [architecture.md](architecture.md).
+For the engine architecture, see [dev/architecture.md](dev/architecture.md).
 For import security restrictions, see [SECURITY.md](SECURITY.md).
 
 ## Document structure
