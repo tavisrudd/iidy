@@ -47,6 +47,10 @@ correctly rejects unknown fields via `validate_tag_fields`. Misspelled keys
 like `itesm:` are silently dropped.
 **Fix**: Add `validate_tag_fields` calls to `parse_map_values_tag` and
 `parse_if_tag`, matching `parse_map_tag`'s behavior.
+**TODO**: The "unexpected field" error prefix says `Tag error:` but doesn't
+name the specific tag (e.g. `!$if` or `!$mapValues`). The tag name IS visible
+in the "example:" block below, but it should also appear in the error prefix
+line for scannability, e.g. `Tag error in !$if: unexpected field 'default'`.
 
 ### 1c. Parser: unwrap panic on non-Mapping input
 

@@ -1,0 +1,18 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: unexpected field 'default'
+
+Valid fields are: test, then, else (optional) @ example-templates/errors/tag-if-unknown-field.yaml:9:3 (errno: ERR_4002)
+  -> check field spelling and tag documentation
+
+   8 |   else: "no"
+   9 |   default: "maybe"
+
+   example:
+   !$if
+     test: !$eq ["prod", "{{env}}"]
+     then: "production"
+     else: "development"
+   For more info, run: iidy explain ERR_4002

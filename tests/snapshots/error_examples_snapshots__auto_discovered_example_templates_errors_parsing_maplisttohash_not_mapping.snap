@@ -1,0 +1,16 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: must be a mapping with 'items' and 'template' fields @ example-templates/errors/parsing-maplisttohash-not-mapping.yaml:2:9 (errno: ERR_4002)
+  -> use format: {items: array, template: mapping_template}
+
+   1 | # !$mapListToHash with string instead of mapping
+   2 | result: !$mapListToHash "invalid"
+
+   example:
+   !$mapListToHash
+     items: [{"key": "a", "value": 1}, {"key": "b", "value": 2}]
+     keyPath: key
+     valuePath: value
+   For more info, run: iidy explain ERR_4002

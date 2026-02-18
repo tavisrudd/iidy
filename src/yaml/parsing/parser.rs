@@ -1324,7 +1324,7 @@ impl YamlParser {
                 }
             }
 
-            // Check for unexpected fields
+            // Check for unexpected fields, using the field's own position for errors
             let mut all_valid_fields = std::collections::HashSet::with_capacity(required_fields.len() + optional_fields.len());
             for &field in required_fields {
                 all_valid_fields.insert(field);
@@ -1333,28 +1333,30 @@ impl YamlParser {
                 all_valid_fields.insert(field);
             }
 
-            for present_field in &present_fields {
-                if !all_valid_fields.contains(present_field) {
-                    let valid_fields_str = {
-                        let mut fields = Vec::with_capacity(required_fields.len() + optional_fields.len());
-                        for &field in required_fields {
-                            fields.push(field.to_string());
-                        }
-                        for &field in optional_fields {
-                            fields.push(format!("{} (optional)", field));
-                        }
-                        fields.join(", ")
-                    };
+            for (key, _) in pairs {
+                if let YamlAst::PlainString(key_str, key_meta) = key {
+                    if !all_valid_fields.contains(key_str.as_str()) {
+                        let valid_fields_str = {
+                            let mut fields = Vec::with_capacity(required_fields.len() + optional_fields.len());
+                            for &field in required_fields {
+                                fields.push(field.to_string());
+                            }
+                            for &field in optional_fields {
+                                fields.push(format!("{} (optional)", field));
+                            }
+                            fields.join(", ")
+                        };
 
-                    return Err(self.tag_error(
-                        tag_name,
-                        &format!(
-                            "unexpected field '{}'\n\nValid fields are: {}",
-                            present_field, valid_fields_str
-                        ),
-                        Some("check field spelling and tag documentation"),
-                        &meta,
-                    ));
+                        return Err(self.tag_error(
+                            tag_name,
+                            &format!(
+                                "unexpected field '{}'\n\nValid fields are: {}",
+                                key_str, valid_fields_str
+                            ),
+                            Some("check field spelling and tag documentation"),
+                            key_meta,
+                        ));
+                    }
                 }
             }
         }
@@ -1367,12 +1369,19 @@ impl YamlParser {
         content: YamlAst,
         meta: &SrcMeta,
     ) -> ParseResult<PreprocessingTag> {
-        // Fast path for simple cases - extract fields directly without validation
+        self.validate_tag_fields(
+            &content,
+            "!$mapValues",
+            &["items", "template"],
+            &["var"],
+            meta,
+        )?;
+
         if let YamlAst::Mapping(ref pairs, _) = content {
             let mut items = None;
             let mut template = None;
             let mut var = None;
-            
+
             for (key, value) in pairs {
                 if let YamlAst::PlainString(key_str, _) = key {
                     match key_str.as_str() {
@@ -1385,14 +1394,14 @@ impl YamlParser {
                                 None
                             };
                         }
-                        _ => {} // Ignore unknown fields for performance
+                        _ => {}
                     }
                 }
             }
-            
+
             let items = items.ok_or_else(|| self.missing_field_error("!$mapValues", "items", &meta))?;
             let template = template.ok_or_else(|| self.missing_field_error("!$mapValues", "template", &meta))?;
-            
+
             return Ok(PreprocessingTag::MapValues(MapValuesTag {
                 items: Box::new(items),
                 template: Box::new(template),
@@ -1518,7 +1527,15 @@ impl YamlParser {
         content: YamlAst,
         meta: &SrcMeta,
     ) -> ParseResult<PreprocessingTag> {
-        // Validate fields first
+        if !matches!(content, YamlAst::Mapping(_, _)) {
+            return Err(self.tag_error(
+                "!$mapListToHash",
+                "must be a mapping with 'items' and 'template' fields",
+                Some("use format: {items: array, template: mapping_template}"),
+                meta,
+            ));
+        }
+
         self.validate_tag_fields(
             &content,
             "!$mapListToHash",
@@ -1527,11 +1544,10 @@ impl YamlParser {
             meta,
         )?;
 
-        let items = self.extract_field_from_mapping(&content, "items").unwrap(); // Safe due to validation
-
+        let items = self.extract_field_from_mapping(&content, "items").unwrap();
         let template = self
             .extract_field_from_mapping(&content, "template")
-            .unwrap(); // Safe due to validation
+            .unwrap();
 
         let var = self
             .extract_field_from_mapping(&content, "var")
@@ -1598,26 +1614,33 @@ impl YamlParser {
 
     /// Parse If tag content
     fn parse_if_tag(&self, content: YamlAst, meta: &SrcMeta) -> ParseResult<PreprocessingTag> {
-        // Fast path for simple cases - extract fields directly
+        self.validate_tag_fields(
+            &content,
+            "!$if",
+            &["test", "then"],
+            &["else"],
+            meta,
+        )?;
+
         if let YamlAst::Mapping(ref pairs, _) = content {
             let mut test = None;
             let mut then_value = None;
             let mut else_value = None;
-            
+
             for (key, value) in pairs {
                 if let YamlAst::PlainString(key_str, _) = key {
                     match key_str.as_str() {
                         "test" => test = Some(value.clone()),
                         "then" => then_value = Some(value.clone()),
                         "else" => else_value = Some(value.clone()),
-                        _ => {} // Ignore unknown fields for performance
+                        _ => {}
                     }
                 }
             }
-            
+
             let test = test.ok_or_else(|| self.missing_field_error("!$if", "test", &meta))?;
             let then_value = then_value.ok_or_else(|| self.missing_field_error("!$if", "then", &meta))?;
-            
+
             return Ok(PreprocessingTag::If(IfTag {
                 test: Box::new(test),
                 then_value: Box::new(then_value),
