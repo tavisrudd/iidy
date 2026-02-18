@@ -1,6 +1,6 @@
 # iidy Development Makefile
 
-.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint
+.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint check-fast
 
 # Test markers directory
 TEST_MARKERS_DIR := .make-markers
@@ -16,6 +16,7 @@ ALL_TRACKED_FILES := $(RUST_FILES) $(TOML_FILES) $(TEST_FILES)
 # Default target
 help:
 	@echo "Available targets:"
+	@echo "  check-fast     - Fast check via rust-analyzer (no cargo rebuild)"
 	@echo "  check          - Run cargo check for lib, bins, tests, and benches"
 	@echo "  test           - Run tests only if source files changed"
 	@echo "  test-force     - Force run all tests regardless of changes"
@@ -33,7 +34,11 @@ help:
 $(TEST_MARKERS_DIR):
 	@mkdir -p $(TEST_MARKERS_DIR)
 
-# Run cargo check for fast sanity check
+# Fast check via rust-analyzer through ra-multiplex (no cargo rebuild)
+check-fast:
+	@python3 scripts/ra-check.py
+
+# Run cargo check for full sanity check (rebuilds deps on profile switch)
 check:
 	cargo check --all-targets
 
