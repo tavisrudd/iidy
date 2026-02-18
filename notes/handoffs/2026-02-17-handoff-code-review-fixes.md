@@ -113,6 +113,16 @@ the same pattern -- if so, delete those too.
 
 Remove corresponding entries from any test configuration.
 
+### 3a-followup. Consolidate integration test files to reduce link pressure
+
+33 integration test files = 33 separate binaries, each linking the full crate
+with all AWS SDK deps (~200MB+ each). On a 24-core/27GB machine this causes
+OOM during parallel linking (even with mold). Currently mitigated by
+`jobs = 12` in `.cargo/config.toml`, but the real fix is fewer test binaries.
+Group related integration tests into fewer files (e.g. all tree_sitter_* into
+one, all yaml_* into one, all output_* into one). This also speeds up clean
+builds significantly since each binary pays the full link cost.
+
 ### 3b. Delete tautology tests
 
 - `tests/property_tests.rs:325` -- `assert!(!x.is_empty() || x.is_empty())`
