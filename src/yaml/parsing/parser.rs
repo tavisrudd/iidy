@@ -820,30 +820,7 @@ impl YamlParser {
                 YamlAst::Null(meta.clone())
             };
 
-            // Classify the tag type based on naming convention - optimize the check
-            if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
-                // Preprocessing tag: !$include, !$if, !$let, etc.
-                match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
-                    Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta.clone())),
-                    Err(e) => {
-                        // All preprocessing tag errors should propagate (including unknown tags)
-                        // This ensures typos in tag names are caught
-                        Err(e)
-                    }
-                }
-            } else if let Some(cf_tag) =
-                CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
-            {
-                // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
-                Ok(YamlAst::CloudFormationTag(cf_tag, meta.clone()))
-            } else {
-                // Unknown tag
-                let unknown_tag = UnknownTag {
-                    tag: tag_name.to_string(),
-                    value: Box::new(tagged_content),
-                };
-                Ok(YamlAst::UnknownYamlTag(unknown_tag, meta.clone()))
-            }
+            self.classify_tag(tag_name, tagged_content, meta.clone())
         } else if let Some(content) = content_node {
             // No tag, just regular block content
             self.build_ast(content, src, uri, anchor_map)
@@ -906,30 +883,7 @@ impl YamlParser {
                 YamlAst::Null(meta.clone())
             };
 
-            // Classify the tag type based on naming convention - optimize the check
-            if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
-                // Preprocessing tag: !$include, !$if, !$let, etc.
-                match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
-                    Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
-                    Err(e) => {
-                        // All preprocessing tag errors should propagate (including unknown tags)
-                        // This ensures typos in tag names are caught
-                        Err(e)
-                    }
-                }
-            } else if let Some(cf_tag) =
-                CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
-            {
-                // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
-                Ok(YamlAst::CloudFormationTag(cf_tag, meta))
-            } else {
-                // Unknown tag
-                let unknown_tag = UnknownTag {
-                    tag: tag_name.to_string(),
-                    value: Box::new(tagged_content),
-                };
-                Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
-            }
+            self.classify_tag(tag_name, tagged_content, meta)
         } else {
             // No tag found, process as regular flow node
             if let Some(child) = node.named_child(0) {
@@ -957,31 +911,27 @@ impl YamlParser {
         let tagged_content = if let Some(content_node) = node.named_child(0) {
             self.build_ast(content_node, src, uri, anchor_map)?
         } else {
-            // Some tags might not have explicit content, treat as null
             YamlAst::Null(meta.clone())
         };
 
-        // Classify the tag type based on naming convention
-        if tag_name.starts_with("!$") {
-            // Preprocessing tag: !$include, !$if, !$let, etc.
-            match self.parse_preprocessing_tag(tag_name, tagged_content.clone(), &meta) {
-                Ok(preprocessing_tag) => Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta)),
-                Err(_) => {
-                    // If parsing fails, fall back to unknown tag
-                    let unknown_tag = UnknownTag {
-                        tag: tag_name.to_string(),
-                        value: Box::new(tagged_content),
-                    };
-                    Ok(YamlAst::UnknownYamlTag(unknown_tag, meta))
-                }
-            }
+        self.classify_tag(tag_name, tagged_content, meta)
+    }
+
+    fn classify_tag(
+        &self,
+        tag_name: &str,
+        tagged_content: YamlAst,
+        meta: SrcMeta,
+    ) -> ParseResult<YamlAst> {
+        if tag_name.as_bytes().get(0) == Some(&b'!') && tag_name.as_bytes().get(1) == Some(&b'$') {
+            let preprocessing_tag =
+                self.parse_preprocessing_tag(tag_name, tagged_content, &meta)?;
+            Ok(YamlAst::PreprocessingTag(preprocessing_tag, meta))
         } else if let Some(cf_tag) =
             CloudFormationTag::from_tag_name(tag_name, tagged_content.clone())
         {
-            // CloudFormation tag: !Ref, !GetAtt, !Sub, etc.
             Ok(YamlAst::CloudFormationTag(cf_tag, meta))
         } else {
-            // Unknown tag
             let unknown_tag = UnknownTag {
                 tag: tag_name.to_string(),
                 value: Box::new(tagged_content),
