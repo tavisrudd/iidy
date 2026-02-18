@@ -86,8 +86,23 @@ and leftover debug output. Test count went from 608 to 576.
 
 ### 3a-followup. Consolidate integration test files to reduce link pressure
 
-Still TODO. 33 integration test files = 33 separate binaries. Mitigated by
-`jobs = 12` in `.cargo/config.toml` but the real fix is fewer test binaries.
+Still TODO. 27 integration test files in `tests/` = 27 separate binaries
+(down from 33 after dead test cleanup). Each file is a separate crate that
+gets linked independently.
+
+**Approach**: Group by domain into a few multi-module test crates:
+- `tests/yaml.rs` with `mod` declarations pulling in yaml_*.rs files
+- `tests/output.rs` grouping output/renderer tests
+- `tests/cfn.rs` grouping cfn-related tests
+- Keep snapshot tests separate (they have different update workflows)
+
+**Notes**:
+- `output_capture_utils.rs` is a shared helper (not a test file itself),
+  used by output renderer tests. It should become a module, not a test crate.
+- `cargo nextest` discovers `#[test]` functions regardless of file structure,
+  so consolidation won't affect test selection or filtering.
+- The main win is link time: fewer binaries = less linker pressure.
+  Build time for compilation itself is unchanged (same amount of code).
 
 ---
 
