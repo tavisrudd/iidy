@@ -1,0 +1,232 @@
+# Architecture
+
+iidy is a CloudFormation deployment tool with a YAML preprocessing language.
+The Rust implementation rewrites the original iidy-js while maintaining
+behavioral compatibility.
+
+## Pipeline overview
+
+A typical CloudFormation operation flows through four stages:
+
+```
+CLI (src/cli.rs)
+  -> Stack-args loading (src/cfn/stack_args.rs)
+    -> YAML preprocessing (src/yaml/engine.rs)
+      -> CFN operations (src/cfn/*.rs)
+        -> Output rendering (src/output/)
+```
+
+1. **CLI parsing**: Clap derives 20+ subcommands from `src/cli.rs`. Global
+   options (`--environment`, `--region`, `--profile`) are available to all
+   commands. `src/main.rs` dispatches on the `Commands` enum.
+
+2. **Stack-args loading**: Commands that operate on stacks load a
+   `stack-args.yaml` file containing stack configuration (`StackName`,
+   `Template`, `Region`, `Parameters`, `Tags`, etc.). Environment maps
+   allow per-environment overrides. See [aws-config.md](aws-config.md)
+   for the full resolution chain.
+
+3. **YAML preprocessing**: The stack-args file and the CloudFormation
+   template are both preprocessed through the YAML engine, resolving
+   `$imports`, `$defs`, preprocessing tags (`!$map`, `!$if`, etc.), and
+   Handlebars `{{ }}` expressions. See [yaml-preprocessing.md](yaml-preprocessing.md).
+
+4. **CFN operations**: AWS API calls are orchestrated by command handlers
+   in `src/cfn/`. Each handler emits `OutputData` variants to a
+   `DynamicOutputManager`.
+
+5. **Output rendering**: The output manager dispatches data to the active
+   renderer (Interactive, Plain, or JSON). See
+   [output-architecture.md](output-architecture.md).
+
+## YAML preprocessing engine
+
+The preprocessing engine in `src/yaml/` is the most complex subsystem.
+It implements a domain-specific language embedded in YAML tags.
+
+### Two-phase pipeline
+
+Orchestrated by `src/yaml/engine.rs`:
+
+**Phase 1** (`load_imports_and_defs`): Parse the document with the
+tree-sitter parser (`src/yaml/parsing/parser.rs`), extract `$defs` and
+`$imports` from the document header, resolve `$defs` with let* semantics
+(each definition can reference prior definitions), load imports with
+Handlebars interpolation on paths, and recursively preprocess imported
+documents.
+
+**Phase 2** (`src/yaml/resolution/resolver.rs`): Walk the `YamlAst` tree
+and resolve all preprocessing tags and `{{ }}` Handlebars strings using the
+environment built in Phase 1.
+
+### Key abstractions
+
+- **`YamlAst`** (`src/yaml/parsing/ast.rs`): Enum representing parsed YAML
+  nodes -- scalars, sequences, mappings, preprocessing tags, and
+  CloudFormation intrinsic function tags. Carries `SrcMeta` for error
+  reporting with source locations.
+
+- **`PreprocessingTag`** (`ast.rs`): Enum with variants for all 20+
+  preprocessing tags (`Include`, `If`, `Let`, `Map`, `Merge`, `Concat`,
+  `Eq`, `Not`, `Split`, `Join`, `ConcatMap`, `MergeMap`, `MapListToHash`,
+  `MapValues`, `GroupBy`, `FromPairs`, `ToYamlString`, `ParseYaml`,
+  `ToJsonString`, `ParseJson`, `Escape`).
+
+- **`TagContext`**: Carries the current environment (resolved `$defs` and
+  `$imports`), base path for relative imports, and the processing
+  environment needed during resolution.
+
+- **`EnvValues`**: Runtime values (`region`, `environment`, `iidy.command`,
+  etc.) injected into the preprocessing environment by `load_stack_args()`.
+
+### Import system
+
+The `ImportType` enum in `src/yaml/imports/mod.rs` supports: `file`, `env`,
+`git`, `random`, `filehash`, `filehash-base64`, `s3`, `http`/`https`,
+`cfn`, `ssm`, `ssm-path`. Each type has a dedicated loader in
+`src/yaml/imports/loaders/`.
+
+Remote templates (S3, HTTP) are restricted from accessing local import types
+(file, env, git, filehash) to prevent information disclosure. See
+[SECURITY.md](SECURITY.md).
+
+### Handlebars integration
+
+`src/yaml/handlebars/engine.rs` provides `interpolate_handlebars_string()`,
+which resolves `{{ }}` expressions in scalar values. A curated set of ~25
+helpers is registered across several modules in `src/yaml/handlebars/helpers/`
+(string manipulation, case conversion, encoding, object access, serialization).
+
+## CloudFormation operations
+
+### CfnContext
+
+`CfnContext` in `src/cfn/mod.rs` carries shared state for a CFN operation:
+the AWS SDK client, SDK config, credential sources, a time provider (system
+clock for reads, NTP for writes), the operation start time, and token
+management for idempotency.
+
+### Handler pattern
+
+Two macros in `src/cfn/mod.rs` structure command handlers:
+
+**`run_command_handler!`** (newer pattern): Handles AWS options
+normalization, output manager creation, context construction, error
+rendering. The implementation function receives a `DynamicOutputManager`
+and `CfnContext` and focuses on business logic:
+
+```rust
+pub async fn describe_stack(cli: &Cli, args: &DescribeArgs) -> Result<i32> {
+    run_command_handler!(describe_stack_impl, cli, args)
+}
+```
+
+**`await_and_render!`** (legacy pattern): Awaits a spawned task and renders
+its result through the output manager, handling errors consistently.
+
+Most handlers follow the same flow:
+1. Build `CfnContext` from CLI args
+2. Load stack-args if applicable
+3. Build AWS requests via `CfnRequestBuilder` (`src/cfn/request_builder.rs`)
+4. Execute operations, emit `OutputData` variants
+5. Watch stack events if needed (polling loop with terminal state detection)
+
+### Stack-args loading
+
+`load_stack_args()` in `src/cfn/stack_args.rs` parses a YAML file through
+the preprocessing engine, resolves environment maps, merges AWS settings
+(CLI overrides stack-args), injects `$envValues`, queries SSM for
+account-level defaults, and returns a `StackArgs` struct plus the resolved
+`SdkConfig`. See [aws-config.md](aws-config.md) for the full resolution
+chain.
+
+### Request building
+
+`CfnRequestBuilder` in `src/cfn/request_builder.rs` constructs all AWS API
+requests from `StackArgs`. It handles parameter formatting, tag injection,
+template body vs. template URL selection, and capability settings.
+
+## Output system
+
+The output system uses a data-driven architecture where command handlers
+emit structured `OutputData` variants and renderers handle all presentation
+logic.
+
+### OutputData enum
+
+`src/output/data.rs` defines 25 variants covering every type of output:
+`CommandMetadata`, `StackDefinition`, `NewStackEvents`,
+`OperationComplete`, `ConfirmationPrompt`, `Error`, etc. Each variant
+carries a payload struct with the data needed for rendering.
+
+### Renderer trait and implementations
+
+`OutputRenderer` trait in `src/output/renderer.rs` with
+`render_output_data()` as the core method.
+
+- **InteractiveRenderer** (`src/output/renderers/interactive.rs`, ~2000
+  lines): Rich colored output with spinners, section headings, ANSI
+  formatting. Handles section sequencing, out-of-order data buffering,
+  and live event streaming.
+
+- **JsonRenderer** (`src/output/renderers/json.rs`): JSONL format, one
+  JSON object per event with type and timestamp metadata.
+
+- **Plain mode**: InteractiveRenderer configured with colors, spinners,
+  and ANSI features disabled. Adds timestamps for CI use.
+
+### DynamicOutputManager
+
+`src/output/manager.rs` sits between handlers and renderers. It buffers
+the last 1000 events for mode switching (replays through new renderer),
+routes data to the active renderer, and provides `request_confirmation()`
+which hides `oneshot::channel` complexity from handlers.
+
+### Keyboard listener
+
+`src/output/keyboard.rs` captures crossterm key events for mode switching
+(toggle between Interactive/Plain/JSON) and confirmation prompts during
+interactive sessions.
+
+For the full output system design, see
+[output-architecture.md](output-architecture.md) and
+[ADR-001](adr/001-output-sequencing.md).
+
+## Testing strategy
+
+### Test infrastructure
+
+- 33 integration test files in `tests/`
+- 100+ insta snapshots in `tests/snapshots/`
+- YAML fixtures in `tests/fixtures/`
+- 46 in-source `#[cfg(test)]` modules throughout `src/`
+- `example-templates/` auto-discovered by `tests/example_templates_snapshots.rs`
+
+### Running tests
+
+```
+make check    -- cargo check + clippy (~300ms)
+make test     -- full suite (~400+ tests, ~2 min)
+make build    -- release build
+```
+
+### Snapshot tests
+
+All files in `example-templates/` are automatically snapshot-tested using
+the `insta` crate. The test runner recursively discovers YAML files
+(excluding `invalid/`, `expected-outputs/`, hidden files) and verifies
+that preprocessing produces the expected output. Snapshot changes require
+explicit acceptance.
+
+### Offline testing
+
+The architecture separates AWS API calls from output formatting, enabling
+offline testing with fixture data. Command handlers can be tested by
+providing mock `OutputData` sequences to renderers. AWS SDK types are
+converted to output data types via `src/output/aws_conversion.rs`.
+
+### Benchmarks
+
+Criterion benchmarks in `benches/` measure handlebars template performance,
+tag resolver overhead, and end-to-end preprocessing pipeline throughput.
+See `make coverage-*` targets for coverage reporting.

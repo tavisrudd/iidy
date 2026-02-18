@@ -24,3 +24,6 @@ lcov.info
 # direnv
 .direnv/
 .envrc
+
+# Handoff docs (session-specific, not committed)
+handoffs/

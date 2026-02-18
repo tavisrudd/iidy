@@ -14,7 +14,7 @@ The import system distinguishes between **local templates** (files loaded from t
 - **Security**: No restrictions - can import from any source type
 - **Rationale**: Already executing in a trusted local context
 
-### Remote Templates  
+### Remote Templates
 - **Definition**: Files loaded from S3, HTTP, or HTTPS URLs
 - **Examples**: `s3://bucket/config.yaml`, `https://example.com/config.yaml`
 - **Security**: Subject to restrictions to prevent local resource access
@@ -22,7 +22,7 @@ The import system distinguishes between **local templates** (files loaded from t
 
 ## Import Type Security Classification
 
-### 🚫 Local-Only Import Types (Forbidden from Remote Templates)
+### Local-Only Import Types (Forbidden from Remote Templates)
 
 | Import Type | Description | Security Risk |
 |-------------|-------------|---------------|
@@ -32,7 +32,7 @@ The import system distinguishes between **local templates** (files loaded from t
 | `filehash:` | File hashing (typically local files) | Could scan filesystem structure |
 | `filehash-base64:` | File hashing with base64 encoding | Could scan filesystem structure |
 
-### ✅ Remote-Allowed Import Types
+### Remote-Allowed Import Types
 
 | Import Type | Description | Use Case |
 |-------------|-------------|-----------|
@@ -52,7 +52,7 @@ When a template uses relative imports (no explicit type prefix), the import inhe
 ```yaml
 # From s3://bucket/configs/app.yaml
 $imports:
-  database: "database.yaml"  # ✅ Resolves to s3://bucket/configs/database.yaml (inherits S3)
+  database: "database.yaml"  # Resolves to s3://bucket/configs/database.yaml (inherits S3)
 ```
 
 ### Local Path Indicators Blocked
@@ -62,49 +62,49 @@ Explicit local path indicators are forbidden from remote templates:
 ```yaml
 # From s3://bucket/config.yaml - These will be REJECTED:
 $imports:
-  bad1: "./local.yaml"      # ❌ Error: local path from remote
-  bad2: "../local.yaml"     # ❌ Error: local path from remote  
-  bad3: "/abs/local.yaml"   # ❌ Error: local path from remote
+  bad1: "./local.yaml"      # Error: local path from remote
+  bad2: "../local.yaml"     # Error: local path from remote
+  bad3: "/abs/local.yaml"   # Error: local path from remote
 ```
 
 ## Examples
 
-### ✅ Allowed: Remote-to-Remote Imports
+### Allowed: Remote-to-Remote Imports
 
 ```yaml
 # From https://example.com/configs/app.yaml
 $imports:
-  s3data: "s3://bucket/data.yaml"           # ✅ S3 import
-  webdata: "https://api.com/config.json"    # ✅ HTTP import  
-  database: "database.yaml"                 # ✅ Relative (inherits HTTPS)
-  cfnstack: "cfn:stack/MyStack/output"      # ✅ CloudFormation
-  secret: "ssm:/app/secret"                 # ✅ SSM parameter
-  uuid: "random:dashed-name"                # ✅ Random generation
+  s3data: "s3://bucket/data.yaml"           # S3 import
+  webdata: "https://api.com/config.json"    # HTTP import
+  database: "database.yaml"                 # Relative (inherits HTTPS)
+  cfnstack: "cfn:stack/MyStack/output"      # CloudFormation
+  secret: "ssm:/app/secret"                 # SSM parameter
+  uuid: "random:dashed-name"                # Random generation
 ```
 
-### ❌ Forbidden: Remote-to-Local Imports
+### Forbidden: Remote-to-Local Imports
 
 ```yaml
 # From s3://bucket/config.yaml - All of these are REJECTED:
 $imports:
-  localfile: "file:./local.yaml"      # ❌ File access
-  envvar: "env:HOME"                  # ❌ Environment variable
-  gitinfo: "git:branch"               # ❌ Git repository
-  hash: "filehash:./data.txt"         # ❌ Local file hash
-  localpath: "./local.yaml"           # ❌ Local path indicator
+  localfile: "file:./local.yaml"      # File access forbidden
+  envvar: "env:HOME"                  # Environment variable forbidden
+  gitinfo: "git:branch"               # Git repository forbidden
+  hash: "filehash:./data.txt"         # Local file hash forbidden
+  localpath: "./local.yaml"           # Local path indicator forbidden
 ```
 
-### ✅ Allowed: Local Template Flexibility
+### Allowed: Local Template Flexibility
 
 ```yaml
 # From local file ./config.yaml - All imports allowed:
 $imports:
-  localfile: "file:./other.yaml"      # ✅ Local file
-  envvar: "env:HOME"                  # ✅ Environment variable
-  s3data: "s3://bucket/data.yaml"     # ✅ S3 object
-  webdata: "https://api.com/data"     # ✅ HTTP endpoint
-  gitbranch: "git:branch"             # ✅ Git info
-  hash: "filehash:./data.txt"         # ✅ File hash
+  localfile: "file:./other.yaml"      # Local file
+  envvar: "env:HOME"                  # Environment variable
+  s3data: "s3://bucket/data.yaml"     # S3 object
+  webdata: "https://api.com/data"     # HTTP endpoint
+  gitbranch: "git:branch"             # Git info
+  hash: "filehash:./data.txt"         # File hash
 ```
 
 ## Base Path Resolution for Relative Imports
@@ -112,19 +112,19 @@ $imports:
 The system derives base paths to enable relative imports across different contexts:
 
 ### Local File Paths
-- `/Users/app/configs/main.yaml` → `/Users/app/configs/`
-- `./configs/app.yaml` → `./configs/`
-- `config.yaml` → `` (empty - current directory)
+- `/Users/app/configs/main.yaml` -> `/Users/app/configs/`
+- `./configs/app.yaml` -> `./configs/`
+- `config.yaml` -> `` (empty - current directory)
 
 ### S3 URLs
-- `s3://bucket/file.yaml` → `s3://bucket/`
-- `s3://bucket/configs/app.yaml` → `s3://bucket/configs/`
-- `s3://bucket/configs/env/prod.yaml` → `s3://bucket/configs/env/`
+- `s3://bucket/file.yaml` -> `s3://bucket/`
+- `s3://bucket/configs/app.yaml` -> `s3://bucket/configs/`
+- `s3://bucket/configs/env/prod.yaml` -> `s3://bucket/configs/env/`
 
 ### HTTP/HTTPS URLs
-- `https://example.com/file.yaml` → `https://example.com/`
-- `https://example.com/configs/app.yaml` → `https://example.com/configs/`
-- `http://api.com/templates/base.yaml` → `http://api.com/templates/`
+- `https://example.com/file.yaml` -> `https://example.com/`
+- `https://example.com/configs/app.yaml` -> `https://example.com/configs/`
+- `http://api.com/templates/base.yaml` -> `http://api.com/templates/`
 
 ## Threat Model
 

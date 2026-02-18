@@ -1,137 +1,41 @@
-# Project Notes and Design Documents
+# Project Notes
 
-This directory contains design documents, implementation plans, and notes for the iidy Rust CloudFormation tool.
+## Developer Documentation
 
-## Major Design Documents
+Permanent documentation lives in [`docs/`](../docs/):
 
-### [2025-05-05-token-management-design.md](2025-05-05-token-management-design.md)
-**Comprehensive Token Management System**
+- [Architecture](../docs/architecture.md) -- system overview, pipeline, subsystem descriptions
+- [Output Architecture](../docs/output-architecture.md) -- data-driven output system deep dive
+- [YAML Preprocessing](../docs/yaml-preprocessing.md) -- complete tag reference with examples
+- [AWS Configuration](../docs/aws-config.md) -- credential, region, and profile resolution
+- [JS Compatibility](../docs/js-compatibility.md) -- behavioral differences from iidy-js
+- [Security](../docs/SECURITY.md) -- import system security model
+- [Coverage](../docs/COVERAGE.md) -- test coverage reporting
 
-Complete design and implementation plan for client request token management in CloudFormation operations. This was the major architectural feature implemented, providing:
+### Architecture Decision Records
 
-- Deterministic token derivation for multi-step operations
-- Full visibility and audit trails for idempotency tokens
-- Offline testing capabilities
-- Retry-safe operations with proper error handling
+- [ADR-001: Output Sequencing](../docs/adr/001-output-sequencing.md)
+- [ADR-002: Data-Driven Output](../docs/adr/002-data-driven-output.md)
+- [ADR-003: Template Approval](../docs/adr/003-template-approval.md)
 
-**Status**: ✅ Complete (Phase 5 finished with 15 commits)
+## Active Notes
 
-**Key Features**:
-- `TokenInfo` with SHA256-based derivation
-- `NormalizedAwsOpts` ensuring tokens always present
-- `CfnRequestBuilder` pattern for consistent AWS API usage
-- `ConsoleReporter` for transparent token display
-- Comprehensive integration tests (135 tests passing)
+- [codebase-guide.md](codebase-guide.md) -- quick reference for navigating the codebase
+- [2026-02-17-project-review-and-next-steps.md](2026-02-17-project-review-and-next-steps.md) -- current project status and roadmap
+- [2026-02-17-custom-resource-templates-rfc.md](2026-02-17-custom-resource-templates-rfc.md) -- RFC for the main remaining feature
+- [2026-02-17-code-review-findings.md](2026-02-17-code-review-findings.md) -- code quality findings
 
-## Codex Implementation Plans
+## Handoff Documents
 
-The `codex/` directory contains smaller implementation tasks and fixes, all from May 22, 2025:
+- [2026-02-17-handoff-code-review.md](2026-02-17-handoff-code-review.md) -- code review task handoff
+- [2026-02-17-handoff-code-review-fixes.md](2026-02-17-handoff-code-review-fixes.md) -- code review fix handoff
+- [2026-02-17-handoff-notes-and-docs-cleanup.md](2026-02-17-handoff-notes-and-docs-cleanup.md) -- this cleanup task
+- [2026-02-17-handoff-user-documentation.md](2026-02-17-handoff-user-documentation.md) -- user documentation handoff
 
-### [codex/2025-05-22-add-iidy-demo-rust-plan.org](codex/2025-05-22-add-iidy-demo-rust-plan.org)
-**Demo Command Implementation**
+## Source Material
 
-Implementation of the `iidy demo` command to run scripted demo sessions from YAML files.
+- [template-approval-design-spec.md](template-approval-design-spec.md) -- detailed implementation spec beyond ADR-003
 
-**Status**: ✅ Complete
-**Features**: YAML demo scripts, temp file extraction, command execution with typing effects, banners, timescaling
+## Historical Notes
 
-### [codex/2025-05-22-fix-drift-pagination-plan.org](codex/2025-05-22-fix-drift-pagination-plan.org)
-**Stack Drift Detection**
-
-Implementation of `describe-stack-drift` with offline testing architecture.
-
-**Status**: ✅ Complete
-**Features**: Drift detection workflow, resource drift formatting, paginated API handling
-
-### [codex/2025-05-22-code-review-add-tests-plan.org](codex/2025-05-22-code-review-add-tests-plan.org)
-**Test Coverage Improvements**
-
-Added unit tests for previously untested utility functions.
-
-**Status**: ✅ Complete
-**Coverage**: Template parsing, string utilities, status formatting functions
-
-### [codex/2025-05-22-fix-unused-imports-plan.org](codex/2025-05-22-fix-unused-imports-plan.org)
-**Compiler Warning Cleanup**
-
-Fixed unused import warnings and dead code warnings.
-
-**Status**: ✅ Complete
-**Changes**: Conditional imports, dead code annotations, import cleanup
-
-### [codex/2025-05-22-fix-unused-warnings-plan.org](codex/2025-05-22-fix-unused-warnings-plan.org)
-**Function Usage Integration**
-
-Wired up stub command handlers to eliminate unused function warnings.
-
-**Status**: ✅ Complete
-**Changes**: Main.rs integration, function usage, CLI command wiring
-
-## Architecture Overview
-
-The project follows a modular Rust architecture:
-
-- **CLI Layer** (`src/cli.rs`): Complete command-line interface using clap
-- **AWS Integration** (`src/aws.rs`): AWS SDK configuration and credential management
-- **CloudFormation Operations** (`src/cfn/`): Individual modules for each operation
-- **Token Management** (`src/timing.rs`): Comprehensive idempotency token system
-- **YAML Preprocessing** (`src/yaml/`): Template processing and imports system
-- **Demo System** (`src/demo.rs`): Scripted demonstration capabilities
-
-## Development Status
-
-**Current State**: Production-ready CloudFormation deployment tool with comprehensive token management.
-
-**Key Achievements**:
-- ✅ 20+ CloudFormation operations implemented
-- ✅ Comprehensive token management with 135 tests passing
-- ✅ Offline testing capabilities
-- ✅ Demo and drift detection features
-- ✅ Clean codebase with no compiler warnings
-
-**Future Enhancements**:
-- Fixture-based end-to-end testing (`--x-load-test-fixture`)
-- Property-based testing enhancements
-- Real AWS integration validation
-
-## Testing Infrastructure
-
-### [Snapshot Testing System](../tests/example_templates_snapshots.rs)
-**Comprehensive Example Template Testing**
-
-**Status**: ✅ Complete
-**Features**:
-- **Auto-discovery**: Recursive scanning of `example-templates/` directory
-- **Snapshot testing**: `insta`-based regression protection for all templates
-- **CloudFormation tag preservation**: Verified correct serialization of `!Ref`, `!Sub`, `!GetAtt`
-- **Path-aware naming**: Templates in subdirectories get organized snapshot names
-- **Selective exclusion**: Automatically skips `invalid/`, `expected-outputs/`, and hidden files
-
-**Coverage**:
-- 12+ comprehensive test scenarios
-- All example templates automatically tested
-- CloudFormation intrinsic function preservation
-- YAML 1.1 boolean compatibility
-- Handlebars preprocessing within CloudFormation tags
-- Template import functionality
-- Performance regression tests
-
-The snapshot testing ensures all example templates remain working and any changes to preprocessing behavior are explicitly reviewed.
-
-## Implementation Roadmap
-
-### [2025-05-05-plan.md](2025-05-05-plan.md)
-**Comprehensive Implementation Plan for Feature Parity**
-
-Complete analysis of missing functionality compared to iidy-js and detailed implementation roadmap. This plan identifies gaps in:
-
-- YAML preprocessing language (custom tags, import sources, handlebars helpers)
-- SSM Parameter Store integration (`iidy param` commands)
-- Template approval workflow system
-- Professional UX and output formatting
-- Advanced CLI features and environment management
-
-**Status**: 📋 Planning (6-phase implementation plan)
-**Priority**: Phases 1-3 are critical for production readiness
-
-This documentation reflects the evolution from initial planning through complete token management implementation, with a clear roadmap for achieving full feature parity with the original iidy-js tool.
+Completed work-session logs are in [`archive/`](archive/).
