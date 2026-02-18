@@ -1,6 +1,6 @@
 # iidy Development Makefile
 
-.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed
+.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint
 
 # Test markers directory
 TEST_MARKERS_DIR := .make-markers
@@ -24,6 +24,9 @@ help:
 	@echo "  coverage-html  - Generate HTML coverage report"
 	@echo "  coverage-report- Open HTML coverage report in browser"
 	@echo "  clean          - Clean build artifacts and coverage files"
+	@echo "  fmt            - Run cargo fmt"
+	@echo "  clippy         - Run clippy lints"
+	@echo "  lint           - Run fmt check + clippy"
 	@echo "  help           - Show this help message"
 
 # Create markers directory if it doesn't exist
@@ -33,6 +36,19 @@ $(TEST_MARKERS_DIR):
 # Run cargo check for fast sanity check
 check:
 	cargo check --all-targets
+
+# Format code
+fmt:
+	cargo fmt
+
+# Run clippy lints
+clippy:
+	cargo clippy --all-targets -- -D warnings
+
+# Combined lint check (CI-friendly: checks formatting without modifying)
+lint:
+	cargo fmt --check
+	cargo clippy --all-targets -- -D warnings
 
 # Run tests only if source files have changed
 test: test-if-changed
@@ -68,7 +84,7 @@ build:
 
 # cargo build --release
 release:
-	cargo release
+	cargo build --release
 
 # Generate coverage summary (fast)
 coverage:

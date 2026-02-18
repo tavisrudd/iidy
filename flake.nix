@@ -20,8 +20,9 @@
             # Fast linker -- GNU ld uses ~1 GB per instance and OOMs on 24-core
             mold
 
-            # Test runner (Makefile uses cargo-nextest)
+            # Test runner and coverage (Makefile targets)
             cargo-nextest
+            cargo-tarpaulin
           ];
 
           PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";

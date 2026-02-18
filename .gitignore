@@ -1,7 +1,6 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
 
 # IDE
 .vscode/
@@ -18,6 +17,9 @@ lcov.info
 
 # Makefile markers
 .make-markers/
+
+# OS
+.DS_Store
 
 # direnv
 .direnv/
