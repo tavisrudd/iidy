@@ -100,7 +100,7 @@ cfn/
 
 create_stack, update_stack, create_or_update, delete_stack, describe_stack,
 watch_stack, describe_stack_drift, list_stacks, estimate_cost,
-create_changeset, exec_changeset, get_stack_template, get_stack_instances,
+create_changeset, exec_changeset, get_stack_template,
 get_import, template_approval_request, template_approval_review
 
 ### Handler Pattern

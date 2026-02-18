@@ -23,8 +23,8 @@ custom resource template feature.
 2. **Emoji violations throughout output code** -- At least 12 instances across
    interactive.rs, keyboard.rs. Direct violation of project standards.
 
-3. **Command handler inconsistency** -- 3 handlers bypass the macro system
-   entirely (get_stack_template, get_stack_instances, get_import); several others
+3. **Command handler inconsistency** -- 2 handlers bypass the macro system
+   entirely (get_stack_template, get_import); several others
    duplicate error-handling boilerplate the macros were designed to eliminate.
    Watch-error path (convert_aws_error + render + Ok(1)) copy-pasted in 4+
    handlers.
@@ -200,8 +200,6 @@ custom resource template feature.
 ### Command Handler Consistency
 
 - **[high]** `get_stack_template.rs:96-143` -- Does not use `run_command_handler!`. Manually reconstructs output manager setup inline.
-
-- **[high]** `get_stack_instances.rs:15-117` -- Does not use `run_command_handler!`. Skips error rendering through output system on context creation failure.
 
 - **[high]** `get_import.rs:32-126` -- Bypasses output manager entirely. Writes directly to stdout/stderr with print!/println!/eprintln!. Incompatible with structured output.
 

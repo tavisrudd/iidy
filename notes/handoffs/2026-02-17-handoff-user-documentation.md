@@ -197,7 +197,7 @@ Group by category:
 - Stack lifecycle: create-stack, update-stack, delete-stack, create-or-update
 - Changesets: create-changeset, exec-changeset
 - Monitoring: watch-stack, describe-stack, describe-stack-drift
-- Information: list-stacks, get-stack-template, get-stack-instances, get-import
+- Information: list-stacks, get-stack-template, get-import
 - Utilities: render, estimate-cost, explain
 - Template approval: template-approval-request, template-approval-review
 
