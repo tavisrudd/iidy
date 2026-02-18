@@ -9,7 +9,7 @@ use proptest::strategy::BoxedStrategy;
 use std::collections::HashSet;
 use url::Url;
 
-use super::{parse_yaml_from_file, parse_yaml_ast_with_diagnostics};
+use super::{parse_yaml_ast_with_diagnostics, parse_yaml_from_file};
 
 /// Preset configurations for common use cases
 #[derive(Debug, Clone, Copy)]
@@ -21,18 +21,39 @@ pub enum ConfigPreset {
 
 /// Common CloudFormation tags
 fn common_cf_tags() -> HashSet<String> {
-    ["Ref", "Sub", "GetAtt", "Join", "Split", "Select", "Base64", "ImportValue"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    [
+        "Ref",
+        "Sub",
+        "GetAtt",
+        "Join",
+        "Split",
+        "Select",
+        "Base64",
+        "ImportValue",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
 /// Common preprocessing tags  
 fn common_prep_tags() -> HashSet<String> {
-    ["$", "$include", "$not", "$parseYaml", "$parseJson", "$if", "$map", "$merge", "$let", "$eq", "$concat"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+    [
+        "$",
+        "$include",
+        "$not",
+        "$parseYaml",
+        "$parseJson",
+        "$if",
+        "$map",
+        "$merge",
+        "$let",
+        "$eq",
+        "$concat",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
 }
 
 /// Configuration for which tags should appear in generated YAML documents
@@ -90,71 +111,75 @@ fn simple_scalar_strategy() -> BoxedStrategy<String> {
         any::<bool>().prop_map(|b| b.to_string()),
         // Simple unquoted strings
         "[a-zA-Z][a-zA-Z0-9_-]{0,10}",
-    ].boxed()
+    ]
+    .boxed()
 }
 
 /// Generate tag values based on configuration
 fn tag_value_strategy(config: &TagConfig) -> BoxedStrategy<String> {
     let cf_tags: Vec<String> = config.cloudformation_tags.iter().cloned().collect();
     let prep_tags: Vec<String> = config.preprocessing_tags.iter().cloned().collect();
-    
+
     let mut strategies: Vec<BoxedStrategy<String>> = Vec::new();
-    
+
     if !cf_tags.is_empty() {
         strategies.push(
             (prop::sample::select(cf_tags), simple_scalar_strategy())
                 .prop_map(|(tag, value)| format!("!{} {}", tag, value))
-                .boxed()
+                .boxed(),
         );
     }
-    
+
     if !prep_tags.is_empty() {
         // Simple preprocessing tags
         strategies.push(
             prop::sample::select(prep_tags.clone())
                 .prop_map(|tag| format!("!{} true", tag))
-                .boxed()
+                .boxed(),
         );
-        
+
         // Complex preprocessing tags with mappings
         if prep_tags.contains(&"$if".to_string()) {
             strategies.push(
-                Just("!$if\n  test: true\n  then: \"yes\"\n  else: \"no\"".to_string()).boxed()
+                Just("!$if\n  test: true\n  then: \"yes\"\n  else: \"no\"".to_string()).boxed(),
             );
         }
-        
+
         if prep_tags.contains(&"$map".to_string()) {
             strategies.push(
-                Just("!$map\n  items: [1, 2, 3]\n  template: \"item-{{item}}\"".to_string()).boxed()
+                Just("!$map\n  items: [1, 2, 3]\n  template: \"item-{{item}}\"".to_string())
+                    .boxed(),
             );
         }
-        
+
         if prep_tags.contains(&"$let".to_string()) {
-            strategies.push(
-                Just("!$let\n  var1: \"value1\"\n  in: \"{{var1}}\"".to_string()).boxed()
-            );
+            strategies
+                .push(Just("!$let\n  var1: \"value1\"\n  in: \"{{var1}}\"".to_string()).boxed());
         }
     }
-    
+
     if strategies.is_empty() {
         return simple_scalar_strategy();
     }
-    
+
     prop::strategy::Union::new(strategies).boxed()
 }
 
 /// Generate YAML mapping entries
 fn yaml_mapping_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<String> {
     if depth >= config.max_depth {
-        return simple_scalar_strategy().prop_map(|v| format!("leaf: {}", v)).boxed();
+        return simple_scalar_strategy()
+            .prop_map(|v| format!("leaf: {}", v))
+            .boxed();
     }
-    
+
     let key_strategy = "[a-zA-Z][a-zA-Z0-9_]{0,10}";
     let value_strategy = yaml_value_strategy(config, depth + 1);
-    
+
     prop::collection::vec((key_strategy, value_strategy), 1..=config.max_items)
         .prop_map(|pairs| {
-            pairs.into_iter()
+            pairs
+                .into_iter()
                 .map(|(k, v)| format!("{}: {}", k, v))
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -167,12 +192,13 @@ fn yaml_sequence_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<Str
     if depth >= config.max_depth {
         return Just("- simple".to_string()).boxed();
     }
-    
+
     let value_strategy = yaml_value_strategy(config, depth + 1);
-    
+
     prop::collection::vec(value_strategy, 1..=config.max_items)
         .prop_map(|values| {
-            values.into_iter()
+            values
+                .into_iter()
                 .map(|v| format!("- {}", v))
                 .collect::<Vec<_>>()
                 .join("\n")
@@ -185,18 +211,16 @@ fn yaml_value_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<String
     if depth >= config.max_depth {
         return simple_scalar_strategy();
     }
-    
-    let mut strategies: Vec<BoxedStrategy<String>> = vec![
-        simple_scalar_strategy(),
-    ];
-    
+
+    let mut strategies: Vec<BoxedStrategy<String>> = vec![simple_scalar_strategy()];
+
     // Add tag values based on probability (simplified - we'll use proptest's built-in probability)
     strategies.push(tag_value_strategy(config));
-    
+
     // Add nested structures
     strategies.push(yaml_mapping_strategy(config, depth));
     strategies.push(yaml_sequence_strategy(config, depth));
-    
+
     prop::strategy::Union::new(strategies).boxed()
 }
 
@@ -208,52 +232,73 @@ pub fn yaml_document_strategy(config: TagConfig) -> BoxedStrategy<String> {
 /// Test that generated YAML doesn't crash the parser
 fn test_generated_yaml_robustness(yaml_doc: String, context: &str) -> Result<(), TestCaseError> {
     let test_uri = Url::parse("file:///proptest.yaml").unwrap();
-    
+
     // Test main parsing API - should not panic
     let parse_result = parse_yaml_from_file(&yaml_doc, "proptest.yaml");
-    
+
     // Test diagnostic API - should not panic
     let diagnostic_result = parse_yaml_ast_with_diagnostics(&yaml_doc, test_uri);
-    
+
     match parse_result {
         Ok(ast) => {
             // Successfully parsed - verify AST is well-formed
-            prop_assert!(!format!("{:?}", ast).is_empty(), "AST should not be empty for: {}", context);
+            prop_assert!(
+                !format!("{:?}", ast).is_empty(),
+                "AST should not be empty for: {}",
+                context
+            );
         }
         Err(error) => {
             // Parse failed - verify error is well-formed
             let error_msg = error.to_string();
-            prop_assert!(!error_msg.is_empty(), "Error message should not be empty for: {}", context);
-            prop_assert!(!error_msg.contains("panic"), "Error should not mention panic for: {}", context);
-            
-                    // Note: Diagnostic API may not always report the same errors as main parser
+            prop_assert!(
+                !error_msg.is_empty(),
+                "Error message should not be empty for: {}",
+                context
+            );
+            prop_assert!(
+                !error_msg.contains("panic"),
+                "Error should not mention panic for: {}",
+                context
+            );
+
+            // Note: Diagnostic API may not always report the same errors as main parser
             // since they use different validation methods (parse vs validate_with_diagnostics)
         }
     }
-    
+
     // Verify diagnostic API never panics and provides consistent results
-    prop_assert!(!diagnostic_result.errors.is_empty() || !diagnostic_result.warnings.is_empty() || diagnostic_result.parse_successful,
-                 "Diagnostic API should provide some result for: {}", context);
-    
+    prop_assert!(
+        !diagnostic_result.errors.is_empty()
+            || !diagnostic_result.warnings.is_empty()
+            || diagnostic_result.parse_successful,
+        "Diagnostic API should provide some result for: {}",
+        context
+    );
+
     Ok(())
 }
 
 /// Test that parser handles edge cases correctly
 fn test_edge_case_robustness(yaml_doc: String) -> Result<(), TestCaseError> {
     let test_uri = Url::parse("file:///edge_case.yaml").unwrap();
-    
+
     // These should not panic regardless of input
-    let _parse_result = std::panic::catch_unwind(|| {
-        parse_yaml_from_file(&yaml_doc, "edge_case.yaml")
-    });
-    
-    let _diagnostic_result = std::panic::catch_unwind(|| {
-        parse_yaml_ast_with_diagnostics(&yaml_doc, test_uri)
-    });
-    
-    prop_assert!(_parse_result.is_ok(), "Parser should not panic on edge case");
-    prop_assert!(_diagnostic_result.is_ok(), "Diagnostic API should not panic on edge case");
-    
+    let _parse_result =
+        std::panic::catch_unwind(|| parse_yaml_from_file(&yaml_doc, "edge_case.yaml"));
+
+    let _diagnostic_result =
+        std::panic::catch_unwind(|| parse_yaml_ast_with_diagnostics(&yaml_doc, test_uri));
+
+    prop_assert!(
+        _parse_result.is_ok(),
+        "Parser should not panic on edge case"
+    );
+    prop_assert!(
+        _diagnostic_result.is_ok(),
+        "Diagnostic API should not panic on edge case"
+    );
+
     Ok(())
 }
 
@@ -343,16 +388,28 @@ mod tests {
 
         for yaml_doc in test_cases {
             let result = parse_yaml_from_file(yaml_doc, "manual_test.yaml");
-            
+
             // Should either succeed or fail gracefully (no panic)
             match result {
                 Ok(ast) => {
-                    assert!(!format!("{:?}", ast).is_empty(), "AST should not be empty for: {}", yaml_doc);
+                    assert!(
+                        !format!("{:?}", ast).is_empty(),
+                        "AST should not be empty for: {}",
+                        yaml_doc
+                    );
                 }
                 Err(error) => {
                     let error_msg = error.to_string();
-                    assert!(!error_msg.is_empty(), "Error message should not be empty for: {}", yaml_doc);
-                    assert!(!error_msg.contains("panic"), "Error should not mention panic for: {}", yaml_doc);
+                    assert!(
+                        !error_msg.is_empty(),
+                        "Error message should not be empty for: {}",
+                        yaml_doc
+                    );
+                    assert!(
+                        !error_msg.contains("panic"),
+                        "Error should not mention panic for: {}",
+                        yaml_doc
+                    );
                 }
             }
         }
@@ -363,26 +420,35 @@ mod tests {
     fn test_include_tag_consistency() {
         let yaml_doc = "A: !$include true";
         let test_uri = Url::parse("file:///proptest.yaml").unwrap();
-        
+
         println!("Testing: {}", yaml_doc);
-        
+
         // Test main parsing API
         let parse_result = parse_yaml_from_file(yaml_doc, "proptest.yaml");
         println!("Main parser result: {:?}", parse_result.is_ok());
         if let Err(e) = &parse_result {
             println!("Main parser error: {}", e);
         }
-        
+
         // Test diagnostic API
         let diagnostic_result = parse_yaml_ast_with_diagnostics(yaml_doc, test_uri);
-        println!("Diagnostic API has_errors: {}", diagnostic_result.has_errors());
-        println!("Diagnostic API parse_successful: {}", diagnostic_result.parse_successful);
-        println!("Diagnostic API error_count: {}", diagnostic_result.error_count());
-        
+        println!(
+            "Diagnostic API has_errors: {}",
+            diagnostic_result.has_errors()
+        );
+        println!(
+            "Diagnostic API parse_successful: {}",
+            diagnostic_result.parse_successful
+        );
+        println!(
+            "Diagnostic API error_count: {}",
+            diagnostic_result.error_count()
+        );
+
         for (i, error) in diagnostic_result.errors.iter().enumerate() {
             println!("Error {}: {}", i, error.message);
         }
-        
+
         // Note: The main parser and diagnostic API use different methods and may not be consistent
         // Main parser: parser.parse() - full parsing with semantic validation
         // Diagnostic API: validate_with_diagnostics() - may have different validation scope
@@ -393,15 +459,15 @@ mod tests {
     #[test]
     fn test_problematic_inputs() {
         let problematic_cases = vec![
-            "", // Empty string
-            "\n", // Just newline
-            ":", // Just colon
-            "- ", // Incomplete array
-            "key: !UnknownTag", // Unknown tag
+            "",                               // Empty string
+            "\n",                             // Just newline
+            ":",                              // Just colon
+            "- ",                             // Incomplete array
+            "key: !UnknownTag",               // Unknown tag
             "key: !$invalidPreprocessingTag", // Invalid preprocessing tag
-            "key: \n  - incomplete", // Incomplete nesting
-            "key: \"unclosed quote", // Unclosed quote
-            "[\n", // Unclosed bracket
+            "key: \n  - incomplete",          // Incomplete nesting
+            "key: \"unclosed quote",          // Unclosed quote
+            "[\n",                            // Unclosed bracket
             "{\n", // Unclosed brace (not valid YAML but should be handled)
         ];
 
@@ -409,8 +475,12 @@ mod tests {
             let result = std::panic::catch_unwind(|| {
                 parse_yaml_from_file(yaml_doc, "problematic_test.yaml")
             });
-            
-            assert!(result.is_ok(), "Parser should not panic on problematic input: {:?}", yaml_doc);
+
+            assert!(
+                result.is_ok(),
+                "Parser should not panic on problematic input: {:?}",
+                yaml_doc
+            );
         }
     }
 }

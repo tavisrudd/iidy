@@ -4,7 +4,7 @@
 //! with various YAML document types and sizes.
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use iidy::yaml::parsing::{parse_yaml_from_file, parse_yaml_ast_with_diagnostics};
+use iidy::yaml::parsing::{parse_yaml_ast_with_diagnostics, parse_yaml_from_file};
 use serde_yaml::Value;
 use tree_sitter::Parser;
 use tree_sitter_yaml::LANGUAGE;
@@ -17,39 +17,34 @@ fn test_uri() -> Url {
 /// Create a tree-sitter parser for YAML
 fn create_yaml_parser() -> Parser {
     let mut parser = Parser::new();
-    parser.set_language(&LANGUAGE.into()).expect("Error loading YAML grammar");
+    parser
+        .set_language(&LANGUAGE.into())
+        .expect("Error loading YAML grammar");
     parser
 }
 
 /// Benchmark baseline serde_yaml parsing
 fn bench_serde_yaml_baseline(c: &mut Criterion, yaml_content: &str, name: &str) {
     c.bench_function(&format!("baseline_serde_yaml_{}", name), |b| {
-        b.iter(|| {
-            serde_yaml::from_str::<Value>(black_box(yaml_content)).unwrap()
-        })
+        b.iter(|| serde_yaml::from_str::<Value>(black_box(yaml_content)).unwrap())
     });
 }
 
 /// Benchmark baseline tree-sitter parsing (just syntax tree)
 fn bench_tree_sitter_baseline(c: &mut Criterion, yaml_content: &str, name: &str) {
     let mut parser = create_yaml_parser();
-    
+
     c.bench_function(&format!("baseline_tree_sitter_{}", name), |b| {
-        b.iter(|| {
-            parser.parse(black_box(yaml_content), None).unwrap()
-        })
+        b.iter(|| parser.parse(black_box(yaml_content), None).unwrap())
     });
 }
 
 /// Benchmark our custom parser (tree-sitter + custom tag processing)
 fn bench_custom_parser(c: &mut Criterion, yaml_content: &str, name: &str) {
     c.bench_function(&format!("custom_parser_{}", name), |b| {
-        b.iter(|| {
-            parse_yaml_from_file(black_box(yaml_content), black_box("test.yaml")).unwrap()
-        })
+        b.iter(|| parse_yaml_from_file(black_box(yaml_content), black_box("test.yaml")).unwrap())
     });
 }
-
 
 /// Benchmark plain YAML parsing (no preprocessing tags)
 fn bench_plain_yaml(c: &mut Criterion) {
@@ -179,12 +174,7 @@ results:
 "#;
 
     group.bench_function("array_syntax_parsing", |b| {
-        b.iter(|| {
-            parse_yaml_from_file(
-                black_box(array_syntax), 
-                black_box("array.yaml")
-            ).unwrap()
-        })
+        b.iter(|| parse_yaml_from_file(black_box(array_syntax), black_box("array.yaml")).unwrap())
     });
 
     group.finish();
@@ -239,10 +229,7 @@ config_d: !$mapListToHash
 
     group.bench_function("mapping_heavy_parsing", |b| {
         b.iter(|| {
-            parse_yaml_from_file(
-                black_box(mapping_heavy),
-                black_box("mapping.yaml"),
-            ).unwrap()
+            parse_yaml_from_file(black_box(mapping_heavy), black_box("mapping.yaml")).unwrap()
         })
     });
 
@@ -278,12 +265,7 @@ level1: !$let
 "#;
 
     group.bench_function("deep_nesting", |b| {
-        b.iter(|| {
-            parse_yaml_from_file(
-                black_box(deep_nesting), 
-                black_box("deep.yaml")
-            ).unwrap()
-        })
+        b.iter(|| parse_yaml_from_file(black_box(deep_nesting), black_box("deep.yaml")).unwrap())
     });
 
     group.finish();
@@ -306,9 +288,7 @@ Resources:
 "#;
 
     group.bench_function("valid_yaml_diagnostics", |b| {
-        b.iter(|| {
-            parse_yaml_ast_with_diagnostics(black_box(valid_yaml), black_box(test_uri()))
-        })
+        b.iter(|| parse_yaml_ast_with_diagnostics(black_box(valid_yaml), black_box(test_uri())))
     });
 
     // YAML with errors for error collection testing
@@ -323,9 +303,7 @@ test3: !$map
 "#;
 
     group.bench_function("error_collection_diagnostics", |b| {
-        b.iter(|| {
-            parse_yaml_ast_with_diagnostics(black_box(error_yaml), black_box(test_uri()))
-        })
+        b.iter(|| parse_yaml_ast_with_diagnostics(black_box(error_yaml), black_box(test_uri())))
     });
 
     group.finish();
@@ -364,10 +342,13 @@ fn bench_large_documents(c: &mut Criterion) {
       port: {}
       replicas: {}
 "#,
-            i, 8000 + i, (i % 5) + 1
+            i,
+            8000 + i,
+            (i % 5) + 1
         ));
     }
-    large_preprocessing.push_str(r#"  template: !$merge
+    large_preprocessing.push_str(
+        r#"  template: !$merge
     - name: "{{item.name}}"
       endpoint: "http://{{item.name}}:{{item.port}}"
     - scaling:
@@ -380,7 +361,8 @@ fn bench_large_documents(c: &mut Criterion) {
           else:
             memory: "1Gi"
             cpu: "500m"
-"#);
+"#,
+    );
 
     // Baseline comparisons for large preprocessing document
     bench_serde_yaml_baseline(c, &large_preprocessing, "large_preprocessing");

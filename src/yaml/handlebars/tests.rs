@@ -440,7 +440,7 @@ mod tests {
         env.insert("filepath".to_string(), json!(file_path.to_str().unwrap()));
 
         let result = interpolate_handlebars_string("{{filehash filepath}}", &env, "test").unwrap();
-        
+
         // Expected hash for "hello world"
         assert_eq!(
             result,
@@ -461,8 +461,9 @@ mod tests {
         let mut env = HashMap::new();
         env.insert("filepath".to_string(), json!(file_path.to_str().unwrap()));
 
-        let result = interpolate_handlebars_string("{{filehashBase64 filepath}}", &env, "test").unwrap();
-        
+        let result =
+            interpolate_handlebars_string("{{filehashBase64 filepath}}", &env, "test").unwrap();
+
         // Expected base64 hash for "hello world"
         // Hex: b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
         // Base64: uU0nuZNNPgilLlLX2n2r+sSE7+N6U4DukIj3rOLvzek=
@@ -478,7 +479,7 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let dir_path = temp_dir.path().join("test_dir");
         fs::create_dir(&dir_path).unwrap();
-        
+
         // Create two files with known content
         fs::write(dir_path.join("file1.txt"), "content1").unwrap();
         fs::write(dir_path.join("file2.txt"), "content2").unwrap();
@@ -487,7 +488,7 @@ mod tests {
         env.insert("dirpath".to_string(), json!(dir_path.to_str().unwrap()));
 
         let result = interpolate_handlebars_string("{{filehash dirpath}}", &env, "test").unwrap();
-        
+
         // The result should be deterministic for the same directory contents
         // We can't easily predict the exact hash without knowing the sort order
         // But we can verify it's a valid hex string of the correct length

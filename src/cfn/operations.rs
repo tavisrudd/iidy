@@ -65,13 +65,13 @@ impl CfnOperation {
 
     /// Check if this operation is read-only (doesn't modify AWS resources)
     pub fn is_read_only(&self) -> bool {
-        matches!(self, 
-            Self::DescribeStack | 
-            Self::EstimateCost | 
-            Self::ListStacks | 
-            Self::GetStackTemplate |
-            Self::DescribeStackDrift
-            // Note: TemplateApprovalRequest writes to S3, TemplateApprovalReview writes conditionally
+        matches!(
+            self,
+            Self::DescribeStack
+                | Self::EstimateCost
+                | Self::ListStacks
+                | Self::GetStackTemplate
+                | Self::DescribeStackDrift // Note: TemplateApprovalRequest writes to S3, TemplateApprovalReview writes conditionally
         )
     }
 }

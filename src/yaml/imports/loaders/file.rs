@@ -119,7 +119,12 @@ pub async fn load_filehash_import(
     if !resolved_path.exists() {
         if allow_missing {
             let data = "FILE_MISSING".to_string();
-            return Ok(create_filehash_import_data(location, resolved_location, data, base64));
+            return Ok(create_filehash_import_data(
+                location,
+                resolved_location,
+                data,
+                base64,
+            ));
         } else {
             return Err(anyhow!(
                 "Invalid location {} for filehash in {}",
@@ -141,7 +146,12 @@ pub async fn load_filehash_import(
         hash
     };
 
-    Ok(create_filehash_import_data(location, resolved_location, data, base64))
+    Ok(create_filehash_import_data(
+        location,
+        resolved_location,
+        data,
+        base64,
+    ))
 }
 
 /// Compute SHA256 hash of a string

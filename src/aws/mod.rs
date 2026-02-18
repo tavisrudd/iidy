@@ -7,19 +7,13 @@ use aws_types::region::Region;
 
 use crate::cli::NormalizedAwsOpts;
 
-pub mod timing;
 pub mod client_req_token;
 mod credential_source;
+pub mod timing;
 
 pub use credential_source::{
-    CredentialSource,
-    CredentialSourceStack,
-    CredentialDetectionContext,
-    ProfileSource,
-    AssumeRoleSource,
-    EnvVarProvider,
-    SystemEnv,
-    detect_credential_sources,
+    AssumeRoleSource, CredentialDetectionContext, CredentialSource, CredentialSourceStack,
+    EnvVarProvider, ProfileSource, SystemEnv, detect_credential_sources,
 };
 
 /// Custom error type for user-friendly AWS errors that have already been displayed
@@ -40,32 +34,35 @@ impl std::error::Error for UserFriendlyAwsError {}
 /// Format AWS errors in a user-friendly way
 pub fn format_aws_error(error: &anyhow::Error) -> String {
     let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
-    
+
     // Look for common AWS error patterns and provide user-friendly messages
     for err_msg in &error_chain {
         let lower_msg = err_msg.to_lowercase();
-        
+
         if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
-            return "ERROR: AWS credentials have expired. Please refresh your credentials.".to_string();
+            return "ERROR: AWS credentials have expired. Please refresh your credentials."
+                .to_string();
         }
-        
+
         if lower_msg.contains("no providers in chain provided credentials") {
-            return "ERROR: AWS credentials not found. Please configure your AWS credentials.".to_string();
+            return "ERROR: AWS credentials not found. Please configure your AWS credentials."
+                .to_string();
         }
-        
+
         if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
             return "ERROR: Access denied. Please check your AWS permissions.".to_string();
         }
-        
+
         if lower_msg.contains("invalid security token") {
-            return "ERROR: Invalid AWS security token. Please refresh your credentials.".to_string();
+            return "ERROR: Invalid AWS security token. Please refresh your credentials."
+                .to_string();
         }
-        
+
         if lower_msg.contains("network") || lower_msg.contains("timeout") {
             return "ERROR: Network error connecting to AWS. Please check your internet connection.".to_string();
         }
     }
-    
+
     // If no specific pattern matches, show the most relevant error from the chain
     if error_chain.len() > 1 {
         format!("ERROR: AWS error - {}", error_chain[error_chain.len() - 1])
@@ -163,7 +160,9 @@ pub async fn config_from_merged_settings(
 ///
 /// Note: This is used for commands that don't use stack-args.yaml. All settings
 /// are treated as coming from CLI flags for credential source detection.
-pub async fn config_from_normalized_opts(opts: &NormalizedAwsOpts) -> Result<(SdkConfig, CredentialSourceStack)> {
+pub async fn config_from_normalized_opts(
+    opts: &NormalizedAwsOpts,
+) -> Result<(SdkConfig, CredentialSourceStack)> {
     let settings = AwsSettings::from_normalized_opts(opts);
 
     // Create detection context - all settings come from CLI in this path

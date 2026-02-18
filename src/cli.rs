@@ -1,8 +1,8 @@
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
-use std::io::IsTerminal;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 
 /// Trait for converting CLI args to HashMap for metadata display
 pub trait ToArgMap {
@@ -90,7 +90,12 @@ pub struct GlobalOpts {
     #[arg(long, value_enum, global = true, default_value_t = Theme::Auto, help = "Color theme to use for output")]
     pub theme: Theme,
 
-    #[arg(long = "output-mode", value_enum, global = true, help = "Output mode for console display")]
+    #[arg(
+        long = "output-mode",
+        value_enum,
+        global = true,
+        help = "Output mode for console display"
+    )]
     pub output_mode: Option<crate::output::OutputMode>,
 
     #[arg(
@@ -113,7 +118,8 @@ pub struct GlobalOpts {
 impl GlobalOpts {
     /// Get the effective output mode, using default_for_environment if not specified
     pub fn effective_output_mode(&self) -> crate::output::OutputMode {
-        self.output_mode.unwrap_or_else(crate::output::OutputMode::default_for_environment)
+        self.output_mode
+            .unwrap_or_else(crate::output::OutputMode::default_for_environment)
     }
 }
 
@@ -382,9 +388,12 @@ impl Commands {
                 ApprovalCommands::Request(_) => crate::cfn::CfnOperation::TemplateApprovalRequest,
                 ApprovalCommands::Review(_) => crate::cfn::CfnOperation::TemplateApprovalReview,
             },
-            
+
             // All other commands should not be calling to_cfn_operation()
-            _ => panic!("Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands", self),
+            _ => panic!(
+                "Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands",
+                self
+            ),
         }
     }
 }
@@ -640,7 +649,11 @@ pub struct DemoArgs {
     pub demoscript: String,
     #[arg(long, default_value_t = 1.0)]
     pub timescaling: f64,
-    #[arg(long, default_value_t = false, help = "Mask secrets (AWS account numbers, ARNs) in command output")]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Mask secrets (AWS account numbers, ARNs) in command output"
+    )]
     pub mask_secrets: bool,
 }
 

@@ -4,17 +4,17 @@
 //! including event buffering, mode switching, event replay, and end-to-end
 //! scenarios that simulate real CloudFormation operations.
 
+use chrono::Utc;
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
 use iidy::output::manager::{DynamicOutputManager, OutputOptions};
 use iidy::output::renderer::OutputMode;
-use chrono::Utc;
 use std::collections::HashMap;
 use tokio;
 
 /// Helper function to create test output options
 fn create_test_output_options() -> OutputOptions {
-    use iidy::cli::{Commands, DescribeArgs, GlobalOpts, AwsOpts, ColorChoice, Theme, Cli};
+    use iidy::cli::{AwsOpts, Cli, ColorChoice, Commands, DescribeArgs, GlobalOpts, Theme};
     let cli = Cli {
         global_opts: GlobalOpts {
             environment: "test".to_string(),
@@ -48,7 +48,9 @@ fn create_sample_command_metadata() -> CommandMetadata {
         cli_arguments: [
             ("argsfile".to_string(), "stack-args.yaml".to_string()),
             ("template".to_string(), "template.yaml".to_string()),
-        ].into_iter().collect(),
+        ]
+        .into_iter()
+        .collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
         credential_source: "profile 'test-profile' (default)".to_string(),
@@ -75,23 +77,26 @@ fn create_sample_status_update(message: &str, level: StatusLevel) -> StatusUpdat
 async fn test_dynamic_output_manager_creation_and_initialization() {
     // Test creation with Plain mode
     let options = create_test_output_options();
-    let manager = DynamicOutputManager::new(OutputMode::Plain, options.clone()).await
+    let manager = DynamicOutputManager::new(OutputMode::Plain, options.clone())
+        .await
         .expect("Should create DynamicOutputManager with Plain mode");
-    
+
     assert_eq!(manager.current_mode(), OutputMode::Plain);
     assert_eq!(manager.buffer_len(), 0);
-    
+
     // Test creation with Interactive mode
-    let manager = DynamicOutputManager::new(OutputMode::Interactive, options.clone()).await
+    let manager = DynamicOutputManager::new(OutputMode::Interactive, options.clone())
+        .await
         .expect("Should create DynamicOutputManager with Interactive mode");
-    
+
     assert_eq!(manager.current_mode(), OutputMode::Interactive);
     assert_eq!(manager.buffer_len(), 0);
-    
+
     // Test creation with JSON mode
-    let manager = DynamicOutputManager::new(OutputMode::Json, options).await
+    let manager = DynamicOutputManager::new(OutputMode::Json, options)
+        .await
         .expect("Should create DynamicOutputManager with JSON mode");
-    
+
     assert_eq!(manager.current_mode(), OutputMode::Json);
     assert_eq!(manager.buffer_len(), 0);
 }
@@ -99,21 +104,26 @@ async fn test_dynamic_output_manager_creation_and_initialization() {
 #[tokio::test]
 async fn test_basic_rendering_and_buffering() {
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
+        .await
         .expect("Should create manager");
-    
+
     // Render some data
     let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
+    manager
+        .render(OutputData::CommandMetadata(metadata))
+        .await
         .expect("Should render command metadata");
-    
+
     assert_eq!(manager.buffer_len(), 1, "Should have 1 buffered event");
-    
+
     // Render a status update
     let status = create_sample_status_update("Operation starting", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(status)).await
+    manager
+        .render(OutputData::StatusUpdate(status))
+        .await
         .expect("Should render status update");
-    
+
     assert_eq!(manager.buffer_len(), 2, "Should have 2 buffered events");
 }
 
@@ -121,67 +131,92 @@ async fn test_basic_rendering_and_buffering() {
 async fn test_buffer_limit_enforcement() {
     let mut options = create_test_output_options();
     options.buffer_limit = 3; // Very small buffer for testing
-    
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
+
+    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
+        .await
         .expect("Should create manager");
-    
+
     // Add events beyond buffer limit
     for i in 0..5 {
         let status = create_sample_status_update(&format!("Event {}", i), StatusLevel::Info);
-        manager.render(OutputData::StatusUpdate(status)).await
+        manager
+            .render(OutputData::StatusUpdate(status))
+            .await
             .expect("Should render status");
     }
-    
+
     // Buffer should be at limit
     assert_eq!(manager.buffer_len(), 3, "Buffer should be at limit of 3");
-    
+
     // Add one more event
     let final_status = create_sample_status_update("Final event", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(final_status)).await
+    manager
+        .render(OutputData::StatusUpdate(final_status))
+        .await
         .expect("Should render final status");
-    
+
     // Buffer should still be at limit (oldest event removed)
-    assert_eq!(manager.buffer_len(), 3, "Buffer should still be at limit after overflow");
+    assert_eq!(
+        manager.buffer_len(),
+        3,
+        "Buffer should still be at limit after overflow"
+    );
 }
 
 #[tokio::test]
 async fn test_buffer_management_operations() {
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
+        .await
         .expect("Should create manager");
-    
+
     // Add some events
     for i in 0..5 {
         let status = create_sample_status_update(&format!("Event {}", i), StatusLevel::Info);
-        manager.render(OutputData::StatusUpdate(status)).await
+        manager
+            .render(OutputData::StatusUpdate(status))
+            .await
             .expect("Should render status");
     }
-    
+
     assert_eq!(manager.buffer_len(), 5, "Should have 5 buffered events");
-    
+
     // Clear buffer
     manager.clear_buffer();
-    assert_eq!(manager.buffer_len(), 0, "Buffer should be empty after clear");
-    
+    assert_eq!(
+        manager.buffer_len(),
+        0,
+        "Buffer should be empty after clear"
+    );
+
     // Add more events after clear
     let status = create_sample_status_update("After clear", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(status)).await
+    manager
+        .render(OutputData::StatusUpdate(status))
+        .await
         .expect("Should render after clear");
-    
-    assert_eq!(manager.buffer_len(), 1, "Should have 1 event after clear and render");
+
+    assert_eq!(
+        manager.buffer_len(),
+        1,
+        "Should have 1 event after clear and render"
+    );
 }
 
 #[tokio::test]
 async fn test_all_output_data_types_rendering() {
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Interactive, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Interactive, options)
+        .await
         .expect("Should create manager");
-    
+
     // Test CommandMetadata
     let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
+    manager
+        .render(OutputData::CommandMetadata(metadata))
+        .await
         .expect("Should render CommandMetadata");
-    
+
     // Test StackDefinition
     let stack_def = StackDefinition {
         name: "test-stack".to_string(),
@@ -204,14 +239,18 @@ async fn test_all_output_data_types_rendering() {
         console_url: "https://console.aws.amazon.com/cloudformation".to_string(),
         region: "us-east-1".to_string(),
     };
-    manager.render(OutputData::StackDefinition(stack_def, true)).await
+    manager
+        .render(OutputData::StackDefinition(stack_def, true))
+        .await
         .expect("Should render StackDefinition");
-    
+
     // Test StatusUpdate
     let status = create_sample_status_update("Test status", StatusLevel::Info);
-    manager.render(OutputData::StatusUpdate(status)).await
+    manager
+        .render(OutputData::StatusUpdate(status))
+        .await
         .expect("Should render StatusUpdate");
-    
+
     // Test CommandResult
     let result = CommandResult {
         success: true,
@@ -219,9 +258,11 @@ async fn test_all_output_data_types_rendering() {
         message: Some("Operation completed".to_string()),
         exit_code: 0,
     };
-    manager.render(OutputData::CommandResult(result)).await
+    manager
+        .render(OutputData::CommandResult(result))
+        .await
         .expect("Should render CommandResult");
-    
+
     let error = ErrorInfo {
         error_type: "TestError".to_string(),
         message: "Test error message".to_string(),
@@ -229,23 +270,32 @@ async fn test_all_output_data_types_rendering() {
         suggestions: vec!["Try again".to_string()],
         error_details: ErrorDetails::Generic(Some("Error details".to_string())),
     };
-    manager.render(OutputData::Error(error)).await
+    manager
+        .render(OutputData::Error(error))
+        .await
         .expect("Should render ErrorInfo");
-    
-    assert_eq!(manager.buffer_len(), 5, "Should have rendered 5 different data types");
+
+    assert_eq!(
+        manager.buffer_len(),
+        5,
+        "Should have rendered 5 different data types"
+    );
 }
 
 #[tokio::test]
 async fn test_end_to_end_cloudformation_operation_simulation() {
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
+        .await
         .expect("Should create manager");
 
     // Simulate a complete CloudFormation create-stack operation
 
     // 1. Command Metadata
     let metadata = create_sample_command_metadata();
-    manager.render(OutputData::CommandMetadata(metadata)).await
+    manager
+        .render(OutputData::CommandMetadata(metadata))
+        .await
         .expect("Should render command metadata");
 
     // 2. Stack Definition
@@ -257,8 +307,12 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         status_reason: None,
         capabilities: vec!["CAPABILITY_IAM".to_string()],
         service_role: None,
-        tags: [("Environment".to_string(), "test".to_string())].into_iter().collect(),
-        parameters: [("InstanceType".to_string(), "t3.micro".to_string())].into_iter().collect(),
+        tags: [("Environment".to_string(), "test".to_string())]
+            .into_iter()
+            .collect(),
+        parameters: [("InstanceType".to_string(), "t3.micro".to_string())]
+            .into_iter()
+            .collect(),
         disable_rollback: false,
         termination_protection: false,
         creation_time: Some(Utc::now()),
@@ -266,11 +320,14 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         timeout_in_minutes: Some(30),
         notification_arns: vec![],
         stack_policy: None,
-        arn: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-infrastructure/id".to_string(),
+        arn: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-infrastructure/id"
+            .to_string(),
         console_url: "https://console.aws.amazon.com/cloudformation".to_string(),
         region: "us-east-1".to_string(),
     };
-    manager.render(OutputData::StackDefinition(stack_def, true)).await
+    manager
+        .render(OutputData::StackDefinition(stack_def, true))
+        .await
         .expect("Should render stack definition");
 
     // 3. Status Updates during operation
@@ -286,7 +343,9 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
 
     for (message, level) in progress_updates {
         let status = create_sample_status_update(message, level);
-        manager.render(OutputData::StatusUpdate(status)).await
+        manager
+            .render(OutputData::StatusUpdate(status))
+            .await
             .expect("Should render status update");
     }
 
@@ -297,7 +356,9 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         message: Some("Stack 'test-infrastructure' created successfully".to_string()),
         exit_code: 0,
     };
-    manager.render(OutputData::CommandResult(result)).await
+    manager
+        .render(OutputData::CommandResult(result))
+        .await
         .expect("Should render command result");
 
     // Verify final state
@@ -309,29 +370,39 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
 async fn test_integration_with_fixture_data() {
     // Load real fixture data and test with DynamicOutputManager
     let loader = FixtureLoader::new();
-    let fixture = loader.load_test_fixture("create-stack-happy-path")
+    let fixture = loader
+        .load_test_fixture("create-stack-happy-path")
         .expect("Should load test fixture");
 
-    let output_data = loader.fixture_to_output_data(&fixture)
+    let output_data = loader
+        .fixture_to_output_data(&fixture)
         .expect("Should convert fixture to OutputData");
 
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Interactive, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Interactive, options)
+        .await
         .expect("Should create manager");
 
     // Render all fixture data
     for data in &output_data {
-        manager.render(data.clone()).await
+        manager
+            .render(data.clone())
+            .await
             .expect("Should render fixture data");
     }
 
-    assert_eq!(manager.buffer_len(), output_data.len(), "Should have buffered all fixture data");
+    assert_eq!(
+        manager.buffer_len(),
+        output_data.len(),
+        "Should have buffered all fixture data"
+    );
 }
 
 #[tokio::test]
 async fn test_error_handling_during_rendering() {
     let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options).await
+    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
+        .await
         .expect("Should create manager");
 
     let error_info = ErrorInfo {
@@ -342,10 +413,14 @@ async fn test_error_handling_during_rendering() {
             "Check parameter values in stack-args.yaml".to_string(),
             "Verify instance types are available in your region".to_string(),
         ],
-        error_details: ErrorDetails::Generic(Some("Parameter 'InstanceType' has invalid value".to_string())),
+        error_details: ErrorDetails::Generic(Some(
+            "Parameter 'InstanceType' has invalid value".to_string(),
+        )),
     };
 
-    manager.render(OutputData::Error(error_info)).await
+    manager
+        .render(OutputData::Error(error_info))
+        .await
         .expect("Should render error information");
 
     assert_eq!(manager.buffer_len(), 1, "Should have buffered error");

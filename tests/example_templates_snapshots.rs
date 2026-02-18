@@ -50,7 +50,15 @@ async fn test_all_example_templates_auto_discovery() {
                     templates.push((relative_file_path, name));
                 } else if path.is_dir() {
                     // Skip certain directories
-                    if ["invalid", "expected-outputs", "errors", ".git", "custom-resource-templates"].contains(&name.as_str()) {
+                    if [
+                        "invalid",
+                        "expected-outputs",
+                        "errors",
+                        ".git",
+                        "custom-resource-templates",
+                    ]
+                    .contains(&name.as_str())
+                    {
                         continue;
                     }
 

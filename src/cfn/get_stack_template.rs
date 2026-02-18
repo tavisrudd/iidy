@@ -1,16 +1,13 @@
-use crate::cli::{GetTemplateArgs, TemplateFormat, TemplateStageArg, Cli};
 use crate::cfn::{create_context_for_operation, error_handling::handle_aws_error};
+use crate::cli::{Cli, GetTemplateArgs, TemplateFormat, TemplateStageArg};
 use crate::output::{
-    DynamicOutputManager, OutputData,
-    data::StackTemplate,
-    manager::OutputOptions
+    DynamicOutputManager, OutputData, data::StackTemplate, manager::OutputOptions,
 };
 use anyhow::Result;
 use aws_sdk_cloudformation::operation::get_template::GetTemplateOutput;
 use aws_sdk_cloudformation::types::TemplateStage;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
-
 
 /// Output of formatting a stack template.
 pub struct FormattedTemplate {
@@ -96,19 +93,22 @@ pub fn format_template(
 pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32> {
     let operation = cli.command.to_cfn_operation();
     let opts = cli.aws_opts.clone().normalize();
-    
+
     // Setup output manager first (needed for error handling)
     let output_options = OutputOptions::new(cli.clone());
-    let mut output_manager = DynamicOutputManager::new(
-        cli.global_opts.effective_output_mode(),
-        output_options
-    ).await?;
+    let mut output_manager =
+        DynamicOutputManager::new(cli.global_opts.effective_output_mode(), output_options).await?;
 
-    let context = match handle_aws_error(create_context_for_operation(&opts, operation).await, &mut output_manager).await? {
+    let context = match handle_aws_error(
+        create_context_for_operation(&opts, operation).await,
+        &mut output_manager,
+    )
+    .await?
+    {
         Some(ctx) => ctx,
         None => return Ok(1),
     };
-    
+
     let client = &context.client;
     let stage = match args.stage {
         TemplateStageArg::Original => TemplateStage::Original,
@@ -123,22 +123,26 @@ pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32
             .send()
             .await
             .map_err(anyhow::Error::from),
-        &mut output_manager
-    ).await? {
+        &mut output_manager,
+    )
+    .await?
+    {
         Some(output) => output,
         None => return Ok(1),
     };
 
     let formatted_template = format_template(output, args.stage.clone(), args.format.clone())?;
-    
+
     // Convert to output data and render through the output manager
     let stack_template = StackTemplate {
         stderr_lines: formatted_template.stderr_lines,
         template_body: formatted_template.body,
     };
-    
-    output_manager.render(OutputData::StackTemplate(stack_template)).await?;
-    
+
+    output_manager
+        .render(OutputData::StackTemplate(stack_template))
+        .await?;
+
     Ok(0) // Return success exit code
 }
 

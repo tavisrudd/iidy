@@ -296,7 +296,7 @@ mod tests {
             poll_interval: Duration::from_millis(100),
             show_help_on_start: false,
         };
-        
+
         let listener = KeyboardListener::new(config);
         assert!(!listener.is_enabled());
         assert!(listener.command_sender.is_none());
@@ -310,9 +310,9 @@ mod tests {
             poll_interval: Duration::from_millis(100),
             show_help_on_start: false,
         };
-        
+
         let mut listener = KeyboardListener::new(config);
-        
+
         // All operations should be no-ops when disabled
         assert!(listener.start().await.is_ok());
         assert!(listener.stop().await.is_ok());

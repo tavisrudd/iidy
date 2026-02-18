@@ -1,8 +1,8 @@
 use url::Url;
 
 // Import the diagnostic API functions
-use crate::yaml::parsing::{error_codes, parse_yaml_ast_with_diagnostics};
 use super::parser::YamlParser;
+use crate::yaml::parsing::{error_codes, parse_yaml_ast_with_diagnostics};
 
 fn test_uri() -> Url {
     Url::parse("file:///test.yaml").unwrap()
@@ -63,7 +63,6 @@ test2: !$unknownTag2 value
             .iter()
             .any(|e| e.message.contains("unknownTag2"))
     );
-
 
     // Verify error codes are set
     assert!(diagnostics.errors.iter().all(|e| e.code.is_some()));
@@ -141,7 +140,7 @@ Properties:
 fn test_empty_string_source() {
     // Test edge case of completely empty source string
     let diagnostics = parse_yaml_ast_with_diagnostics("", test_uri());
-    
+
     // Empty source should parse successfully (empty document)
     assert!(!diagnostics.has_errors());
     assert!(diagnostics.parse_successful);
@@ -152,20 +151,24 @@ fn test_special_characters_in_file_uri() {
     // Test file URIs with special characters, spaces, Unicode
     let test_cases = vec![
         "file:///path/with spaces/test.yaml",
-        "file:///path/with-dashes/test.yaml", 
+        "file:///path/with-dashes/test.yaml",
         "file:///path/with_underscores/test.yaml",
         "file:///path/with.dots/test.yaml",
         "file:///path/with%20encoded%20spaces/test.yaml",
     ];
-    
+
     for uri_str in test_cases {
         let uri = Url::parse(uri_str).expect("Valid URI");
         let source = "test: value";
         let diagnostics = parse_yaml_ast_with_diagnostics(source, uri);
-        
+
         // Should parse successfully regardless of URI special characters
         assert!(!diagnostics.has_errors(), "Failed for URI: {}", uri_str);
-        assert!(diagnostics.parse_successful, "Parse failed for URI: {}", uri_str);
+        assert!(
+            diagnostics.parse_successful,
+            "Parse failed for URI: {}",
+            uri_str
+        );
     }
 }
 
@@ -258,20 +261,24 @@ invalid_test: !$let
 fn test_yaml_11_boolean_compatibility_documented() {
     // Document that tree-sitter parser treats YAML 1.1 boolean forms as strings, not booleans.
     // This is expected behavior - the YAML 1.1 compatibility is handled elsewhere in the codebase.
-    
+
     let yaml_11_booleans = vec![
-        ("yes", true), ("no", false),
-        ("on", true), ("off", false),
-        ("Yes", true), ("No", false),
-        ("ON", true), ("OFF", false),
+        ("yes", true),
+        ("no", false),
+        ("on", true),
+        ("off", false),
+        ("Yes", true),
+        ("No", false),
+        ("ON", true),
+        ("OFF", false),
     ];
-    
+
     for (yaml_str, _expected_bool) in yaml_11_booleans {
-        use super::parser::parse_yaml_ast;
         use super::ast::YamlAst;
-        
+        use super::parser::parse_yaml_ast;
+
         let result = parse_yaml_ast(yaml_str, test_uri()).unwrap();
-        
+
         // Document the current behavior: these are parsed as strings, not booleans
         // This is expected - YAML 1.1 compatibility is handled in conversion layer
         match result {
@@ -292,18 +299,22 @@ fn test_unicode_escape_handling() {
     // Test that documents current unicode handling limitations
     let test_cases = vec![
         (r#""\u0041""#, "\\u0041"), // Currently NOT processed as unicode
-        (r#""\n""#, "\n"),           // Basic escapes DO work
-        (r#""\t""#, "\t"),           // Basic escapes DO work
+        (r#""\n""#, "\n"),          // Basic escapes DO work
+        (r#""\t""#, "\t"),          // Basic escapes DO work
     ];
-    
+
     for (yaml_str, expected) in test_cases {
-        use super::parser::parse_yaml_ast;
         use super::ast::YamlAst;
-        
+        use super::parser::parse_yaml_ast;
+
         let result = parse_yaml_ast(yaml_str, test_uri()).unwrap();
         match result {
             YamlAst::PlainString(s, _) => {
-                assert_eq!(s, expected, "Unicode handling for '{}' differs from expected", yaml_str);
+                assert_eq!(
+                    s, expected,
+                    "Unicode handling for '{}' differs from expected",
+                    yaml_str
+                );
             }
             _ => panic!("Expected PlainString for '{}', got {:?}", yaml_str, result),
         }
@@ -319,17 +330,25 @@ fn test_malformed_yaml_error_recovery() {
         ("key: \"unclosed quote", "Unclosed quote"),
         ("- item\n  - nested\n    - bad", "Bad nesting structure"),
     ];
-    
+
     for (yaml_str, description) in malformed_cases {
         let diagnostics = parse_yaml_ast_with_diagnostics(yaml_str, test_uri());
-        
+
         // Tree-sitter may or may not error on these - document actual behavior
         if diagnostics.has_errors() {
-            assert!(!diagnostics.parse_successful, "If errors exist, parse should fail for: {}", description);
-            
+            assert!(
+                !diagnostics.parse_successful,
+                "If errors exist, parse should fail for: {}",
+                description
+            );
+
             // Error should contain location information
             if let Some(error) = diagnostics.errors.first() {
-                assert!(error.location.is_some(), "Error should have location for: {}", description);
+                assert!(
+                    error.location.is_some(),
+                    "Error should have location for: {}",
+                    description
+                );
             }
         } else {
             // Tree-sitter successfully parsed what serde_yaml might reject
@@ -347,39 +366,49 @@ fn test_deep_nesting_handling() {
         deep_yaml.push_str("  ");
     }
     deep_yaml.push_str("value: \"deep\"");
-    
+
     let diagnostics = parse_yaml_ast_with_diagnostics(&deep_yaml, test_uri());
-    
+
     // Should either succeed or fail gracefully (no panic/stack overflow)
     if diagnostics.has_errors() {
-        println!("Deep nesting failed gracefully with {} errors", diagnostics.error_count());
+        println!(
+            "Deep nesting failed gracefully with {} errors",
+            diagnostics.error_count()
+        );
     } else {
         println!("Deep nesting succeeded");
     }
-    
+
     // Test should not panic/crash
     assert!(true, "Parser handled deep nesting without crashing");
 }
 
-#[test] 
+#[test]
 fn test_large_document_handling() {
     // Test parser behavior with large documents
     let mut large_yaml = String::from("Resources:\n");
-    
+
     for i in 0..100 {
         large_yaml.push_str(&format!(
             "  Resource{}:\n    Type: AWS::S3::Bucket\n    Properties:\n      BucketName: \"bucket-{}\"\n",
             i, i
         ));
     }
-    
+
     let start = std::time::Instant::now();
     let diagnostics = parse_yaml_ast_with_diagnostics(&large_yaml, test_uri());
     let duration = start.elapsed();
-    
+
     // Should parse successfully in reasonable time
-    assert!(!diagnostics.has_errors(), "Large document should parse successfully");
-    assert!(duration < std::time::Duration::from_secs(5), "Parse time should be reasonable: {:?}", duration);
-    
+    assert!(
+        !diagnostics.has_errors(),
+        "Large document should parse successfully"
+    );
+    assert!(
+        duration < std::time::Duration::from_secs(5),
+        "Parse time should be reasonable: {:?}",
+        duration
+    );
+
     println!("Large document (100 resources) parsed in {:?}", duration);
 }

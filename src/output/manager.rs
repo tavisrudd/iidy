@@ -1,11 +1,11 @@
 //! Dynamic output manager for handling mode switching and event buffering
 //!
 //! This module provides the core DynamicOutputManager that coordinates
-//! between different output renderers and manages event history for 
+//! between different output renderers and manages event history for
 //! seamless mode switching.
-use crate::output::data::*;
-use crate::output::renderer::{OutputRenderer, OutputMode};
 use crate::cli::Cli;
+use crate::output::data::*;
+use crate::output::renderer::{OutputMode, OutputRenderer};
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -32,7 +32,6 @@ impl OutputOptions {
             cli_context: Arc::new(cli_context),
         }
     }
-    
 }
 
 /// Dynamic output manager that handles mode switching and event replay
@@ -49,9 +48,9 @@ impl DynamicOutputManager {
     pub async fn new(mode: OutputMode, options: OutputOptions) -> Result<Self> {
         let mut renderer = create_renderer(mode, &options)?;
         renderer.init().await?;
-        
+
         let buffer_limit = options.buffer_limit;
-        
+
         Ok(Self {
             current_mode: mode,
             current_renderer: renderer,
@@ -60,7 +59,7 @@ impl DynamicOutputManager {
             options,
         })
     }
-    
+
     /// Render data with the current renderer and buffer for mode switching
     pub async fn render(&mut self, data: OutputData) -> Result<()> {
         // Buffer the data for mode switching replay (arrival order)
@@ -68,90 +67,107 @@ impl DynamicOutputManager {
             self.event_buffer.pop_front();
         }
         self.event_buffer.push_back(data.clone());
-        
+
         // Render with current mode, passing buffer reference for ordering
-        self.current_renderer.render_output_data(data, Some(&self.event_buffer)).await
+        self.current_renderer
+            .render_output_data(data, Some(&self.event_buffer))
+            .await
     }
-    
+
     /// Switch to a different output mode
     pub async fn switch_to_mode(&mut self, new_mode: OutputMode) -> Result<()> {
         if new_mode == self.current_mode {
             return Ok(());
         }
-        
+
         // Clean up current renderer
         self.current_renderer.cleanup().await?;
-        
+
         // Clear screen logic will be added when TUI is implemented
-        
+
         // Create new renderer using stored options
         self.current_renderer = create_renderer(new_mode, &self.options)?;
         self.current_renderer.init().await?;
-        
+
         // Re-render all buffered data in new mode
         let buffered_data: Vec<OutputData> = self.event_buffer.iter().cloned().collect();
         for data in buffered_data {
-            self.current_renderer.render_output_data(data, Some(&self.event_buffer)).await?;
+            self.current_renderer
+                .render_output_data(data, Some(&self.event_buffer))
+                .await?;
         }
-        
+
         self.current_mode = new_mode;
-        
+
         // Show switch notification
         let switch_msg = StatusUpdate {
             message: format!("Switched to {} mode", new_mode),
             timestamp: chrono::Utc::now(),
             level: crate::output::data::StatusLevel::Info,
         };
-        self.current_renderer.render_output_data(OutputData::StatusUpdate(switch_msg), Some(&self.event_buffer)).await?;
-        
+        self.current_renderer
+            .render_output_data(
+                OutputData::StatusUpdate(switch_msg),
+                Some(&self.event_buffer),
+            )
+            .await?;
+
         Ok(())
     }
-    
+
     /// Get current output mode
     pub fn current_mode(&self) -> OutputMode {
         self.current_mode
     }
-    
+
     /// Clear the event buffer
     pub fn clear_buffer(&mut self) {
         self.event_buffer.clear();
     }
-    
+
     /// Get the number of buffered events
     pub fn buffer_len(&self) -> usize {
         self.event_buffer.len()
     }
-    
-    
+
     /// Request user confirmation and return whether user confirmed
     pub async fn request_confirmation(&mut self, message: String) -> Result<bool> {
         self.request_confirmation_impl(message, None).await
     }
-    
+
     /// Request user confirmation with a specific section key
-    pub async fn request_confirmation_with_key(&mut self, message: String, key: String) -> Result<bool> {
+    pub async fn request_confirmation_with_key(
+        &mut self,
+        message: String,
+        key: String,
+    ) -> Result<bool> {
         self.request_confirmation_impl(message, Some(key)).await
     }
-    
+
     /// Internal implementation for confirmation requests
-    async fn request_confirmation_impl(&mut self, message: String, key: Option<String>) -> Result<bool> {
+    async fn request_confirmation_impl(
+        &mut self,
+        message: String,
+        key: Option<String>,
+    ) -> Result<bool> {
         // Create oneshot channel internally
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         // Create confirmation request with channel
         let confirmation = OutputData::ConfirmationPrompt(ConfirmationRequest {
             message,
             response_tx: Some(response_tx),
             key,
         });
-        
+
         // Send through normal rendering system (integrates with sections)
         self.render(confirmation).await?;
-        
+
         // Wait for response from renderer
-        response_rx.await.map_err(|_| anyhow::anyhow!("Confirmation response channel closed"))
+        response_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("Confirmation response channel closed"))
     }
-    
 }
 
 /// Create a renderer for the specified mode
@@ -164,11 +180,15 @@ fn create_renderer(mode: OutputMode, options: &OutputOptions) -> Result<Box<dyn 
                 color_choice: crate::cli::ColorChoice::Never, // Force no colors
                 terminal_width: options.terminal_width,
                 show_timestamps: true,
-                enable_spinners: false, // No spinners in plain mode
+                enable_spinners: false,      // No spinners in plain mode
                 enable_ansi_features: false, // No ANSI features in plain mode
                 cli_context: Some(options.cli_context.clone()), // Pass CLI context for proper ordering
             };
-            Ok(Box::new(crate::output::renderers::interactive::InteractiveRenderer::new(interactive_options)))
+            Ok(Box::new(
+                crate::output::renderers::interactive::InteractiveRenderer::new(
+                    interactive_options,
+                ),
+            ))
         }
         OutputMode::Interactive => {
             let interactive_options = crate::output::renderers::interactive::InteractiveOptions {
@@ -180,7 +200,11 @@ fn create_renderer(mode: OutputMode, options: &OutputOptions) -> Result<Box<dyn 
                 enable_ansi_features: true,
                 cli_context: Some(options.cli_context.clone()),
             };
-            Ok(Box::new(crate::output::renderers::interactive::InteractiveRenderer::new(interactive_options)))
+            Ok(Box::new(
+                crate::output::renderers::interactive::InteractiveRenderer::new(
+                    interactive_options,
+                ),
+            ))
         }
         OutputMode::Json => {
             let json_options = crate::output::renderers::json::JsonOptions {
@@ -188,7 +212,9 @@ fn create_renderer(mode: OutputMode, options: &OutputOptions) -> Result<Box<dyn 
                 pretty_print: false, // JSONL format should be compact
                 include_type: true,
             };
-            Ok(Box::new(crate::output::renderers::json::JsonRenderer::new(json_options)))
+            Ok(Box::new(crate::output::renderers::json::JsonRenderer::new(
+                json_options,
+            )))
         }
     }
 }

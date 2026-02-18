@@ -4,17 +4,21 @@
 //! multiple command handlers (create-changeset, create-or-update --changeset, etc.)
 
 use anyhow::Result;
+use aws_sdk_cloudformation::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_cloudformation::operation::create_change_set::CreateChangeSetOutput;
-use aws_sdk_cloudformation::error::{SdkError, ProvideErrorMetadata};
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 
-use crate::cfn::{CfnContext, CfnOperation, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, constants::{MAX_CHANGESET_CREATION_TIMEOUT_SECS, CHANGESET_POLL_INTERVAL_SECS}};
+use crate::cfn::stack_args::StackArgs;
+use crate::cfn::{
+    CfnContext, CfnOperation,
+    constants::{CHANGESET_POLL_INTERVAL_SECS, MAX_CHANGESET_CREATION_TIMEOUT_SECS},
+    template_loader::{TEMPLATE_MAX_BYTES, load_cfn_template},
+};
 use crate::output::{
     DynamicOutputManager,
     aws_conversion::convert_token_info,
-    data::{OutputData, ChangeSetCreationResult, ChangeSetInfo, ChangeInfo}
+    data::{ChangeInfo, ChangeSetCreationResult, ChangeSetInfo, OutputData},
 };
-use crate::cfn::stack_args::StackArgs;
 use crate::yaml::imports::loaders::random::generate_dashed_name;
 
 /// Check if a CloudFormation stack exists.
@@ -43,8 +47,12 @@ pub async fn check_stack_state(context: &CfnContext, stack_name: &str) -> Result
         }
         Err(SdkError::ServiceError(e)) => {
             let service_err = e.err();
-            if service_err.code() == Some("ValidationError") &&
-               service_err.message().unwrap_or("").contains("does not exist") {
+            if service_err.code() == Some("ValidationError")
+                && service_err
+                    .message()
+                    .unwrap_or("")
+                    .contains("does not exist")
+            {
                 Ok(StackState::DoesNotExist)
             } else {
                 Err(SdkError::ServiceError(e).into())
@@ -56,7 +64,7 @@ pub async fn check_stack_state(context: &CfnContext, stack_name: &str) -> Result
 
 async fn check_existing_changesets(context: &CfnContext, stack_name: &str) -> Result<String> {
     let list_request = context.client.list_change_sets().stack_name(stack_name);
-    
+
     match list_request.send().await {
         Ok(response) => {
             if let Some(changeset) = response.summaries().first() {
@@ -77,8 +85,12 @@ pub async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Resul
         Ok(_) => Ok(true),
         Err(SdkError::ServiceError(e)) => {
             let service_err = e.err();
-            if service_err.code() == Some("ValidationError") &&
-               service_err.message().unwrap_or("").contains("does not exist") {
+            if service_err.code() == Some("ValidationError")
+                && service_err
+                    .message()
+                    .unwrap_or("")
+                    .contains("does not exist")
+            {
                 Ok(false)
             } else {
                 Err(SdkError::ServiceError(e).into())
@@ -109,27 +121,28 @@ pub async fn create_changeset_comprehensive(
     // Check stack state to determine changeset handling
     let stack_name = stack_args.stack_name.as_ref().unwrap();
     let stack_state = check_stack_state(context, stack_name).await?;
-    
+
     // Handle REVIEW_IN_PROGRESS state - show existing changeset details and flow to execution
     if let StackState::ReviewInProgress(existing_changeset_name) = &stack_state {
         // Infer changeset type: REVIEW_IN_PROGRESS means this is the initial CREATE changeset
         let changeset_type = "CREATE".to_string();
-        
+
         // Build changeset result for the existing changeset to show details to user
         let existing_changeset_result = build_existing_changeset_result(
             context,
             stack_name,
             &existing_changeset_name,
             &changeset_type,
-        ).await?;
-        
+        )
+        .await?;
+
         // Return this result - it will flow through the normal create-or-update execution path
         // which will show the changeset details and then prompt "Do you want to execute this changeset now?"
         return Ok(existing_changeset_result);
     }
 
     let stack_exists = matches!(stack_state, StackState::Exists);
-    
+
     let (changeset_response, _) = perform_changeset_creation(
         context,
         stack_args,
@@ -140,7 +153,8 @@ pub async fn create_changeset_comprehensive(
         output_manager,
         description,
         environment,
-    ).await?;
+    )
+    .await?;
 
     // Wait for changeset to complete processing
     wait_for_changeset_completion(context, &changeset_response, &final_changeset_name).await?;
@@ -153,7 +167,8 @@ pub async fn create_changeset_comprehensive(
         stack_args,
         argsfile_path,
         stack_exists,
-    ).await
+    )
+    .await
 }
 
 async fn perform_changeset_creation(
@@ -170,10 +185,10 @@ async fn perform_changeset_creation(
     let (create_request, token) = build_create_changeset_with_type(
         stack_args,
         changeset_name,
-        if stack_exists { 
-            aws_sdk_cloudformation::types::ChangeSetType::Update 
-        } else { 
-            aws_sdk_cloudformation::types::ChangeSetType::Create 
+        if stack_exists {
+            aws_sdk_cloudformation::types::ChangeSetType::Update
+        } else {
+            aws_sdk_cloudformation::types::ChangeSetType::Create
         },
         &CfnOperation::CreateChangeset,
         argsfile_path,
@@ -181,11 +196,14 @@ async fn perform_changeset_creation(
         context,
         description,
         environment,
-    ).await?;
-    
+    )
+    .await?;
+
     // Show token info
     let output_token = convert_token_info(&token);
-    output_manager.render(OutputData::TokenInfo(output_token)).await?;
+    output_manager
+        .render(OutputData::TokenInfo(output_token))
+        .await?;
 
     let response = create_request.send().await?;
 
@@ -202,9 +220,12 @@ async fn build_create_changeset_with_type(
     context: &CfnContext,
     description: Option<&str>,
     environment: Option<&str>,
-) -> Result<(aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder, crate::aws::client_req_token::TokenInfo)> {
+) -> Result<(
+    aws_sdk_cloudformation::operation::create_change_set::builders::CreateChangeSetFluentBuilder,
+    crate::aws::client_req_token::TokenInfo,
+)> {
     use aws_sdk_cloudformation::types::{Capability, Parameter, Tag};
-    
+
     let token = if use_primary_token {
         context.primary_token().clone()
     } else {
@@ -232,7 +253,8 @@ async fn build_create_changeset_with_type(
                 environment, // Pass through the environment for proper YAML preprocessing
                 TEMPLATE_MAX_BYTES,
                 Some(&context.create_s3_client()),
-            ).await?;
+            )
+            .await?;
 
             if let Some(template_body) = template_result.template_body {
                 create_request = create_request.template_body(template_body);
@@ -316,23 +338,23 @@ async fn build_changeset_result(
 ) -> Result<ChangeSetCreationResult> {
     // Generate console URL
     let console_url = generate_changeset_console_url(response)?;
-    
+
     // Fetch pending changesets
     let stack_name = stack_args.stack_name.as_ref().unwrap();
     let pending_changesets = fetch_pending_changesets(&context.client, stack_name).await?;
-    
+
     // Generate next steps (exact iidy-js format)
     let region = extract_region_from_stack_arn(response.stack_id().unwrap_or(""))?;
     let next_steps = vec![
-        format!("Your new stack is now in REVIEW_IN_PROGRESS state. To create the resources run the following"),
-        format!("  iidy --region {} exec-changeset --stack-name {} {} {}",
-            region,
-            stack_name,
-            argsfile_path,
-            changeset_name
-        )
+        format!(
+            "Your new stack is now in REVIEW_IN_PROGRESS state. To create the resources run the following"
+        ),
+        format!(
+            "  iidy --region {} exec-changeset --stack-name {} {} {}",
+            region, stack_name, argsfile_path, changeset_name
+        ),
     ];
-    
+
     Ok(ChangeSetCreationResult {
         changeset_name: changeset_name.to_string(),
         stack_name: stack_name.clone(),
@@ -349,20 +371,20 @@ fn generate_changeset_console_url(response: &CreateChangeSetOutput) -> Result<St
     // Extract stack ARN and changeset ARN from response
     let stack_arn = response.stack_id().unwrap_or("");
     let changeset_arn = response.id().unwrap_or("");
-    
+
     // Parse region from stack ARN (format: arn:aws:cloudformation:region:account:stack/name/id)
     let region = stack_arn.split(':').nth(3).unwrap_or("us-east-1");
-    
+
     // URL encode the ARNs
     let encoded_stack_arn = urlencoding::encode(stack_arn);
     let encoded_changeset_arn = urlencoding::encode(changeset_arn);
-    
+
     // Generate AWS Console URL (exact iidy-js format)
     let console_url = format!(
         "https://{}.console.aws.amazon.com/cloudformation/home?region={}#/changeset/detail?stackId={}&changeSetId={}",
         region, region, encoded_stack_arn, encoded_changeset_arn
     );
-    
+
     Ok(console_url)
 }
 
@@ -376,9 +398,9 @@ async fn fetch_pending_changesets(
         .stack_name(stack_name)
         .send()
         .await?;
-    
+
     let mut changesets = Vec::new();
-    
+
     if let Some(changeset_summaries) = list_response.summaries {
         for summary in changeset_summaries {
             // Get detailed changeset information
@@ -388,54 +410,88 @@ async fn fetch_pending_changesets(
                 .change_set_name(summary.change_set_name().unwrap_or(""))
                 .send()
                 .await?;
-                
+
             let mut changes = Vec::new();
             if let Some(ref changeset_changes) = describe_response.changes {
                 for change in changeset_changes {
                     if let Some(ref resource_change) = change.resource_change {
                         changes.push(ChangeInfo {
-                            action: resource_change.action().map(|a| a.as_str()).unwrap_or("Unknown").to_string(),
-                            logical_resource_id: resource_change.logical_resource_id().unwrap_or("").to_string(),
-                            physical_resource_id: resource_change.physical_resource_id().map(|s| s.to_string()),
-                            resource_type: resource_change.resource_type().unwrap_or("").to_string(),
-                            replacement: resource_change.replacement().map(|r| r.as_str().to_string()),
-                            scope: Some(resource_change.scope()
-                                .iter().map(|s| s.as_str().to_string()).collect()
+                            action: resource_change
+                                .action()
+                                .map(|a| a.as_str())
+                                .unwrap_or("Unknown")
+                                .to_string(),
+                            logical_resource_id: resource_change
+                                .logical_resource_id()
+                                .unwrap_or("")
+                                .to_string(),
+                            physical_resource_id: resource_change
+                                .physical_resource_id()
+                                .map(|s| s.to_string()),
+                            resource_type: resource_change
+                                .resource_type()
+                                .unwrap_or("")
+                                .to_string(),
+                            replacement: resource_change
+                                .replacement()
+                                .map(|r| r.as_str().to_string()),
+                            scope: Some(
+                                resource_change
+                                    .scope()
+                                    .iter()
+                                    .map(|s| s.as_str().to_string())
+                                    .collect(),
                             ),
-                            details: resource_change.details()
-                                .iter().map(|detail| crate::output::data::ChangeDetail {
-                                    target: detail.target().and_then(|t| t.name()).unwrap_or("").to_string(),
+                            details: resource_change
+                                .details()
+                                .iter()
+                                .map(|detail| crate::output::data::ChangeDetail {
+                                    target: detail
+                                        .target()
+                                        .and_then(|t| t.name())
+                                        .unwrap_or("")
+                                        .to_string(),
                                     evaluation: detail.evaluation().map(|e| e.as_str().to_string()),
-                                    change_source: detail.change_source().map(|cs| cs.as_str().to_string()),
-                                    causing_entity: detail.causing_entity().map(|ce| ce.to_string()),
-                                }).collect(),
+                                    change_source: detail
+                                        .change_source()
+                                        .map(|cs| cs.as_str().to_string()),
+                                    causing_entity: detail
+                                        .causing_entity()
+                                        .map(|ce| ce.to_string()),
+                                })
+                                .collect(),
                         });
                     }
                 }
             }
-            
+
             changesets.push(ChangeSetInfo {
                 change_set_name: summary.change_set_name().unwrap_or("").to_string(),
                 change_set_id: summary.change_set_id().unwrap_or("").to_string(),
                 stack_id: summary.stack_id().unwrap_or("").to_string(),
                 stack_name: summary.stack_name().unwrap_or("").to_string(),
                 description: summary.description().map(|s| s.to_string()),
-                status: summary.status().map(|s| s.to_string()).unwrap_or("UNKNOWN".to_string()),
+                status: summary
+                    .status()
+                    .map(|s| s.to_string())
+                    .unwrap_or("UNKNOWN".to_string()),
                 status_reason: summary.status_reason().map(|s| s.to_string()),
-                creation_time: summary.creation_time.and_then(|ts| {
-                    chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-                }),
+                creation_time: summary
+                    .creation_time
+                    .and_then(|ts| chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())),
                 execution_status: summary.execution_status().map(|s| s.to_string()),
                 changes,
             });
         }
     }
-    
+
     Ok(changesets)
 }
 
 fn extract_region_from_stack_arn(stack_arn: &str) -> Result<String> {
-    stack_arn.split(':').nth(3)
+    stack_arn
+        .split(':')
+        .nth(3)
         .map(|s| s.to_string())
         .ok_or_else(|| anyhow::anyhow!("Invalid stack ARN format"))
 }
@@ -447,39 +503,43 @@ async fn wait_for_changeset_completion(
     changeset_name: &str,
 ) -> Result<()> {
     let stack_id = response.stack_id().unwrap_or("");
-    
+
     let poll_interval = Duration::from_secs(CHANGESET_POLL_INTERVAL_SECS);
     let max_attempts = MAX_CHANGESET_CREATION_TIMEOUT_SECS / CHANGESET_POLL_INTERVAL_SECS;
-    
+
     for _ in 0..max_attempts {
-        let describe_response = context.client
+        let describe_response = context
+            .client
             .describe_change_set()
             .stack_name(stack_id)
             .change_set_name(changeset_name)
             .send()
             .await?;
-        
+
         if let Some(status) = describe_response.status() {
             match status.as_str() {
                 "CREATE_COMPLETE" => {
                     return Ok(()); // Changeset is ready
-                },
+                }
                 "CREATE_PENDING" | "CREATE_IN_PROGRESS" => {
                     // Still processing, continue waiting
                     sleep(poll_interval).await;
                     continue;
-                },
+                }
                 "FAILED" => {
                     let reason = describe_response.status_reason().unwrap_or("Unknown error");
                     return Err(anyhow::anyhow!("Changeset creation failed: {}", reason));
-                },
+                }
                 _ => {
-                    return Err(anyhow::anyhow!("Unexpected changeset status: {}", status.as_str()));
+                    return Err(anyhow::anyhow!(
+                        "Unexpected changeset status: {}",
+                        status.as_str()
+                    ));
                 }
             }
         }
     }
-    
+
     Err(anyhow::anyhow!("Timeout waiting for changeset to complete"))
 }
 
@@ -490,35 +550,38 @@ async fn build_existing_changeset_result(
     changeset_type: &str,
 ) -> Result<ChangeSetCreationResult> {
     // Describe the existing changeset to get its details
-    let describe_response = context.client
+    let describe_response = context
+        .client
         .describe_change_set()
         .stack_name(stack_name)
         .change_set_name(changeset_name)
         .send()
         .await?;
-    
+
     // Generate console URL
     let console_url = format!(
         "https://console.aws.amazon.com/cloudformation/home#/stacks/stackinfo?stackId={}",
         stack_name
     );
-    
+
     // Get pending changesets (reuse existing logic)
     let pending_changesets = fetch_pending_changesets(&context.client, stack_name).await?;
-    
+
     Ok(ChangeSetCreationResult {
         changeset_name: changeset_name.to_string(),
         stack_name: stack_name.to_string(),
         changeset_type: changeset_type.to_string(),
         has_changes: !describe_response.changes().is_empty(),
-        status: describe_response.status()
+        status: describe_response
+            .status()
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|| "UNKNOWN".to_string()),
         console_url,
         pending_changesets,
-        next_steps: vec![
-            format!("Found existing changeset '{}' ready for execution", changeset_name),
-        ],
+        next_steps: vec![format!(
+            "Found existing changeset '{}' ready for execution",
+            changeset_name
+        )],
     })
 }
 
@@ -533,14 +596,16 @@ pub async fn confirm_changeset_execution(
         true
     } else {
         if use_key {
-            output_manager.request_confirmation_with_key(
-                "Do you want to execute this changeset now?".to_string(),
-                "execute_changeset".to_string()
-            ).await?
+            output_manager
+                .request_confirmation_with_key(
+                    "Do you want to execute this changeset now?".to_string(),
+                    "execute_changeset".to_string(),
+                )
+                .await?
         } else {
-            output_manager.request_confirmation(
-                "Do you want to execute this changeset now?".to_string()
-            ).await?
+            output_manager
+                .request_confirmation("Do you want to execute this changeset now?".to_string())
+                .await?
         }
     };
 
@@ -548,7 +613,13 @@ pub async fn confirm_changeset_execution(
         let elapsed = context.elapsed_seconds().await?;
         if use_key {
             use crate::output::aws_conversion::create_command_result;
-            output_manager.render(create_command_result(true, elapsed, Some("Changeset execution declined".to_string()))).await?;
+            output_manager
+                .render(create_command_result(
+                    true,
+                    elapsed,
+                    Some("Changeset execution declined".to_string()),
+                ))
+                .await?;
         } else {
             use crate::output::aws_conversion::create_final_command_summary;
             let final_summary = create_final_command_summary(true, elapsed);
@@ -558,4 +629,3 @@ pub async fn confirm_changeset_execution(
 
     Ok(confirmed)
 }
-

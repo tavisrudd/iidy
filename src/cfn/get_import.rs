@@ -1,7 +1,7 @@
 //! Get-import command implementation
 //!
 //! Retrieves and displays data from any import location supported by the iidy import system.
-//! This command enables users to directly access and inspect data from various sources 
+//! This command enables users to directly access and inspect data from various sources
 //! (files, S3, HTTP, AWS services, etc.) without needing to create a template.
 
 use anyhow::{Result, anyhow};
@@ -10,9 +10,9 @@ use serde_json;
 use serde_yaml;
 
 use crate::{
-    cli::{Cli, GetImportArgs},
     aws::{config_from_normalized_opts, format_aws_error},
-    yaml::imports::{loaders::ProductionImportLoader, ImportLoader},
+    cli::{Cli, GetImportArgs},
+    yaml::imports::{ImportLoader, loaders::ProductionImportLoader},
 };
 
 /// Get import data and display it in the requested format
@@ -32,7 +32,7 @@ use crate::{
 pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
     // Normalize AWS options from CLI
     let normalized_opts = cli.aws_opts.clone().normalize();
-    
+
     // Configure AWS SDK for AWS-based imports (cfn, ssm, s3)
     let aws_config = match config_from_normalized_opts(&normalized_opts).await {
         Ok((config, _credential_sources)) => Some(config),
@@ -71,7 +71,7 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
     if let Some(query_str) = &args.query {
         // Convert serde_yaml::Value to serde_json::Value for JMESPath
         let json_value = yaml_to_json_value(&output_doc)?;
-        
+
         // Compile and execute JMESPath query
         match jmespath::compile(query_str) {
             Ok(expression) => {
@@ -117,7 +117,10 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
             }
         }
         _ => {
-            eprintln!("Unsupported format: '{}'. Use 'yaml' or 'json'.", args.format);
+            eprintln!(
+                "Unsupported format: '{}'. Use 'yaml' or 'json'.",
+                args.format
+            );
             return Ok(1);
         }
     }
@@ -131,10 +134,10 @@ fn yaml_to_json_value(yaml_value: &serde_yaml::Value) -> Result<serde_json::Valu
     // This handles the conversion between the two value types
     let yaml_str = serde_yaml::to_string(yaml_value)
         .map_err(|e| anyhow!("Failed to serialize YAML value: {}", e))?;
-    
+
     let json_value: serde_json::Value = serde_yaml::from_str(&yaml_str)
         .map_err(|e| anyhow!("Failed to convert YAML to JSON: {}", e))?;
-    
+
     Ok(json_value)
 }
 
@@ -143,17 +146,17 @@ fn json_to_yaml_value(json_value: &serde_json::Value) -> Result<serde_yaml::Valu
     // Serialize JSON to string, then deserialize as YAML
     let json_str = serde_json::to_string(json_value)
         .map_err(|e| anyhow!("Failed to serialize JSON value: {}", e))?;
-    
+
     let yaml_value: serde_yaml::Value = serde_yaml::from_str(&json_str)
         .map_err(|e| anyhow!("Failed to convert JSON to YAML: {}", e))?;
-    
+
     Ok(yaml_value)
 }
 
 /// Convert JMESPath Variable to serde_json::Value
 fn jmespath_to_json_value(variable: std::rc::Rc<jmespath::Variable>) -> Result<serde_json::Value> {
     use jmespath::Variable;
-    
+
     let json_value = match variable.as_ref() {
         Variable::Null => serde_json::Value::Null,
         Variable::Bool(b) => serde_json::Value::Bool(*b),
@@ -189,29 +192,32 @@ fn jmespath_to_json_value(variable: std::rc::Rc<jmespath::Variable>) -> Result<s
             serde_json::Value::Null
         }
     };
-    
+
     Ok(json_value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jmespath::Variable;
     use serde_json::json;
     use serde_yaml::Value as YamlValue;
-    use jmespath::Variable;
     use std::rc::Rc;
 
     #[test]
     fn test_yaml_to_json_conversion() {
-        let yaml_value = serde_yaml::from_str(r#"
+        let yaml_value = serde_yaml::from_str(
+            r#"
             name: "test"
             values: [1, 2, 3]
             nested:
               key: "value"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         let json_value = yaml_to_json_value(&yaml_value).unwrap();
-        
+
         assert_eq!(json_value["name"], "test");
         assert_eq!(json_value["values"], json!([1, 2, 3]));
         assert_eq!(json_value["nested"]["key"], "value");
@@ -228,7 +234,7 @@ mod tests {
         });
 
         let yaml_value = json_to_yaml_value(&json_value).unwrap();
-        
+
         // Convert back to verify round-trip
         if let YamlValue::Mapping(map) = yaml_value {
             assert!(map.contains_key(&YamlValue::String("name".to_string())));
@@ -241,26 +247,29 @@ mod tests {
 
     #[test]
     fn test_round_trip_conversion() {
-        let original_yaml = serde_yaml::from_str(r#"
+        let original_yaml = serde_yaml::from_str(
+            r#"
             database:
               host: "localhost"
               port: 5432
               enabled: true
             features: ["auth", "logging"]
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
 
         // Round trip: YAML -> JSON -> YAML
         let json_value = yaml_to_json_value(&original_yaml).unwrap();
         let final_yaml = json_to_yaml_value(&json_value).unwrap();
-        
+
         // Verify structure is preserved
         let original_str = serde_yaml::to_string(&original_yaml).unwrap();
         let final_str = serde_yaml::to_string(&final_yaml).unwrap();
-        
+
         // Parse both back to ensure they represent the same data
         let original_reparsed: serde_yaml::Value = serde_yaml::from_str(&original_str).unwrap();
         let final_reparsed: serde_yaml::Value = serde_yaml::from_str(&final_str).unwrap();
-        
+
         assert_eq!(original_reparsed, final_reparsed);
     }
 
@@ -296,20 +305,26 @@ mod tests {
         ];
         let array_var = Rc::new(Variable::Array(items));
         let json_value = jmespath_to_json_value(array_var).unwrap();
-        
+
         assert_eq!(json_value, json!(["item1", 2, true]));
     }
 
     #[test]
     fn test_jmespath_object_conversion() {
         let mut obj = std::collections::BTreeMap::new();
-        obj.insert("name".to_string(), Rc::new(Variable::String("test".to_string())));
-        obj.insert("count".to_string(), Rc::new(Variable::Number(serde_json::Number::from(42))));
+        obj.insert(
+            "name".to_string(),
+            Rc::new(Variable::String("test".to_string())),
+        );
+        obj.insert(
+            "count".to_string(),
+            Rc::new(Variable::Number(serde_json::Number::from(42))),
+        );
         obj.insert("enabled".to_string(), Rc::new(Variable::Bool(true)));
-        
+
         let object_var = Rc::new(Variable::Object(obj));
         let json_value = jmespath_to_json_value(object_var).unwrap();
-        
+
         assert_eq!(json_value["name"], "test");
         assert_eq!(json_value["count"], 42);
         assert_eq!(json_value["enabled"], true);

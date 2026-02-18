@@ -1,11 +1,14 @@
 use aws_sdk_cloudformation::types::{Capability, OnFailure, Parameter, Tag};
 
-use crate::cfn::StackArgs;
 use crate::aws::client_req_token::TokenInfo;
 #[cfg(test)]
 use crate::aws::client_req_token::TokenSource;
+use crate::cfn::StackArgs;
 
-use super::{CfnContext, CfnOperation, template_loader::{load_cfn_template, load_cfn_stack_policy, TEMPLATE_MAX_BYTES}};
+use super::{
+    CfnContext, CfnOperation,
+    template_loader::{TEMPLATE_MAX_BYTES, load_cfn_stack_policy, load_cfn_template},
+};
 
 /// Builder pattern for constructing CloudFormation API requests with proper token injection.
 ///
@@ -73,7 +76,8 @@ impl<'a> CfnRequestBuilder<'a> {
                 environment,
                 TEMPLATE_MAX_BYTES,
                 Some(&self.context.create_s3_client()),
-            ).await?;
+            )
+            .await?;
 
             if let Some(template_body) = template_result.template_body {
                 builder = builder.template_body(template_body);
@@ -166,7 +170,12 @@ impl<'a> CfnRequestBuilder<'a> {
 
         // Load and apply stack policy if present
         if let Some(ref stack_policy) = self.stack_args.stack_policy {
-            let policy_result = load_cfn_stack_policy(Some(stack_policy), argsfile_path, Some(&self.context.create_s3_client())).await?;
+            let policy_result = load_cfn_stack_policy(
+                Some(stack_policy),
+                argsfile_path,
+                Some(&self.context.create_s3_client()),
+            )
+            .await?;
 
             if let Some(policy_body) = policy_result.stack_policy_body {
                 builder = builder.stack_policy_body(policy_body);
@@ -222,7 +231,8 @@ impl<'a> CfnRequestBuilder<'a> {
                     environment,
                     TEMPLATE_MAX_BYTES,
                     Some(&self.context.create_s3_client()),
-                ).await?;
+                )
+                .await?;
 
                 if let Some(template_body) = template_result.template_body {
                     builder = builder.template_body(template_body);
@@ -424,8 +434,11 @@ impl<'a> CfnRequestBuilder<'a> {
 mod tests {
     use super::*;
     use crate::{
+        aws::{
+            CredentialSource, CredentialSourceStack, ProfileSource, client_req_token::TokenInfo,
+            timing::MockTimeProvider,
+        },
         cfn::CfnContext,
-        aws::{timing::MockTimeProvider, client_req_token::TokenInfo, CredentialSourceStack, CredentialSource, ProfileSource},
     };
     use aws_sdk_cloudformation::Client;
     use chrono::TimeZone;
@@ -433,13 +446,11 @@ mod tests {
     use std::sync::Arc;
 
     fn mock_credential_sources() -> CredentialSourceStack {
-        CredentialSourceStack::new(vec![
-            CredentialSource::Profile {
-                name: "test".to_string(),
-                source: ProfileSource::Default,
-                profile_role_arn: None,
-            }
-        ])
+        CredentialSourceStack::new(vec![CredentialSource::Profile {
+            name: "test".to_string(),
+            source: ProfileSource::Default,
+            profile_role_arn: None,
+        }])
     }
 
     fn mock_client() -> Client {
@@ -461,7 +472,15 @@ mod tests {
             .region(aws_types::region::Region::new("us-east-1"))
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
-        CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap()
+        CfnContext::new(
+            client,
+            aws_config,
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap()
     }
 
     fn mock_stack_args() -> StackArgs {
@@ -510,7 +529,15 @@ mod tests {
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_create_builder, token) = builder.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, token) = builder
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
 
         // Token should be derived from primary token
         assert!(token.is_derived());
@@ -530,14 +557,30 @@ mod tests {
         stack_args.use_previous_template = Some(true);
 
         let builder = CfnRequestBuilder::new(&context, &stack_args);
-        let (_update_builder, token) = builder.build_update_stack(false, &CfnOperation::UpdateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_update_builder, token) = builder
+            .build_update_stack(
+                false,
+                &CfnOperation::UpdateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
 
         // Token should be derived
         assert!(token.is_derived());
         assert_ne!(token.value, context.primary_token().value);
 
         // Different step should produce different token
-        let (_create_builder, create_token) = builder.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, create_token) = builder
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
         assert_ne!(token.value, create_token.value);
     }
 
@@ -570,8 +613,11 @@ mod tests {
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_execute_builder, token) =
-            builder.build_execute_changeset("test-changeset-arn", false, &CfnOperation::ExecuteChangeset);
+        let (_execute_builder, token) = builder.build_execute_changeset(
+            "test-changeset-arn",
+            false,
+            &CfnOperation::ExecuteChangeset,
+        );
 
         // Token should be derived for the execute step
         assert!(token.is_derived());
@@ -592,7 +638,15 @@ mod tests {
         };
 
         let builder = CfnRequestBuilder::new(&context, &minimal_args);
-        let (_create_builder, token) = builder.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_create_builder, token) = builder
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
 
         // Should work with minimal configuration
         assert!(token.is_derived());
@@ -609,8 +663,24 @@ mod tests {
         let builder2 = CfnRequestBuilder::new(&context, &stack_args);
 
         // Same step should produce same derived token
-        let (_, token1) = builder1.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
-        let (_, token2) = builder2.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, token1) = builder1
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
+        let (_, token2) = builder2
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(token1.value, token2.value);
         assert_eq!(token1.source, token2.source);
@@ -622,12 +692,31 @@ mod tests {
         let stack_args = mock_stack_args();
         let builder = CfnRequestBuilder::new(&context, &stack_args);
 
-        let (_, create_token) = builder.build_create_stack(false, &CfnOperation::CreateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
-        let (_, update_token) = builder.build_update_stack(false, &CfnOperation::UpdateStack, "test-stack-args.yaml", Some("test")).await.unwrap();
+        let (_, create_token) = builder
+            .build_create_stack(
+                false,
+                &CfnOperation::CreateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
+        let (_, update_token) = builder
+            .build_update_stack(
+                false,
+                &CfnOperation::UpdateStack,
+                "test-stack-args.yaml",
+                Some("test"),
+            )
+            .await
+            .unwrap();
         let (_, changeset_token) =
             builder.build_create_changeset("test-changeset", false, &CfnOperation::CreateChangeset);
-        let (_, execute_token) =
-            builder.build_execute_changeset("test-changeset", false, &CfnOperation::ExecuteChangeset);
+        let (_, execute_token) = builder.build_execute_changeset(
+            "test-changeset",
+            false,
+            &CfnOperation::ExecuteChangeset,
+        );
 
         // All tokens should be different
         let tokens = vec![

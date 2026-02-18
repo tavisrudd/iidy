@@ -28,7 +28,7 @@ pub struct TestEnv {
 impl TestEnv {
     pub fn new() -> Self {
         Self {
-            vars: std::collections::HashMap::new()
+            vars: std::collections::HashMap::new(),
         }
     }
 
@@ -129,16 +129,27 @@ impl CredentialSource {
             Self::EnvironmentVariablesTemporary => {
                 "environment variables (AWS_ACCESS_KEY_ID + AWS_SESSION_TOKEN)".to_string()
             }
-            Self::Profile { name, source, profile_role_arn } => {
+            Self::Profile {
+                name,
+                source,
+                profile_role_arn,
+            } => {
                 let source_str = source.display_name();
                 if let Some(role) = profile_role_arn {
                     let short_role = role.split('/').last().unwrap_or(role);
-                    format!("profile '{}' ({}, assumes role {})", name, source_str, short_role)
+                    format!(
+                        "profile '{}' ({}, assumes role {})",
+                        name, source_str, short_role
+                    )
                 } else {
                     format!("profile '{}' ({})", name, source_str)
                 }
             }
-            Self::AssumeRole { base_source, role_arn, source } => {
+            Self::AssumeRole {
+                base_source,
+                role_arn,
+                source,
+            } => {
                 let short_arn = role_arn.split('/').last().unwrap_or(role_arn);
                 let source_str = source.display_name();
                 format!(
@@ -191,10 +202,8 @@ impl CredentialSourceStack {
         if overridden.is_empty() {
             active.display_name()
         } else {
-            let overridden_names: Vec<String> = overridden
-                .iter()
-                .map(|s| s.display_name())
-                .collect();
+            let overridden_names: Vec<String> =
+                overridden.iter().map(|s| s.display_name()).collect();
 
             format!(
                 "{} (overriding {})",
@@ -228,7 +237,8 @@ fn get_profile_role_arn(profile_name: &str, env: &impl EnvVarProvider) -> Option
         format!("[profile {}]", profile_name)
     };
 
-    let in_section = content.lines()
+    let in_section = content
+        .lines()
         .skip_while(|line| !line.starts_with(&section))
         .skip(1)
         .take_while(|line| !line.trim_start().starts_with('['));
@@ -253,8 +263,7 @@ pub fn detect_credential_sources(
     let mut sources = Vec::new();
 
     // 1. Environment variables (highest precedence - always wins if present)
-    if env.get("AWS_ACCESS_KEY_ID").is_some()
-        && env.get("AWS_SECRET_ACCESS_KEY").is_some() {
+    if env.get("AWS_ACCESS_KEY_ID").is_some() && env.get("AWS_SECRET_ACCESS_KEY").is_some() {
         let is_temporary = env.get("AWS_SESSION_TOKEN").is_some();
         sources.push(if is_temporary {
             CredentialSource::EnvironmentVariablesTemporary
@@ -264,8 +273,7 @@ pub fn detect_credential_sources(
     }
 
     // 2. Web identity token
-    if env.get("AWS_WEB_IDENTITY_TOKEN_FILE").is_some()
-        && env.get("AWS_ROLE_ARN").is_some() {
+    if env.get("AWS_WEB_IDENTITY_TOKEN_FILE").is_some() && env.get("AWS_ROLE_ARN").is_some() {
         sources.push(CredentialSource::WebIdentityToken);
     }
 
@@ -294,9 +302,9 @@ pub fn detect_credential_sources(
     // - Default profile (when nothing is specified anywhere)
     // If profile is overridden, we skip the expensive file I/O (1-5ms)
     let profile_role_arn = if sources.is_empty() {
-        get_profile_role_arn(&profile_name, env)  // Parse only when profile will be used
+        get_profile_role_arn(&profile_name, env) // Parse only when profile will be used
     } else {
-        None  // Profile is overridden, skip file I/O
+        None // Profile is overridden, skip file I/O
     };
 
     let base_source = CredentialSource::Profile {
@@ -350,7 +358,10 @@ mod tests {
         let stack = detect_credential_sources(&ctx, &env);
 
         // Should detect static env vars as highest priority
-        assert!(matches!(stack.active(), CredentialSource::EnvironmentVariablesStatic));
+        assert!(matches!(
+            stack.active(),
+            CredentialSource::EnvironmentVariablesStatic
+        ));
     }
 
     #[test]
@@ -369,7 +380,10 @@ mod tests {
 
         let stack = detect_credential_sources(&ctx, &env);
 
-        assert!(matches!(stack.active(), CredentialSource::EnvironmentVariablesTemporary));
+        assert!(matches!(
+            stack.active(),
+            CredentialSource::EnvironmentVariablesTemporary
+        ));
     }
 
     #[test]
@@ -388,7 +402,10 @@ mod tests {
         let stack = detect_credential_sources(&ctx, &env);
 
         // Active should be env vars
-        assert!(matches!(stack.active(), CredentialSource::EnvironmentVariablesStatic));
+        assert!(matches!(
+            stack.active(),
+            CredentialSource::EnvironmentVariablesStatic
+        ));
 
         // Should have overridden profile
         assert_eq!(stack.overridden().len(), 1);
@@ -551,7 +568,11 @@ mod tests {
         let stack = detect_credential_sources(&ctx, &env);
 
         match stack.active() {
-            CredentialSource::AssumeRole { base_source, role_arn, source } => {
+            CredentialSource::AssumeRole {
+                base_source,
+                role_arn,
+                source,
+            } => {
                 assert_eq!(role_arn, "arn:aws:iam::123:role/DeployRole");
                 assert!(matches!(source, AssumeRoleSource::CliFlag));
 
@@ -587,7 +608,11 @@ mod tests {
         let stack = detect_credential_sources(&ctx, &env);
 
         match stack.active() {
-            CredentialSource::AssumeRole { base_source, role_arn, source } => {
+            CredentialSource::AssumeRole {
+                base_source,
+                role_arn,
+                source,
+            } => {
                 assert_eq!(role_arn, "arn:aws:iam::456:role/AppRole");
                 assert!(matches!(source, AssumeRoleSource::StackArgs));
 
@@ -612,7 +637,10 @@ mod tests {
     #[test]
     fn test_container_credentials_ecs() {
         let mut env = TestEnv::new();
-        env.set("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "/v2/credentials/test");
+        env.set(
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "/v2/credentials/test",
+        );
 
         let ctx = CredentialDetectionContext {
             cli_profile: None,
@@ -623,7 +651,10 @@ mod tests {
 
         let stack = detect_credential_sources(&ctx, &env);
 
-        assert!(matches!(stack.active(), CredentialSource::ContainerCredentialsEcs));
+        assert!(matches!(
+            stack.active(),
+            CredentialSource::ContainerCredentialsEcs
+        ));
 
         let display = stack.display_name();
         assert!(display.contains("ECS container credentials"));
@@ -664,7 +695,10 @@ mod tests {
         let stack = CredentialSourceStack::new(sources);
 
         // Test active()
-        assert!(matches!(stack.active(), CredentialSource::EnvironmentVariablesStatic));
+        assert!(matches!(
+            stack.active(),
+            CredentialSource::EnvironmentVariablesStatic
+        ));
 
         // Test overridden()
         assert_eq!(stack.overridden().len(), 1);

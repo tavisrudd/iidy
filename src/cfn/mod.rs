@@ -5,21 +5,21 @@ use chrono::{DateTime, Utc};
 use std::sync::{Arc, Mutex};
 
 use crate::{
-    cli::NormalizedAwsOpts,
     aws::{
-        timing::{ReliableTimeProvider, TimeProvider, SystemTimeProvider},
+        CredentialSourceStack,
         client_req_token::TokenInfo,
         config_from_normalized_opts,
-        CredentialSourceStack,
+        timing::{ReliableTimeProvider, SystemTimeProvider, TimeProvider},
     },
+    cli::NormalizedAwsOpts,
 };
 
 /// Macro to consistently await tasks and handle errors via the output system
-/// 
+///
 /// This macro reduces repetition in command handlers by providing standardized
 /// error handling for parallel AWS API tasks. It renders errors through the
 /// output system and returns appropriate exit codes.
-/// 
+///
 /// # Usage
 /// ```rust
 /// let task = tokio::spawn(async { /* AWS API call */ });
@@ -31,13 +31,23 @@ macro_rules! await_and_render {
         match $task.await {
             Ok(Ok(data)) => $output_manager.render(data).await?,
             Ok(Err(error)) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
-                $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info =
+                    $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None)
+                        .await;
+                $output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 return Ok(1);
             }
             Err(join_error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&join_error.into(), None).await;
-                $output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(
+                    &join_error.into(),
+                    None,
+                )
+                .await;
+                $output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 return Ok(1);
             }
         }
@@ -45,14 +55,14 @@ macro_rules! await_and_render {
 }
 
 /// Macro to run a command handler with automatic setup and error handling
-/// 
+///
 /// This macro handles:
 /// 1. Normalizing AWS options
 /// 2. Creating the output manager
 /// 3. Creating the AWS context (with error handling)
 /// 4. Running the implementation function
 /// 5. Converting and rendering any errors
-/// 
+///
 /// # Usage
 /// ```rust
 /// pub async fn my_command(cli: &Cli, args: &MyArgs) -> Result<i32> {
@@ -63,19 +73,24 @@ macro_rules! await_and_render {
 macro_rules! run_command_handler {
     ($impl_fn:ident, $cli:expr, $args:expr) => {{
         let opts = $cli.aws_opts.clone().normalize();
-        
+
         let output_options = $crate::output::manager::OutputOptions::new($cli.clone());
         let mut output_manager = $crate::output::DynamicOutputManager::new(
             $cli.global_opts.effective_output_mode(),
-            output_options
-        ).await?;
+            output_options,
+        )
+        .await?;
 
         let operation = $cli.command.to_cfn_operation();
         let context = match $crate::cfn::create_context_for_operation(&opts, operation).await {
             Ok(ctx) => ctx,
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
-                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info =
+                    $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None)
+                        .await;
+                output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 return Ok(1);
             }
         };
@@ -83,8 +98,14 @@ macro_rules! run_command_handler {
         match $impl_fn(&mut output_manager, &context, $cli, $args, &opts).await {
             Ok(exit_code) => Ok(exit_code),
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, Some((&context, $cli))).await;
-                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(
+                    &error,
+                    Some((&context, $cli)),
+                )
+                .await;
+                output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 Ok(1)
             }
         }
@@ -115,65 +136,94 @@ macro_rules! run_command_handler_with_stack_args {
         let output_options = $crate::output::manager::OutputOptions::new($cli.clone());
         let mut output_manager = $crate::output::DynamicOutputManager::new(
             $cli.global_opts.effective_output_mode(),
-            output_options
-        ).await?;
+            output_options,
+        )
+        .await?;
 
         let operation = $cli.command.to_cfn_operation();
 
         // Load stack args with merged AWS settings (CLI + stack-args.yaml)
         let cli_aws_settings = $crate::aws::AwsSettings::from_normalized_opts(&opts);
-        let (stack_args, aws_config, credential_sources) = match $crate::cfn::stack_args::load_stack_args(
-            $argsfile,
-            &$cli.global_opts.environment,
-            &operation,
-            &cli_aws_settings,
-        ).await {
-            Ok(result) => result,
-            Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
-                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
-                return Ok(1);
-            }
-        };
+        let (stack_args, aws_config, credential_sources) =
+            match $crate::cfn::stack_args::load_stack_args(
+                $argsfile,
+                &$cli.global_opts.environment,
+                &operation,
+                &cli_aws_settings,
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    let error_info =
+                        $crate::output::aws_conversion::convert_aws_error_to_error_info(
+                            &error, None,
+                        )
+                        .await;
+                    output_manager
+                        .render($crate::output::OutputData::Error(error_info))
+                        .await?;
+                    return Ok(1);
+                }
+            };
 
         let context = match $crate::cfn::create_context_from_config(
             aws_config,
             credential_sources,
             operation,
-            opts.client_request_token.clone()
-        ).await {
+            opts.client_request_token.clone(),
+        )
+        .await
+        {
             Ok(ctx) => ctx,
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
-                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info =
+                    $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None)
+                        .await;
+                output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 return Ok(1);
             }
         };
 
-        match $impl_fn(&mut output_manager, &context, $cli, $args, &opts, &stack_args).await {
+        match $impl_fn(
+            &mut output_manager,
+            &context,
+            $cli,
+            $args,
+            &opts,
+            &stack_args,
+        )
+        .await
+        {
             Ok(exit_code) => Ok(exit_code),
             Err(error) => {
-                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(&error, Some((&context, $cli))).await;
-                output_manager.render($crate::output::OutputData::Error(error_info)).await?;
+                let error_info = $crate::output::aws_conversion::convert_aws_error_to_error_info(
+                    &error,
+                    Some((&context, $cli)),
+                )
+                .await;
+                output_manager
+                    .render($crate::output::OutputData::Error(error_info))
+                    .await?;
                 Ok(1)
             }
         }
     }};
 }
 
-
 // CloudFormation operation modules
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod changeset_operations; // Shared changeset functionality
 pub mod constants;
-pub mod error_handling;
-pub mod s3_utils;
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;
 pub mod delete_stack;
 pub mod describe_stack;
 pub mod describe_stack_drift;
+pub mod error_handling;
 pub mod estimate_cost;
 pub mod exec_changeset;
 pub mod get_import;
@@ -183,22 +233,25 @@ pub mod is_terminal_status;
 pub mod list_stacks;
 pub mod operations;
 pub mod request_builder;
+pub mod s3_utils;
 pub mod stack_args;
-pub mod stack_operations;
-pub mod template_loader;
-pub mod update_stack;
-pub mod watch_stack;
 pub mod stack_change_type;
+pub mod stack_operations;
 pub mod template_approval_request;
 pub mod template_approval_review;
 pub mod template_hash;
+pub mod template_loader;
+pub mod update_stack;
+pub mod watch_stack;
 
 // Re-exports
 pub use operations::CfnOperation;
 pub use request_builder::CfnRequestBuilder;
 pub use stack_args::StackArgs;
 pub use stack_change_type::{StackChangeType, UpdateResult};
-pub use template_loader::{load_cfn_template, load_cfn_stack_policy, TemplateResult, StackPolicyResult};
+pub use template_loader::{
+    StackPolicyResult, TemplateResult, load_cfn_stack_policy, load_cfn_template,
+};
 
 /// Create a CfnContext from an existing AWS config with operation-aware time provider selection.
 ///
@@ -236,7 +289,14 @@ pub async fn create_context_from_config(
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
-    CfnContext::new(client, aws_config, credential_sources, time_provider, client_request_token).await
+    CfnContext::new(
+        client,
+        aws_config,
+        credential_sources,
+        time_provider,
+        client_request_token,
+    )
+    .await
 }
 
 /// Create a CfnContext from NormalizedAwsOpts with operation-aware time provider selection.
@@ -251,7 +311,10 @@ pub async fn create_context_from_config(
 ///
 /// # Returns
 /// A fully initialized CfnContext ready for CloudFormation operations
-pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: CfnOperation) -> Result<CfnContext> {
+pub async fn create_context_for_operation(
+    opts: &NormalizedAwsOpts,
+    operation: CfnOperation,
+) -> Result<CfnContext> {
     let (config, credential_sources) = config_from_normalized_opts(opts).await?;
 
     // Validate that a region is configured before proceeding
@@ -271,7 +334,14 @@ pub async fn create_context_for_operation(opts: &NormalizedAwsOpts, operation: C
     } else {
         Arc::new(ReliableTimeProvider::new())
     };
-    CfnContext::new(client, config, credential_sources, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(
+        client,
+        config,
+        credential_sources,
+        time_provider,
+        opts.client_request_token.clone(),
+    )
+    .await
 }
 
 /// Create a CfnContext from NormalizedAwsOpts, eliminating duplicate setup code.
@@ -293,7 +363,14 @@ pub async fn create_context(opts: &NormalizedAwsOpts, need_ntp_sync: bool) -> Re
     } else {
         Arc::new(SystemTimeProvider::new())
     };
-    CfnContext::new(client, config, credential_sources, time_provider, opts.client_request_token.clone()).await
+    CfnContext::new(
+        client,
+        config,
+        credential_sources,
+        time_provider,
+        opts.client_request_token.clone(),
+    )
+    .await
 }
 
 /// Context object that carries shared state for CloudFormation operations.
@@ -319,7 +396,7 @@ impl CfnContext {
             aws_sdk_s3::Config::from(&self.aws_config)
                 .to_builder()
                 .behavior_version_latest()
-                .build()
+                .build(),
         )
     }
     /// Create a new CFN context with the given client, time provider, and token info.
@@ -346,9 +423,6 @@ impl CfnContext {
             used_tokens,
         })
     }
-
-
-
 
     /// Get the start time for this context.
     pub async fn get_start_time(&self) -> Result<DateTime<Utc>> {
@@ -431,28 +505,32 @@ impl CfnContext {
 
 /// Constants for expected success states for each CloudFormation operation
 pub const CREATE_SUCCESS_STATES: &[&str] = &["CREATE_COMPLETE"];
-pub const UPDATE_SUCCESS_STATES: &[&str] = &["UPDATE_COMPLETE"];  
+pub const UPDATE_SUCCESS_STATES: &[&str] = &["UPDATE_COMPLETE"];
 pub const DELETE_SUCCESS_STATES: &[&str] = &["DELETE_COMPLETE"];
 
 /// Determine if a CloudFormation operation succeeded based on its final status.
-/// 
+///
 /// This helper function centralizes the common pattern across handlers that
 /// check if a final stack status indicates successful completion of the operation.
-/// 
+///
 /// # Arguments
 /// * `final_status` - The final stack status from the CloudFormation operation
 /// * `expected_states` - Array of status strings that indicate success
-/// 
+///
 /// # Returns
 /// * `true` if the final status matches one of the expected success states
 /// * `false` if no status is available or the status doesn't match success states
-/// 
+///
 /// # Example
 /// ```rust
 /// let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
 /// ```
-pub fn determine_operation_success(final_status: &Option<String>, expected_states: &[&str]) -> bool {
-    final_status.as_ref()
+pub fn determine_operation_success(
+    final_status: &Option<String>,
+    expected_states: &[&str],
+) -> bool {
+    final_status
+        .as_ref()
         .map(|status| expected_states.contains(&status.as_str()))
         .unwrap_or(false)
 }
@@ -477,24 +555,24 @@ pub fn determine_operation_success(final_status: &Option<String>, expected_state
 /// ```
 // TODO factor out
 pub fn apply_stack_name_override_and_validate(
-    mut stack_args: StackArgs, 
-    cli_stack_name: Option<&String>
+    mut stack_args: StackArgs,
+    cli_stack_name: Option<&String>,
 ) -> Result<StackArgs> {
     if let Some(stack_name) = cli_stack_name {
         stack_args.stack_name = Some(stack_name.clone());
     }
-    
+
     if stack_args.stack_name.is_none() {
         anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
     }
-    
+
     Ok(stack_args)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::aws::{timing::MockTimeProvider, client_req_token::TokenInfo};
+    use crate::aws::{client_req_token::TokenInfo, timing::MockTimeProvider};
     use chrono::TimeZone;
 
     fn create_test_aws_config() -> aws_config::SdkConfig {
@@ -516,13 +594,11 @@ mod tests {
 
     fn mock_credential_sources() -> CredentialSourceStack {
         use crate::aws::{CredentialSource, ProfileSource};
-        CredentialSourceStack::new(vec![
-            CredentialSource::Profile {
-                name: "test".to_string(),
-                source: ProfileSource::Default,
-                profile_role_arn: None,
-            }
-        ])
+        CredentialSourceStack::new(vec![CredentialSource::Profile {
+            name: "test".to_string(),
+            source: ProfileSource::Default,
+            profile_role_arn: None,
+        }])
     }
 
     #[tokio::test]
@@ -532,9 +608,15 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info)
-            .await
-            .unwrap();
+        let ctx = CfnContext::new(
+            client,
+            create_test_aws_config(),
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap();
 
         let expected_start = fixed_time - chrono::Duration::milliseconds(500);
         assert_eq!(ctx.start_time, expected_start);
@@ -547,9 +629,15 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let mut ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider.clone(), token_info)
-            .await
-            .unwrap();
+        let mut ctx = CfnContext::new(
+            client,
+            create_test_aws_config(),
+            mock_credential_sources(),
+            time_provider.clone(),
+            token_info,
+        )
+        .await
+        .unwrap();
 
         // Simulate time passing by updating the mock provider's time
         let later_time = fixed_time + chrono::Duration::seconds(30);
@@ -566,9 +654,15 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info.clone())
-            .await
-            .unwrap();
+        let ctx = CfnContext::new(
+            client,
+            create_test_aws_config(),
+            mock_credential_sources(),
+            time_provider,
+            token_info.clone(),
+        )
+        .await
+        .unwrap();
 
         // Primary token should be accessible
         assert_eq!(ctx.primary_token().value, "test-token-123");
@@ -590,7 +684,15 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info).await.unwrap();
+        let ctx = CfnContext::new(
+            client,
+            create_test_aws_config(),
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap();
 
         // Derive tokens for different steps
         let create_token = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
@@ -626,7 +728,15 @@ mod tests {
         let client = mock_client();
         let token_info = mock_token_info();
 
-        let ctx = CfnContext::new(client, create_test_aws_config(), mock_credential_sources(), time_provider, token_info).await.unwrap();
+        let ctx = CfnContext::new(
+            client,
+            create_test_aws_config(),
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap();
 
         // Derive the same token multiple times
         let token1 = ctx.derive_token_for_step(&CfnOperation::CreateChangeset);
@@ -641,5 +751,4 @@ mod tests {
         let used_tokens = ctx.get_used_tokens();
         assert_eq!(used_tokens.len(), 3); // Primary + 2 identical derived tokens
     }
-
 }

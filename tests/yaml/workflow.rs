@@ -252,4 +252,3 @@ fn test_fixture_file_accessibility() -> Result<()> {
 
     Ok(())
 }
-

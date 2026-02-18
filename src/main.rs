@@ -6,10 +6,10 @@ use std::io;
 
 use iidy::{
     cfn,
-    cli::{Cli, Commands, ApprovalCommands},
+    cli::{ApprovalCommands, Cli, Commands},
+    explain::handle_explain_command,
     output::color::ColorContext,
     output::terminal::Theme as TerminalTheme,
-    explain::handle_explain_command,
     render::handle_render_command,
 };
 mod demo;
@@ -82,7 +82,9 @@ fn handle_command(cli: Cli) {
         }
 
         Commands::DescribeStackDrift(ref args) => {
-            if let Err(e) = rt.block_on(cfn::describe_stack_drift::describe_stack_drift(&cli, &args)) {
+            if let Err(e) =
+                rt.block_on(cfn::describe_stack_drift::describe_stack_drift(&cli, &args))
+            {
                 eprintln!("error describing stack drift: {e:?}");
                 std::process::exit(1);
             }
@@ -123,28 +125,30 @@ fn handle_command(cli: Cli) {
         Commands::DummySpacer3 => {}
         Commands::Param { command } => println!("param {:?}", command),
         Commands::DummySpacer4 => {}
-        Commands::TemplateApproval { ref command } => {
-            match command {
-                ApprovalCommands::Request(args) => {
-                    match rt.block_on(cfn::template_approval_request::template_approval_request(&cli, &args)) {
-                        Ok(exit_code) => std::process::exit(exit_code),
-                        Err(e) => {
-                            eprintln!("error requesting template approval: {e:?}");
-                            std::process::exit(1);
-                        }
-                    }
-                }
-                ApprovalCommands::Review(args) => {
-                    match rt.block_on(cfn::template_approval_review::template_approval_review(&cli, &args)) {
-                        Ok(exit_code) => std::process::exit(exit_code),
-                        Err(e) => {
-                            eprintln!("error reviewing template approval: {e:?}");
-                            std::process::exit(1);
-                        }
+        Commands::TemplateApproval { ref command } => match command {
+            ApprovalCommands::Request(args) => {
+                match rt.block_on(cfn::template_approval_request::template_approval_request(
+                    &cli, &args,
+                )) {
+                    Ok(exit_code) => std::process::exit(exit_code),
+                    Err(e) => {
+                        eprintln!("error requesting template approval: {e:?}");
+                        std::process::exit(1);
                     }
                 }
             }
-        }
+            ApprovalCommands::Review(args) => {
+                match rt.block_on(cfn::template_approval_review::template_approval_review(
+                    &cli, &args,
+                )) {
+                    Ok(exit_code) => std::process::exit(exit_code),
+                    Err(e) => {
+                        eprintln!("error reviewing template approval: {e:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        },
         Commands::DummySpacer5 => {}
         Commands::Render(args) => {
             if let Err(e) = rt.block_on(handle_render_command(&args)) {
@@ -163,7 +167,11 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::Demo(args) => {
-            if let Err(e) = rt.block_on(demo::run(&args.demoscript, args.timescaling, args.mask_secrets)) {
+            if let Err(e) = rt.block_on(demo::run(
+                &args.demoscript,
+                args.timescaling,
+                args.mask_secrets,
+            )) {
                 eprintln!("demo failed: {e:?}");
                 std::process::exit(1);
             }

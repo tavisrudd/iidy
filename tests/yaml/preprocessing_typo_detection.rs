@@ -76,14 +76,14 @@ async fn test_other_common_typos() {
         }
 
         let error_msg = result.unwrap_err().to_string();
-        
+
         // Use catch_unwind to continue on snapshot failure
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             assert_snapshot!(snapshot_name, error_msg);
         })) {
             Ok(_) => {
                 // Snapshot matched or was accepted
-            },
+            }
             Err(_) => {
                 // Snapshot failed - insta should have created .new files
                 failures.push(format!(

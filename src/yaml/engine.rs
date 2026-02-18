@@ -26,8 +26,8 @@ use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
-use crate::yaml::parsing::ast::YamlAst;
 use crate::yaml::parsing;
+use crate::yaml::parsing::ast::YamlAst;
 use crate::yaml::resolution::{TagContext, VariableSource};
 
 use super::resolution::resolve_ast;
@@ -169,7 +169,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         // Look for $imports and $defs in the root mapping
         if let YamlAst::Mapping(pairs, _) = ast {
             for (key, value) in pairs {
-                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key {
+                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key
+                {
                     match key_str.as_str() {
                         "$defs" => {
                             self.process_defs(value, env_values, base_location)?;
@@ -201,7 +202,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
     ) -> Result<()> {
         if let YamlAst::Mapping(pairs, _) = defs_ast {
             for (key, value_ast) in pairs {
-                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key {
+                if let YamlAst::PlainString(key_str, _) | YamlAst::TemplatedString(key_str, _) = key
+                {
                     // Check for collisions with existing imports
                     if env_values.contains_key(key_str) {
                         return Err(anyhow::anyhow!(
@@ -321,8 +323,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             let mut json_env = std::collections::HashMap::with_capacity(env_values.len());
             for (key, yaml_value) in env_values {
                 // Use the yaml_to_json_value function from split_args module
-                let json_value =
-                    crate::yaml::resolution::resolver::yaml_to_json_value(yaml_value)?;
+                let json_value = crate::yaml::resolution::resolver::yaml_to_json_value(yaml_value)?;
                 json_env.insert(key.clone(), json_value);
             }
 
@@ -366,8 +367,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     if has_imports || has_defs {
                         // This document needs recursive preprocessing - parse it back to AST and process
                         let doc_yaml = serde_yaml::to_string(&doc)?;
-                        let doc_ast =
-                            parsing::parse_yaml_from_file(&doc_yaml, doc_location)?;
+                        let doc_ast = parsing::parse_yaml_from_file(&doc_yaml, doc_location)?;
 
                         // Recursively process this document with its own environment
                         let mut doc_env_values = EnvValues::new();
@@ -412,7 +412,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
         hasher.update(data.as_bytes());
         hex::encode(hasher.finalize())
     }
-
 
     /// Convert YAML 1.2 values to YAML 1.1 equivalents for CloudFormation compatibility
     ///
@@ -514,7 +513,6 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
 
         false
     }
-
 }
 
 impl<L: ImportLoader> Default for YamlPreprocessor<L>

@@ -107,13 +107,13 @@ mod tests {
     #[test]
     fn test_path_tracker_push_pop() {
         let mut tracker = PathTracker::new();
-        
+
         tracker.push("a");
         tracker.push("b");
         tracker.push("c");
-        
+
         assert_eq!(tracker.segments(), &["a", "b", "c"]);
-        
+
         assert_eq!(tracker.pop(), Some("c".to_string()));
         assert_eq!(tracker.pop(), Some("b".to_string()));
         assert_eq!(tracker.pop(), Some("a".to_string()));
@@ -123,11 +123,11 @@ mod tests {
     #[test]
     fn test_path_tracker_array_index() {
         let mut tracker = PathTracker::new();
-        
+
         tracker.push("items");
         tracker.push("[0]");
         tracker.push("name");
-        
+
         assert_eq!(tracker.current_path(), "items.[0].name");
     }
 }

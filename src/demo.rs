@@ -1,12 +1,15 @@
 use anyhow::{Context, Result};
-use crossterm::{style::{Stylize, Color}, terminal::size};
+use crossterm::{
+    style::{Color, Stylize},
+    terminal::size,
+};
 use once_cell::sync::Lazy;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
@@ -16,9 +19,8 @@ use tokio::time::{Duration, sleep};
 use iidy::yaml::preprocess_yaml_v11;
 
 // Compile regexes once at startup for performance
-static RE_ACCOUNT_STANDALONE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"\b(\d{12})\b").expect("invalid regex pattern")
-});
+static RE_ACCOUNT_STANDALONE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(\d{12})\b").expect("invalid regex pattern"));
 
 static RE_ACCOUNT_IN_ARN: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(arn:aws:[^:]*:[^:]*:)(\d{12})([:/])").expect("invalid regex pattern")
@@ -72,11 +74,12 @@ fn mask_aws_account_numbers(text: &str) -> String {
 
 pub async fn run(script_path: &str, timescaling: f64, mask_secrets: bool) -> Result<()> {
     let data = fs::read_to_string(script_path).with_context(|| format!("reading {script_path}"))?;
-    
+
     // Preprocess YAML with imports and template variables
-    let processed_yaml = preprocess_yaml_v11(&data, script_path).await
+    let processed_yaml = preprocess_yaml_v11(&data, script_path)
+        .await
         .with_context(|| "preprocessing demo script YAML")?;
-    
+
     let script: DemoScript = serde_yaml::from_value(processed_yaml)
         .with_context(|| "parsing preprocessed demo script")?;
 
@@ -85,7 +88,7 @@ pub async fn run(script_path: &str, timescaling: f64, mask_secrets: bool) -> Res
 
     let mut env: HashMap<String, String> = std::env::vars().collect();
     env.insert("PKG_SKIP_EXECPATH_PATCH".into(), "yes".into());
-    
+
     // Add current executable path for demo scripts to reference
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_path) = current_exe.to_str() {
@@ -97,21 +100,23 @@ pub async fn run(script_path: &str, timescaling: f64, mask_secrets: bool) -> Res
     let current_exe = std::env::current_exe()
         .ok()
         .and_then(|p| p.to_str().map(|s| s.to_string()));
-    
+
     // Check if 'iidy' on PATH points to the same executable
     let should_substitute = if let Some(ref exe_path) = current_exe {
         !is_iidy_on_path_same_as_current_exe(exe_path)
     } else {
         false
     };
-    
+
     let iidy_exe = if should_substitute {
         current_exe.unwrap_or_else(|| "iidy".to_string())
     } else {
         "iidy".to_string()
     };
 
-    let normalized_commands = script.demo.into_iter()
+    let normalized_commands = script
+        .demo
+        .into_iter()
         .map(normalize_raw_command)
         .collect::<Vec<_>>();
 
@@ -161,28 +166,22 @@ fn substitute_iidy_command(cmd: &str, iidy_exe: &str) -> String {
 
     re.replace_all(cmd, |caps: &regex::Captures| {
         format!("{}{}{}", &caps[1], &caps[2], iidy_exe)
-    }).to_string()
+    })
+    .to_string()
 }
 
 fn is_iidy_on_path_same_as_current_exe(current_exe_path: &str) -> bool {
     // Try to find 'iidy' executable on PATH using 'which' command
-    let which_output = Command::new("which")
-        .arg("iidy")
-        .output()
-        .ok();
-    
+    let which_output = Command::new("which").arg("iidy").output().ok();
+
     if let Some(output) = which_output {
         if output.status.success() {
             let iidy_path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !iidy_path_str.is_empty() {
                 // Convert both paths to canonical form for comparison
-                let current_canonical = PathBuf::from(current_exe_path)
-                    .canonicalize()
-                    .ok();
-                let iidy_canonical = PathBuf::from(&iidy_path_str)
-                    .canonicalize()
-                    .ok();
-                
+                let current_canonical = PathBuf::from(current_exe_path).canonicalize().ok();
+                let iidy_canonical = PathBuf::from(&iidy_path_str).canonicalize().ok();
+
                 match (current_canonical, iidy_canonical) {
                     (Some(current), Some(iidy)) => current == iidy,
                     _ => false,
@@ -205,9 +204,12 @@ fn unpack_files(files: &HashMap<String, String>, tmp_dir: &Path) -> Result<()> {
         if Path::new(path).is_absolute() {
             anyhow::bail!("Illegal path {}. Must be relative.", path);
         }
-        
+
         if path.contains("..") {
-            anyhow::bail!("Illegal path {}. Cannot contain parent directory references.", path);
+            anyhow::bail!(
+                "Illegal path {}. Cannot contain parent directory references.",
+                path
+            );
         }
 
         let full = tmp_dir.join(path);
@@ -235,7 +237,11 @@ fn exec(cmd: &str, cwd: &Path, env: &HashMap<String, String>, mask_secrets: bool
 }
 
 /// Execute command directly with inherited stdout/stderr (no masking, fastest)
-fn exec_direct(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<std::process::ExitStatus> {
+fn exec_direct(
+    cmd: &str,
+    cwd: &Path,
+    env: &HashMap<String, String>,
+) -> Result<std::process::ExitStatus> {
     Command::new("/usr/bin/env")
         .arg("bash")
         .arg("-c")
@@ -247,7 +253,11 @@ fn exec_direct(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<s
 }
 
 /// Execute command in PTY with output masking
-fn exec_with_masking(cmd: &str, cwd: &Path, env: &HashMap<String, String>) -> Result<std::process::ExitStatus> {
+fn exec_with_masking(
+    cmd: &str,
+    cwd: &Path,
+    env: &HashMap<String, String>,
+) -> Result<std::process::ExitStatus> {
     let pty_system = native_pty_system();
 
     // Use actual terminal size for proper line wrapping
@@ -342,7 +352,8 @@ fn stream_and_mask_pty_output(mut reader: Box<dyn Read + Send>) -> Result<()> {
         }
     });
 
-    output_handle.join()
+    output_handle
+        .join()
         .map_err(|e| anyhow::anyhow!("output handler thread panicked: {:?}", e))
 }
 
@@ -501,7 +512,9 @@ mod tests {
     fn test_mask_multiple_account_numbers() {
         // Multiple in one line
         assert_eq!(
-            mask_aws_account_numbers("Account: 123456789012, ARN: arn:aws:sts::987654321098:assumed-role/Foo"),
+            mask_aws_account_numbers(
+                "Account: 123456789012, ARN: arn:aws:sts::987654321098:assumed-role/Foo"
+            ),
             "Account: ************, ARN: arn:aws:sts::************:assumed-role/Foo"
         );
 
@@ -542,8 +555,10 @@ mod tests {
     #[test]
     fn test_mask_preserves_line_structure() {
         // Multi-field line
-        let input = "      env = production\n      region = us-west-2\n      account = 123456789012";
-        let expected = "      env = production\n      region = us-west-2\n      account = ************";
+        let input =
+            "      env = production\n      region = us-west-2\n      account = 123456789012";
+        let expected =
+            "      env = production\n      region = us-west-2\n      account = ************";
         assert_eq!(mask_aws_account_numbers(input), expected);
 
         // Line with no account number
@@ -578,10 +593,10 @@ mod tests {
 fn display_banner(text: &str) {
     let (cols, _) = size().unwrap_or((80, 0));
     let line = " ".repeat(cols as usize);
-    
+
     // Use ANSI 256-color 236 to match iidy-js exactly (cli.bgXterm(236))
     let bg_color = Color::AnsiValue(236);
-    
+
     println!(); // Blank line before banner
     println!("{}", line.clone().on(bg_color));
     for ln in text.split('\n') {

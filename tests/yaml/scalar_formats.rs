@@ -723,42 +723,60 @@ folded_keep: >+
     if let Value::Mapping(root) = &result {
         // Test literal_clip: should have single final newline
         if let Some(Value::String(s)) = root.get(&Value::String("literal_clip".to_string())) {
-            assert_eq!(s, "line one\nline two\n", "literal_clip should have single final newline");
+            assert_eq!(
+                s, "line one\nline two\n",
+                "literal_clip should have single final newline"
+            );
         } else {
             panic!("literal_clip not found or not a string");
         }
 
         // Test literal_strip: should have NO final newline
         if let Some(Value::String(s)) = root.get(&Value::String("literal_strip".to_string())) {
-            assert_eq!(s, "line one\nline two", "literal_strip should have no final newline");
+            assert_eq!(
+                s, "line one\nline two",
+                "literal_strip should have no final newline"
+            );
         } else {
             panic!("literal_strip not found or not a string");
         }
 
         // Test literal_keep: should preserve all 3 trailing newlines
         if let Some(Value::String(s)) = root.get(&Value::String("literal_keep".to_string())) {
-            assert_eq!(s, "line one\nline two\n\n\n", "literal_keep should preserve 3 trailing newlines");
+            assert_eq!(
+                s, "line one\nline two\n\n\n",
+                "literal_keep should preserve 3 trailing newlines"
+            );
         } else {
             panic!("literal_keep not found or not a string");
         }
 
         // Test folded_clip: lines should be folded with space, with single final newline
         if let Some(Value::String(s)) = root.get(&Value::String("folded_clip".to_string())) {
-            assert_eq!(s, "line one line two\n", "folded_clip should fold lines and have single final newline");
+            assert_eq!(
+                s, "line one line two\n",
+                "folded_clip should fold lines and have single final newline"
+            );
         } else {
             panic!("folded_clip not found or not a string");
         }
 
         // Test folded_strip: lines should be folded with NO final newline
         if let Some(Value::String(s)) = root.get(&Value::String("folded_strip".to_string())) {
-            assert_eq!(s, "line one line two", "folded_strip should fold lines with no final newline");
+            assert_eq!(
+                s, "line one line two",
+                "folded_strip should fold lines with no final newline"
+            );
         } else {
             panic!("folded_strip not found or not a string");
         }
 
         // Test folded_keep: lines should be folded and preserve trailing newlines
         if let Some(Value::String(s)) = root.get(&Value::String("folded_keep".to_string())) {
-            assert_eq!(s, "line one line two\n\n\n", "folded_keep should fold lines and preserve 3 trailing newlines");
+            assert_eq!(
+                s, "line one line two\n\n\n",
+                "folded_keep should fold lines and preserve 3 trailing newlines"
+            );
         } else {
             panic!("folded_keep not found or not a string");
         }

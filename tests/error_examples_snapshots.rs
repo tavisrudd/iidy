@@ -40,7 +40,7 @@ async fn test_error_template(path: &Path) {
     unsafe {
         std::env::set_var("NO_COLOR", "1");
     }
-    
+
     let content = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
     let snapshot_name = format!(
@@ -71,13 +71,13 @@ async fn test_all_example_errors_auto_discovery() {
     unsafe {
         std::env::set_var("NO_COLOR", "1");
     }
-    
+
     let example_dir = Path::new("example-templates/errors/");
     let discovered_templates = discover_templates(example_dir);
-    
+
     // Collect all errors instead of panicking on first failure
     let mut failures = Vec::new();
-    
+
     for (path, _filename) in discovered_templates {
         let content = match std::fs::read_to_string(&path) {
             Ok(content) => content,
@@ -86,7 +86,7 @@ async fn test_all_example_errors_auto_discovery() {
                 continue;
             }
         };
-        
+
         let snapshot_name = format!(
             "auto_discovered_{}",
             path.to_str()
@@ -102,7 +102,7 @@ async fn test_all_example_errors_auto_discovery() {
                     "Expected {} to fail but it succeeded",
                     path.to_str().unwrap()
                 ));
-            },
+            }
             Err(e) => {
                 // Use our helper function with error catching for better test failure collection
                 match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -111,7 +111,7 @@ async fn test_all_example_errors_auto_discovery() {
                 })) {
                     Ok(_) => {
                         // Snapshot matched or was accepted
-                    },
+                    }
                     Err(_) => {
                         // Snapshot failed - insta should have created .new files
                         failures.push(format!(
@@ -123,7 +123,7 @@ async fn test_all_example_errors_auto_discovery() {
             }
         }
     }
-    
+
     // Report all failures at the end
     if !failures.is_empty() {
         panic!(

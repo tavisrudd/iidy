@@ -1,10 +1,13 @@
 use anyhow::Result;
 
-use crate::cfn::{CfnContext, apply_stack_name_override_and_validate, template_loader::{load_cfn_template, TEMPLATE_MAX_BYTES}, StackArgs};
+use crate::cfn::{
+    CfnContext, StackArgs, apply_stack_name_override_and_validate,
+    template_loader::{TEMPLATE_MAX_BYTES, load_cfn_template},
+};
 use crate::cli::{Cli, StackFileArgs};
 use crate::output::{
-    DynamicOutputManager,
-    OutputData, data::{CostEstimate, CostEstimateInfo}
+    DynamicOutputManager, OutputData,
+    data::{CostEstimate, CostEstimateInfo},
 };
 use crate::run_command_handler_with_stack_args;
 
@@ -18,7 +21,8 @@ async fn estimate_cost_impl(
 ) -> Result<i32> {
     let global_opts = &cli.global_opts;
 
-    let final_stack_args = apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
+    let final_stack_args =
+        apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
     if final_stack_args.template.is_none() {
         anyhow::bail!("Template is required in stack-args.yaml");
     }
@@ -30,9 +34,12 @@ async fn estimate_cost_impl(
             Some(&global_opts.environment),
             TEMPLATE_MAX_BYTES,
             Some(&context.create_s3_client()),
-        ).await?
+        )
+        .await?
     } else {
-        return Err(anyhow::anyhow!("Template must be specified in stack-args.yaml"));
+        return Err(anyhow::anyhow!(
+            "Template must be specified in stack-args.yaml"
+        ));
     };
 
     let mut cfn_parameters = Vec::new();
@@ -42,7 +49,7 @@ async fn estimate_cost_impl(
                 aws_sdk_cloudformation::types::Parameter::builder()
                     .parameter_key(key)
                     .parameter_value(value.to_string())
-                    .build()
+                    .build(),
             );
         }
     }
@@ -61,7 +68,8 @@ async fn estimate_cost_impl(
 
     let estimate_response = estimate_request.send().await.map_err(anyhow::Error::from)?;
 
-    let url = estimate_response.url
+    let url = estimate_response
+        .url
         .ok_or_else(|| anyhow::anyhow!("AWS did not return a cost estimation URL"))?;
 
     let cost_info = CostEstimateInfo {
@@ -70,9 +78,9 @@ async fn estimate_cost_impl(
         template_file: final_stack_args.template.clone(),
     };
 
-    output_manager.render(OutputData::CostEstimate(CostEstimate {
-        info: cost_info,
-    })).await?;
+    output_manager
+        .render(OutputData::CostEstimate(CostEstimate { info: cost_info }))
+        .await?;
 
     Ok(0)
 }

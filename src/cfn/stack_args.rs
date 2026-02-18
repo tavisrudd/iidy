@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Result, bail, Context};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 
-use crate::{cli::YamlSpec, yaml::preprocess_yaml, aws::AwsSettings, cfn::CfnOperation};
 use crate::aws::config_from_merged_settings;
+use crate::{aws::AwsSettings, cfn::CfnOperation, cli::YamlSpec, yaml::preprocess_yaml};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Serialize, Clone, Default)]
@@ -96,17 +96,21 @@ pub async fn load_stack_args(
     environment: &str,
     operation: &CfnOperation,
     cli_aws_settings: &AwsSettings,
-) -> Result<(StackArgs, aws_config::SdkConfig, crate::aws::CredentialSourceStack)> {    
+) -> Result<(
+    StackArgs,
+    aws_config::SdkConfig,
+    crate::aws::CredentialSourceStack,
+)> {
     let path = Path::new(argsfile);
     let contents = fs::read_to_string(path)?;
-    
+
     // Use YAML v1.1 spec for CloudFormation compatibility
     let yaml_spec = YamlSpec::V11;
     let base_location = path.to_string_lossy();
-    
+
     // Initial YAML preprocessing
     let mut value = preprocess_yaml(&contents, &base_location, &yaml_spec).await?;
-    
+
     // Resolve environment maps for AWS credential fields BEFORE AWS config
     if let Value::Mapping(map) = &mut value {
         for key in ["Profile", "AssumeRoleARN", "Region"] {
@@ -118,20 +122,38 @@ pub async fn load_stack_args(
         }
         ensure_environment_tag(map, environment);
     }
-    
+
     // Extract AWS settings from argsfile
     let argsfile_aws_settings = AwsSettings {
-        profile: value.get("Profile").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        region: value.get("Region").and_then(|v| v.as_str()).map(|s| s.to_string()),
-        assume_role_arn: value.get("AssumeRoleARN").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        profile: value
+            .get("Profile")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        region: value
+            .get("Region")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        assume_role_arn: value
+            .get("AssumeRoleARN")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
     };
-    
+
     // Merge AWS settings (CLI overrides argsfile)
     let merged_aws_settings = AwsSettings {
-        profile: cli_aws_settings.profile.clone().or_else(|| argsfile_aws_settings.profile.clone()),
-        region: cli_aws_settings.region.clone().or_else(|| argsfile_aws_settings.region.clone()),
-        assume_role_arn: cli_aws_settings.assume_role_arn.clone().or_else(|| argsfile_aws_settings.assume_role_arn.clone()),
-        };
+        profile: cli_aws_settings
+            .profile
+            .clone()
+            .or_else(|| argsfile_aws_settings.profile.clone()),
+        region: cli_aws_settings
+            .region
+            .clone()
+            .or_else(|| argsfile_aws_settings.region.clone()),
+        assume_role_arn: cli_aws_settings
+            .assume_role_arn
+            .clone()
+            .or_else(|| argsfile_aws_settings.assume_role_arn.clone()),
+    };
 
     // Create detection context with unmerged settings for provenance tracking
     let detection_ctx = crate::aws::CredentialDetectionContext {
@@ -142,19 +164,20 @@ pub async fn load_stack_args(
     };
 
     // Configure AWS BEFORE preprocessing (enables $imports with AWS calls)
-    let (aws_config, credential_sources) = config_from_merged_settings(&merged_aws_settings, &detection_ctx).await?;
+    let (aws_config, credential_sources) =
+        config_from_merged_settings(&merged_aws_settings, &detection_ctx).await?;
 
     // Validate that a region is configured (needed for AWS API calls in $imports and CommandsBefore)
-    let current_region = aws_config.region()
-        .map(|r| r.as_ref())
-        .ok_or_else(|| anyhow::anyhow!(
+    let current_region = aws_config.region().map(|r| r.as_ref()).ok_or_else(|| {
+        anyhow::anyhow!(
             "No AWS region configured. Please specify a region via:\n\
              - CLI flag: --region us-east-1\n\
              - Stack args: Region: us-east-1\n\
              - Environment variable: AWS_REGION or AWS_DEFAULT_REGION\n\
              - AWS config file: ~/.aws/config"
-        ))?;
-    
+        )
+    })?;
+
     // Create and inject $envValues
     let env_values = create_env_values(
         Some(environment),
@@ -163,7 +186,7 @@ pub async fn load_stack_args(
         merged_aws_settings.profile.as_deref(),
     );
     inject_env_values(&mut value, env_values);
-    
+
     // Handle CommandsBefore if present and command supports it
     if let Some(commands_before) = value.get("CommandsBefore").cloned() {
         if should_process_commands_before(operation) {
@@ -173,12 +196,12 @@ pub async fn load_stack_args(
             if let Value::Mapping(map) = &mut value_pass1 {
                 map.remove(&Value::String("CommandsBefore".to_string()));
             }
-            
+
             // Process pass 1 to get complete context
             let pass1_yaml = serde_yaml::to_string(&value_pass1)?;
             let pass1_value = preprocess_yaml(&pass1_yaml, &base_location, &yaml_spec).await?;
             let stack_args_pass1: StackArgs = serde_yaml::from_value(pass1_value)?;
-            
+
             // Execute CommandsBefore with full context
             let processed_commands = process_commands_before(
                 commands_before,
@@ -189,7 +212,7 @@ pub async fn load_stack_args(
                 merged_aws_settings.profile.as_deref(),
                 path,
             )?;
-            
+
             // Update value with processed commands
             if let Value::Mapping(map) = &mut value {
                 map.insert(
@@ -204,24 +227,20 @@ pub async fn load_stack_args(
             }
         }
     }
-    
+
     // Final preprocessing pass with AWS config available
-    let final_value = preprocess_yaml(
-        &serde_yaml::to_string(&value)?,
-        &base_location,
-        &yaml_spec
-    ).await?;
-    
+    let final_value =
+        preprocess_yaml(&serde_yaml::to_string(&value)?, &base_location, &yaml_spec).await?;
+
     // Deserialize to StackArgs
     let mut stack_args: StackArgs = serde_yaml::from_value(final_value)?;
-    
+
     // Apply global configuration from SSM parameter store
     // TODO disable behind feature flag
     apply_global_configuration(&mut stack_args, &aws_config).await?;
 
     Ok((stack_args, aws_config, credential_sources))
 }
-
 
 /// Create $envValues object matching iidy-js structure for template compatibility
 fn create_env_values(
@@ -231,36 +250,50 @@ fn create_env_values(
     current_aws_profile: Option<&str>,
 ) -> Value {
     use std::collections::BTreeMap;
-    
+
     let mut env_values = BTreeMap::new();
-    
+
     // Legacy bare values (TODO: deprecate in iidy-js compatibility)
-    env_values.insert("region".to_string(), Value::String(current_aws_region.to_string()));
+    env_values.insert(
+        "region".to_string(),
+        Value::String(current_aws_region.to_string()),
+    );
     if let Some(env) = environment {
         env_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
-    
+
     // New namespaced structure (iidy.*)
     let mut iidy_values = BTreeMap::new();
-    iidy_values.insert("command".to_string(), Value::String(operation.as_str().to_string()));
+    iidy_values.insert(
+        "command".to_string(),
+        Value::String(operation.as_str().to_string()),
+    );
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
-    iidy_values.insert("region".to_string(), Value::String(current_aws_region.to_string()));
+    iidy_values.insert(
+        "region".to_string(),
+        Value::String(current_aws_region.to_string()),
+    );
     if let Some(profile) = current_aws_profile {
         iidy_values.insert("profile".to_string(), Value::String(profile.to_string()));
     }
-    
-    env_values.insert("iidy".to_string(), Value::Mapping(
-        iidy_values.into_iter()
-            .map(|(k, v)| (Value::String(k), v))
-            .collect()
-    ));
-    
+
+    env_values.insert(
+        "iidy".to_string(),
+        Value::Mapping(
+            iidy_values
+                .into_iter()
+                .map(|(k, v)| (Value::String(k), v))
+                .collect(),
+        ),
+    );
+
     Value::Mapping(
-        env_values.into_iter()
+        env_values
+            .into_iter()
             .map(|(k, v)| (Value::String(k), v))
-            .collect()
+            .collect(),
     )
 }
 
@@ -298,7 +331,7 @@ async fn apply_global_configuration(
     aws_config: &aws_config::SdkConfig,
 ) -> Result<()> {
     let ssm = aws_sdk_ssm::Client::new(aws_config);
-    
+
     match ssm
         .get_parameters_by_path()
         .path("/iidy/")
@@ -312,11 +345,19 @@ async fn apply_global_configuration(
                     if let (Some(name), Some(value)) = (parameter.name, parameter.value) {
                         match name.as_str() {
                             "/iidy/default-notification-arn" => {
-                                apply_sns_notification_global_configuration(args, &value, aws_config).await?;
+                                apply_sns_notification_global_configuration(
+                                    args, &value, aws_config,
+                                )
+                                .await?;
                             }
                             "/iidy/disable-template-approval" => {
-                                if value.to_lowercase() == "true" && args.approved_template_location.is_some() {
-                                    eprintln!("Disabling template approval based on global {} parameter store configuration", name);
+                                if value.to_lowercase() == "true"
+                                    && args.approved_template_location.is_some()
+                                {
+                                    eprintln!(
+                                        "Disabling template approval based on global {} parameter store configuration",
+                                        name
+                                    );
                                     args.approved_template_location = None;
                                 }
                             }
@@ -331,7 +372,7 @@ async fn apply_global_configuration(
             // We silently continue if SSM is not accessible
         }
     }
-    
+
     Ok(())
 }
 
@@ -342,23 +383,21 @@ async fn apply_sns_notification_global_configuration(
     aws_config: &aws_config::SdkConfig,
 ) -> Result<()> {
     let sns = aws_sdk_sns::Client::new(aws_config);
-    
-    match sns
-        .get_topic_attributes()
-        .topic_arn(topic_arn)
-        .send()
-        .await
-    {
+
+    match sns.get_topic_attributes().topic_arn(topic_arn).send().await {
         Ok(_) => {
             // Topic exists, add it to notification ARNs (matching iidy-js concat behavior)
             let notification_arns = args.notification_arns.get_or_insert_with(Vec::new);
             notification_arns.push(topic_arn.to_string());
         }
         Err(_) => {
-            eprintln!("iidy's default NotificationARN set in this region is invalid: {}", topic_arn);
+            eprintln!(
+                "iidy's default NotificationARN set in this region is invalid: {}",
+                topic_arn
+            );
         }
     }
-    
+
     Ok(())
 }
 
@@ -366,7 +405,10 @@ async fn apply_sns_notification_global_configuration(
 fn should_process_commands_before(operation: &CfnOperation) -> bool {
     matches!(
         operation,
-        CfnOperation::CreateStack | CfnOperation::UpdateStack | CfnOperation::CreateChangeset | CfnOperation::CreateOrUpdate
+        CfnOperation::CreateStack
+            | CfnOperation::UpdateStack
+            | CfnOperation::CreateChangeset
+            | CfnOperation::CreateOrUpdate
     )
 }
 
@@ -380,22 +422,21 @@ fn process_commands_before(
     profile: Option<&str>,
     argsfile_path: &Path,
 ) -> Result<Vec<String>> {
-    use std::process::Command;
     use crate::yaml::handlebars::interpolate_handlebars_string;
-    
+    use std::process::Command;
+
     // Extract commands as strings
     let commands = match commands {
-        Value::Sequence(seq) => {
-            seq.into_iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect::<Vec<_>>()
-        }
+        Value::Sequence(seq) => seq
+            .into_iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<_>>(),
         _ => bail!("CommandsBefore must be an array of strings"),
     };
-    
+
     // Build handlebars context with full iidy namespace
     let mut handlebars_env = BTreeMap::new();
-    
+
     // Add iidy namespace
     let mut iidy_values = BTreeMap::new();
     iidy_values.insert("stackArgs".to_string(), serde_yaml::to_value(stack_args)?);
@@ -403,7 +444,10 @@ fn process_commands_before(
     if let Some(stack_name) = &stack_args.stack_name {
         iidy_values.insert("stackName".to_string(), Value::String(stack_name.clone()));
     }
-    iidy_values.insert("command".to_string(), Value::String(operation.as_str().to_string()));
+    iidy_values.insert(
+        "command".to_string(),
+        Value::String(operation.as_str().to_string()),
+    );
     if let Some(env) = environment {
         iidy_values.insert("environment".to_string(), Value::String(env.to_string()));
     }
@@ -411,41 +455,51 @@ fn process_commands_before(
     if let Some(p) = profile {
         iidy_values.insert("profile".to_string(), Value::String(p.to_string()));
     }
-    
-    handlebars_env.insert("iidy".to_string(), Value::Mapping(
-        iidy_values.into_iter()
-            .map(|(k, v)| (Value::String(k), v))
-            .collect()
-    ));
-    
+
+    handlebars_env.insert(
+        "iidy".to_string(),
+        Value::Mapping(
+            iidy_values
+                .into_iter()
+                .map(|(k, v)| (Value::String(k), v))
+                .collect(),
+        ),
+    );
+
     // Add legacy values
     handlebars_env.insert("region".to_string(), Value::String(region.to_string()));
     if let Some(env) = environment {
         handlebars_env.insert("environment".to_string(), Value::String(env.to_string()));
     }
-    
+
     let handlebars_value = Value::Mapping(
-        handlebars_env.into_iter()
+        handlebars_env
+            .into_iter()
             .map(|(k, v)| (Value::String(k), v))
-            .collect()
+            .collect(),
     );
-    
+
     // Get working directory from argsfile path
-    let cwd = argsfile_path.parent()
+    let cwd = argsfile_path
+        .parent()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine working directory from argsfile path"))?;
-    
-    println!("== Executing CommandsBefore from argsfile {}", "=".repeat(28));
-    
+
+    println!(
+        "== Executing CommandsBefore from argsfile {}",
+        "=".repeat(28)
+    );
+
     let mut expanded_commands = Vec::new();
-    
+
     // Convert serde_yaml::Value to HashMap<String, serde_json::Value> for handlebars
     let handlebars_map = if let Value::Mapping(map) = &handlebars_value {
         let mut json_map = std::collections::HashMap::new();
         for (k, v) in map {
             if let Value::String(key) = k {
                 // Convert serde_yaml::Value to serde_json::Value
-                let json_value = serde_json::to_value(v)
-                    .with_context(|| format!("Failed to convert YAML value to JSON for key: {}", key))?;
+                let json_value = serde_json::to_value(v).with_context(|| {
+                    format!("Failed to convert YAML value to JSON for key: {}", key)
+                })?;
                 json_map.insert(key.clone(), json_value);
             }
         }
@@ -453,12 +507,13 @@ fn process_commands_before(
     } else {
         bail!("Handlebars environment must be a mapping");
     };
-    
+
     for (index, cmd) in commands.iter().enumerate() {
         // Process handlebars templates in command
-        let expanded_command = interpolate_handlebars_string(cmd, &handlebars_map, "CommandsBefore")?;
+        let expanded_command =
+            interpolate_handlebars_string(cmd, &handlebars_map, "CommandsBefore")?;
         expanded_commands.push(expanded_command.clone());
-        
+
         println!("\n-- Command {} {}", index + 1, "-".repeat(50));
         if expanded_command != *cmd {
             println!("# raw command before processing handlebars variables:");
@@ -468,23 +523,29 @@ fn process_commands_before(
         } else {
             println!("{}", cmd);
         }
-        
+
         println!("-- Command {} Output {}", index + 1, "-".repeat(25));
-        
+
         // Execute command with environment variables
         let mut command = Command::new("/bin/bash");
         command.arg("-c").arg(&expanded_command);
         command.current_dir(cwd);
-        
+
         // Set environment variables matching iidy-js
         command.env("iidy_profile", profile.unwrap_or(""));
         command.env("iidy_region", region);
         command.env("iidy_environment", environment.unwrap_or(""));
         command.env("PKG_SKIP_EXECPATH_PATCH", "yes");
-        
+
         // Add bash functions matching iidy-js
-        command.env("BASH_FUNC_iidy_filehash%%", "() {   shasum -p -a 256 \"$1\" | cut -f 1 -d ' '; }");
-        command.env("BASH_FUNC_iidy_filehash_base64%%", "() { shasum -p -a 256 \"$1\" | cut -f 1 -d ' ' | xxd -r -p | base64; }");
+        command.env(
+            "BASH_FUNC_iidy_filehash%%",
+            "() {   shasum -p -a 256 \"$1\" | cut -f 1 -d ' '; }",
+        );
+        command.env(
+            "BASH_FUNC_iidy_filehash_base64%%",
+            "() { shasum -p -a 256 \"$1\" | cut -f 1 -d ' ' | xxd -r -p | base64; }",
+        );
         command.env("BASH_FUNC_iidy_s3_upload%%", r#"() {
   echo '>> NOTE: iidy_s3_upload is an experimental addition to iidy. It might be removed in future versions.'
   FILE=$1
@@ -494,11 +555,12 @@ fn process_commands_before(
         aws --profile "$iidy_profile" --region "$iidy_region" s3 cp "$FILE" "s3://$BUCKET/$S3_KEY";
 
  }"#);
-        
+
         // Execute command
-        let output = command.output()
+        let output = command
+            .output()
             .with_context(|| format!("Failed to execute command: {}", expanded_command))?;
-        
+
         // Print output
         if !output.stdout.is_empty() {
             print!("{}", String::from_utf8_lossy(&output.stdout));
@@ -506,7 +568,7 @@ fn process_commands_before(
         if !output.stderr.is_empty() {
             eprint!("{}", String::from_utf8_lossy(&output.stderr));
         }
-        
+
         // Check exit status
         if !output.status.success() {
             bail!(
@@ -516,11 +578,11 @@ fn process_commands_before(
             );
         }
     }
-    
+
     println!();
     println!("== End CommandsBefore {}", "=".repeat(48));
     println!();
-    
+
     Ok(expanded_commands)
 }
 
@@ -530,25 +592,25 @@ mod tests {
 
     #[tokio::test]
     async fn parse_basic_args() {
-        use std::io::Write;
         use crate::aws::AwsSettings;
-        
+        use std::io::Write;
+
         let yaml = "StackName: test\nTemplate: foo.yaml\nRegion: us-east-1\n";
-        
+
         // Create temporary file
         let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        temp_file
+            .write_all(yaml.as_bytes())
+            .expect("Failed to write to temp file");
         let temp_path = temp_file.path().to_str().expect("Invalid path");
-        
+
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
-        
-        let (result, _aws_config, _credential_sources) = load_stack_args(
-            temp_path,
-            "dev",
-            &CfnOperation::CreateStack,
-            &aws_settings
-        ).await.expect("failed to load");
+
+        let (result, _aws_config, _credential_sources) =
+            load_stack_args(temp_path, "dev", &CfnOperation::CreateStack, &aws_settings)
+                .await
+                .expect("failed to load");
 
         assert_eq!(result.stack_name.as_deref(), Some("test"));
         assert_eq!(result.template.as_deref(), Some("foo.yaml"));
@@ -560,9 +622,9 @@ mod tests {
 
     #[tokio::test]
     async fn resolve_environment_map() {
-        use std::io::Write;
         use crate::aws::AwsSettings;
-        
+        use std::io::Write;
+
         let yaml = r#"
 Profile: default
 Region:
@@ -571,21 +633,21 @@ Region:
 StackName: s
 Template: t
 "#;
-        
+
         // Create temporary file
         let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        temp_file
+            .write_all(yaml.as_bytes())
+            .expect("Failed to write to temp file");
         let temp_path = temp_file.path().to_str().expect("Invalid path");
-        
+
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
-        
-        let (result, _aws_config, _credential_sources) = load_stack_args(
-            temp_path,
-            "prod",
-            &CfnOperation::UpdateStack,
-            &aws_settings
-        ).await.unwrap();
+
+        let (result, _aws_config, _credential_sources) =
+            load_stack_args(temp_path, "prod", &CfnOperation::UpdateStack, &aws_settings)
+                .await
+                .unwrap();
 
         assert_eq!(result.region.as_deref(), Some("us-west-2"));
         assert_eq!(result.profile.as_deref(), Some("default"));
@@ -593,30 +655,28 @@ Template: t
 
     #[tokio::test]
     async fn test_yaml_preprocessing_integration() {
-        use std::io::Write;
         use crate::aws::AwsSettings;
-        
+        use std::io::Write;
+
         // Test that our YAML preprocessing system is being used in stack args parsing
         let yaml = r#"
 StackName: !$join ["-", ["my-app", "production"]]
 Template: template.yaml
 Region: us-west-2
 "#;
-        
+
         // Create temporary file
         let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
-        temp_file.write_all(yaml.as_bytes()).expect("Failed to write to temp file");
+        temp_file
+            .write_all(yaml.as_bytes())
+            .expect("Failed to write to temp file");
         let temp_path = temp_file.path().to_str().expect("Invalid path");
-        
+
         // Create mock AWS settings
         let aws_settings = AwsSettings::default();
-        
-        let result = load_stack_args(
-            temp_path,
-            "prod",
-            &CfnOperation::CreateStack,
-            &aws_settings
-        ).await;
+
+        let result =
+            load_stack_args(temp_path, "prod", &CfnOperation::CreateStack, &aws_settings).await;
 
         // Should succeed even with custom tags (currently they get converted to null)
         assert!(
@@ -643,21 +703,33 @@ Region: us-west-2
         // Verify structure matches iidy-js
         if let Value::Mapping(map) = env_values {
             // Legacy values
-            assert_eq!(map.get(&Value::String("region".to_string())), 
-                      Some(&Value::String("us-west-2".to_string())));
-            assert_eq!(map.get(&Value::String("environment".to_string())), 
-                      Some(&Value::String("production".to_string())));
+            assert_eq!(
+                map.get(&Value::String("region".to_string())),
+                Some(&Value::String("us-west-2".to_string()))
+            );
+            assert_eq!(
+                map.get(&Value::String("environment".to_string())),
+                Some(&Value::String("production".to_string()))
+            );
 
             // Namespaced iidy values
             if let Some(Value::Mapping(iidy_map)) = map.get(&Value::String("iidy".to_string())) {
-                assert_eq!(iidy_map.get(&Value::String("command".to_string())), 
-                          Some(&Value::String("create-stack".to_string())));
-                assert_eq!(iidy_map.get(&Value::String("environment".to_string())), 
-                          Some(&Value::String("production".to_string())));
-                assert_eq!(iidy_map.get(&Value::String("region".to_string())), 
-                          Some(&Value::String("us-west-2".to_string())));
-                assert_eq!(iidy_map.get(&Value::String("profile".to_string())), 
-                          Some(&Value::String("prod-profile".to_string())));
+                assert_eq!(
+                    iidy_map.get(&Value::String("command".to_string())),
+                    Some(&Value::String("create-stack".to_string()))
+                );
+                assert_eq!(
+                    iidy_map.get(&Value::String("environment".to_string())),
+                    Some(&Value::String("production".to_string()))
+                );
+                assert_eq!(
+                    iidy_map.get(&Value::String("region".to_string())),
+                    Some(&Value::String("us-west-2".to_string()))
+                );
+                assert_eq!(
+                    iidy_map.get(&Value::String("profile".to_string())),
+                    Some(&Value::String("prod-profile".to_string()))
+                );
             } else {
                 panic!("Expected iidy namespace in $envValues");
             }
@@ -668,29 +740,33 @@ Region: us-west-2
 
     #[test]
     fn test_inject_env_values() {
-        let mut argsdata = serde_yaml::from_str::<Value>(r#"
+        let mut argsdata = serde_yaml::from_str::<Value>(
+            r#"
 StackName: test-stack
 Template: template.yaml
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        let env_values = create_env_values(
-            Some("dev"),
-            &CfnOperation::UpdateStack,
-            "us-east-1", 
-            None,
-        );
+        let env_values =
+            create_env_values(Some("dev"), &CfnOperation::UpdateStack, "us-east-1", None);
 
         inject_env_values(&mut argsdata, env_values);
 
         // Verify $envValues was injected
         if let Value::Mapping(map) = &argsdata {
             assert!(map.contains_key(&Value::String("$envValues".to_string())));
-            
-            if let Some(Value::Mapping(env_map)) = map.get(&Value::String("$envValues".to_string())) {
-                assert_eq!(env_map.get(&Value::String("environment".to_string())), 
-                          Some(&Value::String("dev".to_string())));
-                assert_eq!(env_map.get(&Value::String("region".to_string())), 
-                          Some(&Value::String("us-east-1".to_string())));
+
+            if let Some(Value::Mapping(env_map)) = map.get(&Value::String("$envValues".to_string()))
+            {
+                assert_eq!(
+                    env_map.get(&Value::String("environment".to_string())),
+                    Some(&Value::String("dev".to_string()))
+                );
+                assert_eq!(
+                    env_map.get(&Value::String("region".to_string())),
+                    Some(&Value::String("us-east-1".to_string()))
+                );
             }
         } else {
             panic!("Expected argsdata to be a mapping");

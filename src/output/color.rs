@@ -234,7 +234,6 @@ impl<T: std::fmt::Display> ColorExt for T {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,5 +322,4 @@ mod tests {
         assert_eq!("test".bold_text(), "test");
         assert_eq!("CREATE_COMPLETE".format_status(), "CREATE_COMPLETE");
     }
-
 }

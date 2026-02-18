@@ -4,19 +4,28 @@
 //! such as collecting stack contents, managing stack information, and handling events.
 
 use anyhow::Result;
-use aws_sdk_cloudformation::{Client, types::{StackEvent, Stack}};
+use aws_sdk_cloudformation::{
+    Client,
+    types::{Stack, StackEvent},
+};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
-use super::{CfnContext, is_terminal_status::is_terminal_resource_status, determine_operation_success, constants::DEFAULT_POLL_INTERVAL_SECS};
+use super::{
+    CfnContext, constants::DEFAULT_POLL_INTERVAL_SECS, determine_operation_success,
+    is_terminal_status::is_terminal_resource_status,
+};
 use crate::output::{
-    StackContents, StackStatusInfo, ChangeSetInfo, ChangeInfo, ChangeDetail, DynamicOutputManager,
-    aws_conversion::{convert_stack_resources, convert_stack_outputs, convert_outputs_to_exports, convert_stack_to_definition, create_final_command_summary},
-    data::OutputData
+    ChangeDetail, ChangeInfo, ChangeSetInfo, DynamicOutputManager, StackContents, StackStatusInfo,
+    aws_conversion::{
+        convert_outputs_to_exports, convert_stack_outputs, convert_stack_resources,
+        convert_stack_to_definition, create_final_command_summary,
+    },
+    data::OutputData,
 };
 
 /// Collect stack contents data (controller pattern - no display logic)
-/// 
+///
 /// This function fetches all the necessary data to display stack contents:
 /// - Stack resources
 /// - Stack outputs  
@@ -25,10 +34,7 @@ use crate::output::{
 /// - Pending changesets (placeholder for now)
 ///
 /// Used by multiple operations like watch-stack, describe-stack, and create-stack.
-pub async fn collect_stack_contents(
-    ctx: &CfnContext,
-    stack_name: &str,
-) -> Result<StackContents> {
+pub async fn collect_stack_contents(ctx: &CfnContext, stack_name: &str) -> Result<StackContents> {
     // Start both API calls in parallel - we'll await them as needed
     let resources_future = async {
         ctx.client
@@ -38,7 +44,7 @@ pub async fn collect_stack_contents(
             .await
             .map_err(anyhow::Error::from)
     };
-    
+
     let stack_future = async {
         ctx.client
             .describe_stacks()
@@ -54,17 +60,13 @@ pub async fn collect_stack_contents(
         .stacks
         .and_then(|mut s| s.pop())
         .ok_or_else(|| anyhow::anyhow!("stack not found"))?;
-    
+
     // Get resources (this might still be loading)
     let resources_resp = resources_future.await?;
-    let resources = convert_stack_resources(
-        resources_resp.stack_resources.unwrap_or_default()
-    );
+    let resources = convert_stack_resources(resources_resp.stack_resources.unwrap_or_default());
 
     // Extract outputs from stack
-    let outputs = convert_stack_outputs(
-        stack.outputs.unwrap_or_default()
-    );
+    let outputs = convert_stack_outputs(stack.outputs.unwrap_or_default());
 
     // Get exports if any outputs have export names
     let stack_id = stack.stack_id.clone().unwrap_or_default();
@@ -72,15 +74,21 @@ pub async fn collect_stack_contents(
 
     // Current status
     let current_status = StackStatusInfo {
-        status: stack.stack_status.map(|s| s.as_str().to_string()).unwrap_or_default(),
+        status: stack
+            .stack_status
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_default(),
         status_reason: stack.stack_status_reason,
-        timestamp: stack.last_updated_time.or(stack.creation_time).and_then(|ts| {
-            chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-        }),
+        timestamp: stack
+            .last_updated_time
+            .or(stack.creation_time)
+            .and_then(|ts| chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())),
     };
 
     // Get pending changesets
-    let pending_changesets = collect_pending_changesets(ctx, stack_name).await.unwrap_or_default();
+    let pending_changesets = collect_pending_changesets(ctx, stack_name)
+        .await
+        .unwrap_or_default();
 
     Ok(StackContents {
         resources,
@@ -97,74 +105,105 @@ async fn collect_pending_changesets(
     stack_name: &str,
 ) -> Result<Vec<ChangeSetInfo>> {
     // List all changesets for the stack
-    let list_resp = ctx.client
+    let list_resp = ctx
+        .client
         .list_change_sets()
         .stack_name(stack_name)
         .send()
         .await?;
-    
+
     let changeset_summaries = list_resp.summaries.unwrap_or_default();
     let mut changesets = Vec::new();
-    
+
     for summary in changeset_summaries {
         // Get detailed information about each changeset
         let changeset_name = summary.change_set_name().unwrap_or("").to_string();
         if changeset_name.is_empty() {
             continue;
         }
-        
-        let describe_resp = ctx.client
+
+        let describe_resp = ctx
+            .client
             .describe_change_set()
             .stack_name(stack_name)
             .change_set_name(&changeset_name)
             .send()
             .await?;
-        
+
         // Convert AWS changeset to our format
         let mut changes = Vec::new();
         if let Some(ref changeset_changes) = describe_resp.changes {
             for change in changeset_changes {
                 if let Some(ref resource_change) = change.resource_change {
                     changes.push(ChangeInfo {
-                        action: resource_change.action().map(|a| a.as_str()).unwrap_or("Unknown").to_string(),
-                        logical_resource_id: resource_change.logical_resource_id().unwrap_or("").to_string(),
-                        physical_resource_id: resource_change.physical_resource_id().map(|s| s.to_string()),
+                        action: resource_change
+                            .action()
+                            .map(|a| a.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string(),
+                        logical_resource_id: resource_change
+                            .logical_resource_id()
+                            .unwrap_or("")
+                            .to_string(),
+                        physical_resource_id: resource_change
+                            .physical_resource_id()
+                            .map(|s| s.to_string()),
                         resource_type: resource_change.resource_type().unwrap_or("").to_string(),
-                        replacement: resource_change.replacement().map(|r| r.as_str().to_string()),
-                        scope: Some(resource_change.scope()
-                            .iter().map(|s| s.as_str().to_string()).collect()
+                        replacement: resource_change
+                            .replacement()
+                            .map(|r| r.as_str().to_string()),
+                        scope: Some(
+                            resource_change
+                                .scope()
+                                .iter()
+                                .map(|s| s.as_str().to_string())
+                                .collect(),
                         ),
-                        details: resource_change.details()
-                            .iter().map(|detail| ChangeDetail {
-                                target: detail.target().and_then(|t| t.name()).unwrap_or("").to_string(),
+                        details: resource_change
+                            .details()
+                            .iter()
+                            .map(|detail| ChangeDetail {
+                                target: detail
+                                    .target()
+                                    .and_then(|t| t.name())
+                                    .unwrap_or("")
+                                    .to_string(),
                                 evaluation: detail.evaluation().map(|e| e.as_str().to_string()),
-                                change_source: detail.change_source().map(|cs| cs.as_str().to_string()),
+                                change_source: detail
+                                    .change_source()
+                                    .map(|cs| cs.as_str().to_string()),
                                 causing_entity: detail.causing_entity().map(|ce| ce.to_string()),
-                            }).collect(),
+                            })
+                            .collect(),
                     });
                 }
             }
         }
-        
+
         let changeset_info = ChangeSetInfo {
             change_set_name: changeset_name,
             change_set_id: describe_resp.change_set_id().unwrap_or("").to_string(),
             stack_id: describe_resp.stack_id().unwrap_or("").to_string(),
             stack_name: describe_resp.stack_name().unwrap_or("").to_string(),
             description: describe_resp.description().map(|s| s.to_string()),
-            status: describe_resp.status().map(|s| s.as_str().to_string()).unwrap_or("UNKNOWN".to_string()),
+            status: describe_resp
+                .status()
+                .map(|s| s.as_str().to_string())
+                .unwrap_or("UNKNOWN".to_string()),
             status_reason: describe_resp.status_reason().map(|s| s.to_string()),
             creation_time: describe_resp.creation_time().and_then(|ts| {
                 chrono::DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
                     .map(|dt| dt.with_timezone(&chrono::Utc))
             }),
-            execution_status: describe_resp.execution_status().map(|es| es.as_str().to_string()),
+            execution_status: describe_resp
+                .execution_status()
+                .map(|es| es.as_str().to_string()),
             changes,
         };
-        
+
         changesets.push(changeset_info);
     }
-    
+
     Ok(changesets)
 }
 
@@ -215,22 +254,22 @@ impl StackEventsService {
         if event.resource_type() != Some("AWS::CloudFormation::Stack") {
             return None;
         }
-        
+
         // Extract stack name from stack identifier (could be name or ARN)
         let stack_name = Self::extract_stack_name_from_identifier(stack_identifier);
-        
+
         // The logical resource ID must match the stack name (this is the main stack, not a nested stack)
         if event.logical_resource_id() != Some(&stack_name) {
             return None;
         }
-        
+
         // Check if the resource status is terminal
         if let Some(status) = event.resource_status() {
             if is_terminal_resource_status(status) {
                 return Some(status.as_str().to_string());
             }
         }
-        
+
         None
     }
 
@@ -262,7 +301,7 @@ impl StackEventsService {
         let mut new_events = Vec::new();
         let mut done = false;
         let mut final_status = None;
-        
+
         for ev in filtered_events {
             if let Some(id) = ev.event_id() {
                 if seen.insert(id.to_string()) {
@@ -274,7 +313,7 @@ impl StackEventsService {
                 }
             }
         }
-        
+
         (new_events, done, final_status)
     }
 }
@@ -290,22 +329,23 @@ impl StackInfoService {
             .stack_name(stack_name)
             .send()
             .await?;
-            
+
         let stack = stack_resp
             .stacks
             .and_then(|mut s| s.pop())
             .ok_or_else(|| anyhow::anyhow!("stack '{}' not found", stack_name))?;
-            
+
         Ok(stack)
     }
 
     /// Retrieve a single stack by name and extract its ID (common pattern for operations that need ARN)
     pub async fn get_stack_id(client: &Client, stack_name: &str) -> Result<String> {
         let stack = Self::get_stack(client, stack_name).await?;
-        
-        let stack_id = stack.stack_id
+
+        let stack_id = stack
+            .stack_id
             .ok_or_else(|| anyhow::anyhow!("stack '{}' does not have an ID", stack_name))?;
-            
+
         Ok(stack_id)
     }
 
@@ -363,11 +403,16 @@ pub async fn watch_stack_operation_and_summarize(
         stack_id,
         output_manager,
         std::time::Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
-    ).await {
+    )
+    .await
+    {
         Ok(status) => status,
         Err(error) => {
-            let error_info = crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
-            output_manager.render(crate::output::OutputData::Error(error_info)).await?;
+            let error_info =
+                crate::output::aws_conversion::convert_aws_error_to_error_info(&error, None).await;
+            output_manager
+                .render(crate::output::OutputData::Error(error_info))
+                .await?;
             return Ok(1);
         }
     };
@@ -380,7 +425,7 @@ pub async fn watch_stack_operation_and_summarize(
         if status == "DELETE_COMPLETE" {
             let final_command_summary = create_final_command_summary(
                 false, // Mark as failed since stack was deleted
-                elapsed_seconds
+                elapsed_seconds,
             );
             output_manager.render(final_command_summary).await?;
             return Ok(1); // Return exit code 1 for failure
@@ -388,7 +433,9 @@ pub async fn watch_stack_operation_and_summarize(
     }
 
     let stack_contents = collect_stack_contents(&context, &stack_id).await?;
-    output_manager.render(OutputData::StackContents(stack_contents)).await?;
+    output_manager
+        .render(OutputData::StackContents(stack_contents))
+        .await?;
 
     let final_command_summary = create_final_command_summary(success, elapsed_seconds);
     output_manager.render(final_command_summary).await?;

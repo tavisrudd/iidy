@@ -31,7 +31,11 @@ fn create_env_import_data(location: &str, data: String) -> ImportData {
 }
 
 /// Get environment variable value with optional default
-fn get_env_value(var_name: &str, default_value: Option<&str>, base_location: &str) -> Result<String> {
+fn get_env_value(
+    var_name: &str,
+    default_value: Option<&str>,
+    base_location: &str,
+) -> Result<String> {
     match std::env::var(var_name) {
         Ok(value) => Ok(value),
         Err(_) => {

@@ -5,8 +5,8 @@
 
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
-use iidy::output::renderers::json::{JsonRenderer, JsonOptions};
 use iidy::output::renderer::OutputRenderer;
+use iidy::output::renderers::json::{JsonOptions, JsonRenderer};
 use serde_json::Value;
 use tokio;
 
@@ -14,48 +14,66 @@ use tokio;
 async fn test_json_renderer_with_fixture_data() {
     // Load real fixture data
     let loader = FixtureLoader::new();
-    let fixture = loader.load_test_fixture("create-stack-happy-path")
+    let fixture = loader
+        .load_test_fixture("create-stack-happy-path")
         .expect("Should load test fixture");
-    
-    let output_data = loader.fixture_to_output_data(&fixture)
+
+    let output_data = loader
+        .fixture_to_output_data(&fixture)
         .expect("Should convert fixture to OutputData");
-    
+
     // Create JSON renderer
     let options = JsonOptions::default();
     let mut renderer = JsonRenderer::new(options);
-    
-    renderer.init().await.expect("Should initialize JSON renderer");
-    
+
+    renderer
+        .init()
+        .await
+        .expect("Should initialize JSON renderer");
+
     // Render all fixture data
     for data in &output_data {
         match data {
             OutputData::CommandMetadata(metadata) => {
-                renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await
+                renderer
+                    .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+                    .await
                     .expect("Should render CommandMetadata as JSON");
-            },
+            }
             OutputData::StackDefinition(def, show_times) => {
-                renderer.render_output_data(OutputData::StackDefinition(def.clone(), *show_times), None).await
+                renderer
+                    .render_output_data(OutputData::StackDefinition(def.clone(), *show_times), None)
+                    .await
                     .expect("Should render StackDefinition as JSON");
-            },
+            }
             OutputData::StackEvents(events) => {
-                renderer.render_output_data(OutputData::StackEvents(events.clone()), None).await
+                renderer
+                    .render_output_data(OutputData::StackEvents(events.clone()), None)
+                    .await
                     .expect("Should render StackEvents as JSON");
-            },
+            }
             OutputData::StackContents(contents) => {
-                renderer.render_output_data(OutputData::StackContents(contents.clone()), None).await
+                renderer
+                    .render_output_data(OutputData::StackContents(contents.clone()), None)
+                    .await
                     .expect("Should render StackContents as JSON");
-            },
+            }
             OutputData::CommandResult(result) => {
-                renderer.render_output_data(OutputData::CommandResult(result.clone()), None).await
+                renderer
+                    .render_output_data(OutputData::CommandResult(result.clone()), None)
+                    .await
                     .expect("Should render CommandResult as JSON");
-            },
+            }
             _ => {
                 // Handle other types as needed
             }
         }
     }
-    
-    renderer.cleanup().await.expect("Should cleanup JSON renderer");
+
+    renderer
+        .cleanup()
+        .await
+        .expect("Should cleanup JSON renderer");
 }
 
 #[tokio::test]
@@ -63,15 +81,15 @@ async fn test_json_output_structure() {
     // Test that JSON output has the expected structure
     let options = JsonOptions::default();
     let mut renderer = JsonRenderer::new(options);
-    
+
     // Create sample data
     let metadata = CommandMetadata {
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),
-        cli_arguments: [
-            ("template".to_string(), "template.yaml".to_string()),
-        ].into_iter().collect(),
+        cli_arguments: [("template".to_string(), "template.yaml".to_string())]
+            .into_iter()
+            .collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
         credential_source: "profile 'test-profile' (default)".to_string(),
@@ -83,17 +101,19 @@ async fn test_json_output_structure() {
         },
         derived_tokens: vec![],
     };
-    
+
     // Note: In a real test environment, we would capture stdout to validate
     // the JSON structure. For now, we test that rendering doesn't error.
-    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await
+    renderer
+        .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+        .await
         .expect("Should render command metadata without error");
 }
 
 #[tokio::test]
 async fn test_json_options_configurations() {
     // Test different JsonOptions configurations
-    
+
     // Test with timestamps disabled
     let options = JsonOptions {
         include_timestamps: false,
@@ -101,16 +121,18 @@ async fn test_json_options_configurations() {
         include_type: true,
     };
     let mut renderer = JsonRenderer::new(options);
-    
+
     let status = StatusUpdate {
         message: "Test without timestamps".to_string(),
         timestamp: chrono::Utc::now(),
         level: StatusLevel::Info,
     };
-    
-    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
+
+    renderer
+        .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+        .await
         .expect("Should render without timestamps");
-    
+
     // Test with pretty printing
     let options = JsonOptions {
         include_timestamps: true,
@@ -118,10 +140,12 @@ async fn test_json_options_configurations() {
         include_type: true,
     };
     let mut renderer = JsonRenderer::new(options);
-    
-    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
+
+    renderer
+        .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+        .await
         .expect("Should render with pretty printing");
-    
+
     // Test without type information
     let options = JsonOptions {
         include_timestamps: true,
@@ -129,8 +153,10 @@ async fn test_json_options_configurations() {
         include_type: false,
     };
     let mut renderer = JsonRenderer::new(options);
-    
-    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await
+
+    renderer
+        .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+        .await
         .expect("Should render without type information");
 }
 
@@ -139,7 +165,7 @@ async fn test_json_renderer_with_complex_data() {
     // Test with complex data structures that have nested fields
     let options = JsonOptions::default();
     let mut renderer = JsonRenderer::new(options);
-    
+
     // Test with stack contents (complex nested structure)
     let stack_contents = StackContents {
         resources: vec![
@@ -160,22 +186,19 @@ async fn test_json_renderer_with_complex_data() {
                 resource_status_reason: None,
             },
         ],
-        outputs: vec![
-            StackOutputInfo {
-                output_key: "VPCId".to_string(),
-                output_value: "vpc-12345".to_string(),
-                description: Some("VPC ID".to_string()),
-                export_name: None,
-            },
-        ],
-        exports: vec![
-            StackExportInfo {
-                name: "MyVPC-Id".to_string(),
-                value: "vpc-12345".to_string(),
-                exporting_stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id".to_string(),
-                importing_stacks: vec!["dependent-stack".to_string()],
-            },
-        ],
+        outputs: vec![StackOutputInfo {
+            output_key: "VPCId".to_string(),
+            output_value: "vpc-12345".to_string(),
+            description: Some("VPC ID".to_string()),
+            export_name: None,
+        }],
+        exports: vec![StackExportInfo {
+            name: "MyVPC-Id".to_string(),
+            value: "vpc-12345".to_string(),
+            exporting_stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id"
+                .to_string(),
+            importing_stacks: vec!["dependent-stack".to_string()],
+        }],
         current_status: StackStatusInfo {
             status: "CREATE_COMPLETE".to_string(),
             status_reason: Some("Stack creation completed successfully".to_string()),
@@ -183,8 +206,10 @@ async fn test_json_renderer_with_complex_data() {
         },
         pending_changesets: vec![],
     };
-    
-    renderer.render_output_data(OutputData::StackContents(stack_contents.clone()), None).await
+
+    renderer
+        .render_output_data(OutputData::StackContents(stack_contents.clone()), None)
+        .await
         .expect("Should render complex stack contents as JSON");
 }
 
@@ -193,7 +218,7 @@ async fn test_json_renderer_error_handling() {
     // Test JSON renderer with error data
     let options = JsonOptions::default();
     let mut renderer = JsonRenderer::new(options);
-    
+
     let error_info = ErrorInfo {
         error_type: "ValidationError".to_string(),
         message: "Invalid parameter value".to_string(),
@@ -202,10 +227,14 @@ async fn test_json_renderer_error_handling() {
             "Check the parameter value in your stack-args.yaml".to_string(),
             "Verify instance types available in your region".to_string(),
         ],
-        error_details: ErrorDetails::Generic(Some("Parameter 'InstanceType' must be a valid EC2 instance type".to_string())),
+        error_details: ErrorDetails::Generic(Some(
+            "Parameter 'InstanceType' must be a valid EC2 instance type".to_string(),
+        )),
     };
-    
-    renderer.render_output_data(OutputData::Error(error_info.clone()), None).await
+
+    renderer
+        .render_output_data(OutputData::Error(error_info.clone()), None)
+        .await
         .expect("Should render error information as JSON");
 }
 
@@ -213,7 +242,7 @@ async fn test_json_renderer_error_handling() {
 async fn test_json_serialization_compatibility() {
     // Test that all our data structures serialize properly to JSON
     // This validates that serde annotations are correct
-    
+
     let metadata = CommandMetadata {
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
@@ -230,20 +259,29 @@ async fn test_json_serialization_compatibility() {
         },
         derived_tokens: vec![],
     };
-    
+
     // Test direct serialization
     let json_result = serde_json::to_string(&metadata);
-    assert!(json_result.is_ok(), "CommandMetadata should serialize to JSON");
-    
+    assert!(
+        json_result.is_ok(),
+        "CommandMetadata should serialize to JSON"
+    );
+
     let json_str = json_result.unwrap();
     assert!(!json_str.is_empty(), "JSON output should not be empty");
-    
+
     // Test that it deserializes back
     let parsed: Result<Value, _> = serde_json::from_str(&json_str);
     assert!(parsed.is_ok(), "JSON should be valid and parseable");
-    
+
     let json_value = parsed.unwrap();
     assert!(json_value.is_object(), "JSON should be an object");
-    assert!(json_value.get("region").is_some(), "Should contain region field");
-    assert!(json_value.get("primary_token").is_some(), "Should contain primary_token field");
+    assert!(
+        json_value.get("region").is_some(),
+        "Should contain region field"
+    );
+    assert!(
+        json_value.get("primary_token").is_some(),
+        "Should contain primary_token field"
+    );
 }

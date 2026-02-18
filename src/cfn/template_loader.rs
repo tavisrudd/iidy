@@ -7,16 +7,16 @@
 //! - Auto-signing of S3 URLs for cross-region access
 //! - Error detection for templates using preprocessing without render: prefix
 
-use anyhow::{Result, bail, Context};
-use serde_yaml::Value;
+use anyhow::{Context, Result, bail};
 use aws_sdk_s3::Client as S3Client;
+use serde_yaml::Value;
 
-use crate::yaml::{preprocess_yaml, imports::loaders::load_file_import};
 use crate::cli::YamlSpec;
+use crate::yaml::{imports::loaders::load_file_import, preprocess_yaml};
 
 /// Template size limits from iidy-js
-pub const TEMPLATE_MAX_BYTES: usize = 51199;  // 51KB for inline templates
-pub const S3_TEMPLATE_MAX_BYTES: usize = 999999;  // 1MB for S3 templates
+pub const TEMPLATE_MAX_BYTES: usize = 51199; // 51KB for inline templates
+pub const S3_TEMPLATE_MAX_BYTES: usize = 999999; // 1MB for S3 templates
 
 /// Result of template loading
 #[derive(Debug, Clone)]
@@ -35,10 +35,12 @@ pub async fn load_cfn_template(
 ) -> Result<TemplateResult> {
     let location = match location {
         Some(loc) if !loc.trim().is_empty() => loc.trim(),
-        _ => return Ok(TemplateResult {
-            template_body: None,
-            template_url: None,
-        }),
+        _ => {
+            return Ok(TemplateResult {
+                template_body: None,
+                template_url: None,
+            });
+        }
     };
 
     // Check for render: prefix
@@ -53,14 +55,19 @@ pub async fn load_cfn_template(
     let processed_location = maybe_sign_s3_http_url(actual_location, s3_client).await?;
 
     // Check if this looks like inline template content (JSON or YAML)
-    let is_inline_content = processed_location.trim().starts_with('{') || 
-                           processed_location.trim().starts_with('[') ||
-                           processed_location.contains('\n') ||
-                           (processed_location.len() < 260 && !processed_location.contains('/') && !processed_location.contains('\\'));
-    
+    let is_inline_content = processed_location.trim().starts_with('{')
+        || processed_location.trim().starts_with('[')
+        || processed_location.contains('\n')
+        || (processed_location.len() < 260
+            && !processed_location.contains('/')
+            && !processed_location.contains('\\'));
+
     // Handle different location types
     if !should_render && processed_location.starts_with("s3:") {
-        bail!("Use https:// S3 path-based urls when using a plain (non-rendered) Template from S3: {}", processed_location);
+        bail!(
+            "Use https:// S3 path-based urls when using a plain (non-rendered) Template from S3: {}",
+            processed_location
+        );
     } else if !should_render && processed_location.starts_with("http") {
         // HTTP URL - use as TemplateURL
         return Ok(TemplateResult {
@@ -68,14 +75,15 @@ pub async fn load_cfn_template(
             template_url: Some(processed_location.to_string()),
         });
     }
-    
+
     // Load the template content
     let import_data = if is_inline_content {
         // Inline template content - use directly
         processed_location.to_string()
     } else {
         // Local file or S3/HTTP that needs processing
-        let import_result = load_file_import(&processed_location, base_location).await
+        let import_result = load_file_import(&processed_location, base_location)
+            .await
             .with_context(|| format!("Failed to load template from: {}", processed_location))?;
         import_result.data
     };
@@ -98,14 +106,13 @@ pub async fn load_cfn_template(
 
     let body = if should_render {
         // Parse YAML and add environment values
-        let mut doc: Value = serde_yaml::from_str(&import_data)
-            .with_context(|| {
-                if is_inline_content {
-                    "Failed to parse YAML template".to_string()
-                } else {
-                    format!("Failed to parse YAML template: {}", processed_location)
-                }
-            })?;
+        let mut doc: Value = serde_yaml::from_str(&import_data).with_context(|| {
+            if is_inline_content {
+                "Failed to parse YAML template".to_string()
+            } else {
+                format!("Failed to parse YAML template: {}", processed_location)
+            }
+        })?;
 
         // Inject environment values for preprocessing
         if let Value::Mapping(map) = &mut doc {
@@ -118,7 +125,7 @@ pub async fn load_cfn_template(
             }
             // Add region from AWS context if available
             // TODO: Pass AWS config to get actual region
-            
+
             map.insert(
                 Value::String("$envValues".to_string()),
                 Value::Mapping(env_values),
@@ -131,7 +138,8 @@ pub async fn load_cfn_template(
             &serde_yaml::to_string(&doc)?,
             &processed_location,
             &yaml_spec,
-        ).await?;
+        )
+        .await?;
 
         serde_yaml::to_string(&processed_value)?
     } else {
@@ -178,7 +186,7 @@ mod tests {
         // Test path-style URL: https://s3.us-west-2.amazonaws.com/bucket/path/to/key
         let url = "https://s3.us-west-2.amazonaws.com/mybucket/path/to/template.yaml";
         let (bucket, key) = parse_s3_http_url(url).unwrap();
-        
+
         assert_eq!(bucket, "mybucket");
         assert_eq!(key, "path/to/template.yaml");
     }
@@ -188,7 +196,7 @@ mod tests {
         // Test virtual-hosted style URL: https://bucket.s3.us-west-2.amazonaws.com/path/to/key
         let url = "https://mybucket.s3.us-west-2.amazonaws.com/path/to/template.yaml";
         let (bucket, key) = parse_s3_http_url(url).unwrap();
-        
+
         assert_eq!(bucket, "mybucket");
         assert_eq!(key, "path/to/template.yaml");
     }
@@ -198,7 +206,7 @@ mod tests {
         // Test US East 1 (default region) URL: https://s3.amazonaws.com/bucket/key
         let url = "https://s3.amazonaws.com/mybucket/template.yaml";
         let (bucket, key) = parse_s3_http_url(url).unwrap();
-        
+
         assert_eq!(bucket, "mybucket");
         assert_eq!(key, "template.yaml");
     }
@@ -208,7 +216,7 @@ mod tests {
         // Test virtual-hosted US East 1: https://bucket.s3.amazonaws.com/key
         let url = "https://mybucket.s3.amazonaws.com/template.yaml";
         let (bucket, key) = parse_s3_http_url(url).unwrap();
-        
+
         assert_eq!(bucket, "mybucket");
         assert_eq!(key, "template.yaml");
     }
@@ -218,7 +226,7 @@ mod tests {
         // Test URL with encoded characters in key
         let url = "https://s3.us-west-2.amazonaws.com/mybucket/path%20with%20spaces/template.yaml";
         let (bucket, key) = parse_s3_http_url(url).unwrap();
-        
+
         assert_eq!(bucket, "mybucket");
         assert_eq!(key, "path with spaces/template.yaml");
     }
@@ -229,7 +237,12 @@ mod tests {
         let url = "https://example.com/not-s3";
         let result = parse_s3_http_url(url);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not a well-formed S3 URL"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("not a well-formed S3 URL")
+        );
     }
 
     #[tokio::test]
@@ -264,12 +277,12 @@ fn parse_s3_http_url(input: &str) -> Result<(String, String)> {
         bail!("HTTP URL '{}' is not a well-formed S3 URL", input);
     }
 
-    let url = url::Url::parse(input)
-        .with_context(|| format!("Failed to parse URL: {}", input))?;
+    let url = url::Url::parse(input).with_context(|| format!("Failed to parse URL: {}", input))?;
 
-    let hostname = url.host_str()
+    let hostname = url
+        .host_str()
         .ok_or_else(|| anyhow::anyhow!("No hostname in URL: {}", input))?;
-    
+
     let path = url.path();
 
     // Handle different S3 URL formats
@@ -284,7 +297,9 @@ fn parse_s3_http_url(input: &str) -> Result<(String, String)> {
         (bucket, key)
     } else if hostname.contains(".s3.") || hostname.contains(".s3-") {
         // Virtual-hosted: bucket.s3.region.amazonaws.com/key
-        let bucket = hostname.split('.').next()
+        let bucket = hostname
+            .split('.')
+            .next()
             .ok_or_else(|| anyhow::anyhow!("Cannot extract bucket from hostname: {}", hostname))?
             .to_string();
         let key = path.trim_start_matches('/').to_string();
@@ -302,27 +317,27 @@ fn parse_s3_http_url(input: &str) -> Result<(String, String)> {
 /// Auto-sign S3 HTTP URLs for cross-region access (maybeSignS3HttpUrl equivalent)
 async fn maybe_sign_s3_http_url(location: &str, s3_client: Option<&S3Client>) -> Result<String> {
     // Check if this is an unsigned S3 HTTP URL
-    let is_unsigned_s3_http_url = location.starts_with("http") && 
-                                 location.contains("s3") && 
-                                 location.contains("amazonaws.com") &&
-                                 !location.contains("Signature=");
-    
+    let is_unsigned_s3_http_url = location.starts_with("http")
+        && location.contains("s3")
+        && location.contains("amazonaws.com")
+        && !location.contains("Signature=");
+
     if is_unsigned_s3_http_url {
         if let Some(client) = s3_client {
             let (bucket, key) = parse_s3_http_url(location)?;
-            
+
             // Generate presigned URL for GetObject
             let presigning_config = aws_sdk_s3::presigning::PresigningConfig::expires_in(
-                std::time::Duration::from_secs(3600) // 1 hour expiration
+                std::time::Duration::from_secs(3600), // 1 hour expiration
             )?;
-            
+
             let presigned_request = client
                 .get_object()
                 .bucket(&bucket)
                 .key(&key)
                 .presigned(presigning_config)
                 .await?;
-            
+
             Ok(presigned_request.uri().to_string())
         } else {
             // No S3 client available, return location as-is
@@ -349,16 +364,18 @@ pub async fn load_cfn_stack_policy(
 ) -> Result<StackPolicyResult> {
     let policy = match policy {
         Some(p) => p,
-        None => return Ok(StackPolicyResult {
-            stack_policy_body: None,
-            stack_policy_url: None,
-        }),
+        None => {
+            return Ok(StackPolicyResult {
+                stack_policy_body: None,
+                stack_policy_url: None,
+            });
+        }
     };
 
     match policy {
         Value::String(location) if !location.trim().is_empty() => {
             let location = location.trim();
-            
+
             // Check for render: prefix
             let should_render = location.starts_with("render:");
             let actual_location = if should_render {
@@ -366,13 +383,16 @@ pub async fn load_cfn_stack_policy(
             } else {
                 location
             };
-            
+
             // Auto-sign S3 URLs
             let processed_location = maybe_sign_s3_http_url(actual_location, s3_client).await?;
-            
+
             // Check if URL (S3 or HTTP)
             if !should_render && processed_location.starts_with("s3:") {
-                bail!("Use https:// S3 path-based urls when using a plain (non-rendered) StackPolicy from S3: {}", processed_location);
+                bail!(
+                    "Use https:// S3 path-based urls when using a plain (non-rendered) StackPolicy from S3: {}",
+                    processed_location
+                );
             } else if !should_render && processed_location.starts_with("http") {
                 // HTTP URL - use as StackPolicyURL
                 return Ok(StackPolicyResult {
@@ -380,28 +400,33 @@ pub async fn load_cfn_stack_policy(
                     stack_policy_url: Some(processed_location.to_string()),
                 });
             }
-            
+
             // Load from file
-            let import_result = load_file_import(&processed_location, base_location).await
-                .with_context(|| format!("Failed to load stack policy from: {}", processed_location))?;
-            
+            let import_result = load_file_import(&processed_location, base_location)
+                .await
+                .with_context(|| {
+                    format!("Failed to load stack policy from: {}", processed_location)
+                })?;
+
             let body = if should_render {
                 // Parse YAML and process
-                let doc: Value = serde_yaml::from_str(&import_result.data)
-                    .with_context(|| format!("Failed to parse YAML stack policy: {}", processed_location))?;
-                
+                let doc: Value = serde_yaml::from_str(&import_result.data).with_context(|| {
+                    format!("Failed to parse YAML stack policy: {}", processed_location)
+                })?;
+
                 let yaml_spec = YamlSpec::V11;
                 let processed_value = preprocess_yaml(
                     &serde_yaml::to_string(&doc)?,
                     &processed_location,
                     &yaml_spec,
-                ).await?;
-                
+                )
+                .await?;
+
                 serde_yaml::to_string(&processed_value)?
             } else {
                 import_result.data
             };
-            
+
             Ok(StackPolicyResult {
                 stack_policy_body: Some(body),
                 stack_policy_url: None,
@@ -411,7 +436,7 @@ pub async fn load_cfn_stack_policy(
             // Direct YAML value - serialize to JSON
             let body = serde_json::to_string(policy)
                 .context("Failed to serialize stack policy to JSON")?;
-            
+
             Ok(StackPolicyResult {
                 stack_policy_body: Some(body),
                 stack_policy_url: None,

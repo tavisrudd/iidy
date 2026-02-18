@@ -22,7 +22,7 @@ pub fn generate_versioned_location(
 
     let url_without_scheme = &base_location[5..]; // Remove "s3://"
     let parts: Vec<&str> = url_without_scheme.splitn(2, '/').collect();
-    
+
     if parts.len() != 2 {
         anyhow::bail!("Invalid S3 URL format. Expected s3://bucket/path/");
     }
@@ -36,7 +36,7 @@ pub fn generate_versioned_location(
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("yaml");
-    
+
     let filename = format!("{}.{}", hash, extension);
     let key = if base_path.ends_with('/') {
         format!("{}{}", base_path, filename)
@@ -55,7 +55,7 @@ pub fn parse_s3_url(s3_url: &str) -> Result<(String, String)> {
 
     let url_without_scheme = &s3_url[5..]; // Remove "s3://"
     let parts: Vec<&str> = url_without_scheme.splitn(2, '/').collect();
-    
+
     if parts.len() != 2 {
         anyhow::bail!("Invalid S3 URL format. Expected s3://bucket/key");
     }
@@ -71,14 +71,14 @@ mod tests {
     fn test_calculate_template_hash() {
         let template = "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}";
         let hash = calculate_template_hash(template);
-        
+
         // Hash should be deterministic
         let hash2 = calculate_template_hash(template);
         assert_eq!(hash, hash2);
-        
+
         // Hash should be 64 characters (SHA256 hex)
         assert_eq!(hash.len(), 64);
-        
+
         // Different content should produce different hashes
         let different_template = "AWSTemplateFormatVersion: '2010-09-09'\nResources:\n  Test: {}";
         let different_hash = calculate_template_hash(different_template);

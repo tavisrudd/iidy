@@ -4,8 +4,8 @@
 //! for different output modes (Interactive, Plain, JSON, TUI).
 
 use crate::output::data::*;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use clap::ValueEnum;
 use std::collections::VecDeque;
 
@@ -15,9 +15,13 @@ pub trait OutputRenderer: Send + Sync {
     // Control methods
     async fn init(&mut self) -> Result<()>;
     async fn cleanup(&mut self) -> Result<()>;
-    
+
     /// Render OutputData with optional buffer access for ordering logic
-    async fn render_output_data(&mut self, data: OutputData, buffer: Option<&VecDeque<OutputData>>) -> Result<()>;
+    async fn render_output_data(
+        &mut self,
+        data: OutputData,
+        buffer: Option<&VecDeque<OutputData>>,
+    ) -> Result<()>;
 }
 
 /// Output mode selection
@@ -35,7 +39,7 @@ pub enum OutputMode {
 impl OutputMode {
     pub fn default_for_environment() -> Self {
         use std::io::IsTerminal;
-        
+
         if std::io::stdout().is_terminal() {
             OutputMode::Interactive
         } else {

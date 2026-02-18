@@ -4,20 +4,19 @@
 //! and internal iidy data structures to OutputData for the data-driven output system.
 
 use crate::{
-    cfn::{CfnContext, StackArgs},
-    output::{
-        CommandMetadata, CommandResult, StatusUpdate, StatusLevel, OutputData,
-        TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
-        StackListDisplay, StackListEntry, StackDefinition, StackListColumn,
-        StackEventsDisplay, StackEvent, StackEventWithTiming,
-        StackResourceInfo, StackOutputInfo, StackExportInfo,
-        data::{ErrorInfo, ErrorDetails},
-    },
-    cli::NormalizedAwsOpts,
     aws::client_req_token::{TokenInfo as TimingTokenInfo, TokenSource as TimingTokenSource},
+    cfn::{CfnContext, StackArgs},
+    cli::NormalizedAwsOpts,
+    output::{
+        CommandMetadata, CommandResult, OutputData, StackDefinition, StackEvent,
+        StackEventWithTiming, StackEventsDisplay, StackExportInfo, StackListColumn,
+        StackListDisplay, StackListEntry, StackOutputInfo, StackResourceInfo, StatusLevel,
+        StatusUpdate, TokenInfo as OutputTokenInfo, TokenSource as OutputTokenSource,
+        data::{ErrorDetails, ErrorInfo},
+    },
 };
-use aws_sdk_cloudformation::types::{Stack, StackEvent as AwsStackEvent, StackResource, Output};
-use chrono::{Utc, DateTime};
+use aws_sdk_cloudformation::types::{Output, Stack, StackEvent as AwsStackEvent, StackResource};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
 /// Convert aws::client_req_token::TokenInfo to output::TokenInfo
@@ -46,7 +45,7 @@ pub async fn create_command_metadata(
     environment: &str,
 ) -> Result<CommandMetadata, anyhow::Error> {
     let mut cli_arguments = HashMap::new();
-    
+
     // Add CLI arguments from opts
     if let Some(ref profile) = opts.profile {
         cli_arguments.insert("profile".to_string(), profile.clone());
@@ -57,11 +56,15 @@ pub async fn create_command_metadata(
 
     // Always include the primary token, but renderers will decide whether to display it
     let primary_token = convert_token_info(&context.primary_token());
-    
+
     // Only include derived tokens if we actually derived new ones (not just the primary)
     let all_tokens = context.get_used_tokens();
     let derived_tokens = if all_tokens.len() > 1 {
-        all_tokens.into_iter().skip(1).map(|t| convert_token_info(&t)).collect()
+        all_tokens
+            .into_iter()
+            .skip(1)
+            .map(|t| convert_token_info(&t))
+            .collect()
     } else {
         vec![]
     };
@@ -71,7 +74,9 @@ pub async fn create_command_metadata(
 
     Ok(CommandMetadata {
         iidy_environment: environment.to_string(),
-        region: context.aws_config.region()
+        region: context
+            .aws_config
+            .region()
             .expect("Region must be configured - validated in create_context_for_operation")
             .as_ref()
             .to_string(),
@@ -99,13 +104,19 @@ pub async fn get_caller_identity(context: &CfnContext) -> Result<(String, String
     match sts_client.get_caller_identity().send().await {
         Ok(response) => {
             let account = response.account().unwrap_or("unknown").to_string();
-            let arn = response.arn().unwrap_or("arn:aws:iam::unknown:user/current").to_string();
+            let arn = response
+                .arn()
+                .unwrap_or("arn:aws:iam::unknown:user/current")
+                .to_string();
             Ok((account, arn))
         }
         Err(e) => {
             // Fall back to placeholders if STS call fails (e.g., no internet, permissions issue)
             eprintln!("Warning: Could not get caller identity: {}", e);
-            Ok(("unknown".to_string(), "arn:aws:iam::unknown:user/current".to_string()))
+            Ok((
+                "unknown".to_string(),
+                "arn:aws:iam::unknown:user/current".to_string(),
+            ))
         }
     }
 }
@@ -134,18 +145,15 @@ pub fn create_command_result(
 }
 
 /// Create a final command summary (exact iidy-js showFinalComandSummary pattern)
-pub fn create_final_command_summary(
-    success: bool,
-    elapsed_seconds: i64,
-) -> OutputData {
-    use crate::output::data::{FinalCommandSummary, CommandSummaryResult};
-    
+pub fn create_final_command_summary(success: bool, elapsed_seconds: i64) -> OutputData {
+    use crate::output::data::{CommandSummaryResult, FinalCommandSummary};
+
     let result = if success {
         CommandSummaryResult::Success
     } else {
         CommandSummaryResult::Failure
     };
-    
+
     OutputData::FinalCommandSummary(FinalCommandSummary {
         result,
         elapsed_seconds,
@@ -172,12 +180,12 @@ pub fn error_message(msg: &str) -> OutputData {
 /// Convert AWS SDK Stack to StackListEntry
 pub fn convert_stack_to_list_entry(stack: &Stack) -> StackListEntry {
     use chrono::{DateTime, Utc};
-    
+
     // Convert AWS DateTime to chrono DateTime
     let creation_time = stack.creation_time().map(|aws_dt| {
         DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
     });
-    
+
     let last_updated_time = stack.last_updated_time().map(|aws_dt| {
         DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
     });
@@ -186,7 +194,7 @@ pub fn convert_stack_to_list_entry(stack: &Stack) -> StackListEntry {
         .stack_status()
         .map(|s| s.as_str().to_string())
         .unwrap_or_else(|| "UNKNOWN".to_string());
-        
+
     let name = stack.stack_name().unwrap_or("unknown").to_string();
 
     let tags: HashMap<String, String> = stack
@@ -199,13 +207,19 @@ pub fn convert_stack_to_list_entry(stack: &Stack) -> StackListEntry {
         .collect();
 
     let termination_protection = stack.enable_termination_protection().unwrap_or(false);
-    
+
     // Determine environment type based on name/tags
-    let environment_type = if name.contains("production") || tags.get("environment") == Some(&"production".to_string()) {
+    let environment_type = if name.contains("production")
+        || tags.get("environment") == Some(&"production".to_string())
+    {
         Some("production".to_string())
-    } else if name.contains("integration") || tags.get("environment") == Some(&"integration".to_string()) {
+    } else if name.contains("integration")
+        || tags.get("environment") == Some(&"integration".to_string())
+    {
         Some("integration".to_string())
-    } else if name.contains("development") || tags.get("environment") == Some(&"development".to_string()) {
+    } else if name.contains("development")
+        || tags.get("environment") == Some(&"development".to_string())
+    {
         Some("development".to_string())
     } else {
         None
@@ -226,7 +240,7 @@ pub fn convert_stack_to_list_entry(stack: &Stack) -> StackListEntry {
 /// Convert a list of AWS SDK Stacks to StackListDisplay
 pub fn convert_stacks_to_list_display(stacks: Vec<Stack>, show_tags: bool) -> OutputData {
     let mut entries: Vec<StackListEntry> = stacks.iter().map(convert_stack_to_list_entry).collect();
-    
+
     // Sort by creation time (matching original logic)
     entries.sort_by(|a, b| a.creation_time.cmp(&b.creation_time));
 
@@ -235,18 +249,18 @@ pub fn convert_stacks_to_list_display(stacks: Vec<Stack>, show_tags: bool) -> Ou
         show_tags,
         filters_applied: vec![], // No filters applied by default
         columns: StackListColumn::default_columns(), // Use default columns
-        query_mode: false, // Normal display mode by default
+        query_mode: false,       // Normal display mode by default
     })
 }
 
 /// Convert AWS SDK Stack to StackDefinition
 pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputData {
     use chrono::{DateTime, Utc};
-    
+
     let creation_time = stack.creation_time().map(|aws_dt| {
         DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
     });
-    
+
     let last_updated_time = stack.last_updated_time().map(|aws_dt| {
         DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
     });
@@ -272,27 +286,42 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
         name: stack.stack_name().unwrap_or("unknown").to_string(),
         stackset_name: None, // TODO: Determine if this is a StackSet stack
         description: stack.description().map(|s| s.to_string()),
-        status: stack.stack_status().map(|s| s.as_str().to_string()).unwrap_or_else(|| "UNKNOWN".to_string()),
+        status: stack
+            .stack_status()
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_else(|| "UNKNOWN".to_string()),
         status_reason: stack.stack_status_reason().map(|s| s.to_string()),
-        capabilities: stack.capabilities().iter().map(|c| c.as_str().to_string()).collect(),
+        capabilities: stack
+            .capabilities()
+            .iter()
+            .map(|c| c.as_str().to_string())
+            .collect(),
         service_role: stack.role_arn().map(|s| s.to_string()),
         tags,
-        parameters: stack.parameters().iter().filter_map(|p| {
-            match (p.parameter_key(), p.parameter_value()) {
+        parameters: stack
+            .parameters()
+            .iter()
+            .filter_map(|p| match (p.parameter_key(), p.parameter_value()) {
                 (Some(k), Some(v)) => Some((k.to_string(), v.to_string())),
                 _ => None,
-            }
-        }).collect(),
+            })
+            .collect(),
         disable_rollback: false, // TODO: Get this information
         termination_protection: stack.enable_termination_protection().unwrap_or(false),
         creation_time,
         last_updated_time,
         timeout_in_minutes: stack.timeout_in_minutes(),
-        notification_arns: stack.notification_arns().iter().map(|s| s.to_string()).collect(),
+        notification_arns: stack
+            .notification_arns()
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
         stack_policy: None, // TODO: Fetch separately if needed
         arn: stack_id.to_string(),
-        console_url: format!("https://{}.console.aws.amazon.com/cloudformation/home?region={}#/stacks/stackinfo?stackId={}",
-                           region_from_arn, region_from_arn, stack_id),
+        console_url: format!(
+            "https://{}.console.aws.amazon.com/cloudformation/home?region={}#/stacks/stackinfo?stackId={}",
+            region_from_arn, region_from_arn, stack_id
+        ),
         region: region_from_arn.to_string(),
     };
 
@@ -302,7 +331,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
 /// Convert AWS StackEvent to our StackEvent format
 pub fn convert_aws_stack_event(aws_event: &AwsStackEvent) -> StackEvent {
     use chrono::{DateTime, Utc};
-    
+
     let timestamp = aws_event.timestamp().map(|aws_dt| {
         DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
     });
@@ -311,11 +340,17 @@ pub fn convert_aws_stack_event(aws_event: &AwsStackEvent) -> StackEvent {
         event_id: aws_event.event_id().unwrap_or("unknown").to_string(),
         stack_id: aws_event.stack_id().unwrap_or("unknown").to_string(),
         stack_name: aws_event.stack_name().unwrap_or("unknown").to_string(),
-        logical_resource_id: aws_event.logical_resource_id().unwrap_or("unknown").to_string(),
+        logical_resource_id: aws_event
+            .logical_resource_id()
+            .unwrap_or("unknown")
+            .to_string(),
         physical_resource_id: aws_event.physical_resource_id().map(|s| s.to_string()),
         resource_type: aws_event.resource_type().unwrap_or("unknown").to_string(),
         timestamp,
-        resource_status: aws_event.resource_status().map(|s| s.as_str().to_string()).unwrap_or_else(|| "UNKNOWN".to_string()),
+        resource_status: aws_event
+            .resource_status()
+            .map(|s| s.as_str().to_string())
+            .unwrap_or_else(|| "UNKNOWN".to_string()),
         resource_status_reason: aws_event.resource_status_reason().map(|s| s.to_string()),
         resource_properties: aws_event.resource_properties().map(|s| s.to_string()),
         client_request_token: aws_event.client_request_token().map(|s| s.to_string()),
@@ -323,10 +358,7 @@ pub fn convert_aws_stack_event(aws_event: &AwsStackEvent) -> StackEvent {
 }
 
 /// Convert AWS stack events to StackEventsDisplay
-pub fn convert_stack_events_to_display(
-    events: Vec<AwsStackEvent>,
-    title: &str,
-) -> OutputData {
+pub fn convert_stack_events_to_display(events: Vec<AwsStackEvent>, title: &str) -> OutputData {
     convert_stack_events_to_display_with_max(events, title, None)
 }
 
@@ -337,7 +369,7 @@ pub fn convert_stack_events_to_display_with_max(
     max_events: Option<usize>,
 ) -> OutputData {
     let converted_events: Vec<StackEvent> = events.iter().map(convert_aws_stack_event).collect();
-    
+
     // Calculate duration for resource operations
     let events_with_timing: Vec<StackEventWithTiming> = calculate_event_durations(converted_events);
 
@@ -351,33 +383,33 @@ pub fn convert_stack_events_to_display_with_max(
 
 /// Calculate durations for resource operations by matching start/complete events
 fn calculate_event_durations(mut events: Vec<StackEvent>) -> Vec<StackEventWithTiming> {
-    use std::collections::HashMap;
     use chrono::DateTime;
-    
+    use std::collections::HashMap;
+
     // Sort events chronologically (oldest first) to properly track start/end pairs
-    events.sort_by(|a, b| {
-        match (&a.timestamp, &b.timestamp) {
-            (Some(a_time), Some(b_time)) => a_time.cmp(b_time),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => std::cmp::Ordering::Equal,
-        }
+    events.sort_by(|a, b| match (&a.timestamp, &b.timestamp) {
+        (Some(a_time), Some(b_time)) => a_time.cmp(b_time),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
     });
-    
+
     // Track start times for each resource
     let mut start_times: HashMap<String, DateTime<chrono::Utc>> = HashMap::new();
     let mut result = Vec::new();
-    
+
     // Process events in chronological order to properly track durations
     for event in events {
         let duration_seconds = if let Some(timestamp) = &event.timestamp {
             let resource_key = format!("{}/{}", event.logical_resource_id, event.resource_type);
-            
+
             if event.resource_status.ends_with("_IN_PROGRESS") {
                 // This is a start event, record the start time
                 start_times.insert(resource_key, *timestamp);
                 None
-            } else if event.resource_status.ends_with("_COMPLETE") || event.resource_status.ends_with("_FAILED") {
+            } else if event.resource_status.ends_with("_COMPLETE")
+                || event.resource_status.ends_with("_FAILED")
+            {
                 // This is an end event, calculate duration if we have a start time
                 if let Some(start_time) = start_times.get(&resource_key) {
                     let duration = timestamp.signed_duration_since(*start_time);
@@ -399,7 +431,7 @@ fn calculate_event_durations(mut events: Vec<StackEvent>) -> Vec<StackEventWithT
             duration_seconds,
         });
     }
-    
+
     result
 }
 
@@ -409,13 +441,16 @@ pub fn convert_stack_resource(aws_resource: &StackResource) -> StackResourceInfo
         logical_resource_id: aws_resource.logical_resource_id.clone().unwrap_or_default(),
         physical_resource_id: aws_resource.physical_resource_id.clone(),
         resource_type: aws_resource.resource_type.clone().unwrap_or_default(),
-        resource_status: aws_resource.resource_status.as_ref()
+        resource_status: aws_resource
+            .resource_status
+            .as_ref()
             .map(|s| s.as_str().to_string())
             .unwrap_or_default(),
         resource_status_reason: aws_resource.resource_status_reason.clone(),
-        last_updated_timestamp: aws_resource.timestamp.as_ref().and_then(|ts| {
-            DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())
-        }),
+        last_updated_timestamp: aws_resource
+            .timestamp
+            .as_ref()
+            .and_then(|ts| DateTime::from_timestamp(ts.secs(), ts.subsec_nanos())),
     }
 }
 
@@ -441,26 +476,28 @@ pub fn convert_stack_outputs(aws_outputs: Vec<Output>) -> Vec<StackOutputInfo> {
 
 /// Create StackExportInfo from StackOutputInfo (for outputs with export names)
 pub fn create_stack_export(
-    output: &StackOutputInfo, 
-    stack_id: &str, 
-    importing_stacks: Vec<String>
+    output: &StackOutputInfo,
+    stack_id: &str,
+    importing_stacks: Vec<String>,
 ) -> Option<StackExportInfo> {
-    output.export_name.as_ref().map(|export_name| {
-        StackExportInfo {
+    output
+        .export_name
+        .as_ref()
+        .map(|export_name| StackExportInfo {
             name: export_name.clone(),
             value: output.output_value.clone(),
             exporting_stack_id: stack_id.to_string(),
             importing_stacks,
-        }
-    })
+        })
 }
 
 /// Convert stack outputs to exports (only outputs with export_name)
 pub fn convert_outputs_to_exports(
-    outputs: &[StackOutputInfo], 
-    stack_id: &str
+    outputs: &[StackOutputInfo],
+    stack_id: &str,
 ) -> Vec<StackExportInfo> {
-    outputs.iter()
+    outputs
+        .iter()
         .filter_map(|output| create_stack_export(output, stack_id, vec![]))
         .collect()
 }
@@ -468,23 +505,24 @@ pub fn convert_outputs_to_exports(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{DateTime, Utc};
     use crate::{
+        aws::{
+            CredentialSource, CredentialSourceStack, ProfileSource, client_req_token::TokenInfo,
+            timing::MockTimeProvider,
+        },
         cfn::{CfnContext, StackArgs},
-        aws::{client_req_token::TokenInfo, timing::MockTimeProvider, CredentialSourceStack, CredentialSource, ProfileSource},
         cli::NormalizedAwsOpts,
     };
     use aws_sdk_cloudformation::Client;
+    use chrono::{DateTime, Utc};
     use std::sync::Arc;
 
     fn mock_credential_sources() -> CredentialSourceStack {
-        CredentialSourceStack::new(vec![
-            CredentialSource::Profile {
-                name: "test".to_string(),
-                source: ProfileSource::Default,
-                profile_role_arn: None,
-            }
-        ])
+        CredentialSourceStack::new(vec![CredentialSource::Profile {
+            name: "test".to_string(),
+            source: ProfileSource::Default,
+            profile_role_arn: None,
+        }])
     }
 
     #[tokio::test]
@@ -498,15 +536,27 @@ mod tests {
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
         let client = Client::new(&aws_config);
-        let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
-        let context = CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap();
+        let token_info =
+            TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
+        let context = CfnContext::new(
+            client,
+            aws_config,
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap();
 
         // opts.region is just what was passed on CLI - may or may not match aws_config
         let opts = NormalizedAwsOpts {
             profile: Some("test-profile".to_string()),
             region: Some("us-west-2".to_string()),
             assume_role_arn: None,
-            client_request_token: TokenInfo::user_provided("test-token".to_string(), "test-op".to_string()),
+            client_request_token: TokenInfo::user_provided(
+                "test-token".to_string(),
+                "test-op".to_string(),
+            ),
             fixture_set: None,
         };
 
@@ -517,13 +567,18 @@ mod tests {
             ..Default::default()
         };
 
-        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env").await.unwrap();
+        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env")
+            .await
+            .unwrap();
 
         assert_eq!(metadata.iidy_environment, "test-env");
         // Region should come from context.aws_config, not opts
         assert_eq!(metadata.region, "us-west-2");
         assert_eq!(metadata.profile, Some("test-profile".to_string()));
-        assert_eq!(metadata.iam_service_role, Some("arn:aws:iam::123456789012:role/TestRole".to_string()));
+        assert_eq!(
+            metadata.iam_service_role,
+            Some("arn:aws:iam::123456789012:role/TestRole".to_string())
+        );
         assert_eq!(metadata.primary_token.value, "test-token-123");
         assert!(metadata.cli_arguments.contains_key("profile"));
         assert!(metadata.cli_arguments.contains_key("region"));
@@ -542,21 +597,35 @@ mod tests {
             .behavior_version(aws_config::BehaviorVersion::latest())
             .build();
         let client = Client::new(&aws_config);
-        let token_info = TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
-        let context = CfnContext::new(client, aws_config, mock_credential_sources(), time_provider, token_info).await.unwrap();
+        let token_info =
+            TokenInfo::user_provided("test-token-123".to_string(), "test-op".to_string());
+        let context = CfnContext::new(
+            client,
+            aws_config,
+            mock_credential_sources(),
+            time_provider,
+            token_info,
+        )
+        .await
+        .unwrap();
 
         // opts.region is None (simulating region from stack-args or AWS config files)
         let opts = NormalizedAwsOpts {
             profile: Some("test-profile".to_string()),
             region: None, // No CLI region specified
             assume_role_arn: None,
-            client_request_token: TokenInfo::user_provided("test-token".to_string(), "test-op".to_string()),
+            client_request_token: TokenInfo::user_provided(
+                "test-token".to_string(),
+                "test-op".to_string(),
+            ),
             fixture_set: None,
         };
 
         let stack_args = StackArgs::default();
 
-        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env").await.unwrap();
+        let metadata = create_command_metadata(&context, &opts, &stack_args, "test-env")
+            .await
+            .unwrap();
 
         // Should display the region from aws_config, not default to us-east-1
         assert_eq!(metadata.region, "eu-west-1");
@@ -565,7 +634,7 @@ mod tests {
     #[test]
     fn test_status_update_creation() {
         let update = create_status_update("Test message", StatusLevel::Info);
-        
+
         if let OutputData::StatusUpdate(status) = update {
             assert_eq!(status.message, "Test message");
             assert_eq!(status.level, StatusLevel::Info);
@@ -577,7 +646,7 @@ mod tests {
     #[test]
     fn test_command_result_creation() {
         let result = create_command_result(true, 120, Some("Success".to_string()));
-        
+
         if let OutputData::CommandResult(cmd_result) = result {
             assert!(cmd_result.success);
             assert_eq!(cmd_result.elapsed_seconds, 120);
@@ -627,7 +696,7 @@ mod tests {
     #[test]
     fn test_duration_calculation() {
         let base_time = "2023-07-10T14:00:00Z".parse::<DateTime<Utc>>().unwrap();
-        
+
         let events = vec![
             StackEvent {
                 event_id: "1".to_string(),
@@ -658,10 +727,10 @@ mod tests {
         ];
 
         let events_with_timing = calculate_event_durations(events);
-        
+
         // First event (IN_PROGRESS) should have no duration
         assert_eq!(events_with_timing[0].duration_seconds, None);
-        
+
         // Second event (COMPLETE) should have 5 second duration
         assert_eq!(events_with_timing[1].duration_seconds, Some(5));
     }
@@ -711,7 +780,9 @@ async fn create_stack_absent_context(
     Ok(crate::output::data::StackAbsentInfo {
         stack_name,
         environment: cli.global_opts.environment.clone(),
-        region: context.aws_config.region()
+        region: context
+            .aws_config
+            .region()
             .map(|r| r.as_ref().to_string())
             .unwrap_or_else(|| "unknown".to_string()),
         account,
@@ -733,7 +804,7 @@ fn extract_stack_name_from_error(error_message: &str) -> String {
 fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
     for err_msg in error_chain {
         let lower_msg = err_msg.to_lowercase();
-        
+
         if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
             return (
                 "ExpiredCredentials".to_string(),
@@ -742,10 +813,10 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
                     "Run 'aws sts get-caller-identity' to check your credentials".to_string(),
                     "Refresh your AWS SSO session if using SSO".to_string(),
                     "Check your AWS credentials configuration".to_string(),
-                ]
+                ],
             );
         }
-        
+
         if lower_msg.contains("no providers in chain provided credentials") {
             return (
                 "NoCredentials".to_string(),
@@ -754,10 +825,10 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
                     "Run 'aws configure' to set up your credentials".to_string(),
                     "Set AWS_PROFILE environment variable if using named profiles".to_string(),
                     "Ensure ~/.aws/credentials file exists and is properly formatted".to_string(),
-                ]
+                ],
             );
         }
-        
+
         if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
             return (
                 "AccessDenied".to_string(),
@@ -766,14 +837,15 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
                     "Verify your IAM user/role has CloudFormation permissions".to_string(),
                     "Check if you're using the correct AWS account/region".to_string(),
                     "Review IAM policies attached to your user/role".to_string(),
-                ]
+                ],
             );
         }
-        
-        if lower_msg.contains("invalidclienttokenid") || 
-           lower_msg.contains("invalid security token") ||
-           lower_msg.contains("tokenfreshfailed") ||
-           lower_msg.contains("unrecognizedclientexception") {
+
+        if lower_msg.contains("invalidclienttokenid")
+            || lower_msg.contains("invalid security token")
+            || lower_msg.contains("tokenfreshfailed")
+            || lower_msg.contains("unrecognizedclientexception")
+        {
             return (
                 "InvalidToken".to_string(),
                 "Invalid AWS security token. Please refresh your credentials.".to_string(),
@@ -782,30 +854,34 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
                     "Check if your AWS region is correct".to_string(),
                     "Verify you're using the correct AWS profile".to_string(),
                     "If using SSO, run 'aws sso login' to refresh your session".to_string(),
-                ]
+                ],
             );
         }
-        
+
         if lower_msg.contains("network") || lower_msg.contains("timeout") {
             return (
                 "NetworkError".to_string(),
-                "Network error connecting to AWS. Please check your internet connection.".to_string(),
+                "Network error connecting to AWS. Please check your internet connection."
+                    .to_string(),
                 vec![
                     "Check your internet connection".to_string(),
                     "Verify AWS service endpoints are accessible".to_string(),
                     "Try again in a few moments".to_string(),
-                ]
+                ],
             );
         }
-        
-        if lower_msg.contains("insufficientcapabilitiesexception") && lower_msg.contains("requires capabilities") {
+
+        if lower_msg.contains("insufficientcapabilitiesexception")
+            && lower_msg.contains("requires capabilities")
+        {
             // Extract the required capabilities from the error message
             // Message format: "Requires capabilities : [CAPABILITY_NAMED_IAM]"
             let capabilities_list = if let Some(start) = err_msg.find('[') {
                 if let Some(end) = err_msg.find(']') {
-                    let caps_str = &err_msg[start+1..end];
+                    let caps_str = &err_msg[start + 1..end];
                     // Split by comma and clean up
-                    caps_str.split(',')
+                    caps_str
+                        .split(',')
                         .map(|s| s.trim())
                         .filter(|s| !s.is_empty())
                         .map(|s| format!("\"{}\"", s))
@@ -817,17 +893,18 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
             } else {
                 "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
             };
-            
+
             return (
                 "InsufficientCapabilities".to_string(),
                 format!("CloudFormation stack requires additional capabilities"),
-                vec![
-                    format!("Add \"Capabilities: [{}]\" to your stack-args.yaml file", capabilities_list),
-                ]
+                vec![format!(
+                    "Add \"Capabilities: [{}]\" to your stack-args.yaml file",
+                    capabilities_list
+                )],
             );
         }
     }
-    
+
     // If no specific pattern matches, show the most relevant error from the chain
     let message = if error_chain.len() > 1 {
         format!("AWS error - {}", error_chain[error_chain.len() - 1])
@@ -836,10 +913,10 @@ fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
     } else {
         "Unknown AWS error".to_string()
     };
-    
+
     (
         "AWSError".to_string(),
         message,
-        vec!["Check the AWS CloudFormation console for more details".to_string()]
+        vec!["Check the AWS CloudFormation console for more details".to_string()],
     )
 }

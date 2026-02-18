@@ -45,7 +45,7 @@ impl ValueTypeStr for Value {
         match self {
             Value::Null => "null",
             Value::Bool(_) => "boolean",
-            Value::Number(_) => "number", 
+            Value::Number(_) => "number",
             Value::String(_) => "string",
             Value::Sequence(_) => "sequence",
             Value::Mapping(_) => "object",
@@ -58,7 +58,10 @@ impl ValueTypeStr for Value {
 #[inline(always)]
 fn is_simple_ast_value(ast: &YamlAst) -> bool {
     match ast {
-        YamlAst::Null(_) | YamlAst::Bool(_, _) | YamlAst::Number(_, _) | YamlAst::PlainString(_, _) => true,
+        YamlAst::Null(_)
+        | YamlAst::Bool(_, _)
+        | YamlAst::Number(_, _)
+        | YamlAst::PlainString(_, _) => true,
         _ => false,
     }
 }
@@ -550,7 +553,9 @@ impl Resolver {
             YamlAst::Null(_) => Ok(Value::Null),
             YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
             YamlAst::Number(n, _) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s.clone())),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => {
+                Ok(Value::String(s.clone()))
+            }
             YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
@@ -582,7 +587,9 @@ impl Resolver {
             YamlAst::UnknownYamlTag(unknown, _) => {
                 self.ast_to_value_without_preprocessing(&unknown.value)
             }
-            YamlAst::ImportedDocument(doc, _) => self.ast_to_value_without_preprocessing(&doc.content),
+            YamlAst::ImportedDocument(doc, _) => {
+                self.ast_to_value_without_preprocessing(&doc.content)
+            }
         }
     }
 
@@ -621,22 +628,19 @@ impl Resolver {
                         }
                     }
 
-                    let transformed =
-                        self.resolve_ast(template, &item_context, path_tracker)?;
+                    let transformed = self.resolve_ast(template, &item_context, path_tracker)?;
                     result.push(transformed);
                 }
 
                 Ok(Value::Sequence(result))
             }
-            _ => {
-                Err(self.create_type_mismatch_error(
-                    "sequence",
-                    &items_result,
-                    &format!("{} items field", tag_name),
-                    context,
-                    path_tracker,
-                ))
-            }
+            _ => Err(self.create_type_mismatch_error(
+                "sequence",
+                &items_result,
+                &format!("{} items field", tag_name),
+                context,
+                path_tracker,
+            )),
         }
     }
 }
@@ -1261,15 +1265,13 @@ impl TagResolver for Resolver {
                 let joined = strings?.join(&delimiter_str);
                 Ok(Value::String(joined))
             }
-            _ => {
-                Err(self.create_type_mismatch_error(
-                    "sequence",
-                    &array_result,
-                    "!$join sequence argument",
-                    context,
-                    path_tracker,
-                ))
-            }
+            _ => Err(self.create_type_mismatch_error(
+                "sequence",
+                &array_result,
+                "!$join sequence argument",
+                context,
+                path_tracker,
+            )),
         }
     }
 
@@ -1727,7 +1729,9 @@ impl TagResolver for Resolver {
             YamlAst::Null(_) => Ok(Value::Null),
             YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
             YamlAst::Number(n, _) => Ok(Value::Number(n.clone())),
-            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => Ok(Value::String(s.clone())),
+            YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => {
+                Ok(Value::String(s.clone()))
+            }
             YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
@@ -2249,10 +2253,7 @@ fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
 fn find_template_variable_location(file_path: &str, var_name: &str) -> String {
     let needle = format!("{{{{{}}}}}", var_name);
     if let Ok(content) = std::fs::read_to_string(file_path) {
-        if let Some(line_number) = content
-            .lines()
-            .position(|line| line.contains(&needle))
-        {
+        if let Some(line_number) = content.lines().position(|line| line.contains(&needle)) {
             return format!("{}:{}", file_path, line_number + 1);
         }
     }

@@ -6,10 +6,10 @@
 //! - OutputData conversions and basic functionality
 //! - Individual renderer helper methods
 
-use iidy::cli::{Theme, ColorChoice};
+use chrono::Utc;
+use iidy::cli::{ColorChoice, Theme};
 use iidy::output::data::*;
 use iidy::output::theme::{IidyTheme, get_terminal_width};
-use chrono::Utc;
 use serde_json;
 use std::collections::HashMap;
 
@@ -19,7 +19,9 @@ fn test_command_metadata_serialization() {
         iidy_environment: "test".to_string(),
         region: "us-east-1".to_string(),
         profile: Some("test-profile".to_string()),
-        cli_arguments: [("argsfile".to_string(), "stack-args.yaml".to_string())].into_iter().collect(),
+        cli_arguments: [("argsfile".to_string(), "stack-args.yaml".to_string())]
+            .into_iter()
+            .collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/test-user".to_string(),
         credential_source: "profile 'test-profile' (default)".to_string(),
@@ -31,14 +33,15 @@ fn test_command_metadata_serialization() {
         },
         derived_tokens: vec![],
     };
-    
+
     // Test serialization
     let json = serde_json::to_string(&metadata).expect("Should serialize to JSON");
     assert!(json.contains("create-stack"));
     assert!(json.contains("test-profile"));
-    
+
     // Test deserialization
-    let deserialized: CommandMetadata = serde_json::from_str(&json).expect("Should deserialize from JSON");
+    let deserialized: CommandMetadata =
+        serde_json::from_str(&json).expect("Should deserialize from JSON");
     // cfn_operation field removed from CommandMetadata
     assert_eq!(deserialized.profile, metadata.profile);
 }
@@ -54,8 +57,12 @@ fn test_stack_definition_with_times() {
         status_reason: None,
         capabilities: vec!["CAPABILITY_IAM".to_string()],
         service_role: None,
-        tags: [("Environment".to_string(), "test".to_string())].into_iter().collect(),
-        parameters: [("VpcId".to_string(), "vpc-12345".to_string())].into_iter().collect(),
+        tags: [("Environment".to_string(), "test".to_string())]
+            .into_iter()
+            .collect(),
+        parameters: [("VpcId".to_string(), "vpc-12345".to_string())]
+            .into_iter()
+            .collect(),
         disable_rollback: false,
         termination_protection: true,
         creation_time: Some(now),
@@ -67,12 +74,12 @@ fn test_stack_definition_with_times() {
         console_url: "https://console.aws.amazon.com/cloudformation/".to_string(),
         region: "us-east-1".to_string(),
     };
-    
+
     // Test Clone
     let cloned = stack_def.clone();
     assert_eq!(cloned.name, stack_def.name);
     assert_eq!(cloned.termination_protection, true);
-    
+
     // Test serialization with timestamps
     let json = serde_json::to_string(&stack_def).expect("Should serialize with timestamps");
     assert!(json.contains("CREATE_COMPLETE"));
@@ -94,27 +101,24 @@ fn test_stack_events_display_structure() {
         resource_properties: None,
         client_request_token: None,
     };
-    
+
     let event_with_timing = StackEventWithTiming {
         event,
         duration_seconds: Some(45),
     };
-    
+
     let display = StackEventsDisplay {
         title: "Previous Stack Events (max 10):".to_string(),
         events: vec![event_with_timing],
         max_events: Some(10),
-        truncated: Some(TruncationInfo {
-            shown: 1,
-            total: 5,
-        }),
+        truncated: Some(TruncationInfo { shown: 1, total: 5 }),
     };
-    
+
     assert_eq!(display.events.len(), 1);
     assert_eq!(display.events[0].duration_seconds, Some(45));
     assert!(display.truncated.is_some());
-    
-    // Test serialization 
+
+    // Test serialization
     let json = serde_json::to_string(&display).expect("Should serialize events display");
     assert!(json.contains("Previous Stack Events"));
     assert!(json.contains("CREATE_COMPLETE"));
@@ -138,7 +142,7 @@ fn test_output_data_enum_variants() {
         },
         derived_tokens: vec![],
     };
-    
+
     // Test different OutputData variants
     let cmd_data = OutputData::CommandMetadata(metadata.clone());
     let status_data = OutputData::StatusUpdate(StatusUpdate {
@@ -152,12 +156,12 @@ fn test_output_data_enum_variants() {
         message: None,
         exit_code: 0,
     });
-    
+
     // Test Clone
     let cloned_cmd = cmd_data.clone();
     let cloned_status = status_data.clone();
     let cloned_result = result_data.clone();
-    
+
     // Basic variant checks
     matches!(cloned_cmd, OutputData::CommandMetadata(_));
     matches!(cloned_status, OutputData::StatusUpdate(_));
@@ -167,16 +171,16 @@ fn test_output_data_enum_variants() {
 #[test]
 fn test_iidy_theme_dark_mode() {
     let theme = IidyTheme::new(Theme::Dark, ColorChoice::Always);
-    
+
     assert!(theme.colors_enabled);
-    
+
     // Test that we have distinct colors for different purposes
     // Note: We can't easily test the exact color values, but we can test structure
     let _timestamp_color = &theme.timestamp;
     let _resource_id_color = &theme.resource_id;
     let _muted_color = &theme.muted;
     let _primary_color = &theme.primary;
-    
+
     // All colors should be set (not default)
     // This is a structural test since DynColors doesn't implement PartialEq
 }
@@ -184,9 +188,9 @@ fn test_iidy_theme_dark_mode() {
 #[test]
 fn test_iidy_theme_light_mode() {
     let theme = IidyTheme::new(Theme::Light, ColorChoice::Always);
-    
+
     assert!(theme.colors_enabled);
-    
+
     // Light theme should also have all colors set
     let _success_color = &theme.success;
     let _error_color = &theme.error;
@@ -196,9 +200,9 @@ fn test_iidy_theme_light_mode() {
 #[test]
 fn test_iidy_theme_disabled_colors() {
     let theme = IidyTheme::new(Theme::Dark, ColorChoice::Never);
-    
+
     assert!(!theme.colors_enabled);
-    
+
     // When colors are disabled, all color fields should still be set
     // but colors_enabled should be false
     let _any_color = &theme.primary;
@@ -208,9 +212,12 @@ fn test_iidy_theme_disabled_colors() {
 fn test_iidy_theme_auto_detection() {
     // Test auto theme resolution
     let theme_auto = IidyTheme::new(Theme::Auto, ColorChoice::Auto);
-    
+
     // Auto should resolve to Dark by default
-    assert_eq!(theme_auto.colors_enabled, std::io::IsTerminal::is_terminal(&std::io::stdout()));
+    assert_eq!(
+        theme_auto.colors_enabled,
+        std::io::IsTerminal::is_terminal(&std::io::stdout())
+    );
 }
 
 #[test]
@@ -218,7 +225,7 @@ fn test_color_choice_never_overrides_theme() {
     // Even with a colorful theme, ColorChoice::Never should disable colors
     let theme = IidyTheme::new(Theme::Dark, ColorChoice::Never);
     assert!(!theme.colors_enabled);
-    
+
     let theme = IidyTheme::new(Theme::Light, ColorChoice::Never);
     assert!(!theme.colors_enabled);
 }
@@ -228,7 +235,7 @@ fn test_color_choice_always_enables_colors() {
     // ColorChoice::Always should enable colors regardless of TTY
     let theme = IidyTheme::new(Theme::Dark, ColorChoice::Always);
     assert!(theme.colors_enabled);
-    
+
     let theme = IidyTheme::new(Theme::HighContrast, ColorChoice::Always);
     assert!(theme.colors_enabled);
 }
@@ -236,11 +243,11 @@ fn test_color_choice_always_enables_colors() {
 #[test]
 fn test_terminal_width_detection() {
     let width = get_terminal_width();
-    
+
     // Should always return a reasonable width
     assert!(width >= 80); // Minimum reasonable width
     assert!(width <= 500); // Maximum reasonable width
-    
+
     // Should default to 130 if terminal_size fails
     // (We can't easily test the failure case, but we test the default)
 }
@@ -253,7 +260,7 @@ fn test_changeset_info_structure() {
         change_source: Some("ResourceReference".to_string()),
         causing_entity: Some("MyParameter".to_string()),
     };
-    
+
     let change_info = ChangeInfo {
         action: "Add".to_string(),
         logical_resource_id: "MyResource".to_string(),
@@ -263,7 +270,7 @@ fn test_changeset_info_structure() {
         scope: Some(vec!["Properties".to_string()]),
         details: vec![change_detail],
     };
-    
+
     let changeset_info = ChangeSetInfo {
         change_set_name: "test-changeset".to_string(),
         change_set_id: "changeset-123".to_string(),
@@ -276,11 +283,11 @@ fn test_changeset_info_structure() {
         execution_status: Some("AVAILABLE".to_string()),
         changes: vec![change_info],
     };
-    
+
     assert_eq!(changeset_info.changes.len(), 1);
     assert_eq!(changeset_info.changes[0].action, "Add");
     assert_eq!(changeset_info.changes[0].details.len(), 1);
-    
+
     // Test serialization
     let json = serde_json::to_string(&changeset_info).expect("Should serialize changeset info");
     assert!(json.contains("test-changeset"));
@@ -294,16 +301,21 @@ fn test_error_info_structure() {
         message: "Stack does not exist".to_string(),
         timestamp: Utc::now(),
         suggestions: vec!["Check the stack name and region".to_string()],
-        error_details: ErrorDetails::Generic(Some("The stack 'missing-stack' was not found in region us-east-1".to_string())),
+        error_details: ErrorDetails::Generic(Some(
+            "The stack 'missing-stack' was not found in region us-east-1".to_string(),
+        )),
     };
 
-    assert!(matches!(error_info.error_details, ErrorDetails::Generic(Some(_))));
+    assert!(matches!(
+        error_info.error_details,
+        ErrorDetails::Generic(Some(_))
+    ));
     assert_eq!(error_info.error_type, "ValidationError".to_string());
-    
+
     // Test Clone and serialization
     let cloned = error_info.clone();
     assert_eq!(cloned.message, error_info.message);
-    
+
     let json = serde_json::to_string(&error_info).expect("Should serialize error info");
     assert!(json.contains("Stack does not exist"));
     assert!(json.contains("ValidationError"));
@@ -314,8 +326,10 @@ fn test_stack_list_entry_with_lifecycle_tags() {
     let tags = [
         ("Environment".to_string(), "production".to_string()),
         ("lifetime".to_string(), "protected".to_string()),
-    ].into_iter().collect();
-    
+    ]
+    .into_iter()
+    .collect();
+
     let stack_entry = StackListEntry {
         stack_name: "prod-database".to_string(),
         stack_status: "CREATE_COMPLETE".to_string(),
@@ -326,11 +340,17 @@ fn test_stack_list_entry_with_lifecycle_tags() {
         status_reason: None,
         environment_type: Some("production".to_string()),
     };
-    
-    assert_eq!(stack_entry.tags.get("lifetime"), Some(&"protected".to_string()));
-    assert_eq!(stack_entry.tags.get("Environment"), Some(&"production".to_string()));
+
+    assert_eq!(
+        stack_entry.tags.get("lifetime"),
+        Some(&"protected".to_string())
+    );
+    assert_eq!(
+        stack_entry.tags.get("Environment"),
+        Some(&"production".to_string())
+    );
     assert!(stack_entry.termination_protection);
-    
+
     let stack_list = StackListDisplay {
         stacks: vec![stack_entry],
         show_tags: true,
@@ -338,9 +358,8 @@ fn test_stack_list_entry_with_lifecycle_tags() {
         columns: StackListColumn::default_columns(),
         query_mode: false,
     };
-    
+
     assert_eq!(stack_list.stacks.len(), 1);
     assert!(stack_list.show_tags);
     assert_eq!(stack_list.filters_applied.len(), 1);
 }
-

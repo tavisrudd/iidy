@@ -1,15 +1,14 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 use crate::cfn::CfnContext;
 use crate::cli::{Cli, ListArgs};
 use crate::output::{
-    DynamicOutputManager, OutputData, StackListDisplay, StackListEntry, StackListColumn,
-    aws_conversion::convert_stack_to_list_entry
+    DynamicOutputManager, OutputData, StackListColumn, StackListDisplay, StackListEntry,
+    aws_conversion::convert_stack_to_list_entry,
 };
 use crate::run_command_handler;
-
 
 /// Serializable representation of a CloudFormation stack for JSON output
 #[derive(Serialize, Deserialize)]
@@ -56,18 +55,34 @@ impl From<&aws_sdk_cloudformation::types::Stack> for SerializableStack {
             creation_time: stack.creation_time().map(|t| t.to_string()),
             last_updated_time: stack.last_updated_time().map(|t| t.to_string()),
             timeout_in_minutes: stack.timeout_in_minutes(),
-            notification_arns: stack.notification_arns().iter().map(|s| s.to_string()).collect(),
-            capabilities: stack.capabilities().iter().map(|c| c.as_str().to_string()).collect(),
-            outputs: stack.outputs().iter().map(|o| SerializableStackOutput {
-                output_key: o.output_key().map(|s| s.to_string()),
-                output_value: o.output_value().map(|s| s.to_string()),
-                description: o.description().map(|s| s.to_string()),
-                export_name: o.export_name().map(|s| s.to_string()),
-            }).collect(),
-            tags: stack.tags().iter().map(|t| SerializableTag {
-                key: t.key().map(|s| s.to_string()),
-                value: t.value().map(|s| s.to_string()),
-            }).collect(),
+            notification_arns: stack
+                .notification_arns()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+            capabilities: stack
+                .capabilities()
+                .iter()
+                .map(|c| c.as_str().to_string())
+                .collect(),
+            outputs: stack
+                .outputs()
+                .iter()
+                .map(|o| SerializableStackOutput {
+                    output_key: o.output_key().map(|s| s.to_string()),
+                    output_value: o.output_value().map(|s| s.to_string()),
+                    description: o.description().map(|s| s.to_string()),
+                    export_name: o.export_name().map(|s| s.to_string()),
+                })
+                .collect(),
+            tags: stack
+                .tags()
+                .iter()
+                .map(|t| SerializableTag {
+                    key: t.key().map(|s| s.to_string()),
+                    value: t.value().map(|s| s.to_string()),
+                })
+                .collect(),
         }
     }
 }
@@ -79,7 +94,8 @@ async fn list_stacks_impl(
     args: &ListArgs,
     _opts: &crate::cli::NormalizedAwsOpts,
 ) -> Result<i32> {
-    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = context.client
+    let stacks: Vec<aws_sdk_cloudformation::types::Stack> = context
+        .client
         .describe_stacks()
         .into_paginator()
         .items()
@@ -87,10 +103,15 @@ async fn list_stacks_impl(
         .try_collect()
         .await?;
 
-    let tag_filters: Vec<(String, String)> = args.tag_filter.iter()
+    let tag_filters: Vec<(String, String)> = args
+        .tag_filter
+        .iter()
         .map(|tf| {
             let parts: Vec<&str> = tf.splitn(2, '=').collect();
-            (parts[0].to_string(), parts.get(1).unwrap_or(&"").to_string())
+            (
+                parts[0].to_string(),
+                parts.get(1).unwrap_or(&"").to_string(),
+            )
         })
         .collect();
 
@@ -98,19 +119,18 @@ async fn list_stacks_impl(
     let mut filters_applied = Vec::new();
     if !tag_filters.is_empty() {
         filtered_stacks.retain(|stack| {
-            let tags: HashMap<String, String> = stack.tags()
+            let tags: HashMap<String, String> = stack
+                .tags()
                 .iter()
-                .filter_map(|tag| {
-                    match (tag.key(), tag.value()) {
-                        (Some(k), Some(v)) => Some((k.to_string(), v.to_string())),
-                        _ => None,
-                    }
+                .filter_map(|tag| match (tag.key(), tag.value()) {
+                    (Some(k), Some(v)) => Some((k.to_string(), v.to_string())),
+                    _ => None,
                 })
                 .collect();
-            
+
             tag_filters.iter().all(|(k, v)| tags.get(k) == Some(v))
         });
-        
+
         for (k, v) in &tag_filters {
             filters_applied.push(format!("tag:{}={}", k, v));
         }
@@ -121,53 +141,66 @@ async fn list_stacks_impl(
             .iter()
             .map(SerializableStack::from)
             .collect();
-        
-        let json_value = serde_json::to_value(&serializable_stacks)
-            .map_err(|e| anyhow::anyhow!("Failed to convert stacks to JSON for filtering: {}", e))?;
-        
-        let expression = jmespath::compile(jmespath_filter)
-            .map_err(|e| anyhow::anyhow!("Invalid JMESPath expression '{}': {}", jmespath_filter, e))?;
-        
-        let filtered_json = expression.search(&json_value)
+
+        let json_value = serde_json::to_value(&serializable_stacks).map_err(|e| {
+            anyhow::anyhow!("Failed to convert stacks to JSON for filtering: {}", e)
+        })?;
+
+        let expression = jmespath::compile(jmespath_filter).map_err(|e| {
+            anyhow::anyhow!("Invalid JMESPath expression '{}': {}", jmespath_filter, e)
+        })?;
+
+        let filtered_json = expression
+            .search(&json_value)
             .map_err(|e| anyhow::anyhow!("JMESPath filter execution failed: {}", e))?;
-        
+
         let filtered_json_value = match filtered_json.as_array() {
             Some(arr) => serde_json::Value::Array(
                 arr.iter()
                     .map(|item| serde_json::to_value(item).unwrap_or(serde_json::Value::Null))
-                    .collect()
+                    .collect(),
             ),
-            None => return Err(anyhow::anyhow!("JMESPath filter must return an array"))
+            None => return Err(anyhow::anyhow!("JMESPath filter must return an array")),
         };
-        
-        let filtered_serializable: Vec<SerializableStack> = serde_json::from_value(filtered_json_value)
-            .map_err(|e| anyhow::anyhow!("Failed to convert filtered JSON back to stacks: {}", e))?;
-        
-        filtered_stacks = filtered_stacks.into_iter()
+
+        let filtered_serializable: Vec<SerializableStack> =
+            serde_json::from_value(filtered_json_value).map_err(|e| {
+                anyhow::anyhow!("Failed to convert filtered JSON back to stacks: {}", e)
+            })?;
+
+        filtered_stacks = filtered_stacks
+            .into_iter()
             .filter(|stack| {
                 let serializable = SerializableStack::from(stack);
                 filtered_serializable.iter().any(|filtered| {
-                    filtered.stack_name == serializable.stack_name && 
-                    filtered.stack_id == serializable.stack_id
+                    filtered.stack_name == serializable.stack_name
+                        && filtered.stack_id == serializable.stack_id
                 })
             })
             .collect();
-        
+
         filters_applied.push(format!("jmespath:{}", jmespath_filter));
     }
 
     let is_query_mode = args.query.is_some();
     let columns = if let Some(columns_str) = &args.columns {
-        columns_str.split(',')
+        columns_str
+            .split(',')
             .map(|s| s.trim())
             .filter_map(StackListColumn::from_str)
             .collect()
     } else {
         StackListColumn::default_columns()
     };
-    
+
     let show_tags = columns.contains(&StackListColumn::Tags) || args.tags;
-    let stack_list_display = convert_stacks_to_list_display_with_filters(filtered_stacks, show_tags, filters_applied, columns, is_query_mode);
+    let stack_list_display = convert_stacks_to_list_display_with_filters(
+        filtered_stacks,
+        show_tags,
+        filters_applied,
+        columns,
+        is_query_mode,
+    );
     output_manager.render(stack_list_display).await?;
 
     Ok(0)
@@ -179,16 +212,17 @@ pub async fn list_stacks(cli: &Cli, args: &ListArgs) -> Result<i32> {
 
 /// Convert a list of AWS SDK Stacks to StackListDisplay with applied filters
 fn convert_stacks_to_list_display_with_filters(
-    stacks: Vec<aws_sdk_cloudformation::types::Stack>, 
+    stacks: Vec<aws_sdk_cloudformation::types::Stack>,
     show_tags: bool,
     filters_applied: Vec<String>,
     columns: Vec<StackListColumn>,
-    query_mode: bool
+    query_mode: bool,
 ) -> OutputData {
-    let mut entries: Vec<StackListEntry> = stacks.iter().map(|stack| {
-        convert_stack_to_list_entry(stack)
-    }).collect();
-    
+    let mut entries: Vec<StackListEntry> = stacks
+        .iter()
+        .map(|stack| convert_stack_to_list_entry(stack))
+        .collect();
+
     entries.sort_by(|a, b| {
         let time_a = a.creation_time.or(a.last_updated_time);
         let time_b = b.creation_time.or(b.last_updated_time);

@@ -4,13 +4,13 @@
 //! by using fixtures and insta snapshot testing. These tests ensure pixel-perfect
 //! output matching and catch formatting regressions.
 
-use iidy::cli::{Theme, ColorChoice};
+use chrono::Utc;
+use iidy::cli::{ColorChoice, Theme};
 use iidy::output::data::*;
 use iidy::output::fixtures::FixtureLoader;
-use iidy::output::renderers::interactive::{InteractiveRenderer, InteractiveOptions};
 use iidy::output::renderer::OutputRenderer;
+use iidy::output::renderers::interactive::{InteractiveOptions, InteractiveRenderer};
 use iidy::output::theme::IidyTheme;
-use chrono::Utc;
 use std::collections::HashMap;
 use tokio;
 
@@ -18,12 +18,12 @@ use tokio;
 fn create_test_plain_options() -> InteractiveOptions {
     InteractiveOptions {
         color_choice: ColorChoice::Never, // No colors for plain mode
-        theme: Theme::Auto, // Doesn't matter since colors are disabled
+        theme: Theme::Auto,               // Doesn't matter since colors are disabled
         terminal_width: Some(120),
         show_timestamps: true,
-        enable_spinners: false, // No spinners in plain mode
+        enable_spinners: false,      // No spinners in plain mode
         enable_ansi_features: false, // No ANSI features in plain mode
-        cli_context: None, // No CLI context needed for tests
+        cli_context: None,           // No CLI context needed for tests
     }
 }
 
@@ -46,7 +46,7 @@ fn create_test_interactive_options() -> InteractiveOptions {
 async fn test_plain_renderer_command_metadata() {
     let options = create_test_plain_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
+
     let metadata = CommandMetadata {
         iidy_environment: "development".to_string(),
         region: "us-east-1".to_string(),
@@ -54,7 +54,9 @@ async fn test_plain_renderer_command_metadata() {
         cli_arguments: [
             ("argsfile".to_string(), "stack-args.yaml".to_string()),
             ("template".to_string(), "infrastructure.yaml".to_string()),
-        ].into_iter().collect(),
+        ]
+        .into_iter()
+        .collect(),
         iam_service_role: None,
         current_iam_principal: "arn:aws:iam::123456789012:user/developer".to_string(),
         credential_source: "profile 'dev' (default)".to_string(),
@@ -66,14 +68,17 @@ async fn test_plain_renderer_command_metadata() {
         },
         derived_tokens: vec![],
     };
-    
+
     // Test command metadata rendering
     renderer.init().await.expect("Should initialize");
-    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata");
-    
+    renderer
+        .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+        .await
+        .expect("Should render metadata");
+
     // Note: For now we're testing that the render method executes without error
     // In the full implementation, we'll capture actual output and snapshot it
-    
+
     // Verify data structure is properly formed
     // cfn_operation is now derived from CLI context, not stored in metadata
     assert_eq!(metadata.region, "us-east-1");
@@ -85,7 +90,7 @@ async fn test_plain_renderer_command_metadata() {
 async fn test_plain_renderer_stack_definition() {
     let options = create_test_plain_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
+
     let now = Utc::now();
     let stack_def = StackDefinition {
         name: "development-infrastructure".to_string(),
@@ -115,10 +120,13 @@ async fn test_plain_renderer_stack_definition() {
         console_url: "https://console.aws.amazon.com/cloudformation/home?region=us-east-1#/stacks".to_string(),
         region: "us-east-1".to_string(),
     };
-    
+
     renderer.init().await.expect("Should initialize");
-    renderer.render_output_data(OutputData::StackDefinition(stack_def.clone(), true), None).await.expect("Should render stack definition");
-    
+    renderer
+        .render_output_data(OutputData::StackDefinition(stack_def.clone(), true), None)
+        .await
+        .expect("Should render stack definition");
+
     // Verify data structure
     assert_eq!(stack_def.name, "development-infrastructure");
     assert_eq!(stack_def.status, "CREATE_COMPLETE");
@@ -132,20 +140,23 @@ async fn test_plain_renderer_stack_definition() {
 async fn test_plain_renderer_stack_events() {
     let options = create_test_plain_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
+
     let now = Utc::now();
     let events = vec![
         StackEventWithTiming {
             event: StackEvent {
                 event_id: "event-001".to_string(),
-                stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id-123".to_string(),
+                stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id-123"
+                    .to_string(),
                 stack_name: "test-stack".to_string(),
                 logical_resource_id: "MyVPC".to_string(),
                 physical_resource_id: Some("vpc-12345abcde".to_string()),
                 resource_type: "AWS::EC2::VPC".to_string(),
                 timestamp: Some(now),
                 resource_status: "CREATE_COMPLETE".to_string(),
-                resource_status_reason: Some("Resource creation completed successfully".to_string()),
+                resource_status_reason: Some(
+                    "Resource creation completed successfully".to_string(),
+                ),
                 resource_properties: None,
                 client_request_token: None,
             },
@@ -154,7 +165,8 @@ async fn test_plain_renderer_stack_events() {
         StackEventWithTiming {
             event: StackEvent {
                 event_id: "event-002".to_string(),
-                stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id-123".to_string(),
+                stack_id: "arn:aws:cloudformation:us-east-1:123456789012:stack/test-stack/id-123"
+                    .to_string(),
                 stack_name: "test-stack".to_string(),
                 logical_resource_id: "MySecurityGroup".to_string(),
                 physical_resource_id: Some("sg-67890fghij".to_string()),
@@ -168,20 +180,20 @@ async fn test_plain_renderer_stack_events() {
             duration_seconds: Some(12),
         },
     ];
-    
+
     let events_display = StackEventsDisplay {
         title: "Previous Stack Events (max 10):".to_string(),
         events,
         max_events: Some(10),
-        truncated: Some(TruncationInfo {
-            shown: 2,
-            total: 8,
-        }),
+        truncated: Some(TruncationInfo { shown: 2, total: 8 }),
     };
-    
+
     renderer.init().await.expect("Should initialize");
-    renderer.render_output_data(OutputData::StackEvents(events_display.clone()), None).await.expect("Should render stack events");
-    
+    renderer
+        .render_output_data(OutputData::StackEvents(events_display.clone()), None)
+        .await
+        .expect("Should render stack events");
+
     // Verify data structure
     assert_eq!(events_display.events.len(), 2);
     assert!(events_display.truncated.is_some());
@@ -193,15 +205,17 @@ async fn test_plain_renderer_stack_events() {
 async fn test_interactive_renderer_command_metadata_colors() {
     let options = create_test_interactive_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
+
     let metadata = CommandMetadata {
         iidy_environment: "production".to_string(),
         region: "us-west-2".to_string(),
         profile: Some("prod-profile".to_string()),
-        cli_arguments: [
-            ("argsfile".to_string(), "prod-stack-args.yaml".to_string()),
-        ].into_iter().collect(),
-        iam_service_role: Some("arn:aws:iam::123456789012:role/CloudFormationServiceRole".to_string()),
+        cli_arguments: [("argsfile".to_string(), "prod-stack-args.yaml".to_string())]
+            .into_iter()
+            .collect(),
+        iam_service_role: Some(
+            "arn:aws:iam::123456789012:role/CloudFormationServiceRole".to_string(),
+        ),
         current_iam_principal: "arn:aws:iam::123456789012:role/DeploymentRole".to_string(),
         credential_source: "profile 'production' (default)".to_string(),
         iidy_version: "2.0.0".to_string(),
@@ -210,28 +224,29 @@ async fn test_interactive_renderer_command_metadata_colors() {
             source: TokenSource::UserProvided,
             operation_id: "update-stack-prod-001".to_string(),
         },
-        derived_tokens: vec![
-            TokenInfo {
-                value: "changeset-token-abc123".to_string(),
-                source: TokenSource::Derived { 
-                    from: "prod-token-xyz789".to_string(), 
-                    step: "create-changeset".to_string() 
-                },
-                operation_id: "changeset-001".to_string(),
+        derived_tokens: vec![TokenInfo {
+            value: "changeset-token-abc123".to_string(),
+            source: TokenSource::Derived {
+                from: "prod-token-xyz789".to_string(),
+                step: "create-changeset".to_string(),
             },
-        ],
+            operation_id: "changeset-001".to_string(),
+        }],
     };
-    
+
     renderer.init().await.expect("Should initialize");
-    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata with colors");
-    
+    renderer
+        .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+        .await
+        .expect("Should render metadata with colors");
+
     // Verify data structure including derived tokens
     assert_eq!(metadata.derived_tokens.len(), 1);
     match &metadata.derived_tokens[0].source {
         TokenSource::Derived { from, step } => {
             assert_eq!(from, "prod-token-xyz789");
             assert_eq!(step, "create-changeset");
-        },
+        }
         _ => panic!("Expected derived token source"),
     }
 }
@@ -239,17 +254,17 @@ async fn test_interactive_renderer_command_metadata_colors() {
 #[tokio::test]
 async fn test_theme_color_consistency() {
     // Test that themes produce consistent colors across different renderers
-    
+
     let dark_theme = IidyTheme::new(Theme::Dark, ColorChoice::Always);
     let light_theme = IidyTheme::new(Theme::Light, ColorChoice::Always);
-    
+
     // Verify themes are initialized
     assert!(dark_theme.colors_enabled);
     assert!(light_theme.colors_enabled);
-    
+
     // Note: We can't easily test exact color values since DynColors doesn't implement PartialEq
     // But we can verify the themes are structurally different and properly initialized
-    
+
     // Test disabled colors
     let no_color_theme = IidyTheme::new(Theme::Dark, ColorChoice::Never);
     assert!(!no_color_theme.colors_enabled);
@@ -261,7 +276,7 @@ async fn test_status_update_rendering() {
     let interactive_options = create_test_interactive_options();
     let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
-    
+
     let status_updates = vec![
         StatusUpdate {
             message: "Starting stack creation".to_string(),
@@ -284,19 +299,28 @@ async fn test_status_update_rendering() {
             level: StatusLevel::Error,
         },
     ];
-    
+
     // Test plain renderer
     plain_renderer.init().await.expect("Should initialize");
     for status in &status_updates {
-        plain_renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
+        plain_renderer
+            .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+            .await
+            .expect("Should render status");
     }
-    
+
     // Test interactive renderer
-    interactive_renderer.init().await.expect("Should initialize");
+    interactive_renderer
+        .init()
+        .await
+        .expect("Should initialize");
     for status in &status_updates {
-        interactive_renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
+        interactive_renderer
+            .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+            .await
+            .expect("Should render status");
     }
-    
+
     // Verify data structures
     assert_eq!(status_updates.len(), 4);
     assert!(matches!(status_updates[0].level, StatusLevel::Info));
@@ -310,32 +334,47 @@ async fn test_command_result_rendering() {
     let interactive_options = create_test_interactive_options();
     let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
-    
+
     let success_result = CommandResult {
         success: true,
         elapsed_seconds: 125,
         message: Some("Stack creation completed successfully".to_string()),
         exit_code: 0,
     };
-    
+
     let failure_result = CommandResult {
         success: false,
         elapsed_seconds: 67,
         message: Some("Stack creation failed: InvalidParameterValue".to_string()),
         exit_code: 1,
     };
-    
+
     // Test both renderers with success
     plain_renderer.init().await.expect("Should initialize");
-    plain_renderer.render_output_data(OutputData::CommandResult(success_result.clone()), None).await.expect("Should render success");
-    
-    interactive_renderer.init().await.expect("Should initialize");
-    interactive_renderer.render_output_data(OutputData::CommandResult(success_result.clone()), None).await.expect("Should render success");
-    
+    plain_renderer
+        .render_output_data(OutputData::CommandResult(success_result.clone()), None)
+        .await
+        .expect("Should render success");
+
+    interactive_renderer
+        .init()
+        .await
+        .expect("Should initialize");
+    interactive_renderer
+        .render_output_data(OutputData::CommandResult(success_result.clone()), None)
+        .await
+        .expect("Should render success");
+
     // Test both renderers with failure
-    plain_renderer.render_output_data(OutputData::CommandResult(failure_result.clone()), None).await.expect("Should render failure");
-    interactive_renderer.render_output_data(OutputData::CommandResult(failure_result.clone()), None).await.expect("Should render failure");
-    
+    plain_renderer
+        .render_output_data(OutputData::CommandResult(failure_result.clone()), None)
+        .await
+        .expect("Should render failure");
+    interactive_renderer
+        .render_output_data(OutputData::CommandResult(failure_result.clone()), None)
+        .await
+        .expect("Should render failure");
+
     // Verify data structures
     assert!(success_result.success);
     assert_eq!(success_result.exit_code, 0);
@@ -349,7 +388,7 @@ async fn test_error_info_rendering() {
     let interactive_options = create_test_interactive_options();
     let mut plain_renderer = InteractiveRenderer::new(plain_options);
     let mut interactive_renderer = InteractiveRenderer::new(interactive_options);
-    
+
     let error_info = ErrorInfo {
         error_type: "InvalidParameterValue".to_string(),
         message: "Parameter 'InstanceType' has invalid value 't3.invalid'".to_string(),
@@ -358,17 +397,31 @@ async fn test_error_info_rendering() {
             "Check the parameter value in your stack-args.yaml".to_string(),
             "Verify the instance type is available in your region".to_string(),
         ],
-        error_details: ErrorDetails::Generic(Some("Valid values are: t3.nano, t3.micro, t3.small, t3.medium, t3.large".to_string())),
+        error_details: ErrorDetails::Generic(Some(
+            "Valid values are: t3.nano, t3.micro, t3.small, t3.medium, t3.large".to_string(),
+        )),
     };
 
     plain_renderer.init().await.expect("Should initialize");
-    plain_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
+    plain_renderer
+        .render_output_data(OutputData::Error(error_info.clone()), None)
+        .await
+        .expect("Should render error");
 
-    interactive_renderer.init().await.expect("Should initialize");
-    interactive_renderer.render_output_data(OutputData::Error(error_info.clone()), None).await.expect("Should render error");
+    interactive_renderer
+        .init()
+        .await
+        .expect("Should initialize");
+    interactive_renderer
+        .render_output_data(OutputData::Error(error_info.clone()), None)
+        .await
+        .expect("Should render error");
 
     assert_eq!(error_info.error_type, "InvalidParameterValue");
-    assert!(matches!(error_info.error_details, ErrorDetails::Generic(Some(_))));
+    assert!(matches!(
+        error_info.error_details,
+        ErrorDetails::Generic(Some(_))
+    ));
     assert_eq!(error_info.suggestions.len(), 2);
 }
 
@@ -376,10 +429,13 @@ async fn test_error_info_rendering() {
 async fn test_renderer_lifecycle() {
     let options = create_test_plain_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
+
     // Test init
-    renderer.init().await.expect("Should initialize successfully");
-    
+    renderer
+        .init()
+        .await
+        .expect("Should initialize successfully");
+
     // Test multiple render operations
     let metadata = CommandMetadata {
         iidy_environment: "test".to_string(),
@@ -397,19 +453,28 @@ async fn test_renderer_lifecycle() {
         },
         derived_tokens: vec![],
     };
-    
-    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render metadata");
-    
+
+    renderer
+        .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+        .await
+        .expect("Should render metadata");
+
     let status = StatusUpdate {
         message: "Operation in progress".to_string(),
         timestamp: Utc::now(),
         level: StatusLevel::Info,
     };
-    
-    renderer.render_output_data(OutputData::StatusUpdate(status.clone()), None).await.expect("Should render status");
-    
+
+    renderer
+        .render_output_data(OutputData::StatusUpdate(status.clone()), None)
+        .await
+        .expect("Should render status");
+
     // Test cleanup
-    renderer.cleanup().await.expect("Should cleanup successfully");
+    renderer
+        .cleanup()
+        .await
+        .expect("Should cleanup successfully");
 }
 
 /// Test that fixtures can be loaded and converted to OutputData
@@ -417,34 +482,38 @@ async fn test_renderer_lifecycle() {
 async fn test_fixture_integration() {
     // Load the test fixture
     let loader = FixtureLoader::new();
-    let fixture = loader.load_test_fixture("create-stack-happy-path")
+    let fixture = loader
+        .load_test_fixture("create-stack-happy-path")
         .expect("Should load test fixture");
-    
+
     // Verify fixture structure
     assert_eq!(fixture.name, "create-stack-happy-path");
     assert!(!fixture.tokens.primary.is_empty());
-    
+
     // Test conversion to OutputData using fixture loader
-    let output_data = loader.fixture_to_output_data(&fixture)
+    let output_data = loader
+        .fixture_to_output_data(&fixture)
         .expect("Should convert fixture to OutputData");
-    
+
     assert!(!output_data.is_empty());
-    
+
     // Extract command metadata for testing
     let metadata = match output_data.first().expect("Should have first item") {
         OutputData::CommandMetadata(metadata) => metadata.clone(),
         _ => panic!("First item should be CommandMetadata"),
     };
-    
+
     // Verify operation is valid (enum variants can't be empty)
     // cfn_operation is now derived from CLI context, not stored in metadata
     assert!(!metadata.region.is_empty());
-    
+
     // Test with renderer
     let options = create_test_plain_options();
     let mut renderer = InteractiveRenderer::new(options);
-    
-    renderer.init().await.expect("Should initialize");
-    renderer.render_output_data(OutputData::CommandMetadata(metadata.clone()), None).await.expect("Should render from fixture");
-}
 
+    renderer.init().await.expect("Should initialize");
+    renderer
+        .render_output_data(OutputData::CommandMetadata(metadata.clone()), None)
+        .await
+        .expect("Should render from fixture");
+}
