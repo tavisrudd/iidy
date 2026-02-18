@@ -67,6 +67,7 @@ n/a
 - **Green commits only**: All tests must pass (100%) before committing.
 - **No compiler warnings**: Fix all `make check` warnings before committing
 - **User review requried**: The user will prompt you explicitly when it is time to commit.
+- **No Co-Authored-By**: Do not add a Co-Authored-By trailer to commit messages.
 
 ## Project Documentation
 See [notes/index.md](notes/index.md) for an overview of all design documents and implementation plans.
