@@ -61,39 +61,39 @@
 //!
 //! ## Examples
 //!
-//! ### ✅ Allowed: Remote-to-Remote Imports
+//! ### Allowed: Remote-to-Remote Imports
 //!
 //! ```yaml
 //! # From https://example.com/configs/app.yaml
 //! $imports:
-//!   s3data: "s3://bucket/data.yaml"           # ✅ S3 import
-//!   webdata: "https://api.com/config.json"    # ✅ HTTP import  
-//!   database: "./database.yaml"               # ✅ Relative (inherits HTTPS)
-//!   cfnstack: "cfn:stack/MyStack/output"      # ✅ CloudFormation
-//!   secret: "ssm:/app/secret"                 # ✅ SSM parameter
+//!   s3data: "s3://bucket/data.yaml"           # S3 import
+//!   webdata: "https://api.com/config.json"    # HTTP import
+//!   database: "./database.yaml"               # Relative (inherits HTTPS)
+//!   cfnstack: "cfn:stack/MyStack/output"      # CloudFormation
+//!   secret: "ssm:/app/secret"                 # SSM parameter
 //! ```
 //!
-//! ### ❌ Forbidden: Remote-to-Local Imports
+//! ### Forbidden: Remote-to-Local Imports
 //!
 //! ```yaml
 //! # From s3://bucket/config.yaml - All of these are REJECTED:
 //! $imports:
-//!   localfile: "file:./local.yaml"      # ❌ File access
-//!   envvar: "env:HOME"                  # ❌ Environment variable
-//!   gitinfo: "git:branch"               # ❌ Git repository
-//!   hash: "filehash:./data.txt"         # ❌ Local file hash
-//!   localpath: "./local.yaml"           # ❌ Local path indicator
+//!   localfile: "file:./local.yaml"      # REJECTED: File access
+//!   envvar: "env:HOME"                  # REJECTED: Environment variable
+//!   gitinfo: "git:branch"               # REJECTED: Git repository
+//!   hash: "filehash:./data.txt"         # REJECTED: Local file hash
+//!   localpath: "./local.yaml"           # REJECTED: Local path indicator
 //! ```
 //!
-//! ### ✅ Allowed: Local Template Flexibility
+//! ### Allowed: Local Template Flexibility
 //!
 //! ```yaml
 //! # From local file ./config.yaml - All imports allowed:
 //! $imports:
-//!   localfile: "file:./other.yaml"      # ✅ Local file
-//!   envvar: "env:HOME"                  # ✅ Environment variable
-//!   s3data: "s3://bucket/data.yaml"     # ✅ S3 object
-//!   webdata: "https://api.com/data"     # ✅ HTTP endpoint
+//!   localfile: "file:./other.yaml"      # Local file
+//!   envvar: "env:HOME"                  # Environment variable
+//!   s3data: "s3://bucket/data.yaml"     # S3 object
+//!   webdata: "https://api.com/data"     # HTTP endpoint
 //! ```
 //!
 //! This security model prevents malicious remote templates from:
@@ -209,9 +209,9 @@ pub trait ImportLoader: Send + Sync {
 ///
 /// # Security Examples
 ///
-/// - ✅ Local template can import anything: `parse_import_type("file:local.yaml", "config.yaml")` → `Ok(ImportType::File)`
-/// - ❌ Remote template cannot import local files: `parse_import_type("file:local.yaml", "s3://bucket/config.yaml")` → `Err("not allowed from remote template")`
-/// - ✅ Remote template can import other remote sources: `parse_import_type("s3://other/data.yaml", "https://example.com/config.yaml")` → `Ok(ImportType::S3)`
+/// - Local template can import anything: `parse_import_type("file:local.yaml", "config.yaml")` -> `Ok(ImportType::File)`
+/// - Remote template cannot import local files: `parse_import_type("file:local.yaml", "s3://bucket/config.yaml")` -> `Err("not allowed from remote template")`
+/// - Remote template can import other remote sources: `parse_import_type("s3://other/data.yaml", "https://example.com/config.yaml")` -> `Ok(ImportType::S3)`
 pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportType> {
     // Parse explicit type from location (e.g., "s3:", "env:", etc.)
     let has_explicit_type = location.contains(':');

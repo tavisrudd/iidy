@@ -26,39 +26,24 @@ Work in this order. Each numbered section is one commit-sized unit.
 
 These directly impact the upcoming feature.
 
-### 1a. Parser: silent tag error dropping
+### 1a. Parser: silent tag error dropping -- DONE (655b966)
 
-**File**: `src/yaml/parsing/parser.rs:969-975`
-**Problem**: `build_tagged_node` catches errors from `parse_preprocessing_tag`
-and silently converts them to `UnknownYamlTag`. Typos like `!$mapp` are
-silently ignored. The `!$expand` tag (needed for custom resource templates)
-will have this same problem.
-**Fix**: Propagate the error. `build_block_node` and `build_flow_node` already
-do this correctly -- match their behavior.
-**Risk**: This may cause previously-passing tests to fail if any tests rely on
-malformed tags being silently accepted. Check carefully.
+Extracted `classify_tag` method shared by all three callers (`build_block_node`,
+`build_flow_node`, `build_tagged_node`). Errors now propagate via `?` instead
+of being silently converted to `UnknownYamlTag`. Added flow-style typo error
+template (`example-templates/errors/unknown-tag-typo-flow.yaml`) to cover the
+`build_tagged_node` code path. No test regressions.
 
-### 1b. Parser: inconsistent unknown field handling
+### 1b. Parser: inconsistent unknown field handling -- DONE (0a4815b)
 
-**Files**: `parser.rs:1388` (`parse_map_values_tag`), `parser.rs:1601-1635`
-(`parse_if_tag`)
-**Problem**: These tag parsers silently ignore unknown fields. `parse_map_tag`
-correctly rejects unknown fields via `validate_tag_fields`. Misspelled keys
-like `itesm:` are silently dropped.
-**Fix**: Add `validate_tag_fields` calls to `parse_map_values_tag` and
-`parse_if_tag`, matching `parse_map_tag`'s behavior.
-**TODO**: The "unexpected field" error prefix says `Tag error:` but doesn't
-name the specific tag (e.g. `!$if` or `!$mapValues`). The tag name IS visible
-in the "example:" block below, but it should also appear in the error prefix
-line for scannability, e.g. `Tag error in !$if: unexpected field 'default'`.
+Added `validate_tag_fields` calls to `parse_map_values_tag` and `parse_if_tag`.
+Fixed error location to use the unexpected field's own SrcMeta. Added error
+example templates with snapshot tests.
 
-### 1c. Parser: unwrap panic on non-Mapping input
+### 1c. Parser: unwrap panic on non-Mapping input -- DONE (0a4815b)
 
-**File**: `parser.rs:1530-1534`
-**Problem**: `parse_map_list_to_hash_tag` calls `extract_field_from_mapping(...).unwrap()`
-after `validate_tag_fields`. But `validate_tag_fields` silently passes non-Mapping
-content. `!$mapListToHash someString` will panic.
-**Fix**: Add a Mapping guard before the unwraps, return a proper error.
+Added mapping guard to `parse_map_list_to_hash_tag`. Returns proper error
+instead of panicking on non-mapping input.
 
 ### 1d. Engine: process_imported_document round-trip
 
@@ -75,104 +60,55 @@ AWS config. Nested documents with S3/SSM imports silently fail.
 Start with the quick fix. The proper fix can come later or during the
 custom resource template work.
 
-### 1e. Engine: tag classification duplication
+### 1e. Engine: tag classification duplication -- DONE (655b966)
 
-**File**: `parser.rs:810-862,864-940`
-**Problem**: `build_block_node` and `build_flow_node` have ~30 lines of
-copy-pasted tag classification logic.
-**Fix**: Extract a shared `classify_tag(tag_name, content, meta) -> ParseResult<YamlAst>`
-helper. Both functions call it.
+Extracted `classify_tag(&self, tag_name, tagged_content, meta) -> ParseResult<YamlAst>`.
+All three callers (`build_block_node`, `build_flow_node`, `build_tagged_node`) now
+use it. Net -40 lines. Done as part of the 1a fix.
 
 ---
 
-## 2. Handlebars Registry Performance
+## 2. Handlebars Registry Performance -- DONE (655b966)
 
-**File**: `src/yaml/handlebars/engine.rs:76`
-**Problem**: `create_handlebars_registry()` called on every
-`interpolate_handlebars_string` invocation. 100 interpolations = 100
-registry allocations with ~20 boxed helpers each. Custom resource template
-expansion will amplify this significantly.
-**Fix**: Use `std::sync::OnceLock<handlebars::Handlebars<'static>>` at
-module level. Initialize once, reuse. The registry is stateless (helpers
-are pure functions of their arguments), so sharing is safe.
-**Test**: The existing tests should pass unchanged. Consider adding a
-benchmark if one doesn't exist -- the improvement should be measurable.
+Replaced `create_handlebars_registry()` with `static REGISTRY: OnceLock<Handlebars<'static>>`
+and `get_registry()`. Initialized once on first use, shared across all calls.
+All existing tests pass unchanged.
 
 ---
 
-## 3. Dead Test Cleanup
+## 3. Dead Test Cleanup -- DONE (c65422b)
 
-These tests add noise and false confidence. Delete or fix them.
-
-### 3a. Delete assertion-free debug tests
-
-These files contain only `println!` calls with no assertions. Delete the
-entire files:
-- `tests/nested_import_debug.rs`
-- `tests/tree_sitter_debug.rs`
-- `tests/tree_sitter_tag_debug.rs`
-
-Check if `tree_sitter_path_debug.rs` and `tree_sitter_array_debug.rs` follow
-the same pattern -- if so, delete those too.
-
-Remove corresponding entries from any test configuration.
+Deleted debug-only test files, tautology tests, keyboard switching tests,
+and leftover debug output. Test count went from 608 to 576.
 
 ### 3a-followup. Consolidate integration test files to reduce link pressure
 
-33 integration test files = 33 separate binaries, each linking the full crate
-with all AWS SDK deps (~200MB+ each). On a 24-core/27GB machine this causes
-OOM during parallel linking (even with mold). Currently mitigated by
-`jobs = 12` in `.cargo/config.toml`, but the real fix is fewer test binaries.
-Group related integration tests into fewer files (e.g. all tree_sitter_* into
-one, all yaml_* into one, all output_* into one). This also speeds up clean
-builds significantly since each binary pays the full link cost.
-
-### 3b. Delete tautology tests
-
-- `tests/property_tests.rs:325` -- `assert!(!x.is_empty() || x.is_empty())`
-- `tests/property_tests.rs:248` -- `assert!(true)`
-- `tests/output_renderer_snapshots.rs:458,466,474` -- snapshot hardcoded
-  placeholder strings
-- `tests/keyboard.rs:264` -- `assert!(is_tty == true || is_tty == false)`
-- `tests/json.rs:371` -- `assert!(true)`
-
-### 3c. Mark stub tests as ignored with clear TODO
-
-These tests were written as stubs early in development and never completed:
-- `tests/yaml_tests.rs:20,64,112,190,252` -- parse-only assertions
-- `tests/property_tests.rs:57,76` -- proptest stubs
-
-Rather than deleting (they document intended coverage), add `#[ignore]` with
-a comment: `// TODO: Complete -- currently only asserts parse succeeds, not
-resolution output`.
-
-### 3d. Remove leftover debug output
-
-- `tests/equivalence_tests.rs:84` -- `eprint!` dumping test cases
-- `tests/yaml_preprocessing_integration.rs:311,319` -- `println!("DEBUG: ...")`
+Still TODO. 33 integration test files = 33 separate binaries. Mitigated by
+`jobs = 12` in `.cargo/config.toml` but the real fix is fewer test binaries.
 
 ---
 
-## 4. Emoji Violations
+## 4. Emoji Cleanup -- DONE (partial)
 
-Quick grep-and-replace. At least 12 instances across production code.
+Removed emojis from comments and doc comments in:
+- `src/main.rs` (comment)
+- `src/yaml/imports/mod.rs` (doc comments)
+- `src/yaml/imports/loaders/git.rs` (comment + joke)
 
-**Files to check** (non-exhaustive):
-- `src/output/renderers/interactive.rs` -- lines 1035, 1257-1285, 1313-1317,
-  1889, 1910-1922, 1930
-- `src/output/keyboard.rs` -- lines 145, 233
-- Any test files with emoji in `println!` output
+Deleted `src/yaml/parsing/multiple_if_error_position_tests.rs` (debug session
+tests with no real assertions -- error position already tested in
+`position_error_tests.rs`).
 
-**Replacements**:
-- Lock emoji -> `[protected]` or `*`
-- Thumbsup -> `OK` or `Success`
-- Table flip -> `Failure` (plain text)
-- Warning triangle -> `[!]` or `WARNING`
-- Check/cross marks -> `[ok]`/`[x]` or `+`/`-`
-- Clipboard -> remove entirely
+Removed `src/pocs/` directory entirely along with its `[[bin]]` target in
+Cargo.toml and `pub mod pocs` in lib.rs.
 
-Match the ASCII style used elsewhere in the codebase. The interactive
-renderer already has ASCII-only code paths for some features.
+Fixed 3 unnecessary-braces warnings in `get_stack_instances.rs`,
+`watch_stack.rs`, `ast.rs`. Zero warnings remaining.
+
+**Left intentionally**:
+- `src/output/` emojis (intentional UI: status icons, spinner, interactive renderer)
+- `src/docs/errors/*.md` emojis (user-facing markers in error help docs)
+- `src/yaml/parsing/test.rs` emoji in YAML fixture (testing unicode handling)
 
 ---
 

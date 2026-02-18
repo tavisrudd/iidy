@@ -3,7 +3,7 @@
 //! Defines the abstract syntax tree for YAML documents with custom preprocessing tags
 //! and precise source location information for error reporting.
 
-use serde_yaml::{Number};
+use serde_yaml::Number;
 use url::Url;
 
 // We'll define a simple Position type instead of using lsp_types for now

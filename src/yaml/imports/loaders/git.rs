@@ -256,7 +256,4 @@ mod tests {
     // a real git repository and git command to be available. In a real test environment,
     // you might want to create integration tests that verify the SystemGitExecutor
     // works correctly in a controlled git repository.
-    //
-    // Fun fact: Testing git commands is like trying to herd cats - just when you think
-    // you've got them all accounted for, one runs off and creates a detached HEAD! 🐱‍💻
 }

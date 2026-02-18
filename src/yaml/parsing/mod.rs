@@ -37,8 +37,6 @@ mod test;
 #[cfg(test)]
 mod position_error_tests;
 #[cfg(test)]
-mod multiple_if_error_position_tests;
-#[cfg(test)]
 mod position_verification_tests;
 
 // Property-based testing for finding parser bugs

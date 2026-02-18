@@ -4,7 +4,7 @@ use crate::cli::{Cli, GetStackInstancesArgs};
 use crate::cfn::create_context_for_operation;
 use crate::output::{
     DynamicOutputManager, manager::OutputOptions,
-    aws_conversion::{create_command_result},
+    aws_conversion::create_command_result,
     OutputData, StatusUpdate, StatusLevel
 };
 

@@ -17,10 +17,6 @@ path = "src/lib.rs"
 name = "iidy"
 path = "src/main.rs"
 
-[[bin]]
-name = "iidy-pocs"
-path = "src/pocs/main.rs"
-
 
 [dependencies]
 atty = "0.2.14"

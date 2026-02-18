@@ -216,7 +216,7 @@ fn main() {
             ) =>
         {
             e.print().unwrap();
-            std::process::exit(0); // 👈 override exit code 2 → 0
+            std::process::exit(0); // override exit code 2 -> 0
         }
         Err(e) => {
             e.print().unwrap();

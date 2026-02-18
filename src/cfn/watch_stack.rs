@@ -20,7 +20,7 @@ use crate::output::{
 use crate::run_command_handler;
 
 
-use super::{stack_operations::{StackEventsService, StackInfoService}};
+use super::stack_operations::{StackEventsService, StackInfoService};
 
 // Removed format_event function - using data-driven output architecture instead
 
