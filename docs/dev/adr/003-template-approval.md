@@ -22,7 +22,7 @@ S3 is used as the approval store. The workflow is split into two commands:
 
 **`template-approval request <argsfile>`**: Loads the stack-args file, runs the template
 through the full preprocessing pipeline via `template_loader::load_cfn_template()`, computes
-an MD5 hash of the processed template body, and derives a versioned S3 key:
+a SHA256 hash of the processed template body, and derives a versioned S3 key:
 `{ApprovedTemplateLocation prefix}/{hash}{extension}`. If an object at that key already
 exists (without the `.pending` suffix), the template is already approved and the command
 reports this and exits cleanly. Otherwise, the processed template is uploaded to

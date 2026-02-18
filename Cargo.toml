@@ -57,9 +57,6 @@ yaml-rust = "0.4"
 # JMESPath for JSON query filtering
 jmespath = "0.3"
 
-# MD5 hashing for template versioning
-md5 = "0.7"
-
 # Diff generation for template approval
 similar = "2.4"
 

@@ -1,10 +1,12 @@
 use anyhow::Result;
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
-/// Calculate MD5 hash of template content (following iidy-js pattern)
+/// Calculate SHA256 hash of template content for versioned S3 key generation.
 pub fn calculate_template_hash(template_content: &str) -> String {
-    let digest = md5::compute(template_content.as_bytes());
-    format!("{:x}", digest)
+    let mut hasher = Sha256::new();
+    hasher.update(template_content.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 /// Parse S3 URL and generate versioned S3 location
@@ -74,8 +76,8 @@ mod tests {
         let hash2 = calculate_template_hash(template);
         assert_eq!(hash, hash2);
         
-        // Hash should be 32 characters (MD5 hex)
-        assert_eq!(hash.len(), 32);
+        // Hash should be 64 characters (SHA256 hex)
+        assert_eq!(hash.len(), 64);
         
         // Different content should produce different hashes
         let different_template = "AWSTemplateFormatVersion: '2010-09-09'\nResources:\n  Test: {}";
