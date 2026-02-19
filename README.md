@@ -87,6 +87,14 @@ The AWS CLI and most CloudFormation frontends give poor feedback during
 deployments. iidy shows a color-coded event stream with clear section
 structure, spinners for in-progress operations, and confirmation prompts.
 
+When something goes wrong, iidy provides precise, actionable error messages.
+CloudFormation operation failures and template validation errors surface
+immediately with context. Preprocessing errors (syntax or semantic) include
+the exact file, line, and column of the problem, the surrounding YAML context,
+and examples of how to correct it -- so whether you are debugging manually or
+an AI coding agent is iterating on your infrastructure, the feedback loop is
+tight.
+
 iidy is built for both humans at a terminal and CI pipelines. For interactive
 use it provides color themes, TTY detection, and confirmation prompts. For CI
 it supports `--output-mode plain` (no ANSI codes), `--output-mode json`

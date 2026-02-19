@@ -738,7 +738,14 @@ the camelCase versions).
 
 ---
 
-## Debugging
+## Debugging and Error Messages
+
+Every preprocessing error includes the exact file, line, and column where the
+problem occurred, the surrounding YAML context, and a concrete example of how
+to fix it. This applies to syntax errors (malformed tags, bad nesting),
+semantic errors (undefined variables, type mismatches), and import failures
+(missing files, unreachable URIs). The goal is that a human or an AI coding
+agent can read the error message and immediately know what to change.
 
 ### Use `iidy render`
 
