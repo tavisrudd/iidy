@@ -25,6 +25,13 @@ These were identified during development and fixed to match JS behavior:
   `{bindings: ..., expression: ...}`. Fixed to use the same flat format
   as JS.
 
+- **Custom resource templates**: JS has a full system for defining
+  reusable CloudFormation resource templates (`$params` validation,
+  automatic name-prefixing, `!Ref`/`!GetAtt`/`!Sub` rewriting,
+  `GlobalAccumulator` for section promotion, `$global` flag,
+  `$globalRefs`, `Overrides`). Rust now implements this in
+  `src/yaml/custom_resources/`.
+
 ## Not yet implemented
 
 ### `!$string` alias
@@ -35,23 +42,15 @@ These were identified during development and fixed to match JS behavior:
 
 ### `!$expand`
 
-- **JS**: `!$expand` performs simple template expansion with `$params`
-  validation but without CloudFormation-specific ref rewriting or
-  name-prefixing.
+- **JS**: `!$expand` is a preprocessing tag that takes `{template, params}`,
+  looks up a named template from the environment, validates parameters
+  against the template's `$params`, and expands inline. Unlike custom
+  resource types, it does not perform name-prefixing or ref rewriting --
+  it is a simple "inline this template with these parameters" operation.
 - **Rust**: Not implemented.
-- **Status**: Planned as part of the custom resource template feature.
-
-### Custom resource templates
-
-- **JS**: Full system for defining reusable CloudFormation resource
-  templates. Includes `$params` validation, automatic name-prefixing,
-  `!Ref`/`!GetAtt`/`!Sub` rewriting, `GlobalAccumulator` for section
-  promotion (Parameters, Conditions, Mappings, Outputs from templates
-  merged into root document), `$global` flag, `$globalRefs`, `Overrides`.
-- **Rust**: Not implemented.
-- **Status**: This is the primary remaining feature gap. Design analysis
-  at `notes/2026-02-17-project-review-and-next-steps.md` and RFC at
-  `notes/2026-02-17-custom-resource-templates-rfc.md`.
+- **Status**: The underlying machinery (`$params` validation, template
+  lookup) exists in the custom resource template system. Implementing
+  `!$expand` would reuse that but skip the CFN-specific transforms.
 
 ### `$envValues` custom values
 

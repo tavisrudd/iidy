@@ -4,46 +4,27 @@ $defs:
       host: "db.example.com"
       port: 5432
     cache:
-      host: "cache.example.com"  
+      host: "cache.example.com"
       port: 6379
     production: "prod-config-value"
   environment: "production"
 
-# Demonstrate that !$ and !$include are equivalent
-# Both should produce identical output
+# Variable lookup using !$ in various forms
 
-# Simple path reference using !$
-db_host_short: !$ config.database.host
-cache_port_short: !$ config.cache.port
+# Simple path reference
+db_host: !$ config.database.host
+cache_port: !$ config.cache.port
 
-# Same path reference using !$include  
-db_host_long: !$include config.database.host
-cache_port_long: !$include config.cache.port
+# Query syntax
+db_config_query: !$ config.database?host,port
 
-# Query syntax with !$
-db_config_query_short: !$ config.database?host,port
-
-# Same query syntax with !$include
-db_config_query_long: !$include config.database?host,port
-
-# Object form with !$
-explicit_short: !$
+# Object form
+explicit: !$
   path: config.database
   query: "host,port"
 
-# Object form with !$include
-explicit_long: !$include
-  path: config.database
-  query: "host,port"
+# Variable reference
+env_ref: !$ environment
 
-# Variable references with !$
-env_ref_short: !$ environment
-
-# Variable references with !$include  
-env_ref_long: !$include environment
-
-# Bracket notation with !$
-dynamic_short: !$ config[environment]
-
-# Bracket notation with !$include
-dynamic_long: !$include config[environment]
+# Bracket notation
+dynamic: !$ config[environment]

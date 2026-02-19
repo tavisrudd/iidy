@@ -92,7 +92,8 @@ This differs from iidy-js, which resolves `$defs` in parallel.
 ### `!$` (variable lookup)
 
 Look up a value from the environment (imports + defs). Dot notation traverses
-nested objects.
+nested objects. (`!$include` is a deprecated alias for `!$` -- avoid it as it
+misleadingly suggests file inclusion rather than variable lookup.)
 
 ```yaml
 $defs:
@@ -103,12 +104,6 @@ $defs:
 
 db_host: !$ config.database.host
 db_port: !$ config.database.port
-```
-
-`!$include` is an alias for `!$` -- they are interchangeable:
-
-```yaml
-db_host: !$include config.database.host
 ```
 
 #### Query selector

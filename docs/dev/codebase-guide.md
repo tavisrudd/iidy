@@ -67,7 +67,7 @@ yaml/
 
 ### Preprocessing Tags (PreprocessingTag enum in ast.rs)
 
-`!$` / `!$include`, `!$if`, `!$map`, ... (20+ tags). See
+`!$`, `!$if`, `!$map`, ... (20+ tags). See
 [architecture.md](architecture.md) for the full listing.
 
 NOT yet implemented: `!$expand` (template expansion with `$params`)

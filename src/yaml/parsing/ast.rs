@@ -255,7 +255,9 @@ impl CloudFormationTag {
 /// All supported preprocessing tags in the iidy language
 #[derive(Debug, Clone, PartialEq)]
 pub enum PreprocessingTag {
-    /// !$include or !$ - Include content from external file
+    /// !$ - Variable lookup from environment (imports + defs).
+    /// !$include is a deprecated alias.
+    // TODO: rename IncludeTag to LookupTag
     Include(IncludeTag),
     /// !$if - Conditional logic
     If(IfTag),
@@ -299,7 +301,8 @@ pub enum PreprocessingTag {
     Escape(EscapeTag),
 }
 
-/// Include tag for importing external content
+/// Variable lookup tag (!$ / !$include).
+// TODO: rename to LookupTag
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncludeTag {
     /// Path or reference to include
