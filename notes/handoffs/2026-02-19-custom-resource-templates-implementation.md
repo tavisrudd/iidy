@@ -587,7 +587,9 @@ the next chunk's details.
 - [x] Chunk 1: Foundation modules (params.rs, ref_rewriting.rs, mod.rs)
 - [x] Chunk 2: Plumbing (TagContext, skip list, engine template detection)
 - [x] Chunk 3: Expansion + wiring (expansion.rs, resolver, global promotion)
-- [ ] Snapshot acceptance (user review required)
+- [x] Snapshot acceptance (user review required)
+- [x] Follow-up: Schema validation, overrides, and additional examples
+- [ ] Remaining Follow-up task: error reporting consistency
 
 ---
 
@@ -707,7 +709,7 @@ later by the expansion code. This distinction wasn't visible until expansion ran
 real templates. Future work should be careful about adding keys to the resolver skip list
 -- consider whether the key appears only at document root or at arbitrary nesting depths.
 
-### Follow-up: Schema validation and additional examples (2026-02-19)
+### Follow-up: Schema validation, overrides, and additional examples (done 2026-02-19)
 
 **Added**: `jsonschema` crate (0.28) for JSON Schema validation on `$params`.
 Schema validation implemented in `validate_schema` in params.rs. Gracefully skips
@@ -740,7 +742,7 @@ To support `$global` on Conditions, a wrapper syntax would be needed (e.g.,
 from the JS implementation -- Conditions promotion via `$global` was theoretically
 supported but not practically usable.
 
-### Follow-up task: error reporting consistency
+### Remaining Follow-up task: error reporting consistency
 
 All errors raised by the custom resource expansion code (params.rs, expansion.rs) need
 to be reviewed for consistency with the project's user-facing error reporting style.
