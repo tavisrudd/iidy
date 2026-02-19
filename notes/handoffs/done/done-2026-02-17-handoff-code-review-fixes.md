@@ -142,7 +142,7 @@ Fixed 3 unnecessary-braces warnings in `get_stack_instances.rs`,
 
 ---
 
-## 5. Resolver Duplication (if time permits)
+## 5. Resolver Duplication -- DONE
 
 These are not blockers but reduce maintenance burden before the custom
 resource template work touches the resolver.
@@ -171,18 +171,6 @@ refactor for marginal gain since the string format is stable (`strict_error`
 in handlebars uses `{:?}` formatting).
 
 ---
-
-## What NOT to Fix Now
-
-These are real issues but not on the critical path:
-
-- CFN handler inconsistencies (3 handlers bypassing macros) -- fix during a
-  dedicated CFN cleanup pass
-- Output manager buffer overflow -- fix when implementing proper TUI
-- AWS conversion hardcoded fields -- fix when working on output accuracy
-- Blocking I/O on async runtime -- low risk at current scale
-- `unsafe set_var` in aws/mod.rs -- needs careful analysis of init ordering
-- Concurrency issues in keyboard.rs -- fix when implementing proper event loop
 
 ## Verification
 
