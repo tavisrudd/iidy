@@ -305,10 +305,12 @@ pub enum PreprocessingTag {
 // TODO: rename to LookupTag
 #[derive(Debug, Clone, PartialEq)]
 pub struct IncludeTag {
-    /// Path or reference to include
+    /// Dot-notation path to look up in the environment
     pub path: String,
-    /// Optional query/selector for partial inclusion
+    /// Optional comma-separated key filter
     pub query: Option<String>,
+    /// Optional JMESPath expression (mutually exclusive with query)
+    pub jmespath: Option<String>,
 }
 
 /// Conditional tag for if/then/else logic

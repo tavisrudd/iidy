@@ -28,10 +28,12 @@ use std::collections::HashMap;
 
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::variable_not_found_error_with_path_tracker;
+use crate::yaml::errors::wrapper::lookup_query_error;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
 use crate::yaml::parsing::ast::*;
 use crate::yaml::path_tracker::PathTracker;
+use crate::yaml::jmespath::apply_jmespath_query;
 use crate::yaml::resolution::context::TagContext;
 
 /// Helper trait for extracting human-readable type strings from serde_yaml::Value
@@ -435,13 +437,17 @@ impl Resolver {
                     let path = &query[1..];
                     self.apply_nested_path_query(value, path)
                 } else if query.contains(',') {
-                    // Handle multiple property selection like "database,host"
                     let properties: Vec<&str> = query.split(',').map(|s| s.trim()).collect();
                     let mut result = serde_yaml::Mapping::with_capacity(properties.len());
 
-                    for prop in properties {
+                    for prop in &properties {
                         if let Some(prop_value) = map.get(&Value::String(prop.to_string())) {
                             result.insert(Value::String(prop.to_string()), prop_value.clone());
+                        } else {
+                            return Err(anyhow!(
+                                "property '{}' not found in mapping",
+                                prop,
+                            ));
                         }
                     }
 
@@ -494,6 +500,46 @@ impl Resolver {
 
         Ok(current_value.clone())
     }
+
+    /// Find the 1-based source line number for a variable lookup reference.
+    /// Returns 0 if the reference can't be found.
+    fn find_lookup_line(&self, variable_path: &str, file_path: &str) -> usize {
+        let Ok(content) = std::fs::read_to_string(file_path) else {
+            return 0;
+        };
+        content
+            .lines()
+            .enumerate()
+            .find_map(|(idx, line)| {
+                let patterns = [
+                    format!("!$ {}", variable_path),
+                    format!("!$include {}", variable_path),
+                    format!("path: {}", variable_path),
+                ];
+                for pattern in &patterns {
+                    if line.contains(pattern) {
+                        return Some(idx + 1);
+                    }
+                }
+                None
+            })
+            .unwrap_or(0)
+    }
+
+    /// Extract string keys from a mapping value, or return empty vec.
+    fn mapping_keys(value: &Value) -> Vec<String> {
+        match value {
+            Value::Mapping(map) => map
+                .keys()
+                .filter_map(|k| match k {
+                    Value::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     /// Process handlebars templates in strings
     fn process_string_with_handlebars(
         &self,
@@ -965,10 +1011,24 @@ impl TagResolver for Resolver {
         let (base_path, query) = self.parse_path_and_query(path, &tag.query);
 
         // Try to resolve the variable from the environment
+        let file_path = context.input_uri.as_deref().unwrap_or("unknown");
         if let Some(mut value) = self.resolve_dot_notation_path(&base_path, context) {
+            let line = self.find_lookup_line(&base_path, file_path);
+
             // Apply query selector if present
             if let Some(query_str) = query {
-                value = self.apply_query_selector(&value, &query_str)?;
+                let available_keys = Self::mapping_keys(&value);
+                value = self.apply_query_selector(&value, &query_str)
+                    .map_err(|e| lookup_query_error(
+                        &base_path, &e.to_string(), file_path, line, &available_keys,
+                    ))?;
+            }
+            // Apply JMESPath expression if present
+            if let Some(jmespath_expr) = &tag.jmespath {
+                value = apply_jmespath_query(&value, jmespath_expr)
+                    .map_err(|e| lookup_query_error(
+                        &base_path, &e.to_string(), file_path, line, &[],
+                    ))?;
             }
             return Ok(value);
         }

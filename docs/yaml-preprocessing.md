@@ -120,8 +120,8 @@ db_subset: !$ config.database?host,port
 # Result: {host: db.example.com, port: 5432}
 ```
 
-Keys that don't exist in the source mapping are silently omitted from the
-result (no error).
+All listed keys must exist in the source mapping -- a missing key produces an
+error listing the available keys.
 
 **Error handling:** Applying a query to a non-mapping value (e.g. a string or
 sequence) always produces an error.
@@ -129,13 +129,37 @@ sequence) always produces an error.
 #### Object form
 
 The object form is equivalent to the `?` syntax. The `query` field accepts the
-same three forms described above:
+same comma-separated key syntax described above:
 
 ```yaml
 db_subset: !$
   path: config.database
   query: "host,port"
 ```
+
+The object form also supports JMESPath expressions via a `jmespath` field for
+more complex queries (projections, filters, multi-select). The `query` and
+`jmespath` fields are mutually exclusive.
+
+```yaml
+# Multi-select hash -- pick specific keys
+db_subset: !$
+  path: config.database
+  jmespath: "{host: host, port: port}"
+
+# Array projection -- extract a field from each item
+service_names: !$
+  path: services
+  jmespath: "[*].name"
+
+# Filter -- select items matching a condition
+enabled: !$
+  path: services
+  jmespath: "[?enabled].name"
+```
+
+See the [JMESPath specification](https://jmespath.org/specification.html) for
+the full expression syntax.
 
 #### Bracket notation
 

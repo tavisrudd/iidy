@@ -1,0 +1,13 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Lookup error: property 'missing_key' not found in mapping @ example-templates/errors/query-missing-key.yaml:7:0 (errno: ERR_2001)
+  -> query failed on variable 'config'
+
+   6 | 
+   7 | result: !$ config?host,missing_key
+
+   available keys: host, port
+
+   For more info: iidy explain ERR_2001

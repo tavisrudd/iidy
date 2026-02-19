@@ -27,6 +27,7 @@ use std::rc::Rc;
 use yaml_rust::{Yaml, yaml::Hash};
 
 use crate::yaml::custom_resources::TemplateInfo;
+use crate::yaml::custom_resources::expansion::GLOBAL_SECTION_NAMES;
 use crate::yaml::custom_resources::params::parse_params;
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
@@ -678,8 +679,12 @@ fn promote_global_sections(
     }
 
     if let Value::Mapping(ref mut result_map) = result {
-        for (section_name, section_entries) in globals.iter() {
-            let section_key = Value::String(section_name.clone());
+        // Iterate in fixed order so promoted sections appear deterministically.
+        for section_name in GLOBAL_SECTION_NAMES {
+            let Some(section_entries) = globals.get(*section_name) else {
+                continue;
+            };
+            let section_key = Value::String(section_name.to_string());
             let existing = result_map
                 .entry(section_key)
                 .or_insert_with(|| Value::Mapping(Mapping::new()));

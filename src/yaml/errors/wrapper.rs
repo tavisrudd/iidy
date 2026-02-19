@@ -999,3 +999,85 @@ fn cloudformation_validation_error_impl(
         message: enhanced_display,
     })
 }
+
+/// Error for query/JMESPath failures on a resolved variable lookup.
+///
+/// Formats in the same style as variable-not-found errors with source context.
+pub fn lookup_query_error(
+    variable_path: &str,
+    message: &str,
+    file_path: &str,
+    line_number: usize,
+    available_keys: &[String],
+) -> anyhow::Error {
+    let use_color = std::env::var("NO_COLOR").is_err() && atty::is(atty::Stream::Stderr);
+
+    let bold_red = if use_color { "\x1b[1;31m" } else { "" };
+    let red = if use_color { "\x1b[31m" } else { "" };
+    let cyan = if use_color { "\x1b[36m" } else { "" };
+    let blue_grey = if use_color { "\x1b[38;5;245m" } else { "" };
+    let light_blue = if use_color { "\x1b[38;5;75m" } else { "" };
+    let grey = if use_color { "\x1b[90m" } else { "" };
+    let reset = if use_color { "\x1b[0m" } else { "" };
+
+    let location = if line_number > 0 {
+        format!("{}:{}:0", file_path, line_number)
+    } else {
+        file_path.to_string()
+    };
+
+    let mut output = format!(
+        "{}Lookup error{}: {} @ {}{}{} {}(errno: ERR_2001){}\n",
+        bold_red, reset, message, cyan, location, reset, grey, reset,
+    );
+    output.push_str(&format!(
+        "{}  -> query failed on variable '{}'{}\n",
+        light_blue, variable_path, reset,
+    ));
+
+    // Source context
+    if line_number > 0 {
+        if let Ok(content) = std::fs::read_to_string(file_path) {
+            let lines: Vec<&str> = content.lines().collect();
+            output.push('\n');
+
+            if line_number > 1 && line_number - 2 < lines.len() {
+                output.push_str(&format!(
+                    "{}{:4}{} | {}{}{}\n",
+                    grey, line_number - 1, reset, blue_grey, lines[line_number - 2], reset,
+                ));
+            }
+            if line_number > 0 && line_number - 1 < lines.len() {
+                output.push_str(&format!(
+                    "{}{:4}{} | {}\n",
+                    red, line_number, reset, lines[line_number - 1],
+                ));
+            }
+            if line_number < lines.len() {
+                output.push_str(&format!(
+                    "{}{:4}{} | {}{}{}\n",
+                    grey, line_number + 1, reset, blue_grey, lines[line_number], reset,
+                ));
+            }
+            output.push('\n');
+        }
+    }
+
+    if !available_keys.is_empty() {
+        let mut sorted = available_keys.to_vec();
+        sorted.sort();
+        output.push_str(&format!(
+            "{}   available keys: {}{}\n",
+            light_blue,
+            sorted.join(", "),
+            reset,
+        ));
+    }
+
+    output.push_str(&format!(
+        "\n{}   For more info: iidy explain ERR_2001{}\n",
+        light_blue, reset,
+    ));
+
+    anyhow::Error::new(EnhancedErrorWrapper { message: output })
+}

@@ -10,6 +10,7 @@ pub mod engine;
 pub mod errors;
 pub mod handlebars;
 pub mod imports;
+pub mod jmespath;
 pub mod location;
 pub mod parsing;
 pub mod path_tracker;

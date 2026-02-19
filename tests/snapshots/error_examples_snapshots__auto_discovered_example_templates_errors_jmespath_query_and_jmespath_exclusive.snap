@@ -1,0 +1,14 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Tag error: 'query' and 'jmespath' are mutually exclusive @ example-templates/errors/jmespath-query-and-jmespath-exclusive.yaml:6:9 (errno: ERR_4002)
+  -> use one or the other, not both
+
+   5 | 
+   6 | result: !$
+   7 |   path: config
+
+   example:
+   !$ variable_name
+   For more info, run: iidy explain ERR_4002

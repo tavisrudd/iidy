@@ -1043,12 +1043,14 @@ impl YamlParser {
                         Ok(PreprocessingTag::Include(IncludeTag {
                             path: s,
                             query: None,
+                            jmespath: None,
                         }))
                     }
                     YamlAst::Mapping(pairs, _) => {
-                        // Object form: !$ { path: "...", query: "..." }
+                        // Object form: !$ { path: "...", query: "...", jmespath: "..." }
                         let mut path = None;
                         let mut query = None;
+                        let mut jmespath = None;
 
                         for (key, value) in pairs {
                             match key {
@@ -1080,12 +1082,39 @@ impl YamlParser {
                                         }
                                     };
                                 }
+                                YamlAst::PlainString(k, _) if k == "jmespath" => {
+                                    jmespath = match value {
+                                        YamlAst::PlainString(s, _)
+                                        | YamlAst::TemplatedString(s, _) => Some(s),
+                                        _ => {
+                                            return Err(self.tag_error(
+                                                "!$include",
+                                                "jmespath must be a string",
+                                                Some("use string JMESPath expression"),
+                                                &meta,
+                                            ));
+                                        }
+                                    };
+                                }
                                 _ => {}
                             }
                         }
 
+                        if query.is_some() && jmespath.is_some() {
+                            return Err(self.tag_error(
+                                "!$include",
+                                "'query' and 'jmespath' are mutually exclusive",
+                                Some("use one or the other, not both"),
+                                &meta,
+                            ));
+                        }
+
                         match path {
-                            Some(p) => Ok(PreprocessingTag::Include(IncludeTag { path: p, query })),
+                            Some(p) => Ok(PreprocessingTag::Include(IncludeTag {
+                                path: p,
+                                query,
+                                jmespath,
+                            })),
                             None => Err(self.missing_field_error("!$include", "path", &meta)),
                         }
                     }

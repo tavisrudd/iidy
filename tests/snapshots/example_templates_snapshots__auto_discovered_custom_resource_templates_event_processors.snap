@@ -1,5 +1,6 @@
 ---
 source: tests/example_templates_snapshots.rs
+assertion_line: 96
 expression: formatted_output
 ---
 AWSTemplateFormatVersion: 2010-09-09

@@ -1,0 +1,13 @@
+---
+source: tests/error_examples_snapshots.rs
+expression: "format!(\"{}\", e)"
+---
+Lookup error: Invalid JMESPath expression 'host[': Parse error: Expected number, ':', or '*' -- found Eof (line 0, column 5) @ example-templates/errors/jmespath-invalid-syntax.yaml:8:0 (errno: ERR_2001)
+  -> query failed on variable 'config'
+
+   7 | result: !$
+   8 |   path: config
+   9 |   jmespath: "host["
+
+
+   For more info: iidy explain ERR_2001

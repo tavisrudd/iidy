@@ -10,7 +10,7 @@ use crate::yaml::parsing;
 use crate::yaml::resolution::context::TagContext;
 use crate::yaml::resolution::resolve_ast;
 
-const GLOBAL_SECTION_NAMES: &[&str] = &[
+pub(crate) const GLOBAL_SECTION_NAMES: &[&str] = &[
     "Parameters",
     "Metadata",
     "Mappings",
