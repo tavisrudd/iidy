@@ -31,9 +31,9 @@ use crate::yaml::errors::variable_not_found_error_with_path_tracker;
 use crate::yaml::errors::wrapper::lookup_query_error;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
+use crate::yaml::jmespath::apply_jmespath_query;
 use crate::yaml::parsing::ast::*;
 use crate::yaml::path_tracker::PathTracker;
-use crate::yaml::jmespath::apply_jmespath_query;
 use crate::yaml::resolution::context::TagContext;
 
 /// Helper trait for extracting human-readable type strings from serde_yaml::Value
@@ -444,10 +444,7 @@ impl Resolver {
                         if let Some(prop_value) = map.get(&Value::String(prop.to_string())) {
                             result.insert(Value::String(prop.to_string()), prop_value.clone());
                         } else {
-                            return Err(anyhow!(
-                                "property '{}' not found in mapping",
-                                prop,
-                            ));
+                            return Err(anyhow!("property '{}' not found in mapping", prop,));
                         }
                     }
 
@@ -706,9 +703,7 @@ impl Resolver {
         for (key_ast, value_ast) in pairs {
             let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
 
-            let is_preprocessing_key = key_value
-                .as_str()
-                .map_or(false, |s| s.starts_with('$'));
+            let is_preprocessing_key = key_value.as_str().map_or(false, |s| s.starts_with('$'));
             if is_preprocessing_key {
                 let key_str = key_value.as_str().unwrap();
                 if matches!(key_str, "$imports" | "$defs" | "$envValues" | "$params") {
@@ -736,12 +731,8 @@ impl Resolver {
             if let Some(type_name) = resource_type {
                 if let Some(template_info) = context.custom_template_defs.get(type_name) {
                     let key_str = key_value.as_str().unwrap_or(&path_segment);
-                    let expanded = expand_custom_resource(
-                        key_str,
-                        &resolved_value,
-                        template_info,
-                        context,
-                    )?;
+                    let expanded =
+                        expand_custom_resource(key_str, &resolved_value, template_info, context)?;
                     for (res_name, res_value) in expanded {
                         result.insert(Value::String(res_name), res_value);
                     }
@@ -823,8 +814,7 @@ impl TagResolver for Resolver {
             }
         } else {
             // Custom resource expansion at the CFN Resources level
-            if !context.custom_template_defs.is_empty()
-                && path_tracker.segments() == ["Resources"]
+            if !context.custom_template_defs.is_empty() && path_tracker.segments() == ["Resources"]
             {
                 return self.resolve_resources_mapping(pairs, context, path_tracker);
             }
@@ -1018,17 +1008,15 @@ impl TagResolver for Resolver {
             // Apply query selector if present
             if let Some(query_str) = query {
                 let available_keys = Self::mapping_keys(&value);
-                value = self.apply_query_selector(&value, &query_str)
-                    .map_err(|e| lookup_query_error(
-                        &base_path, &e.to_string(), file_path, line, &available_keys,
-                    ))?;
+                value = self.apply_query_selector(&value, &query_str).map_err(|e| {
+                    lookup_query_error(&base_path, &e.to_string(), file_path, line, &available_keys)
+                })?;
             }
             // Apply JMESPath expression if present
             if let Some(jmespath_expr) = &tag.jmespath {
-                value = apply_jmespath_query(&value, jmespath_expr)
-                    .map_err(|e| lookup_query_error(
-                        &base_path, &e.to_string(), file_path, line, &[],
-                    ))?;
+                value = apply_jmespath_query(&value, jmespath_expr).map_err(|e| {
+                    lookup_query_error(&base_path, &e.to_string(), file_path, line, &[])
+                })?;
             }
             return Ok(value);
         }

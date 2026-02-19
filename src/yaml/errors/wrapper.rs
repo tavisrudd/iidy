@@ -1044,19 +1044,32 @@ pub fn lookup_query_error(
             if line_number > 1 && line_number - 2 < lines.len() {
                 output.push_str(&format!(
                     "{}{:4}{} | {}{}{}\n",
-                    grey, line_number - 1, reset, blue_grey, lines[line_number - 2], reset,
+                    grey,
+                    line_number - 1,
+                    reset,
+                    blue_grey,
+                    lines[line_number - 2],
+                    reset,
                 ));
             }
             if line_number > 0 && line_number - 1 < lines.len() {
                 output.push_str(&format!(
                     "{}{:4}{} | {}\n",
-                    red, line_number, reset, lines[line_number - 1],
+                    red,
+                    line_number,
+                    reset,
+                    lines[line_number - 1],
                 ));
             }
             if line_number < lines.len() {
                 output.push_str(&format!(
                     "{}{:4}{} | {}{}{}\n",
-                    grey, line_number + 1, reset, blue_grey, lines[line_number], reset,
+                    grey,
+                    line_number + 1,
+                    reset,
+                    blue_grey,
+                    lines[line_number],
+                    reset,
                 ));
             }
             output.push('\n');

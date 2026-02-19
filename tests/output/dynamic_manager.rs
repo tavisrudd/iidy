@@ -189,7 +189,6 @@ async fn test_all_output_data_types_rendering() {
         .render(OutputData::Error(error))
         .await
         .expect("Should render ErrorInfo");
-
 }
 
 #[tokio::test]
@@ -270,7 +269,6 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         .render(OutputData::CommandResult(result))
         .await
         .expect("Should render command result");
-
 }
 
 #[tokio::test]
@@ -297,7 +295,6 @@ async fn test_integration_with_fixture_data() {
             .await
             .expect("Should render fixture data");
     }
-
 }
 
 #[tokio::test]
@@ -324,5 +321,4 @@ async fn test_error_handling_during_rendering() {
         .render(OutputData::Error(error_info))
         .await
         .expect("Should render error information");
-
 }

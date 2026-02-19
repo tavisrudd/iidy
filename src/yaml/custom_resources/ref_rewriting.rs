@@ -32,11 +32,7 @@ fn walk(value: &Value, prefix: &str, global_refs: &HashSet<String>) -> Value {
     }
 }
 
-fn rewrite_tagged(
-    tagged: &TaggedValue,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn rewrite_tagged(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<String>) -> Value {
     let tag_str = tagged.tag.to_string();
     let tag_name = tag_str.strip_prefix('!').unwrap_or(&tag_str);
 
@@ -55,11 +51,7 @@ fn rewrite_tagged(
     }
 }
 
-fn rewrite_ref_tag(
-    tagged: &TaggedValue,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn rewrite_ref_tag(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<String>) -> Value {
     if let Value::String(name) = &tagged.value {
         let trimmed = name.trim();
         if should_rewrite(trimmed, global_refs) {
@@ -70,36 +62,22 @@ fn rewrite_ref_tag(
     Value::Tagged(Box::new(tagged.clone()))
 }
 
-fn rewrite_getatt_tag(
-    tagged: &TaggedValue,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn rewrite_getatt_tag(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<String>) -> Value {
     if let Value::String(dotted) = &tagged.value {
         let trimmed = dotted.trim();
         if let Some(first_dot) = trimmed.find('.') {
             let resource_name = &trimmed[..first_dot];
             if should_rewrite(resource_name, global_refs) {
-                return make_tagged(
-                    "GetAtt",
-                    Value::String(format!("{}{}", prefix, trimmed)),
-                );
+                return make_tagged("GetAtt", Value::String(format!("{}{}", prefix, trimmed)));
             }
         } else if should_rewrite(trimmed, global_refs) {
-            return make_tagged(
-                "GetAtt",
-                Value::String(format!("{}{}", prefix, trimmed)),
-            );
+            return make_tagged("GetAtt", Value::String(format!("{}{}", prefix, trimmed)));
         }
     }
     Value::Tagged(Box::new(tagged.clone()))
 }
 
-fn rewrite_sub_tag(
-    tagged: &TaggedValue,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn rewrite_sub_tag(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<String>) -> Value {
     match &tagged.value {
         Value::String(template) => {
             let rewritten = rewrite_sub_template(template, prefix, global_refs);
@@ -117,15 +95,11 @@ fn rewrite_sub_tag(
                 }
             }
             let template = seq[0].as_str().unwrap_or("");
-            let rewritten_template =
-                rewrite_sub_template(template, prefix, &extended_globals);
+            let rewritten_template = rewrite_sub_template(template, prefix, &extended_globals);
             let rewritten_vars = walk(&seq[1], prefix, global_refs);
             make_tagged(
                 "Sub",
-                Value::Sequence(vec![
-                    Value::String(rewritten_template),
-                    rewritten_vars,
-                ]),
+                Value::Sequence(vec![Value::String(rewritten_template), rewritten_vars]),
             )
         }
         other => {
@@ -136,11 +110,7 @@ fn rewrite_sub_tag(
     }
 }
 
-fn rewrite_sub_template(
-    template: &str,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> String {
+fn rewrite_sub_template(template: &str, prefix: &str, global_refs: &HashSet<String>) -> String {
     // Match ${RefName} but not ${!literal} -- the ! prefix means "literal" in CFN Sub
     let re = Regex::new(r"\$\{([^!].*?)\}").unwrap();
     re.replace_all(template, |caps: &regex::Captures| {
@@ -155,11 +125,7 @@ fn rewrite_sub_template(
     .into_owned()
 }
 
-fn walk_mapping(
-    map: &serde_yaml::Mapping,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn walk_mapping(map: &serde_yaml::Mapping, prefix: &str, global_refs: &HashSet<String>) -> Value {
     // Check if this is a CFN resource entry (has a "Type" key)
     let is_resource_entry = map.contains_key(&Value::String("Type".into()));
 
@@ -196,11 +162,7 @@ fn rewrite_resource_field(
     }
 }
 
-fn rewrite_depends_on(
-    value: &Value,
-    prefix: &str,
-    global_refs: &HashSet<String>,
-) -> Value {
+fn rewrite_depends_on(value: &Value, prefix: &str, global_refs: &HashSet<String>) -> Value {
     match value {
         Value::String(name) => {
             if should_rewrite(name.trim(), global_refs) {
@@ -319,10 +281,7 @@ mod tests {
     fn sub_with_vars() {
         // !Sub [template, {LocalVar: value}]
         let mut vars = Mapping::new();
-        vars.insert(
-            Value::String("LocalVar".into()),
-            make_ref("SomeResource"),
-        );
+        vars.insert(Value::String("LocalVar".into()), make_ref("SomeResource"));
         let sub_value = Value::Sequence(vec![
             Value::String("${LocalVar}-${Queue}".into()),
             Value::Mapping(vars),
@@ -334,10 +293,7 @@ mod tests {
         // Queue should be rewritten
         if let Value::Tagged(t) = &result {
             if let Value::Sequence(seq) = &t.value {
-                assert_eq!(
-                    seq[0].as_str().unwrap(),
-                    "${LocalVar}-${PrefixQueue}"
-                );
+                assert_eq!(seq[0].as_str().unwrap(), "${LocalVar}-${PrefixQueue}");
                 // The vars mapping values should be walked (SomeResource ref rewritten)
                 if let Value::Mapping(m) = &seq[1] {
                     let ref_val = m.get(&Value::String("LocalVar".into())).unwrap();
@@ -432,24 +388,15 @@ mod tests {
     fn nested_structure() {
         // A mapping containing a ref nested inside properties
         let mut props = Mapping::new();
-        props.insert(
-            Value::String("QueueArn".into()),
-            make_getatt("Queue.Arn"),
-        );
-        props.insert(
-            Value::String("TopicArn".into()),
-            make_ref("AlertTopicArn"),
-        );
+        props.insert(Value::String("QueueArn".into()), make_getatt("Queue.Arn"));
+        props.insert(Value::String("TopicArn".into()), make_ref("AlertTopicArn"));
 
         let mut resource = Mapping::new();
         resource.insert(
             Value::String("Type".into()),
             Value::String("AWS::SNS::Subscription".into()),
         );
-        resource.insert(
-            Value::String("Properties".into()),
-            Value::Mapping(props),
-        );
+        resource.insert(Value::String("Properties".into()), Value::Mapping(props));
 
         let result = rewrite_refs(
             &Value::Mapping(resource),

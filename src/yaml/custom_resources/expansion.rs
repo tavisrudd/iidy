@@ -68,9 +68,12 @@ pub fn expand_custom_resource(
         deep_merge(&mut resolved, overrides);
     }
 
-    let resolved_map = resolved
-        .as_mapping()
-        .ok_or_else(|| anyhow!("Custom resource template '{}' must resolve to a mapping", name))?;
+    let resolved_map = resolved.as_mapping().ok_or_else(|| {
+        anyhow!(
+            "Custom resource template '{}' must resolve to a mapping",
+            name
+        )
+    })?;
 
     // Collect global refs: entries with $global: true across sections + params with is_global
     let global_refs = collect_global_refs(resolved_map, &template_info.params);
@@ -89,8 +92,7 @@ pub fn expand_custom_resource(
     let rewritten_resources = rewrite_refs(resources_value, prefix, &global_refs);
 
     // Prefix resource names and strip $global
-    let expanded_resources =
-        prefix_and_strip_global(&rewritten_resources, prefix)?;
+    let expanded_resources = prefix_and_strip_global(&rewritten_resources, prefix)?;
 
     // Accumulate global sections
     accumulate_globals(resolved_map, prefix, &global_refs, context)?;
@@ -177,10 +179,7 @@ fn has_global_flag(value: &Value) -> bool {
 
 /// Prefix resource names and strip $global flag from values.
 /// Resources with $global: true keep their original name.
-fn prefix_and_strip_global(
-    resources: &Value,
-    prefix: &str,
-) -> Result<Vec<(String, Value)>> {
+fn prefix_and_strip_global(resources: &Value, prefix: &str) -> Result<Vec<(String, Value)>> {
     let resources_map = resources
         .as_mapping()
         .ok_or_else(|| anyhow!("Resources section must be a mapping"))?;
@@ -276,10 +275,7 @@ mod tests {
             Value::String("AlarmPriority".into()),
             Value::String("P2".into()),
         );
-        map.insert(
-            Value::String("Properties".into()),
-            Value::Mapping(props),
-        );
+        map.insert(Value::String("Properties".into()), Value::Mapping(props));
 
         let result = extract_properties(&map);
         assert_eq!(result.len(), 2);
@@ -297,10 +293,7 @@ mod tests {
     #[test]
     fn has_global_flag_true() {
         let mut map = Mapping::new();
-        map.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        map.insert(Value::String("Type".into()), Value::String("String".into()));
         map.insert(Value::String("$global".into()), Value::Bool(true));
         assert!(has_global_flag(&Value::Mapping(map)));
     }
@@ -308,10 +301,7 @@ mod tests {
     #[test]
     fn has_global_flag_false() {
         let mut map = Mapping::new();
-        map.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        map.insert(Value::String("Type".into()), Value::String("String".into()));
         assert!(!has_global_flag(&Value::Mapping(map)));
     }
 
@@ -323,10 +313,7 @@ mod tests {
     #[test]
     fn strip_global_key_removes_flag() {
         let mut map = Mapping::new();
-        map.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        map.insert(Value::String("Type".into()), Value::String("String".into()));
         map.insert(Value::String("$global".into()), Value::Bool(true));
         let result = strip_global_key(&Value::Mapping(map));
         let result_map = result.as_mapping().unwrap();
@@ -338,10 +325,7 @@ mod tests {
     #[test]
     fn strip_global_key_noop_when_absent() {
         let mut map = Mapping::new();
-        map.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        map.insert(Value::String("Type".into()), Value::String("String".into()));
         let original = Value::Mapping(map.clone());
         let result = strip_global_key(&original);
         assert_eq!(result, original);
@@ -356,10 +340,7 @@ mod tests {
             Value::String("Type".into()),
             Value::String("AWS::SQS::Queue".into()),
         );
-        resources.insert(
-            Value::String("Queue".into()),
-            Value::Mapping(queue),
-        );
+        resources.insert(Value::String("Queue".into()), Value::Mapping(queue));
 
         let mut alarm = Mapping::new();
         alarm.insert(
@@ -371,8 +352,7 @@ mod tests {
             Value::Mapping(alarm),
         );
 
-        let result =
-            prefix_and_strip_global(&Value::Mapping(resources), "OrderEvents").unwrap();
+        let result = prefix_and_strip_global(&Value::Mapping(resources), "OrderEvents").unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].0, "OrderEventsQueue");
         assert_eq!(result[1].0, "OrderEventsQueueDepthAlarm");
@@ -398,22 +378,20 @@ mod tests {
             Value::String("Type".into()),
             Value::String("AWS::SQS::Queue".into()),
         );
-        resources.insert(
-            Value::String("LocalQueue".into()),
-            Value::Mapping(regular),
-        );
+        resources.insert(Value::String("LocalQueue".into()), Value::Mapping(regular));
 
-        let result =
-            prefix_and_strip_global(&Value::Mapping(resources), "Prefix").unwrap();
+        let result = prefix_and_strip_global(&Value::Mapping(resources), "Prefix").unwrap();
         assert_eq!(result.len(), 2);
         // Global resource keeps original name
         assert_eq!(result[0].0, "SharedQueue");
         // $global stripped from value
-        assert!(!result[0]
-            .1
-            .as_mapping()
-            .unwrap()
-            .contains_key(&Value::String("$global".into())));
+        assert!(
+            !result[0]
+                .1
+                .as_mapping()
+                .unwrap()
+                .contains_key(&Value::String("$global".into()))
+        );
         // Non-global resource gets prefixed
         assert_eq!(result[1].0, "PrefixLocalQueue");
     }
@@ -452,10 +430,7 @@ mod tests {
         let mut params_section = Mapping::new();
 
         let mut env_param = Mapping::new();
-        env_param.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        env_param.insert(Value::String("Type".into()), Value::String("String".into()));
         env_param.insert(Value::String("$global".into()), Value::Bool(true));
         params_section.insert(
             Value::String("Environment".into()),
@@ -463,10 +438,7 @@ mod tests {
         );
 
         let mut local_param = Mapping::new();
-        local_param.insert(
-            Value::String("Type".into()),
-            Value::String("String".into()),
-        );
+        local_param.insert(Value::String("Type".into()), Value::String("String".into()));
         params_section.insert(
             Value::String("LocalParam".into()),
             Value::Mapping(local_param),
