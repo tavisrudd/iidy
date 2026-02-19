@@ -42,11 +42,15 @@ in Phase 1.
 ```
 yaml/
   engine.rs            -- orchestrator: load_imports_and_defs, preprocess_yaml
+  detection.rs         -- YAML spec version and document type detection (CFN, K8s)
+  location.rs          -- position-finding strategies for error reporting
+  tree_sitter_location.rs -- tree-sitter based precise tag/node position finding
   parsing/
     parser.rs          -- tree-sitter based, builds YamlAst
     ast.rs             -- YamlAst enum, PreprocessingTag enum, SrcMeta
   resolution/
     resolver.rs        -- resolve_ast, all tag resolution (resolve_if, resolve_map, etc.)
+    context.rs         -- variable scope management during tag resolution
   imports/
     mod.rs             -- parse_import_type, ImportType enum, security checks
     loaders/           -- one file per import type (file.rs, s3.rs, ssm.rs, cfn.rs, etc.)
@@ -54,8 +58,9 @@ yaml/
     engine.rs          -- create_handlebars_registry, interpolate_handlebars_string
     helpers/           -- one file per helper category
   errors/
-    mod.rs             -- IidyError enum
-    wrapper.rs         -- enhanced error display with context (has panic risks with UTF-8)
+    ids.rs             -- ErrorId enum (categorized error codes ERR_1xxx through ERR_9xxx)
+    enhanced.rs        -- EnhancedPreprocessingError enum, SourceLocation
+    wrapper.rs         -- enhanced error display with context
   emitter.rs           -- YamlAst -> String serialization
   path_tracker.rs      -- tracks YAML paths during resolution
 ```

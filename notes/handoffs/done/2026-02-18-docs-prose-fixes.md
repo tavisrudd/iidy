@@ -40,6 +40,12 @@
 - Only explained in `docs/dev/js-compatibility.md` (line 67-70)
 - `architecture.md` and `codebase-guide.md` just say "sequentially" and cross-reference
 
+### Factual fixes from code-checking review
+- Fixed `IidyError` reference in codebase-guide.md errors/ tree -- now correctly shows `ids.rs` (ErrorId enum) and `enhanced.rs` (EnhancedPreprocessingError)
+- Added missing files to codebase-guide.md yaml/ directory tree: `detection.rs`, `location.rs`, `tree_sitter_location.rs`, `context.rs`
+- Added credential source detection section to aws-config.md documenting `CredentialSource`, `CredentialSourceStack`, `detect_credential_sources()`
+- output-architecture.md method/variant names verified correct (no fix needed)
+
 ## Remaining
 
 ### Verify build and tests pass
@@ -52,11 +58,3 @@
 - If any insta snapshot captures a template hash value, it will change from 32 to 64 hex chars
 - Search: `grep -r 'template_hash\|approval.*hash' tests/snapshots/`
 - User must accept any snapshot changes
-
-### Factual issues from the earlier code-checking review (not addressed here)
-These were identified in the factual review but are separate from the prose fixes:
-- `IidyError` enum referenced in codebase-guide.md line 56 does not exist (actual: `ErrorId`, `EnhancedPreprocessingError`)
-- Missing files in codebase-guide directory trees (`detection.rs`, `location.rs`, `tree_sitter_location.rs`, `context.rs`, `enhanced.rs`, `ids.rs`)
-- output-architecture.md has several factual errors (method names, variant names)
-- aws-config.md missing credential source detection system
-- See main conversation for the full factual review details

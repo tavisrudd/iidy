@@ -197,14 +197,53 @@ for account-level defaults:
 SSM failures are silently ignored so that environments without these parameters
 are unaffected.
 
+## Credential Source Detection
+
+The AWS SDK does not expose which credential provider was actually used. iidy
+implements its own detection in `src/aws/credential_source.rs` by checking
+the same sources in the same precedence order as the SDK.
+
+### Key types
+
+- `CredentialSource` -- enum with 9 variants representing each possible
+  credential provider (env vars static/temporary, profile, assume-role,
+  ECS container, generic container, web identity token, instance metadata,
+  unknown)
+- `CredentialSourceStack` -- ordered list of detected sources. The first entry
+  is the active source; remaining entries are configured but overridden by
+  higher-precedence sources
+- `CredentialDetectionContext` -- captures provenance (did the profile come from
+  `--profile`, stack-args, or `AWS_PROFILE`?)
+- `ProfileSource` / `AssumeRoleSource` -- track where each setting originated
+
+### How it works
+
+`detect_credential_sources()` checks sources in SDK precedence order:
+
+1. Environment variables (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`)
+2. Web identity token (`AWS_WEB_IDENTITY_TOKEN_FILE` + `AWS_ROLE_ARN`)
+3. Container credentials (ECS or generic)
+4. Profile (from `--profile`, stack-args `Profile:`, `AWS_PROFILE`, or default)
+5. AssumeRole wrapper (from `--assume-role-arn` or stack-args `AssumeRoleARN:`)
+
+All matching sources are collected. The highest-precedence source becomes
+active; lower-precedence ones are tracked as overridden. This lets iidy show
+messages like:
+
+```
+Credentials: environment variables (AWS_ACCESS_KEY_ID) (overriding profile 'production' (from --profile))
+```
+
+EC2 instance metadata is not probed (would add 100-1000ms latency).
+
 ## Debugging Tips
 
 ### Check which credential source is active
 
-The AWS SDK does not expose which provider in the chain was used. Check manually
-in this order:
+iidy detects and reports the active credential source automatically (see
+Credential Source Detection above). If you need to check manually:
 
-1. Are `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` set? If yes, they win —
+1. Are `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` set? If yes, they win --
    profile settings are irrelevant.
 2. Is `AWS_PROFILE` set? That controls profile selection unless `--profile` or
    `Profile:` overrides it.
