@@ -256,9 +256,7 @@ impl CloudFormationTag {
 #[derive(Debug, Clone, PartialEq)]
 pub enum PreprocessingTag {
     /// !$ - Variable lookup from environment (imports + defs).
-    /// !$include is a deprecated alias.
-    // TODO: rename IncludeTag to LookupTag
-    Include(IncludeTag),
+    VarLookup(VarLookupTag),
     /// !$if - Conditional logic
     If(IfTag),
     /// !$map - Transform lists/arrays
@@ -301,10 +299,9 @@ pub enum PreprocessingTag {
     Escape(EscapeTag),
 }
 
-/// Variable lookup tag (!$ / !$include).
-// TODO: rename to LookupTag
+/// Variable lookup tag (!$).
 #[derive(Debug, Clone, PartialEq)]
-pub struct IncludeTag {
+pub struct VarLookupTag {
     /// Dot-notation path to look up in the environment
     pub path: String,
     /// Optional comma-separated key filter

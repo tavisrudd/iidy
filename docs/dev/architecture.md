@@ -68,7 +68,7 @@ environment built in Phase 1.
   reporting with source locations.
 
 - **`PreprocessingTag`** (`ast.rs`): Enum with variants for all
-  preprocessing tags (`Include`, `If`, `Map`, `Merge`, `Concat`, ...).
+  preprocessing tags (`VarLookup`, `If`, `Map`, `Merge`, `Concat`, ...).
 
 - **`TagContext`**: Carries the current environment (resolved `$defs` and
   `$imports`), base path for relative imports, and the processing

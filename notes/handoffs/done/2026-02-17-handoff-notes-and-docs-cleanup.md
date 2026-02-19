@@ -254,7 +254,7 @@ and the AWS SDK config chain.
 Complete reference for all 20 preprocessing tags with examples. This is
 the document a user would read to understand the preprocessing language.
 Structure by tag category:
-- Variable lookup: `!$` / `!$include`
+- Variable lookup: `!$`
 - Control flow: `!$if`, `!$let`
 - Collection transforms: `!$map`, `!$concat`, `!$merge`, `!$concatMap`,
   `!$mergeMap`, `!$mapListToHash`, `!$mapValues`, `!$groupBy`, `!$fromPairs`

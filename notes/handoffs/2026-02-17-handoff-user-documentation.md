@@ -189,7 +189,7 @@ important user doc because preprocessing is what makes iidy valuable.
   - Edge cases / gotchas
 
   Group by purpose:
-  - Lookup: !$ (variable lookup), !$include
+  - Lookup: !$ (variable lookup)
   - Control flow: !$if, !$let
   - Collections: !$map, !$concat, !$merge, !$concatMap, !$mergeMap,
     !$mapListToHash, !$mapValues, !$groupBy, !$fromPairs

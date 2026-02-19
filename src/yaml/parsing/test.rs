@@ -136,7 +136,7 @@ fn test_parse_preprocessing_include_tag() {
     let result = parse_yaml_ast(yaml, test_uri()).unwrap();
 
     match result {
-        YamlAst::PreprocessingTag(PreprocessingTag::Include(include_tag), _) => {
+        YamlAst::PreprocessingTag(PreprocessingTag::VarLookup(include_tag), _) => {
             assert_eq!(include_tag.path, "path/to/file.yaml");
             assert_eq!(include_tag.query, None);
         }
@@ -317,7 +317,7 @@ template:
             // Check items field
             assert!(matches!(
                 map_tag.items.as_ref(),
-                YamlAst::PreprocessingTag(PreprocessingTag::Include(_), _)
+                YamlAst::PreprocessingTag(PreprocessingTag::VarLookup(_), _)
             ));
 
             // Check template is a mapping

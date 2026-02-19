@@ -149,7 +149,7 @@ pub trait TagResolver {
 
     fn resolve_include(
         &self,
-        tag: &IncludeTag,
+        tag: &VarLookupTag,
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value>;
@@ -510,7 +510,7 @@ impl Resolver {
             .find_map(|(idx, line)| {
                 let patterns = [
                     format!("!$ {}", variable_path),
-                    format!("!$include {}", variable_path),
+                    format!("!$include {}", variable_path), // deprecated alias
                     format!("path: {}", variable_path),
                 ];
                 for pattern in &patterns {
@@ -934,7 +934,7 @@ impl TagResolver for Resolver {
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
         match tag {
-            PreprocessingTag::Include(include_tag) => {
+            PreprocessingTag::VarLookup(include_tag) => {
                 self.resolve_include(include_tag, context, path_tracker)
             }
             PreprocessingTag::If(if_tag) => self.resolve_if(if_tag, context, path_tracker),
@@ -991,7 +991,7 @@ impl TagResolver for Resolver {
     /// Resolve an include tag  
     fn resolve_include(
         &self,
-        tag: &IncludeTag,
+        tag: &VarLookupTag,
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value> {
@@ -1065,9 +1065,8 @@ impl TagResolver for Resolver {
                     .find_map(|(idx, line)| {
                         let patterns = [
                             format!("!$ {}", base_path),
-                            format!("!$include {}", base_path),
-                            format!("!$include: {}", base_path),
-                            format!("!$include\\n  path: {}", base_path),
+                            format!("!$include {}", base_path),  // deprecated alias
+                            format!("!$include: {}", base_path), // deprecated alias
                             format!("path: {}", base_path),
                             base_path.clone(),
                         ];
@@ -1106,11 +1105,11 @@ impl TagResolver for Resolver {
                     .enumerate()
                     .find_map(|(idx, line)| {
                         let patterns = [
-                            format!("!$ {}", root_var),         // Standard pattern: !$ var
-                            format!("!$include {}", root_var),  // Explicit include tag
-                            format!("!$include: {}", root_var), // Include with colon
-                            format!("path: {}", root_var),      // Just the path part
-                            root_var.to_string(),               // Direct variable reference
+                            format!("!$ {}", root_var),
+                            format!("!$include {}", root_var),  // deprecated alias
+                            format!("!$include: {}", root_var), // deprecated alias
+                            format!("path: {}", root_var),
+                            root_var.to_string(),
                         ];
 
                         for pattern in &patterns {

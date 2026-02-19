@@ -7,7 +7,7 @@ use url::Url;
 
 use super::ast::{
     CloudFormationTag, ConcatMapTag, ConcatTag, EqTag, EscapeTag, FromPairsTag, GroupByTag, IfTag,
-    IncludeTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag, MergeMapTag, MergeTag,
+    VarLookupTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag, MergeMapTag, MergeTag,
     NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag, SplitTag, SrcMeta,
     ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
@@ -1034,13 +1034,12 @@ impl YamlParser {
                 }))
             }
             "!$" | "!$include" => {
-                // Include tag: !$ <path> or !$include <path>
                 // Can be either a string or an object with path and query fields
                 match content {
                     YamlAst::PlainString(s, _) | YamlAst::TemplatedString(s, _) => {
                         // Simple string form: !$ path or !$ path?query
                         // Don't parse query syntax - keep the whole string as the path
-                        Ok(PreprocessingTag::Include(IncludeTag {
+                        Ok(PreprocessingTag::VarLookup(VarLookupTag {
                             path: s,
                             query: None,
                             jmespath: None,
@@ -1060,7 +1059,7 @@ impl YamlParser {
                                         | YamlAst::TemplatedString(s, _) => Some(s),
                                         _ => {
                                             return Err(self.tag_error(
-                                                "!$include",
+                                                "!$",
                                                 "path must be a string",
                                                 Some("use string path"),
                                                 &meta,
@@ -1074,7 +1073,7 @@ impl YamlParser {
                                         | YamlAst::TemplatedString(s, _) => Some(s),
                                         _ => {
                                             return Err(self.tag_error(
-                                                "!$include",
+                                                "!$",
                                                 "query must be a string",
                                                 Some("use string query"),
                                                 &meta,
@@ -1088,7 +1087,7 @@ impl YamlParser {
                                         | YamlAst::TemplatedString(s, _) => Some(s),
                                         _ => {
                                             return Err(self.tag_error(
-                                                "!$include",
+                                                "!$",
                                                 "jmespath must be a string",
                                                 Some("use string JMESPath expression"),
                                                 &meta,
@@ -1102,7 +1101,7 @@ impl YamlParser {
 
                         if query.is_some() && jmespath.is_some() {
                             return Err(self.tag_error(
-                                "!$include",
+                                "!$",
                                 "'query' and 'jmespath' are mutually exclusive",
                                 Some("use one or the other, not both"),
                                 &meta,
@@ -1110,16 +1109,16 @@ impl YamlParser {
                         }
 
                         match path {
-                            Some(p) => Ok(PreprocessingTag::Include(IncludeTag {
+                            Some(p) => Ok(PreprocessingTag::VarLookup(VarLookupTag {
                                 path: p,
                                 query,
                                 jmespath,
                             })),
-                            None => Err(self.missing_field_error("!$include", "path", &meta)),
+                            None => Err(self.missing_field_error("!$", "path", &meta)),
                         }
                     }
                     _ => Err(self.tag_error(
-                        "!$include",
+                        "!$",
                         "invalid format - must be string variable name",
                         Some("use string variable name"),
                         &meta,

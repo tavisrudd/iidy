@@ -92,8 +92,7 @@ This differs from iidy-js, which resolves `$defs` in parallel.
 ### `!$` (variable lookup)
 
 Look up a value from the environment (imports + defs). Dot notation traverses
-nested objects. (`!$include` is a deprecated alias for `!$` -- avoid it as it
-misleadingly suggests file inclusion rather than variable lookup.)
+nested objects.
 
 ```yaml
 $defs:
