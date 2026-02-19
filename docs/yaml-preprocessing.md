@@ -757,6 +757,53 @@ iidy render my-template.yaml --format json
 iidy render stack-args.yaml
 ```
 
+### Error message examples
+
+An undefined variable in a Handlebars expression:
+
+```
+Variable error: 'app_name' not found @ stack-args.yaml:6:15 (errno: ERR_2001)
+  -> variable not defined in current scope
+
+   5 |
+   6 | stack_name: "{{app_name}}-{{environment}}"
+     |               ^^^^^^^^^^^ variable not defined
+
+   available variables: environment, region
+
+   For more info: iidy explain ERR_2001
+```
+
+A typo in a tag name:
+
+```
+Tag error: '!$mapp' is not a valid iidy tag @ template.yaml:5:9 (errno: ERR_4002)
+  -> check tag spelling or see documentation for valid tags
+
+   4 |
+   5 | result: !$mapp
+     |         ^^^^^^
+   6 |   items: !$ data
+   For more info, run: iidy explain ERR_4002
+```
+
+A missing required field, with a correction example:
+
+```
+Tag error: 'template' missing in !$map tag @ template.yaml:2:11 (errno: ERR_4002)
+  -> add 'template' field to !$map tag
+
+   1 | # !$map with missing template field error
+   2 | test_map: !$map
+   3 |   items: ["a", "b", "c"]
+
+   example:
+   !$map
+     items: [1, 2, 3]
+     template: "{{item}}"
+   For more info, run: iidy explain ERR_4002
+```
+
 ### Common errors
 
 **"Variable not found"**: The variable name in `!$` or `{{ }}` does not exist
