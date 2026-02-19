@@ -297,6 +297,8 @@ pub enum PreprocessingTag {
     ParseJson(ParseJsonTag),
     /// !$escape - Prevent preprocessing on child tree
     Escape(EscapeTag),
+    /// !$expand - Inline template expansion
+    Expand(ExpandTag),
 }
 
 /// Variable lookup tag (!$).
@@ -492,6 +494,13 @@ pub struct ParseJsonTag {
 pub struct EscapeTag {
     /// Child tree to escape from preprocessing
     pub content: Box<YamlAst>,
+}
+
+/// Expand tag for inline template expansion
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpandTag {
+    pub template: Box<YamlAst>,
+    pub params: Box<YamlAst>,
 }
 
 impl YamlAst {

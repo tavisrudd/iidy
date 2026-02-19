@@ -26,12 +26,14 @@ use serde_yaml::Value;
 use serde_yaml::value::{Tag, TaggedValue};
 use std::collections::HashMap;
 
+use crate::yaml::custom_resources::params::{merge_params, validate_params};
 use crate::yaml::errors::cloudformation_validation_error_with_path_tracker;
 use crate::yaml::errors::variable_not_found_error_with_path_tracker;
 use crate::yaml::errors::wrapper::lookup_query_error;
 use crate::yaml::errors::wrapper::type_mismatch_error_with_path_tracker;
 use crate::yaml::handlebars::interpolate_handlebars_string;
 use crate::yaml::jmespath::apply_jmespath_query;
+use crate::yaml::parsing;
 use crate::yaml::parsing::ast::*;
 use crate::yaml::path_tracker::PathTracker;
 use crate::yaml::resolution::context::TagContext;
@@ -274,6 +276,12 @@ pub trait TagResolver {
     fn resolve_escape(
         &self,
         tag: &EscapeTag,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value>;
+    fn resolve_expand(
+        &self,
+        tag: &ExpandTag,
         context: &TagContext,
         path_tracker: &mut PathTracker,
     ) -> Result<Value>;
@@ -984,6 +992,9 @@ impl TagResolver for Resolver {
             }
             PreprocessingTag::Escape(escape_tag) => {
                 self.resolve_escape(escape_tag, context, path_tracker)
+            }
+            PreprocessingTag::Expand(expand_tag) => {
+                self.resolve_expand(expand_tag, context, path_tracker)
             }
         }
     }
@@ -1872,6 +1883,52 @@ impl TagResolver for Resolver {
                 self.ast_to_value_without_preprocessing(&tag.content)
             }
         }
+    }
+
+    fn resolve_expand(
+        &self,
+        tag: &ExpandTag,
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        let template_name_value = self.resolve_ast(&tag.template, context, path_tracker)?;
+        let template_name = template_name_value
+            .as_str()
+            .ok_or_else(|| anyhow!("!$expand 'template' must resolve to a string"))?;
+
+        let template_info = context
+            .custom_template_defs
+            .get(template_name)
+            .ok_or_else(|| {
+                anyhow!(
+                    "!$expand: template '{}' not found in imports",
+                    template_name
+                )
+            })?
+            .clone();
+
+        let params_value = self.resolve_ast(&tag.params, context, path_tracker)?;
+        let params_mapping = params_value
+            .as_mapping()
+            .ok_or_else(|| anyhow!("!$expand 'params' must resolve to a mapping"))?;
+
+        let mut provided = HashMap::new();
+        for (k, v) in params_mapping {
+            let key = k
+                .as_str()
+                .ok_or_else(|| anyhow!("!$expand param keys must be strings"))?;
+            provided.insert(key.to_string(), v.clone());
+        }
+
+        let merged = merge_params(&template_info.params, &provided);
+        validate_params(&template_info.params, &merged, "!$expand")?;
+
+        let sub_context = context
+            .with_bindings(merged)
+            .with_input_uri(template_info.location.clone());
+
+        let ast = parsing::parse_yaml_from_file(&template_info.raw_body, &template_info.location)?;
+        resolve_ast(&ast, &sub_context)
     }
 
     /// Resolve a CloudFormation tag

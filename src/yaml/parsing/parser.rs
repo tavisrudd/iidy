@@ -6,10 +6,10 @@ use tree_sitter_yaml::LANGUAGE;
 use url::Url;
 
 use super::ast::{
-    CloudFormationTag, ConcatMapTag, ConcatTag, EqTag, EscapeTag, FromPairsTag, GroupByTag, IfTag,
-    VarLookupTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag, MergeMapTag, MergeTag,
-    NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag, SplitTag, SrcMeta,
-    ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
+    CloudFormationTag, ConcatMapTag, ConcatTag, EqTag, EscapeTag, ExpandTag, FromPairsTag,
+    GroupByTag, IfTag, VarLookupTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag,
+    MergeMapTag, MergeTag, NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag,
+    SplitTag, SrcMeta, ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
 use super::error::{ParseDiagnostics, ParseError, ParseResult, error_codes};
 use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
@@ -1283,6 +1283,23 @@ impl YamlParser {
             "!$let" => {
                 // Let tag: !$let {...bindings..., in: ...}
                 self.parse_let_tag(content, meta)
+            }
+            "!$expand" => {
+                self.validate_tag_fields(&content, "!$expand", &["template", "params"], &[], meta)?;
+                let fields =
+                    self.extract_fields_from_mapping(&content, &["template", "params"]);
+                let template = fields
+                    .get("template")
+                    .cloned()
+                    .ok_or_else(|| self.missing_field_error("!$expand", "template", meta))?;
+                let params = fields
+                    .get("params")
+                    .cloned()
+                    .ok_or_else(|| self.missing_field_error("!$expand", "params", meta))?;
+                Ok(PreprocessingTag::Expand(ExpandTag {
+                    template: Box::new(template),
+                    params: Box::new(params),
+                }))
             }
             _ => {
                 // Unknown preprocessing tag
