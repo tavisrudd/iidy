@@ -1,97 +1,226 @@
 # iidy -- CloudFormation with Confidence
 
-iidy ("Is it done yet?") deploys CloudFormation stacks with a YAML
-preprocessing layer that supports imports, variables, conditionals, and
-collection transforms. It wraps the CloudFormation API with readable progress
-output and changeset support.
+iidy ("Is it done yet?") is a command-line tool for deploying and managing
+CloudFormation stacks. It gives you fast, readable feedback on every operation,
+a clean workflow for parameterizing stacks across environments, changeset-based
+review before updates, and a multi-team template approval process. It also
+includes an optional YAML preprocessing language for reducing boilerplate in
+complex templates.
+
+[![asciicast](https://asciinema.org/a/8rzW1WyoDxMdVJpvpYf2mHm8E.png)](https://asciinema.org/a/8rzW1WyoDxMdVJpvpYf2mHm8E)
 
 ## Deploy a stack in 60 seconds
 
 ```yaml
 # stack-args.yaml
 StackName: my-app
-Template: render:./cfn-template.yaml
+Template: ./cfn-template.yaml
 Region: us-east-1
 Parameters:
   InstanceType: t3.micro
+  Environment: staging
 Tags:
   Team: platform
+  CostCenter: CC-1234
 ```
 
 ```
 iidy create-stack stack-args.yaml
 ```
 
-## What iidy adds over raw CloudFormation
+No special template syntax is required. Any valid CloudFormation YAML or JSON
+template works as-is. iidy submits it to CloudFormation and streams events in
+real time (color-coded in the terminal):
 
-- **YAML preprocessing**: import values from files, environment variables, SSM
-  Parameter Store, S3, and other CloudFormation stacks. Define variables,
-  conditionals, and collection transforms to generate repetitive template
-  sections.
-- **Stack lifecycle management**: `create-stack`, `update-stack`,
-  `create-or-update`, `delete-stack`, and changeset workflows with diffs and
-  confirmation prompts.
-- **Interactive progress display**: collapsible, color-coded event stream with
-  keyboard navigation. Plain and JSON output modes for CI.
-- **Environment-based configuration**: a single `stack-args.yaml` can target
-  multiple environments (dev, staging, production) via `--environment` flag and
-  environment maps.
+```
+Command Metadata:
+ CFN Operation:        create-stack
+ iidy Environment:     development
+ Region:               us-east-1
+ IAM Service Role:     None
+ Current IAM Principal: arn:aws:iam::123456789012:user/deployer
+ CLI Arguments:        region=us-east-1, argsfile=stack-args.yaml
+ iidy Version:         0.9.0
+ Client Req Token:     a1b2c3d4-e5f6-7890-abcd-ef1234567890 (auto-generated)
+
+Stack Details:
+ Name:                 my-app
+ Status:               CREATE_IN_PROGRESS
+ Capabilities:         None
+ Service Role:         None
+ Region:               us-east-1
+ Tags:                 Team=platform, CostCenter=CC-1234
+ Parameters:           InstanceType=t3.micro, Environment=staging
+ DisableRollback:      false
+ TerminationProtection: false
+ Creation Time:        Wed Jan 14 2026 11:14:15
+ NotificationARNs:     None
+ ARN:                  arn:aws:cloudformation:us-east-1:123456789012:stack/my-app/abcd1234
+ Console URL:          https://us-east-1.console.aws.amazon.com/cloudformation/home?...
+
+Live Stack Events (2s poll):
+ Wed Jan 14 2026 11:14:15 CREATE_IN_PROGRESS  AWS::S3::Bucket              AppBucket
+ Wed Jan 14 2026 11:14:22 CREATE_COMPLETE     AWS::S3::Bucket              AppBucket (7s)
+ Wed Jan 14 2026 11:14:24 CREATE_COMPLETE     AWS::CloudFormation::Stack   my-app (9s)
+
+Stack Resources:
+ AppBucket            AWS::S3::Bucket                my-app-demo-assets
+
+Stack Outputs:
+ BucketName           my-app-demo-assets
+ BucketArn            arn:aws:s3:::my-app-demo-assets
+
+SUCCESS: (9s)
+```
+
+The first thing you see is what was sent to the API -- parameters, tags,
+region, IAM principal -- so a human operator or AI coding agent can instantly
+verify the right values were used. Then events stream as resources are created.
+When something goes wrong, the error is right there in the event stream, not
+buried in the AWS console.
+
+## Why iidy
+
+### Readable, fast feedback
+
+The AWS CLI and most CloudFormation frontends give poor feedback during
+deployments. iidy shows a color-coded event stream with clear section
+structure, spinners for in-progress operations, and confirmation prompts.
+
+iidy is built for both humans at a terminal and CI pipelines. For interactive
+use it provides color themes, TTY detection, and confirmation prompts. For CI
+it supports `--output-mode plain` (no ANSI codes), `--output-mode json`
+(machine-parseable newline-delimited JSON), and `--yes` to skip confirmation
+prompts.
+
+### Simple stack configuration
+
+`stack-args.yaml` puts stack name, template path, parameters, tags, region,
+profile, and IAM role in one file. No wrapper scripts, no CloudFormation
+parameter files, no CLI flags to remember. The output from every command clearly
+shows what was sent to the API, so you can verify at a glance.
+
+A single stack-args file can target multiple environments:
+
+```yaml
+StackName: my-app-{{ environment }}
+Template: ./cfn-template.yaml
+
+Region:
+  development: us-east-1
+  staging: us-west-2
+  production: us-east-1
+
+Parameters:
+  InstanceType:
+    development: t3.micro
+    staging: t3.small
+    production: m5.large
+```
+
+```
+iidy -e staging create-stack stack-args.yaml
+iidy -e production create-stack stack-args.yaml
+```
+
+### Changeset workflow
+
+`update-stack` shows a template diff and prompts for confirmation before
+submitting. Pass `--changeset` and iidy creates a CloudFormation changeset,
+shows exactly what will be added, modified, or replaced, then asks y/n before
+executing:
+
+```
+iidy update-stack stack-args.yaml --changeset
+```
+
+This is the right workflow for production updates: see the full impact before
+committing.
+
+### Template approval
+
+For teams that need sign-off before deploying to production, iidy provides a
+built-in approval workflow backed by S3 versioning:
+
+```
+# Developer iterates in sandbox, then requests approval
+iidy template-approval request stack-args.yaml
+
+# Reviewer sees a colored diff and approves or rejects
+iidy template-approval review <approval-url>
+```
+
+Once a template is approved, subsequent deployments with parameter-only changes
+do not require re-approval. This lets dev teams iterate quickly in sandbox
+environments and get fast review from whoever gatekeeps production access,
+without re-approving unchanged infrastructure.
+
+### YAML preprocessing for growing complexity
+
+Many teams find iidy valuable without ever touching the preprocessor. But as
+infrastructure complexity grows, `stack-args.yaml` already supports importing
+values from external sources -- files, environment variables, SSM Parameter
+Store, S3, other CloudFormation stacks -- to keep parameters and tags
+consistent across stacks:
+
+```yaml
+$imports:
+  shared: ./shared-config.yaml
+  dbHost: ssm:/myapp/prod/database-host
+
+StackName: my-app
+Template: ./cfn-template.yaml
+Region: us-east-1
+Parameters:
+  DatabaseHost: !$ dbHost
+Tags:
+  Team: !$ shared.team
+  CostCenter: !$ shared.cost_center
+```
+
+For templates themselves, adding a `render:` prefix enables iidy's full
+preprocessing language -- variables, conditionals, and collection transforms
+that generate repetitive template sections. The language operates on YAML data
+structures, not strings: it is purely functional (side-effect-free once imports
+are loaded) data transformations layered on top of valid YAML. See
+[yaml-preprocessing.md](docs/yaml-preprocessing.md) for the full reference.
+
+Teams that become comfortable with the preprocessor also use `iidy render`
+outside of CloudFormation to generate Kubernetes manifests, CI configurations,
+and other YAML-based artifacts.
 
 ## Commands
 
 | Category | Command | Description |
 |----------|---------|-------------|
 | Deploy | `create-stack` | Create a new stack |
-| | `update-stack` | Update an existing stack |
-| | `create-or-update` | Create or update a stack |
-| | `delete-stack` | Delete a stack |
+| | `update-stack` | Update an existing stack (diff + confirm) |
+| | `create-or-update` | Create or update depending on stack state |
+| | `delete-stack` | Delete a stack (with confirmation) |
 | Changesets | `create-changeset` | Create a changeset for review |
-| | `exec-changeset` | Execute a changeset |
-| Monitor | `describe-stack` | Show stack status, outputs, events |
-| | `watch-stack` | Watch a stack operation in progress |
+| | `exec-changeset` | Execute a previously created changeset |
+| Monitor | `describe-stack` | Show stack status, parameters, outputs, events |
+| | `watch-stack` | Tail events on an in-progress operation |
 | | `describe-stack-drift` | Detect configuration drift |
-| Info | `list-stacks` | List stacks in a region |
-| | `get-stack-template` | Download a stack's template |
+| Info | `list-stacks` | List stacks (with tag filtering) |
+| | `get-stack-template` | Download a deployed stack's template |
 | | `get-import` | Resolve an import URI |
 | Preprocess | `render` | Preview preprocessed YAML output |
+| Approval | `template-approval request` | Submit a template for approval |
+| | `template-approval review` | Review and approve/reject a pending template |
 | Cost | `estimate-cost` | Estimate stack costs |
 | SSM | `param set/get/get-by-path` | Manage SSM parameters |
 | Utilities | `explain` | Explain error codes |
 | | `completion` | Generate shell completions |
 
-## Preprocessing Example
-
-```yaml
-$imports:
-  vpc: ./vpc-outputs.yaml
-  branch: git:branch
-
-$defs:
-  env: production
-  app: my-service
-
-Resources: !$mergeMap
-  items:
-    - {name: api, port: 3000}
-    - {name: web, port: 80}
-  template:
-    !$join ["",[!$ app, "-", !$ item.name, "-sg"]]:
-      Type: AWS::EC2::SecurityGroup
-      Properties:
-        GroupDescription: !$join [" ", [!$ item.name, "on port", !$ item.port]]
-        VpcId: !$ vpc.VpcId
-```
-
-Use `iidy render template.yaml` to see the resolved output.
-
 ## Documentation
 
 - **[Getting Started](docs/getting-started.md)** -- installation, first
   deployment, stack-args.yaml reference
-- **[YAML Preprocessing](docs/yaml-preprocessing.md)** -- tags, imports,
-  Handlebars helpers, debugging
 - **[Command Reference](docs/command-reference.md)** -- all commands, options,
   and exit codes
+- **[YAML Preprocessing](docs/yaml-preprocessing.md)** -- the preprocessing
+  language for imports, variables, conditionals, and collection transforms
 - **[Import Types](docs/import-types.md)** -- file, env, git, s3, ssm, cfn,
   and other import sources
 - **[Security](docs/SECURITY.md)** -- import system security model for remote

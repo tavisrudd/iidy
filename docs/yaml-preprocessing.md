@@ -1,14 +1,23 @@
 # YAML Preprocessing
 
-iidy preprocesses YAML documents before passing them to CloudFormation.
-`$imports` loads external data. `$defs` defines local variables. Preprocessing
-tags like `!$map` and `!$if` transform the data. Handlebars `{{ }}` expressions
-interpolate values into strings.
+iidy's preprocessing language reduces boilerplate in CloudFormation templates
+and stack configuration files. It operates on YAML data structures, not strings:
+every transformation takes valid YAML as input and produces valid YAML as
+output. The language is purely functional -- once imports are loaded, all
+operations are side-effect-free data transformations.
+
+`$imports` loads external data. `$defs` defines local variables. Tags like
+`!$if` and `!$map` transform the data. `{{ }}` expressions interpolate values
+into strings.
 
 Use `iidy render <file>` to see the preprocessed output without deploying.
 
 For import type details, see [import-types.md](import-types.md).
 For import security restrictions, see [SECURITY.md](SECURITY.md).
+
+Teams that become comfortable with the preprocessor also use `iidy render`
+outside of CloudFormation to generate Kubernetes manifests, CI configurations,
+and other YAML-based artifacts.
 
 ---
 
@@ -19,14 +28,13 @@ A preprocessed document has an optional header and a body:
 ```yaml
 $imports:
   vpc: ./vpc-outputs.yaml
-  config: env:APP_CONFIG
 
 $defs:
   region: us-east-1
-  prefix: !$join ["-", [myapp, !$ region]]
+  app: myapp
 
 # Everything below $imports/$defs is the body
-StackName: !$ prefix
+StackName: "{{ app }}-{{ region }}"
 Template: template.yaml
 Region: !$ region
 Parameters:

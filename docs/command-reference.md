@@ -29,6 +29,24 @@ These options apply to every command and may be placed before or after the subco
 | 1 | Error |
 | 130 | Cancelled (user responded No to a prompt, or Ctrl-C received) |
 
+## Idempotency Tokens
+
+CloudFormation mutations (create, update, delete, changeset) accept an optional client request
+token for idempotency. iidy always provides one, auto-generating a UUID for each operation so you
+never need to think about it. If a network timeout or transient failure causes a retry,
+CloudFormation recognizes the duplicate token and returns the result of the original operation
+rather than applying the change twice.
+
+For multi-step operations (e.g., `create-or-update` with `--changeset` creates a changeset then
+executes it), iidy derives deterministic sub-tokens from the primary token using SHA256 hashing.
+The same primary token always produces the same derived tokens, so retrying the entire operation
+is safe -- each step gets the same idempotency token it had on the first attempt.
+
+The token and any derived tokens are displayed in the Command Metadata section of every operation's
+output for traceability. You can supply your own semantically meaningful token via
+`--client-request-token` -- for example, a release tag or CI build ID -- which then also serves
+as the base for any derived sub-tokens.
+
 ---
 
 ### Stack Lifecycle
@@ -373,14 +391,59 @@ iidy -e prod estimate-cost stack-args.yaml --stack-name my-app-prod
 
 ### Template Approval
 
-The template approval workflow provides a lightweight sign-off mechanism before deploying changes.
-A requester generates an approval URL; a reviewer inspects the diff at that URL and approves or
-rejects it before the deployment proceeds.
+The template approval workflow gates production deployments on explicit review. It is designed
+for organizations where one team (e.g., application developers) authors CloudFormation templates
+and another team (e.g., ops, SRE, or security) must approve changes before they reach production.
+
+#### How it works
+
+1. The stack-args.yaml includes an `ApprovedTemplateLocation` field pointing to an S3 prefix
+   (e.g., `s3://my-org-approvals/templates/my-app/`).
+2. A developer runs `template-approval request`. iidy preprocesses the template through the
+   full pipeline (imports, variables, tags, handlebars), computes a SHA256 hash of the processed
+   output, and uploads it to `{prefix}/{hash}.pending` in S3.
+3. A reviewer runs `template-approval review <s3-url>`. iidy fetches the pending template and
+   the most recently approved version, shows a colored diff, and prompts for approval.
+4. On approval, iidy copies the pending template to the approved key (removing `.pending`) and
+   updates a `latest` reference.
+5. At deploy time, iidy re-processes the template, re-hashes it, and checks whether a matching
+   approved object exists. If it does, the deployment proceeds. If not, it fails.
+
+Because the hash is computed on the fully-processed template, any change to the source -- including
+changes to imported files or resolved variables -- produces a different hash and requires a new
+approval. Conversely, once a template is approved, parameter-only changes to stack-args.yaml do
+not require re-approval because the template itself has not changed.
+
+#### Security model
+
+The enforcement mechanism is IAM, not application logic. In protected environments (production
+accounts/regions), the CloudFormation service role's IAM policy restricts `cloudformation:CreateStack`,
+`cloudformation:UpdateStack`, `cloudformation:DeleteStack`, `cloudformation:CreateChangeSet`,
+and other mutation operations to templates sourced from the approved S3 location. A template
+that has not been approved and copied to that location simply cannot be deployed -- CloudFormation
+will reject the API call regardless of what tooling is used.
+
+The actual security gate is the IAM policy on the deploy role. Once those roles and permissions
+are in place, iidy's `template-approval` commands make the workflow around them seamless:
+developers submit with one command, reviewers see a clear diff and approve with one command,
+and deploys just work if the template is approved.
+
+The S3 bucket permissions complete the picture:
+
+- **Developers** need `s3:PutObject` on `.pending` keys to submit requests, but should NOT
+  have `s3:PutObject` on the approved (non-pending) keys. This prevents self-approval.
+- **Reviewers** need `s3:GetObject` to read pending and approved templates, and `s3:PutObject`
+  plus `s3:DeleteObject` to approve (copy to approved key, delete pending).
+- **CloudFormation service role** in production needs `s3:GetObject` on the approved keys only.
+
+For cross-account deployments, the `bucket-owner-full-control` ACL is set on uploads so the
+bucket owner retains control regardless of which account uploads.
 
 ## template-approval request
 
-Submits a template approval request and prints the review URL. Optionally lints the template
-before submission.
+Submits a template approval request. iidy preprocesses the template, computes its hash, and
+uploads it to the pending location in S3. If the template is already approved (same hash), the
+command reports this and exits without uploading.
 
 ```
 iidy template-approval request <argsfile> [options] [global options]
@@ -413,8 +476,8 @@ iidy template-approval review <url> [options] [global options]
 | `--context <N>` | 100 | Lines of diff context to display |
 
 ```
-iidy template-approval review https://approval.example.com/requests/abc123
-iidy template-approval review https://approval.example.com/requests/abc123 --context 50
+iidy template-approval review s3://my-org-approvals/templates/my-app/a1b2c3d4.yaml.pending
+iidy template-approval review s3://my-org-approvals/templates/my-app/a1b2c3d4.yaml.pending --context 50
 ```
 
 ---
