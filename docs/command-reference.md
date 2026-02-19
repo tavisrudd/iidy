@@ -1,0 +1,600 @@
+# Command Reference
+
+iidy ("Is it done yet?") is a CloudFormation deployment tool. It wraps the AWS CloudFormation API with
+a preprocessing pipeline for YAML templates, a structured watch loop for stack events, and change
+visibility tooling (diffs, changesets, drift detection).
+
+## Global Options
+
+These options apply to every command and may be placed before or after the subcommand name.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-e, --environment <ENV>` | `development` | Load environment-based settings (AWS profile, region) from stack-args.yaml |
+| `--region <REGION>` | | AWS region override. Overrides stack-args.yaml and environment config |
+| `--profile <PROFILE>` | | AWS profile override. Use `--profile=no-profile` to ignore stack-args.yaml and rely on `AWS_*` env vars |
+| `--assume-role-arn <ARN>` | | AWS role to assume before executing the operation. Use `--assume-role-arn=no-role` to ignore stack-args.yaml |
+| `--client-request-token <TOKEN>` | auto-generated UUID | Idempotency token for CloudFormation operations. Auto-generated if omitted |
+| `--output-mode <MODE>` | `interactive` in terminals | Output mode: `interactive`, `plain`, or `json` |
+| `--color <WHEN>` | `auto` | ANSI color output: `auto`, `always`, or `never` |
+| `--theme <THEME>` | `auto` | Color theme: `auto`, `light`, `dark`, or `high-contrast` |
+| `--debug` | false | Log debug information to stderr |
+| `--log-full-error` | false | Log full error information to stderr |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | Error |
+| 130 | Cancelled (user responded No to a prompt, or Ctrl-C received) |
+
+---
+
+### Stack Lifecycle
+
+## create-stack
+
+Creates a new CloudFormation stack from a stack-args.yaml file. The argsfile specifies the stack
+name, template path, parameters, tags, and other configuration. iidy preprocesses the template
+before submission. The command watches stack events until the operation completes or fails.
+
+```
+iidy create-stack <argsfile> [--stack-name <NAME>] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<argsfile>` | Path to stack-args.yaml (required) |
+| `--stack-name <NAME>` | Override the stack name defined in the argsfile |
+
+```
+iidy -e staging create-stack stack-args.yaml
+iidy create-stack stack-args.yaml --stack-name my-app-v2
+```
+
+## update-stack
+
+Updates an existing CloudFormation stack. Before submitting the update, iidy shows a diff of
+template and parameter changes and prompts for confirmation unless `--yes` is given. Pass
+`--changeset` to route the update through a changeset for manual review before execution.
+
+```
+iidy update-stack <argsfile> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<argsfile>` | | Path to stack-args.yaml (required) |
+| `--stack-name <NAME>` | | Override the stack name from argsfile |
+| `--lint-template <BOOL>` | | Enable or disable template linting before update |
+| `--changeset` | false | Create a changeset instead of updating directly; requires manual execution |
+| `--yes` | false | Skip the confirmation prompt |
+| `--diff` | true | Show a template diff before updating |
+| `--stack-policy-during-update <FILE>` | | Stack policy to apply during this update only |
+
+```
+iidy update-stack stack-args.yaml --yes
+iidy -e prod update-stack stack-args.yaml --changeset
+iidy update-stack stack-args.yaml --stack-policy-during-update policy.json
+```
+
+## create-or-update
+
+Creates the stack if it does not exist, or updates it if it does. This is the primary command for
+continuous deployment pipelines where the stack's existence state is unknown or variable. Accepts
+the same options as `update-stack`.
+
+```
+iidy create-or-update <argsfile> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<argsfile>` | | Path to stack-args.yaml (required) |
+| `--stack-name <NAME>` | | Override the stack name from argsfile |
+| `--lint-template <BOOL>` | | Enable or disable template linting |
+| `--changeset` | false | Use a changeset for the update path |
+| `--yes` | false | Skip the confirmation prompt |
+| `--diff` | true | Show a template diff before updating |
+| `--stack-policy-during-update <FILE>` | | Stack policy to apply during update only |
+
+```
+iidy -e prod create-or-update stack-args.yaml --yes
+```
+
+## delete-stack
+
+Deletes a CloudFormation stack after interactive confirmation. Unlike the lifecycle commands above,
+this command takes a stack name directly rather than a stack-args.yaml path. Use `--fail-if-absent`
+in scripts that require the stack to exist before deletion.
+
+```
+iidy delete-stack <stackname> [options] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<stackname>` | Name or ID of the stack to delete (required) |
+| `--role-arn <ARN>` | IAM role ARN for CloudFormation to assume during deletion |
+| `--retain-resources <RESOURCE>...` | Logical resource IDs to retain after deletion |
+| `--yes` | Skip the confirmation prompt |
+| `--fail-if-absent` | Exit with an error if the stack does not exist |
+
+```
+iidy delete-stack my-app-staging
+iidy delete-stack my-app-staging --yes --retain-resources MyS3Bucket
+```
+
+---
+
+### Changesets
+
+## create-changeset
+
+Creates a CloudFormation changeset without executing it. Use this to inspect what changes will be
+made before committing to an update. Optionally pass `--watch` to tail changeset creation events
+rather than returning immediately.
+
+```
+iidy create-changeset <argsfile> [changeset-name] [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<argsfile>` | | Path to stack-args.yaml (required) |
+| `[changeset-name]` | | Name for the changeset; auto-generated if omitted |
+| `--stack-name <NAME>` | | Override the stack name from argsfile |
+| `--watch` | false | Watch changeset creation events |
+| `--watch-inactivity-timeout <SECS>` | 180 | Seconds of inactivity before the watch loop exits |
+| `--description <DESC>` | | Human-readable description for the changeset |
+
+```
+iidy create-changeset stack-args.yaml my-changeset-v3 --watch
+iidy -e prod create-changeset stack-args.yaml --description "Add Lambda function"
+```
+
+## exec-changeset
+
+Executes a previously created changeset, applying the proposed changes to the stack. The changeset
+must already exist and be in a reviewable state. After execution, iidy watches stack events until
+the operation completes.
+
+```
+iidy exec-changeset <argsfile> <changeset-name> [options] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<argsfile>` | Path to stack-args.yaml (required) |
+| `<changeset-name>` | Name of the changeset to execute (required) |
+| `--stack-name <NAME>` | Override the stack name from argsfile |
+
+```
+iidy exec-changeset stack-args.yaml my-changeset-v3
+iidy -e prod exec-changeset stack-args.yaml my-changeset-v3 --stack-name my-app-prod
+```
+
+---
+
+### Monitoring
+
+## describe-stack
+
+Shows the current state of a stack including its status, parameters, outputs, and recent events.
+Pass `--query` with a JMESPath expression to extract specific fields from the output for scripting.
+
+```
+iidy describe-stack <stackname> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<stackname>` | | Name or ID of the stack (required) |
+| `--events <N>` | 50 | Number of recent stack events to display |
+| `--query <JMESPATH>` | | JMESPath expression to filter output |
+
+```
+iidy describe-stack my-app-prod
+iidy describe-stack my-app-prod --events 10
+iidy describe-stack my-app-prod --query "Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]"
+```
+
+## watch-stack
+
+Attaches to a stack that is already being created or updated and tails its events in real time.
+Use this when a deployment was started independently (e.g., by a CI system) and you want to
+observe progress. The command exits when the operation finishes or when no new events arrive
+within the inactivity timeout.
+
+```
+iidy watch-stack <stackname> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<stackname>` | | Name or ID of the stack (required) |
+| `--inactivity-timeout <SECS>` | 180 | Seconds without new events before exiting |
+
+```
+iidy watch-stack my-app-prod
+iidy watch-stack my-app-prod --inactivity-timeout 300
+```
+
+## describe-stack-drift
+
+Initiates a drift detection operation and displays which stack resources have drifted from their
+expected configuration. CloudFormation drift detection can take a minute or more for large stacks;
+iidy polls until results are available. Recently cached results may be reused depending on the
+`--drift-cache` setting.
+
+```
+iidy describe-stack-drift <stackname> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<stackname>` | | Name or ID of the stack (required) |
+| `--drift-cache <SECS>` | 300 | Reuse a cached drift result if it is younger than this many seconds |
+
+```
+iidy describe-stack-drift my-app-prod
+iidy describe-stack-drift my-app-prod --drift-cache 0
+```
+
+---
+
+### Information
+
+## list-stacks
+
+Lists all stacks in the current region. Supports filtering by tag, JMESPath expression, or custom
+column selection. Useful for auditing environments or finding stacks that match a particular
+ownership or application tag.
+
+```
+iidy list-stacks [options] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--tag-filter <KEY=VALUE>...` | Filter stacks by tag key-value pair; may be repeated |
+| `--jmespath-filter <EXPR>` | Filter the raw stack list with a JMESPath expression |
+| `--query <JMESPATH>` | Apply a JMESPath expression to the output data |
+| `--tags` | Include tag columns in the output |
+| `--columns <COLS>` | Comma-separated list of columns to display |
+
+```
+iidy list-stacks
+iidy -e prod list-stacks --tag-filter Team=platform --tag-filter Env=prod
+iidy list-stacks --tags --columns Name,Status,Team
+```
+
+## get-stack-template
+
+Downloads the template of a live CloudFormation stack and prints it to stdout. The `--stage`
+option controls whether to retrieve the original template as submitted or the processed version
+after CloudFormation macro transformations.
+
+```
+iidy get-stack-template <stackname> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<stackname>` | | Name or ID of the stack (required) |
+| `--format <FMT>` | `original` | Output format: `json`, `yaml`, or `original` |
+| `--stage <STAGE>` | `original` | Template stage: `original` (as submitted) or `processed` (after transforms) |
+
+```
+iidy get-stack-template my-app-prod
+iidy get-stack-template my-app-prod --format yaml > template.yaml
+iidy get-stack-template my-app-prod --stage processed --format json
+```
+
+## get-import
+
+Retrieves and prints an import value directly, without going through a full template render. This
+is useful for inspecting what a particular import URI resolves to. See
+[import-types.md](import-types.md) for the full list of supported import URI schemes.
+
+```
+iidy get-import <import-uri> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<import-uri>` | | Import URI to resolve (required) |
+| `--format <FMT>` | `yaml` | Output format: `yaml` or `json` |
+| `--query <JMESPATH>` | | JMESPath expression to filter the resolved value |
+
+```
+iidy get-import ssm:/myapp/prod/db-password
+iidy get-import ./shared-outputs.yaml --query VpcId
+iidy get-import env:DATABASE_URL --format json
+```
+
+---
+
+### Template Preprocessing
+
+## render
+
+Preprocesses a YAML template (or stack-args file) through iidy's tag and import engine, then
+prints the result. Read from stdin by passing `-` as the template path. This command is the
+primary way to inspect what a template looks like after iidy's preprocessing without deploying
+it. See [yaml-preprocessing.md](yaml-preprocessing.md) for full preprocessing documentation.
+
+```
+iidy render <template> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<template>` | | Template file path, or `-` to read from stdin (required) |
+| `--outfile <PATH>` | stdout | Write output to this file instead of stdout |
+| `--format <FMT>` | `yaml` | Output format: `yaml`, `json`, or `yaml-cloudformation` |
+| `--query <JMESPATH>` | | JMESPath expression to filter the rendered output |
+| `--overwrite` | false | Allow overwriting an existing outfile |
+| `--yaml-spec <VER>` | `auto` | YAML input parsing mode: `auto`, `1.1`, or `1.2`. `auto` detects `%YAML` directives and CloudFormation patterns. `1.1` converts `yes`/`no`/`on`/`off` to booleans; `1.2` treats them as strings |
+
+```
+iidy render template.yaml
+iidy render template.yaml --format json > template.json
+iidy render - < template.yaml --query 'Resources | keys(@)'
+iidy render template.yaml --outfile rendered.yaml --overwrite
+```
+
+---
+
+### Cost Estimation
+
+## estimate-cost
+
+Submits the stack configuration to the AWS CloudFormation cost estimation API and returns a link
+to the AWS Simple Monthly Calculator with pre-populated values. Costs are estimates only and do
+not account for data transfer or usage patterns.
+
+```
+iidy estimate-cost <argsfile> [options] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<argsfile>` | Path to stack-args.yaml (required) |
+| `--stack-name <NAME>` | Override the stack name from argsfile |
+
+```
+iidy estimate-cost stack-args.yaml
+iidy -e prod estimate-cost stack-args.yaml --stack-name my-app-prod
+```
+
+---
+
+### Template Approval
+
+The template approval workflow provides a lightweight sign-off mechanism before deploying changes.
+A requester generates an approval URL; a reviewer inspects the diff at that URL and approves or
+rejects it before the deployment proceeds.
+
+## template-approval request
+
+Submits a template approval request and prints the review URL. Optionally lints the template
+before submission.
+
+```
+iidy template-approval request <argsfile> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<argsfile>` | | Path to stack-args.yaml (required) |
+| `--lint-template` | true | Lint the template before requesting approval |
+| `--lint-using-parameters` | false | Pass actual parameter values to the linter |
+
+```
+iidy template-approval request stack-args.yaml
+iidy -e prod template-approval request stack-args.yaml --lint-using-parameters
+```
+
+## template-approval review
+
+Opens a pending template approval request and displays the diff for review. The reviewer accepts
+or rejects the request interactively. The `--context` option controls how many lines of diff
+context are shown.
+
+```
+iidy template-approval review <url> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<url>` | | Approval request URL (required) |
+| `--context <N>` | 100 | Lines of diff context to display |
+
+```
+iidy template-approval review https://approval.example.com/requests/abc123
+iidy template-approval review https://approval.example.com/requests/abc123 --context 50
+```
+
+---
+
+### SSM Parameter Store
+
+## param set
+
+Creates or updates an AWS SSM Parameter Store parameter. By default the value is stored as a
+`SecureString` (KMS-encrypted). Use `--with-approval` to route the change through an approval
+workflow before it takes effect.
+
+```
+iidy param set <path> <value> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<path>` | | SSM parameter path (required) |
+| `<value>` | | Parameter value (required) |
+| `--type <TYPE>` | `SecureString` | SSM parameter type: `String`, `StringList`, or `SecureString` |
+| `--overwrite` | false | Overwrite an existing parameter |
+| `--message <MSG>` | | Change description for audit purposes |
+| `--with-approval` | false | Route the change through an approval workflow |
+
+```
+iidy param set /myapp/prod/db-password "s3cr3t" --overwrite
+iidy param set /myapp/prod/feature-flag "true" --type String
+iidy param set /myapp/prod/api-key "key" --with-approval --message "Rotate API key"
+```
+
+## param get
+
+Retrieves a single SSM parameter value. SecureString parameters are decrypted by default.
+
+```
+iidy param get <path> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<path>` | | SSM parameter path (required) |
+| `--decrypt` | true | Decrypt SecureString parameters |
+| `--format <FMT>` | `simple` | Output format |
+
+```
+iidy param get /myapp/prod/db-password
+iidy param get /myapp/prod/db-password --decrypt=false
+```
+
+## param get-by-path
+
+Retrieves all SSM parameters under a path prefix. Use `--recursive` to include parameters in
+nested sub-paths.
+
+```
+iidy param get-by-path <path> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<path>` | | SSM parameter path prefix (required) |
+| `--decrypt` | true | Decrypt SecureString parameters |
+| `--format <FMT>` | `simple` | Output format |
+| `--recursive` | false | Include parameters in nested sub-paths |
+
+```
+iidy param get-by-path /myapp/prod
+iidy param get-by-path /myapp --recursive
+```
+
+## param get-history
+
+Retrieves the version history of an SSM parameter, showing past values and metadata.
+
+```
+iidy param get-history <path> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<path>` | | SSM parameter path (required) |
+| `--decrypt` | true | Decrypt SecureString parameter history |
+| `--format <FMT>` | `simple` | Output format |
+
+```
+iidy param get-history /myapp/prod/db-password
+```
+
+## param review
+
+Reviews a pending SSM parameter change that was submitted with `--with-approval`.
+
+```
+iidy param review <path> [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<path>` | SSM parameter path with a pending change (required) |
+
+```
+iidy param review /myapp/prod/api-key
+```
+
+---
+
+### Utilities
+
+## explain
+
+Prints a human-readable explanation of one or more iidy or CloudFormation error codes.
+
+```
+iidy explain <codes>... [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `<codes>...` | One or more error codes to explain (e.g., `ERR_2001`) |
+
+```
+iidy explain ERR_2001
+iidy explain ERR_2001 ERR_2002
+```
+
+## completion
+
+Generates a shell completion script for the specified shell and prints it to stdout. Source or
+install the output according to your shell's conventions.
+
+```
+iidy completion [shell] [global options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `[shell]` | Shell to generate completions for: `bash`, `zsh`, `fish`, or `powershell`. Detects current shell if omitted |
+
+```
+iidy completion zsh > ~/.zsh/completions/_iidy
+iidy completion bash >> ~/.bashrc
+```
+
+---
+
+### Not Yet Implemented
+
+The following commands are defined in the CLI but are not yet functional. They are listed here
+for completeness.
+
+## lint-template
+
+Lints a CloudFormation template for errors and best-practice violations.
+
+```
+iidy lint-template <argsfile>
+```
+
+## convert-stack-to-iidy
+
+Generates a stack-args.yaml and template file from an existing CloudFormation stack, creating
+an iidy project directory for a stack that was not originally deployed with iidy.
+
+```
+iidy convert-stack-to-iidy <stackname> <output-dir>
+```
+
+## init-stack-args
+
+Initializes a new `stack-args.yaml` and `cfn-template.yaml` in the current directory.
+
+```
+iidy init-stack-args
+```
+
+---
+
+## Related Documentation
+
+- [getting-started.md](getting-started.md) -- stack-args.yaml format and project structure
+- [yaml-preprocessing.md](yaml-preprocessing.md) -- full reference for iidy's YAML preprocessing tags and import system
+- [import-types.md](import-types.md) -- supported import URI schemes for `get-import` and `$imports`

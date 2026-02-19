@@ -1,15 +1,20 @@
-# YAML Preprocessing Reference
+# YAML Preprocessing
 
-iidy's YAML preprocessing engine transforms YAML documents through a set
-of custom tags and an import system. It is used for both stack-args files
-and CloudFormation templates.
+iidy preprocesses YAML documents before passing them to CloudFormation.
+`$imports` loads external data. `$defs` defines local variables. Preprocessing
+tags like `!$map` and `!$if` transform the data. Handlebars `{{ }}` expressions
+interpolate values into strings.
 
-For the engine architecture, see [dev/architecture.md](dev/architecture.md).
+Use `iidy render <file>` to see the preprocessed output without deploying.
+
+For import type details, see [import-types.md](import-types.md).
 For import security restrictions, see [SECURITY.md](SECURITY.md).
+
+---
 
 ## Document structure
 
-A preprocessed YAML document has an optional header and a body:
+A preprocessed document has an optional header and a body:
 
 ```yaml
 $imports:
@@ -28,200 +33,558 @@ Parameters:
   VpcId: !$ vpc.VpcId
 ```
 
+The header keys (`$imports`, `$defs`) are consumed during preprocessing and do
+not appear in the output. The body is the output, with all tags and expressions
+resolved.
+
+---
+
+## Tier 1: The Basics
+
+These features cover 80% of real-world usage.
+
 ### `$imports`
 
 Key-value pairs where the key becomes a variable name and the value is an
-import location string. Import paths support Handlebars interpolation:
-`config-{{ environment }}.yaml`. Imports are loaded and recursively
-preprocessed before the body is resolved.
+import location string. Imports are loaded and recursively preprocessed before
+the body is resolved.
+
+```yaml
+$imports:
+  vpc: ./vpc-outputs.yaml
+  dbHost: ssm:/app/config/database-host
+  home: env:HOME
+  branch: git:branch
+```
+
+Import paths support Handlebars interpolation:
+
+```yaml
+$imports:
+  config: ./config-{{ environment }}.yaml
+```
+
+See [import-types.md](import-types.md) for all supported import sources.
 
 ### `$defs`
 
-Local variable definitions with let* semantics -- each definition can
-reference prior definitions. Values are resolved in order.
-
-### `$envValues`
-
-Runtime values injected by `load_stack_args()` (not user-defined). Provides
-legacy bare values (`region`, `environment`) and namespaced values
-(`iidy.command`, `iidy.environment`, `iidy.region`, `iidy.profile`)
-accessible in Handlebars expressions.
-
-## Variable lookup
-
-### `!$` / `!$include`
-
-Look up a value from the environment (imports + defs).
+Local variable definitions. Each definition can reference prior definitions
+(let* semantics -- they resolve in order, top to bottom).
 
 ```yaml
-name: !$ config.appName
-nested: !$ vpc.Outputs.SubnetId
-full_object: !$include config
+$defs:
+  a: 1234
+  b: !$ a           # b = 1234
+  name: myapp
+  prefix: !$join ["-", [!$ name, !$ a]]  # prefix = "myapp-1234"
 ```
 
-Dot notation traverses nested objects. `!$` and `!$include` are
-interchangeable.
+This differs from iidy-js, which resolves `$defs` in parallel.
 
-## Control flow
+### `!$` (variable lookup)
 
-### `!$if`
-
-Conditional expression. Evaluates `test`, returns `then` if truthy,
-`else` otherwise.
+Look up a value from the environment (imports + defs). Dot notation traverses
+nested objects.
 
 ```yaml
-mode: !$if
+$defs:
+  config:
+    database:
+      host: db.example.com
+      port: 5432
+
+db_host: !$ config.database.host
+db_port: !$ config.database.port
+```
+
+`!$include` is an alias for `!$` -- they are interchangeable:
+
+```yaml
+db_host: !$include config.database.host
+```
+
+#### Query selector
+
+Select specific keys from a mapping using `?` syntax:
+
+```yaml
+# Select only host and port from the database config
+db_subset: !$ config.database?host,port
+```
+
+This returns a mapping containing only the requested keys.
+
+#### Object form
+
+For complex lookups, use the object form with explicit `path` and `query`:
+
+```yaml
+db_subset: !$
+  path: config.database
+  query: "host,port"
+```
+
+#### Bracket notation
+
+Use `[varname]` to do dynamic key lookup:
+
+```yaml
+$defs:
+  environment: production
+  config:
+    production: prod-value
+    staging: staging-value
+
+value: !$ config[environment]   # resolves to "prod-value"
+```
+
+### Handlebars templates
+
+Scalar string values containing `{{ }}` expressions are processed through
+Handlebars. The environment (imports + defs) is available as context.
+
+```yaml
+$defs:
+  app: myapp
+  environment: production
+
+name: "{{ app }}-{{ environment }}"
+url: "https://{{ app }}.{{ environment }}.example.com"
+```
+
+Handlebars interpolation also works inside import paths, `!$join` arguments,
+and other string values.
+
+To produce literal `{{` in output, escape with a backslash: `\{{ not a template }}`.
+
+See [Handlebars helpers reference](#handlebars-helpers-reference) for available
+helpers.
+
+### `!$if` / `!$eq` / `!$not`
+
+Conditional logic. `!$if` evaluates `test`, returns `then` if truthy, `else`
+otherwise.
+
+```yaml
+$defs:
+  environment: production
+
+log_level: !$if
   test: !$eq [!$ environment, production]
-  then: multi-az
-  else: single-az
+  then: WARN
+  else: DEBUG
 ```
+
+`!$eq` tests equality of two values and returns a boolean:
+
+```yaml
+is_prod: !$eq [!$ environment, production]
+```
+
+`!$not` negates a boolean value:
+
+```yaml
+is_not_prod: !$not
+  - !$eq [!$ environment, production]
+```
+
+Nested conditionals work for complex logic:
+
+```yaml
+instance_type: !$if
+  test: !$eq [!$ environment, production]
+  then: m5.large
+  else: !$if
+    test: !$eq [!$ environment, staging]
+    then: m5.small
+    else: t3.micro
+```
+
+There are no `!$and` or `!$or` tags. Use nested `!$if` for compound conditions.
 
 ### `!$let`
 
-Introduces local variable bindings for an expression. Uses a flat format
-where all keys except `in` are treated as bindings, and `in` holds the
-expression to evaluate.
+Introduces local variable bindings for an expression. All keys except `in` are
+treated as bindings; `in` holds the expression to evaluate with those bindings
+in scope.
 
 ```yaml
-result: !$let
-  x: 10
-  y: 20
-  in: !$join ["-", [!$ x, !$ y]]
+endpoint: !$let
+  protocol: https
+  host: api.example.com
+  port: 443
+  in: !$join ["", [!$ protocol, "://", !$ host, ":", !$ port]]
+# Result: "https://api.example.com:443"
 ```
 
-## Collection transforms
+Bindings can reference variables from the outer scope:
+
+```yaml
+$defs:
+  environment: production
+
+config: !$let
+  env: !$ environment
+  maxConnections: !$if
+    test: !$eq [!$ environment, production]
+    then: 100
+    else: 50
+  in:
+    Host: !$join ["-", [!$ env, db, cluster]]
+    MaxConnections: !$ maxConnections
+```
+
+### `render:` prefix
+
+When iidy loads `stack-args.yaml`, it always preprocesses that file. But the
+CloudFormation template referenced by the `Template` field is only preprocessed
+if you add the `render:` prefix:
+
+```yaml
+# stack-args.yaml
+Template: render:./cfn-template.yaml    # preprocessed before deploy
+# Template: ./cfn-template.yaml         # sent to CloudFormation as-is
+```
+
+Use `render:` when your template uses iidy tags (`!$map`, `$imports`, etc.).
+Omit it for plain CloudFormation templates or templates already processed
+by another tool.
+
+### `iidy render`
+
+Preview preprocessed output without deploying:
+
+```
+iidy render stack-args.yaml
+iidy render cfn-template.yaml
+iidy render cfn-template.yaml --format json
+```
+
+This is the primary debugging tool. If the output looks wrong, the issue is in
+preprocessing. If the output looks right but the deploy fails, the issue is in
+CloudFormation.
+
+---
+
+## Tier 2: Collections
+
+These tags transform lists and mappings. They share a common structure with
+`items`, `template`, and optional `var` and `filter` keys.
+
+### Common structure
+
+Most collection tags use this format:
+
+```yaml
+result: !$map
+  items: <sequence to iterate>
+  template: <expression applied to each item>
+  var: <name for current item, default "item">
+  filter: <optional boolean expression, only include truthy>
+```
+
+Inside `template` and `filter`, you can reference:
+- `!$ item` (or `!$ yourVarName`) -- the current item
+- `{{ item }}` or `{{ item.field }}` -- Handlebars interpolation of the item
+- `{{ itemIdx }}` (or `{{ yourVarNameIdx }}`) -- zero-based index
 
 ### `!$map`
 
-Transforms each element in a list using a template expression.
+Transforms each element in a list using a template expression. Returns a list
+of the same length (or shorter if `filter` is used).
 
 ```yaml
-prefixed: !$map
-  items: [a, b, c]
-  var: item
-  template: !$join ["-", [prefix, !$ item]]
+$defs:
+  ports: [80, 443, 8080]
+
+port_configs: !$map
+  items: !$ ports
+  var: port
+  template:
+    port_number: "{{ port }}"
+    protocol: tcp
 ```
 
-Optional `filter` key to include only items where the filter is truthy.
+**When to use**: You need a 1:1 transformation of list items.
+
+With `filter` to select only matching items:
+
+```yaml
+$defs:
+  users:
+    - {name: alice, role: admin}
+    - {name: bob, role: user}
+    - {name: charlie, role: admin}
+
+admins: !$map
+  items: !$ users
+  var: user
+  filter: !$eq [!$ user.role, admin]
+  template:
+    name: !$ user.name
+    access_level: full
+```
 
 ### `!$concat`
 
-Concatenates multiple sequences into one.
+Concatenates multiple sequences into one flat list.
 
 ```yaml
-all: !$concat
-  - [a, b]
-  - [c, d]
-  - !$ moreItems
+all_envs: !$concat
+  - [dev, test]
+  - [staging]
+  - [production]
+# Result: [dev, test, staging, production]
 ```
+
+**When to use**: You have several lists and need one combined list.
 
 ### `!$merge`
 
-Deep-merges multiple mappings. Later values override earlier ones.
+Deep-merges multiple mappings. Later values override earlier ones for
+conflicting keys.
+
+```yaml
+$defs:
+  base_config:
+    cpu: 256
+    memory: 512
+    timeout: 30
+  prod_overrides:
+    cpu: 1024
+    memory: 2048
+    replicas: 3
+
+config: !$merge
+  - !$ base_config
+  - !$ prod_overrides
+# Result: {cpu: 1024, memory: 2048, timeout: 30, replicas: 3}
+```
+
+**When to use**: You have base settings and environment-specific overrides.
+
+Works with conditional overrides:
 
 ```yaml
 config: !$merge
-  - {port: 80, host: localhost}
-  - {port: 443}
-  # Result: {port: 443, host: localhost}
+  - !$ base_config
+  - !$if
+      test: !$eq [!$ environment, production]
+      then: !$ prod_overrides
+      else:
+        replicas: 1
 ```
 
 ### `!$concatMap`
 
-Maps each item to a sequence, then concatenates all results. Uses the
-same `{items, template, var, filter}` format as `!$map`.
+Maps each item to a sequence, then concatenates all results into one flat list.
+Same format as `!$map`, but each `template` must produce a list.
 
 ```yaml
-flattened: !$concatMap
-  items: [[1, 2], [3, 4]]
-  var: group
-  template: !$ group
+$defs:
+  services: [api, web, worker]
+
+endpoints: !$concatMap
+  items: !$ services
+  template:
+    - name: "{{ item }}-internal"
+      type: internal
+    - name: "{{ item }}-external"
+      type: external
+# Result: list of 6 items (2 per service)
+```
+
+**When to use**: Each input item should produce multiple output items. Common
+for generating cross-products:
+
+```yaml
+$defs:
+  services: [api, web]
+  environments: [dev, staging, prod]
+
+deployments: !$concatMap
+  items: !$ services
+  var: service
+  template: !$map
+    items: !$ environments
+    var: env
+    template:
+      service: "{{ service }}"
+      environment: "{{ env }}"
+      name: "{{ service }}-{{ env }}"
+# Result: 6 deployment configs (2 services x 3 environments)
 ```
 
 ### `!$mergeMap`
 
-Maps each item to a mapping, then merges all results. Same format as
-`!$map`.
+Maps each item to a mapping, then merges all results into one mapping. Same
+format as `!$map`, but each `template` must produce a single-key mapping.
 
 ```yaml
-combined: !$mergeMap
-  items: [a, b, c]
-  var: name
+$defs:
+  services:
+    - {name: api, port: 3000}
+    - {name: web, port: 80}
+    - {name: worker, port: 6379}
+
+Resources: !$mergeMap
+  items: !$ services
   template:
-    !$ name:
-      enabled: true
+    !$ item.name:
+      host: !$join ["-", [!$ item.name, service]]
+      port: !$ item.port
+# Result: {api: {host: api-service, port: 3000}, web: {...}, worker: {...}}
 ```
+
+**When to use**: You need to produce a mapping (not a list) from a list of
+inputs. Common for generating CloudFormation `Resources` blocks where each
+resource has a unique logical name.
 
 ### `!$mapListToHash`
 
-Maps each item to a key-value pair mapping, then merges. Same format as
-`!$map`. The template must produce a single-key mapping.
+Like `!$mergeMap`, but the template produces a two-element list `[key, value]`
+which is converted to a mapping entry, then all entries are merged.
 
 ```yaml
 lookup: !$mapListToHash
   items: [web, api, worker]
   var: svc
   template:
-    !$ svc: !$join ["-", [!$ svc, service]]
+    - !$ svc
+    - !$join ["-", [!$ svc, service]]
+# Result: {web: web-service, api: api-service, worker: worker-service}
 ```
 
-### `!$mapValues`
-
-Transforms each value in a mapping, preserving keys.
-
-```yaml
-uppercased: !$mapValues
-  source:
-    a: hello
-    b: world
-  var: val
-  template: !$join ["", [!$ val, "!"]]
-```
-
-### `!$groupBy`
-
-Groups items by a key expression.
-
-```yaml
-grouped: !$groupBy
-  items:
-    - {name: a, type: web}
-    - {name: b, type: api}
-    - {name: c, type: web}
-  var: item
-  key: !$ item.type
-```
-
-Note: current implementation uses HashMap, so group ordering is
-non-deterministic.
+**When to use**: You have a list and want to convert it to a key-value mapping.
+Similar to `!$mergeMap` but more concise when the template naturally produces
+pairs.
 
 ### `!$fromPairs`
 
-Converts a list of `[key, value]` pairs into a mapping.
+Converts a list of `[key, value]` pairs into a mapping. Unlike `!$mapListToHash`,
+this does not iterate -- it takes a pre-built list of pairs.
 
 ```yaml
 obj: !$fromPairs
   - [name, myapp]
   - [version, "1.0"]
-# Result: {name: myapp, version: "1.0"}
+  - [port, 3000]
+# Result: {name: myapp, version: "1.0", port: 3000}
 ```
 
-## String operations
+**When to use**: You already have key-value pairs as two-element lists and want
+a mapping. Combines well with `!$map` and `!$split`:
+
+```yaml
+# Parse "KEY=VALUE,KEY=VALUE" string into a mapping
+env_vars: !$fromPairs
+  - !$map
+      items: !$split [",", "NODE_ENV=production,PORT=3000,DEBUG=false"]
+      template: !$split ["=", !$ item]
+```
+
+### `!$mapValues`
+
+Transforms each value in a mapping, preserving keys. The loop variable
+(default `item`) has `.key` and `.value` properties.
+
+```yaml
+$defs:
+  service_ports:
+    api: 3000
+    web: 8080
+    db: 5432
+
+configs: !$mapValues
+  items: !$ service_ports
+  template:
+    name: "{{ item.key }}-service"
+    port: !$ item.value
+    protocol: tcp
+# Result: {api: {name: api-service, port: 3000, ...}, web: {...}, db: {...}}
+```
+
+**When to use**: You want to transform the values of a mapping without
+changing the keys. Contrast with `!$mergeMap` which builds a new mapping from
+a list.
+
+### `!$groupBy`
+
+Groups items from a list by a key expression. Returns a mapping where each key
+is a group label and each value is a list of items in that group.
+
+```yaml
+$defs:
+  resources:
+    - {name: web-1, type: EC2, env: production}
+    - {name: web-2, type: EC2, env: production}
+    - {name: db-1, type: RDS, env: production}
+    - {name: test-1, type: EC2, env: staging}
+
+by_type: !$groupBy
+  items: !$ resources
+  key: !$ item.type
+# Result: {EC2: [{name: web-1, ...}, {name: web-2, ...}, {name: test-1, ...}], RDS: [{name: db-1, ...}]}
+```
+
+The `key` expression is evaluated for each item and used as the group label.
+You can build compound keys:
+
+```yaml
+by_env_type: !$groupBy
+  items: !$ resources
+  key: !$join ["-", [!$ item.env, !$ item.type]]
+```
+
+**Caveat**: Group ordering is non-deterministic (uses HashMap internally).
+
+### Choosing between collection tags
+
+| I have... | I want... | Use |
+|-----------|-----------|-----|
+| A list | A transformed list (same length) | `!$map` |
+| A list | A flat list (each item produces multiple) | `!$concatMap` |
+| A list | A mapping (each item becomes a key) | `!$mergeMap` or `!$mapListToHash` |
+| A list of pairs | A mapping | `!$fromPairs` |
+| A mapping | Same keys, transformed values | `!$mapValues` |
+| A list | Grouped by some property | `!$groupBy` |
+| Multiple lists | One combined list | `!$concat` |
+| Multiple mappings | One combined mapping | `!$merge` |
+
+---
+
+## Tier 3: Serialization, Strings, and Advanced
 
 ### `!$join`
 
-Joins a list of strings with a separator.
+Joins a list of values with a separator. Takes a two-element array:
+`[separator, list]`.
 
 ```yaml
 name: !$join ["-", [myapp, !$ environment, !$ region]]
+# Result: "myapp-production-us-east-1"
 ```
 
 ### `!$split`
 
-Splits a string by a delimiter. Takes a two-element array: `[delimiter, string]`.
+Splits a string by a delimiter. Takes a two-element array:
+`[delimiter, string]`.
 
 ```yaml
-parts: !$split ["-", "a-b-c"]
+parts: !$split [",", "apple,banana,cherry"]
+# Result: ["apple", "banana", "cherry"]
+```
+
+Combines well with other tags:
+
+```yaml
+# Parse comma-separated ports into security group rules
+rules: !$map
+  items: !$split [",", "80,443,8080"]
+  template:
+    IpProtocol: tcp
+    FromPort: !$ item
+    ToPort: !$ item
 ```
 
 ### `!$toYamlString`
@@ -229,9 +592,10 @@ parts: !$split ["-", "a-b-c"]
 Serializes a value to a YAML string.
 
 ```yaml
-yamlText: !$toYamlString
+config_text: !$toYamlString
   key: value
   list: [1, 2, 3]
+# Result: "key: value\nlist:\n- 1\n- 2\n- 3\n"
 ```
 
 ### `!$parseYaml`
@@ -240,15 +604,19 @@ Parses a YAML string into a structured value.
 
 ```yaml
 parsed: !$parseYaml "key: value\nlist:\n  - 1\n  - 2"
+# Result: {key: value, list: [1, 2]}
 ```
 
 ### `!$toJsonString`
 
-Serializes a value to a JSON string.
+Serializes a value to a JSON string. Commonly used for CloudFormation
+parameters that expect JSON:
 
 ```yaml
-jsonText: !$toJsonString
-  key: value
+Value: !$toJsonString
+  - database:
+      host: db.example.com
+      port: 5432
 ```
 
 ### `!$parseJson`
@@ -256,174 +624,39 @@ jsonText: !$toJsonString
 Parses a JSON string into a structured value.
 
 ```yaml
-parsed: !$parseJson '{"key": "value"}'
+parsed: !$parseJson '{"key": "value", "count": 42}'
+# Result: {key: value, count: 42}
 ```
-
-## Comparison
-
-### `!$eq`
-
-Tests equality of two values. Returns a boolean.
-
-```yaml
-isProd: !$eq [!$ environment, production]
-```
-
-### `!$not`
-
-Logical negation.
-
-```yaml
-isNotProd: !$not
-  - !$eq [!$ environment, production]
-```
-
-## Escaping
 
 ### `!$escape`
 
-Prevents preprocessing of its contents. The inner value passes through
-without tag resolution.
+Prevents preprocessing of its contents. Plain values (strings, numbers,
+mappings, sequences) pass through without tag resolution.
 
 ```yaml
 literal: !$escape
-  !$map:
-    items: [1, 2, 3]
+  key: value
+  list: [1, 2, 3]
+# Result: {key: value, list: [1, 2, 3]} -- no preprocessing applied
 ```
 
-## Import types
-
-### `file`
-
-Load from the local filesystem. Paths are resolved relative to the
-importing document.
-
-```yaml
-$imports:
-  config: ./config.yaml
-  absolute: file:/etc/iidy/defaults.yaml
-```
-
-### `env`
-
-Read an environment variable. Supports a default value after a second colon.
-
-```yaml
-$imports:
-  home: env:HOME
-  optional: env:MISSING_VAR:default-value
-```
-
-### `git`
-
-Read git repository information.
-
-```yaml
-$imports:
-  branch: git:branch
-  sha: git:sha
-  short: git:short
-```
-
-### `random`
-
-Generate random values.
-
-```yaml
-$imports:
-  uuid: random:dashed-name
-  hex: random:hex
-```
-
-### `filehash` / `filehash-base64`
-
-Compute SHA256 hash of a file's contents. Prefix with `?` to allow missing
-files (returns empty string).
-
-```yaml
-$imports:
-  hash: filehash:./template.yaml
-  b64hash: filehash-base64:./template.yaml
-  optional: filehash:?./maybe-missing.yaml
-```
-
-### `s3`
-
-Load from an S3 bucket. Requires AWS credentials.
-
-```yaml
-$imports:
-  remote: s3://my-bucket/configs/shared.yaml
-```
-
-### `http` / `https`
-
-Fetch from an HTTP endpoint.
-
-```yaml
-$imports:
-  api: https://config-api.example.com/v1/config.json
-```
-
-### `cfn`
-
-Read CloudFormation stack outputs or exports.
-
-```yaml
-$imports:
-  vpcStack: cfn:us-east-1:vpc-stack
-```
-
-### `ssm`
-
-Read an SSM Parameter Store parameter. Supports `:json` or `:yaml` suffix
-to parse the value.
-
-```yaml
-$imports:
-  dbHost: ssm:/app/config/database-host
-  dbConfig: ssm:/app/config/database:json
-```
-
-### `ssm-path`
-
-Read all SSM parameters under a path prefix.
-
-```yaml
-$imports:
-  allConfig: ssm-path:/app/config
-```
-
-## Handlebars interpolation
-
-Scalar string values containing `{{ }}` expressions are processed through
-Handlebars. The environment (imports + defs + envValues) is available as
-context.
-
-```yaml
-$defs:
-  app: myapp
-name: "{{ app }}-{{ environment }}"
-```
-
-Available helpers include string manipulation (`toUpperCase`, `toLowerCase`,
-`replace`, `trim`, `substring`, `length`, `pad`, `concat`, `capitalize`,
-`titleize`), case conversion (`camelCase`, `snakeCase`, `kebabCase`,
-`pascalCase`), encoding (`base64`, `urlEncode`, `sha256`, `filehash`,
-`filehashBase64`), serialization (`toJson`, `toJsonPretty`, `toYaml`),
-and object access (`lookup`).
+---
 
 ## CloudFormation tag pass-through
 
-CloudFormation intrinsic function tags (`!Ref`, `!Sub`, `!GetAtt`, `!Join`,
-`!Select`, `!Split`, `!If`, `!Equals`, `!And`, `!Or`, `!Not`,
-`!FindInMap`, `!ImportValue`, `!Base64`, `!Cidr`, `!GetAZs`, `!Length`,
-`!ToJsonString`, `!Transform`, `!ForEach`) are
-recognized by the parser. Their inner content is preprocessed (so you can
-use `!$` lookups inside `!Sub`), then they pass through to output as
-tagged YAML values:
+CloudFormation intrinsic function tags are recognized by the parser. Their
+inner content is preprocessed (so you can use `!$` lookups inside `!Sub`),
+then they pass through to the output as tagged YAML values.
+
+Recognized tags: `!Ref`, `!Sub`, `!GetAtt`, `!Join`, `!Select`, `!Split`,
+`!If`, `!Equals`, `!And`, `!Or`, `!Not`, `!FindInMap`, `!ImportValue`,
+`!Base64`, `!Cidr`, `!GetAZs`, `!Length`, `!ToJsonString`, `!Transform`,
+`!ForEach`.
 
 ```yaml
+$defs:
+  bucketSuffix: assets
+
 Resources:
   MyBucket:
     Type: AWS::S3::Bucket
@@ -432,4 +665,106 @@ Resources:
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentParam
+```
+
+In this example, `!$ bucketSuffix` is resolved by iidy during preprocessing,
+while `!Sub` and `!Ref` pass through to CloudFormation.
+
+---
+
+## Handlebars helpers reference
+
+Helpers are called inside `{{ }}` expressions. All helpers take positional
+parameters.
+
+### Serialization
+
+| Helper | Description | Example |
+|--------|-------------|---------|
+| `toJson` | Serialize to JSON | `{{ toJson config }}` |
+| `toJsonPretty` | Serialize to pretty JSON | `{{ toJsonPretty config }}` |
+| `toYaml` | Serialize to YAML | `{{ toYaml config }}` |
+
+Deprecated aliases: `tojson`, `tojsonPretty`, `toyaml` (same behavior, prefer
+the camelCase versions).
+
+### Encoding
+
+| Helper | Description | Example |
+|--------|-------------|---------|
+| `base64` | Base64 encode | `{{ base64 value }}` |
+| `urlEncode` | URL-encode | `{{ urlEncode path }}` |
+| `sha256` | SHA256 hash (hex) | `{{ sha256 value }}` |
+| `filehash` | SHA256 of file contents | `{{ filehash "./template.yaml" }}` |
+| `filehashBase64` | Base64-encoded SHA256 of file | `{{ filehashBase64 "./template.yaml" }}` |
+
+### String case
+
+| Helper | Description | Example | Result |
+|--------|-------------|---------|--------|
+| `toLowerCase` | Lower case | `{{ toLowerCase "Hello" }}` | `hello` |
+| `toUpperCase` | Upper case | `{{ toUpperCase "Hello" }}` | `HELLO` |
+| `capitalize` | Capitalize first letter | `{{ capitalize "hello" }}` | `Hello` |
+| `titleize` | Title case | `{{ titleize "hello world" }}` | `Hello World` |
+| `camelCase` | camelCase | `{{ camelCase "my-app" }}` | `myApp` |
+| `pascalCase` | PascalCase | `{{ pascalCase "my-app" }}` | `MyApp` |
+| `snakeCase` | snake_case | `{{ snakeCase "myApp" }}` | `my_app` |
+| `kebabCase` | kebab-case | `{{ kebabCase "myApp" }}` | `my-app` |
+
+### String manipulation
+
+| Helper | Description | Syntax |
+|--------|-------------|--------|
+| `trim` | Remove leading/trailing whitespace | `{{ trim value }}` |
+| `replace` | Replace all occurrences | `{{ replace value "search" "replacement" }}` |
+| `substring` | Extract substring | `{{ substring value start length }}` |
+| `length` | Length of string, array, or object | `{{ length value }}` |
+| `pad` | Right-pad to target length | `{{ pad value targetLength [padChar] }}` |
+| `concat` | Concatenate strings | `{{ concat str1 str2 str3 }}` |
+
+### Object access
+
+| Helper | Description | Syntax |
+|--------|-------------|--------|
+| `lookup` | Get property or array element | `{{ lookup object "key" }}` |
+
+---
+
+## Debugging
+
+### Use `iidy render`
+
+The `render` command shows preprocessed output:
+
+```
+iidy render my-template.yaml
+iidy render my-template.yaml --format json
+iidy render stack-args.yaml
+```
+
+### Common errors
+
+**"Variable not found"**: The variable name in `!$` or `{{ }}` does not exist
+in the current scope. Check spelling and ensure the variable is defined in
+`$imports` or `$defs`.
+
+**"Env-var X not found"**: An `env:` import references an environment variable
+that is not set. Either set the variable or provide a default: `env:VAR:default`.
+
+**"bad import"**: A file import path cannot be resolved. Check that the path is
+correct relative to the importing document, not relative to the working
+directory.
+
+**Tag nesting**: YAML tags cannot be placed directly after another tag on the
+same line. Use a newline and indentation:
+
+```yaml
+# Wrong:
+value: !$if !$eq [a, b]
+
+# Right:
+value: !$if
+  test: !$eq [a, b]
+  then: yes
+  else: no
 ```

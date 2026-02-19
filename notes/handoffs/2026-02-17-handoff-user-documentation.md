@@ -2,6 +2,35 @@
 
 **Date**: 2026-02-17
 **For**: Next Claude instance creating user-facing documentation
+**Status**: Complete (2026-02-18)
+
+## Completion Report
+
+Executed 2026-02-18. All 5 documents created, reviewed against source code,
+and cross-link verified.
+
+| File | Action | Lines |
+|------|--------|-------|
+| `docs/import-types.md` | New | 257 |
+| `docs/command-reference.md` | New | 601 |
+| `docs/yaml-preprocessing.md` | Rewrite | 580 |
+| `docs/getting-started.md` | New | 282 |
+| `README.md` | Replace | 100 |
+| `docs/README.md` | Update | 11 |
+| `notes/index.md` | Update | +3 lines |
+
+**Process**: Sonnet sub-agents drafted import-types.md and command-reference.md
+in parallel. yaml-preprocessing.md, getting-started.md, and README.md written
+directly. A Sonnet review sub-agent verified all 5 docs against source code
+(cli.rs, stack_args.rs, engine.rs, all import loaders). Found and fixed 3 issues:
+(1) `!$escape` description was inaccurate for the known buggy case -- rewritten
+to document only the working behavior; (2) `cfn:stack` incorrectly listed as
+unimplemented -- removed from the list; (3) `RoleARN` described as alias rather
+than fallback.
+
+**Execution notes**: `notes/handoffs/2026-02-18-user-documentation-execution.md`
+
+---
 
 ## Goal
 

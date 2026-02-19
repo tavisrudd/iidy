@@ -6,7 +6,10 @@
 
 ### User-Facing (`docs/`)
 
-- [YAML Preprocessing](../docs/yaml-preprocessing.md) -- complete tag reference with examples
+- [Getting Started](../docs/getting-started.md) -- installation, first deployment, stack-args.yaml reference
+- [YAML Preprocessing](../docs/yaml-preprocessing.md) -- tags, imports, Handlebars helpers, debugging
+- [Command Reference](../docs/command-reference.md) -- all commands, options, and exit codes
+- [Import Types](../docs/import-types.md) -- file, env, git, s3, ssm, cfn, and other import sources
 - [Security](../docs/SECURITY.md) -- import system security model
 
 ### Developer/Internal (`docs/dev/`)
