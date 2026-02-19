@@ -113,18 +113,28 @@ db_host: !$include config.database.host
 
 #### Query selector
 
-Select specific keys from a mapping using `?` syntax:
+Append `?query` to a path to filter or drill into the resolved value. This is
+useful when importing a large shared config but only needing specific fields.
+
+The query supports three forms:
+
+**Comma-separated keys** -- returns a mapping containing only the listed keys:
 
 ```yaml
-# Select only host and port from the database config
 db_subset: !$ config.database?host,port
+# Result: {host: db.example.com, port: 5432}
 ```
 
-This returns a mapping containing only the requested keys.
+Keys that don't exist in the source mapping are silently omitted from the
+result (no error).
+
+**Error handling:** Applying a query to a non-mapping value (e.g. a string or
+sequence) always produces an error.
 
 #### Object form
 
-For complex lookups, use the object form with explicit `path` and `query`:
+The object form is equivalent to the `?` syntax. The `query` field accepts the
+same three forms described above:
 
 ```yaml
 db_subset: !$

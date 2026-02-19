@@ -430,8 +430,9 @@ impl Resolver {
         match value {
             Value::Mapping(map) => {
                 if query.starts_with('.') {
-                    // Handle nested path query like ".database.host"
-                    let path = &query[1..]; // Remove leading dot
+                    // TODO: remove dot-prefixed query support -- it's redundant
+                    // with dot notation in the path itself (e.g. config.database.host)
+                    let path = &query[1..];
                     self.apply_nested_path_query(value, path)
                 } else if query.contains(',') {
                     // Handle multiple property selection like "database,host"
@@ -446,7 +447,8 @@ impl Resolver {
 
                     Ok(Value::Mapping(result))
                 } else {
-                    // Handle single property selection like "database"
+                    // TODO: remove single-key query support -- it's redundant
+                    // with dot notation in the path (e.g. config.database.host)
                     if let Some(prop_value) = map.get(&Value::String(query.to_string())) {
                         Ok(prop_value.clone())
                     } else {
