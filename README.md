@@ -107,6 +107,20 @@ Variable error: 'app_name' not found @ stack-args.yaml:6:15 (errno: ERR_2001)
    For more info: iidy explain ERR_2001
 ```
 
+CloudFormation operation failures are equally clear. A failed update shows the
+failing resource and the reason inline in the event stream:
+
+```
+Live Stack Events (2s poll):
+ Wed Jan 14 2026 11:14:15 UPDATE_IN_PROGRESS   AWS::EC2::Instance           AppServer
+ Wed Jan 14 2026 11:14:18 UPDATE_FAILED        AWS::EC2::Instance           AppServer
+  Parameter validation failed: Invalid value 't3.nonexistent' for InstanceType
+ Wed Jan 14 2026 11:14:20 UPDATE_ROLLBACK_IN_PROGRESS  AWS::CloudFormation::Stack   my-app
+ ...
+
+FAILURE: (42s)
+```
+
 iidy is built for both humans at a terminal and CI pipelines. For interactive
 use it provides color themes, TTY detection, and confirmation prompts. For CI
 it supports `--output-mode plain` (no ANSI codes), `--output-mode json`
