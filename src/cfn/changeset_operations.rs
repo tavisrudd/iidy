@@ -359,6 +359,7 @@ async fn build_changeset_result(
         changeset_name: changeset_name.to_string(),
         stack_name: stack_name.clone(),
         changeset_type: if stack_exists { "UPDATE" } else { "CREATE" }.to_string(),
+        // Guaranteed by wait_for_changeset_completion which only returns Ok on CREATE_COMPLETE
         status: "CREATE_COMPLETE".to_string(),
         console_url,
         has_changes: !pending_changesets.is_empty(),

@@ -88,13 +88,12 @@ pub fn format_template(
 
 /// Retrieve a stack template from CloudFormation and format it for display.
 ///
-/// Uses the data-driven output architecture for consistent error handling and rendering.
-/// Returns exit code: 0 for success, 1 for failure.
+/// This is a data extraction command (output piped to stdout), so it uses
+/// a lighter error handling path than interactive CFN operations.
 pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32> {
     let operation = cli.command.to_cfn_operation();
     let opts = cli.aws_opts.clone().normalize();
 
-    // Setup output manager first (needed for error handling)
     let output_options = OutputOptions::new(cli.clone());
     let mut output_manager =
         DynamicOutputManager::new(cli.global_opts.effective_output_mode(), output_options).await?;
@@ -133,7 +132,6 @@ pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32
 
     let formatted_template = format_template(output, args.stage.clone(), args.format.clone())?;
 
-    // Convert to output data and render through the output manager
     let stack_template = StackTemplate {
         stderr_lines: formatted_template.stderr_lines,
         template_body: formatted_template.body,
@@ -143,7 +141,7 @@ pub async fn get_stack_template(cli: &Cli, args: &GetTemplateArgs) -> Result<i32
         .render(OutputData::StackTemplate(stack_template))
         .await?;
 
-    Ok(0) // Return success exit code
+    Ok(0)
 }
 
 #[cfg(test)]

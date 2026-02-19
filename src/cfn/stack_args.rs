@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -102,7 +101,7 @@ pub async fn load_stack_args(
     crate::aws::CredentialSourceStack,
 )> {
     let path = Path::new(argsfile);
-    let contents = fs::read_to_string(path)?;
+    let contents = tokio::fs::read_to_string(path).await?;
 
     // Use YAML v1.1 spec for CloudFormation compatibility
     let yaml_spec = YamlSpec::V11;

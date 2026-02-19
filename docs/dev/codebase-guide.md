@@ -105,12 +105,17 @@ get_import, template_approval_request, template_approval_review
 
 ### Handler Pattern
 
-All handlers follow the `run_command_handler!` macro pattern:
+Most handlers follow the `run_command_handler!` macro pattern:
 1. Build `CfnContext` from CLI args
 2. Load stack-args if applicable
 3. Build AWS requests via `CfnRequestBuilder`
 4. Execute operations, emit `OutputData` variants
 5. Watch stack events if needed
+
+**Exceptions**: `get_stack_template` and `get_import` are data extraction
+commands that pipe raw content (YAML/JSON) to stdout. They manage their
+own error handling rather than using the macro, because their output style
+is fundamentally different from interactive CFN operations.
 
 ### Stubs in main.rs (println! only)
 

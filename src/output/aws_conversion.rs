@@ -19,6 +19,10 @@ use aws_sdk_cloudformation::types::{Output, Stack, StackEvent as AwsStackEvent, 
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+fn convert_aws_datetime(aws_dt: &aws_smithy_types::DateTime) -> DateTime<Utc> {
+    DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
+}
+
 /// Convert aws::client_req_token::TokenInfo to output::TokenInfo
 pub fn convert_token_info(timing_token: &TimingTokenInfo) -> OutputTokenInfo {
     let source = match &timing_token.source {
@@ -179,16 +183,8 @@ pub fn error_message(msg: &str) -> OutputData {
 
 /// Convert AWS SDK Stack to StackListEntry
 pub fn convert_stack_to_list_entry(stack: &Stack) -> StackListEntry {
-    use chrono::{DateTime, Utc};
-
-    // Convert AWS DateTime to chrono DateTime
-    let creation_time = stack.creation_time().map(|aws_dt| {
-        DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
-    });
-
-    let last_updated_time = stack.last_updated_time().map(|aws_dt| {
-        DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
-    });
+    let creation_time = stack.creation_time().map(convert_aws_datetime);
+    let last_updated_time = stack.last_updated_time().map(convert_aws_datetime);
 
     let status = stack
         .stack_status()
@@ -255,15 +251,8 @@ pub fn convert_stacks_to_list_display(stacks: Vec<Stack>, show_tags: bool) -> Ou
 
 /// Convert AWS SDK Stack to StackDefinition
 pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputData {
-    use chrono::{DateTime, Utc};
-
-    let creation_time = stack.creation_time().map(|aws_dt| {
-        DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
-    });
-
-    let last_updated_time = stack.last_updated_time().map(|aws_dt| {
-        DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
-    });
+    let creation_time = stack.creation_time().map(convert_aws_datetime);
+    let last_updated_time = stack.last_updated_time().map(convert_aws_datetime);
 
     let tags: HashMap<String, String> = stack
         .tags()
@@ -284,7 +273,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
 
     let stack_definition = StackDefinition {
         name: stack.stack_name().unwrap_or("unknown").to_string(),
-        stackset_name: None, // TODO: Determine if this is a StackSet stack
+        stackset_name: None, // Not available from DescribeStacks; would need ListStackInstances API call
         description: stack.description().map(|s| s.to_string()),
         status: stack
             .stack_status()
@@ -306,7 +295,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
                 _ => None,
             })
             .collect(),
-        disable_rollback: false, // TODO: Get this information
+        disable_rollback: stack.disable_rollback().unwrap_or(false),
         termination_protection: stack.enable_termination_protection().unwrap_or(false),
         creation_time,
         last_updated_time,
@@ -316,7 +305,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
             .iter()
             .map(|s| s.to_string())
             .collect(),
-        stack_policy: None, // TODO: Fetch separately if needed
+        stack_policy: None, // Not available from DescribeStacks; would need GetStackPolicy API call
         arn: stack_id.to_string(),
         console_url: format!(
             "https://{}.console.aws.amazon.com/cloudformation/home?region={}#/stacks/stackinfo?stackId={}",
@@ -330,11 +319,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
 
 /// Convert AWS StackEvent to our StackEvent format
 pub fn convert_aws_stack_event(aws_event: &AwsStackEvent) -> StackEvent {
-    use chrono::{DateTime, Utc};
-
-    let timestamp = aws_event.timestamp().map(|aws_dt| {
-        DateTime::from_timestamp(aws_dt.as_secs_f64().floor() as i64, 0).unwrap_or_else(Utc::now)
-    });
+    let timestamp = aws_event.timestamp().map(convert_aws_datetime);
 
     StackEvent {
         event_id: aws_event.event_id().unwrap_or("unknown").to_string(),

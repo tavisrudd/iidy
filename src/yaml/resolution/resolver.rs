@@ -936,20 +936,20 @@ impl TagResolver for Resolver {
                 base_path.to_string()
             };
 
-            // Try to find the line number by searching for the include reference with multiple patterns
+            // Note: blocking read in a sync method called from async context. Acceptable because
+            // this is an error-only path reading a local file already loaded by the resolver.
             let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
                 let line_number = content
                     .lines()
                     .enumerate()
                     .find_map(|(idx, line)| {
-                        // Try multiple patterns to find the include reference
                         let patterns = [
-                            format!("!$ {}", base_path),         // Standard pattern: !$ var.prop
-                            format!("!$include {}", base_path),  // Explicit include tag
-                            format!("!$include: {}", base_path), // Include with colon
-                            format!("!$include\\n  path: {}", base_path), // Multi-line include
-                            format!("path: {}", base_path),      // Just the path part
-                            base_path.clone(),                   // Direct path reference
+                            format!("!$ {}", base_path),
+                            format!("!$include {}", base_path),
+                            format!("!$include: {}", base_path),
+                            format!("!$include\\n  path: {}", base_path),
+                            format!("path: {}", base_path),
+                            base_path.clone(),
                         ];
 
                         for pattern in &patterns {
@@ -978,13 +978,13 @@ impl TagResolver for Resolver {
                 available_vars,
             ));
         } else {
-            // Root variable doesn't exist - enhanced line detection for root variable
+            // Note: blocking read in a sync method called from async context. Acceptable because
+            // this is an error-only path reading a local file already loaded by the resolver.
             let location = if let Ok(content) = std::fs::read_to_string(&file_path) {
                 let line_number = content
                     .lines()
                     .enumerate()
                     .find_map(|(idx, line)| {
-                        // Try multiple patterns to find the root variable reference
                         let patterns = [
                             format!("!$ {}", root_var),         // Standard pattern: !$ var
                             format!("!$include {}", root_var),  // Explicit include tag
@@ -2250,6 +2250,8 @@ fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
 
 /// Try to find which line of a source file contains a handlebars reference to `var_name`.
 /// Returns "file_path:line" if found, otherwise just "file_path".
+/// Note: blocking read in a sync function called from async context. Acceptable because
+/// this is an error-only path reading a local file already loaded by the resolver.
 fn find_template_variable_location(file_path: &str, var_name: &str) -> String {
     let needle = format!("{{{{{}}}}}", var_name);
     if let Ok(content) = std::fs::read_to_string(file_path) {

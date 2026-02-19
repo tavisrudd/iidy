@@ -7,6 +7,7 @@ use crate::cli::Cli;
 use crate::output::data::*;
 use crate::output::renderer::{OutputMode, OutputRenderer};
 use anyhow::Result;
+use log;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::oneshot;
@@ -36,11 +37,13 @@ impl OutputOptions {
 
 /// Dynamic output manager that handles mode switching and event replay
 pub struct DynamicOutputManager {
-    current_mode: OutputMode,
+    // Stored for future mode-switching support (replay buffer into new renderer)
+    _current_mode: OutputMode,
     current_renderer: Box<dyn OutputRenderer>,
     event_buffer: VecDeque<OutputData>,
     buffer_limit: usize,
-    options: OutputOptions, // Store options for mode switching
+    events_dropped: usize,
+    _options: OutputOptions,
 }
 
 impl DynamicOutputManager {
@@ -52,11 +55,12 @@ impl DynamicOutputManager {
         let buffer_limit = options.buffer_limit;
 
         Ok(Self {
-            current_mode: mode,
+            _current_mode: mode,
             current_renderer: renderer,
             event_buffer: VecDeque::with_capacity(buffer_limit),
             buffer_limit,
-            options,
+            events_dropped: 0,
+            _options: options,
         })
     }
 
@@ -65,6 +69,13 @@ impl DynamicOutputManager {
         // Buffer the data for mode switching replay (arrival order)
         if self.event_buffer.len() >= self.buffer_limit {
             self.event_buffer.pop_front();
+            self.events_dropped += 1;
+            if self.events_dropped == 1 {
+                log::warn!(
+                    "Output event buffer full ({} events); older events will be lost on mode switch",
+                    self.buffer_limit
+                );
+            }
         }
         self.event_buffer.push_back(data.clone());
 

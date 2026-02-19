@@ -16,6 +16,17 @@ mod demo;
 use tokio::runtime::Runtime;
 
 fn handle_command(cli: Cli) {
+    // Set AWS_SDK_LOAD_CONFIG before creating the Tokio runtime so no other threads exist.
+    // This must not be done inside async code where Tokio worker threads are alive.
+    if let Some(home) = std::env::var_os("HOME") {
+        let aws_dir = std::path::Path::new(&home).join(".aws");
+        if aws_dir.exists() {
+            unsafe {
+                std::env::set_var("AWS_SDK_LOAD_CONFIG", "1");
+            }
+        }
+    }
+
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
         Commands::CreateStack(ref args) => {

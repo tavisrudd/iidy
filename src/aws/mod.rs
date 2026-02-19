@@ -108,17 +108,6 @@ pub async fn config_from_merged_settings(
     // Detect credential sources BEFORE loading config
     let credential_sources = detect_credential_sources(detection_ctx, &SystemEnv);
 
-    // Set AWS_SDK_LOAD_CONFIG if ~/.aws exists (matching iidy-js behavior)
-    if let Some(home) = std::env::var_os("HOME") {
-        let aws_dir = std::path::Path::new(&home).join(".aws");
-        if aws_dir.exists() {
-            // SAFETY: This is called early in the program before any threads are spawned
-            unsafe {
-                std::env::set_var("AWS_SDK_LOAD_CONFIG", "1");
-            }
-        }
-    }
-
     let mut loader = aws_config::defaults(BehaviorVersion::v2025_01_17());
 
     if let Some(ref region) = merged_settings.region {
