@@ -77,3 +77,9 @@ Resources:
       OKActions:
         - !Ref AlertTopicArn
       MetricName: ApproximateAgeOfOldestMessage
+
+Outputs:
+  QueueUrl:
+    Value: !Ref Queue
+  QueueArn:
+    Value: !GetAtt Queue.Arn

@@ -40,6 +40,7 @@ async fn test_all_example_templates_auto_discovery() {
                 if path.is_file()
                     && path.extension().map_or(false, |ext| ext == "yaml")
                     && !name.starts_with(".")
+                    && !name.ends_with("-template.yaml")
                 {
                     let relative_file_path = if relative_path.is_empty() {
                         name.clone()
@@ -50,14 +51,8 @@ async fn test_all_example_templates_auto_discovery() {
                     templates.push((relative_file_path, name));
                 } else if path.is_dir() {
                     // Skip certain directories
-                    if [
-                        "invalid",
-                        "expected-outputs",
-                        "errors",
-                        ".git",
-                        "custom-resource-templates",
-                    ]
-                    .contains(&name.as_str())
+                    if ["invalid", "expected-outputs", "errors", ".git"]
+                        .contains(&name.as_str())
                     {
                         continue;
                     }

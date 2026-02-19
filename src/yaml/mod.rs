@@ -3,6 +3,7 @@
 //! This module provides YAML preprocessing capabilities with custom tags,
 //! imports, and template composition for CloudFormation and other YAML documents.
 
+pub mod custom_resources;
 pub mod detection;
 pub mod emitter;
 pub mod engine;

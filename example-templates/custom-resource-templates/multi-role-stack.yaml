@@ -1,6 +1,6 @@
 # A CFN template that uses DeployRole custom resource template multiple times.
-# Demonstrates: name-prefixing on resources, referencing expanded resources
-# by their prefixed names (e.g., AppDeployRoleDeployRole).
+# Demonstrates: name-prefixing on resources, global section promotion (Outputs
+# are defined in the template and automatically stitched into the top level).
 AWSTemplateFormatVersion: 2010-09-09
 Description: CI/CD deploy roles
 
@@ -46,13 +46,3 @@ Resources:
               - arn:aws:s3:::deploy-artifacts/*
       Roles:
         - !Ref AppDeployRoleDeployRole
-
-Outputs:
-  AppDeployRoleARN:
-    Value: !GetAtt AppDeployRoleDeployRole.Arn
-    Export:
-      Name: deploy-roles:app-deploy-role
-  DataPipelineDeployRoleARN:
-    Value: !GetAtt DataPipelineDeployRoleDeployRole.Arn
-    Export:
-      Name: deploy-roles:data-pipeline-deploy-role

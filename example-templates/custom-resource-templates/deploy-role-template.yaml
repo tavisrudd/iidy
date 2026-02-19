@@ -48,3 +48,9 @@ Resources:
                 - ssm:GetParameters
                 - ssm:GetParametersByPath
               Resource: !$ SsmResources
+
+Outputs:
+  ARN:
+    Value: !GetAtt DeployRole.Arn
+    Export:
+      Name: deploy-roles:{{RoleName}}

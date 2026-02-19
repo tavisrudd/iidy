@@ -20,10 +20,14 @@
 //! - Generate final processed output
 
 use anyhow::Result;
-use serde_yaml::Value;
-use std::collections::HashSet;
+use serde_yaml::{Mapping, Value};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use yaml_rust::{Yaml, yaml::Hash};
 
+use crate::yaml::custom_resources::TemplateInfo;
+use crate::yaml::custom_resources::params::parse_params;
 use crate::yaml::imports::loaders::ProductionImportLoader;
 use crate::yaml::imports::{EnvValues, ImportLoader, ImportRecord};
 use crate::yaml::parsing;
@@ -98,6 +102,8 @@ pub struct YamlPreprocessor<L: ImportLoader> {
     yaml_11_compatibility: bool,
     /// Variable metadata for scope tracking
     variable_metadata: std::collections::HashMap<String, VariableMetadata>,
+    /// Custom resource template definitions detected during import processing
+    custom_template_defs: std::collections::HashMap<String, TemplateInfo>,
 }
 
 impl<L: ImportLoader> YamlPreprocessor<L> {
@@ -107,6 +113,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             import_loader,
             yaml_11_compatibility,
             variable_metadata: std::collections::HashMap::new(),
+            custom_template_defs: std::collections::HashMap::new(),
         }
     }
 
@@ -147,7 +154,13 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
             context.add_scoped_variable(&key, value, source, Some(defined_at));
         }
 
+        // Transfer custom resource template definitions to context for resolver access
+        context.custom_template_defs = std::mem::take(&mut self.custom_template_defs);
+
         let result = resolve_ast(&ast, &context)?;
+
+        // Promote accumulated global sections from custom resource expansion
+        let result = promote_global_sections(result, &context.accumulated_globals);
 
         // Apply YAML 1.1 compatibility for CloudFormation if enabled
         if self.yaml_11_compatibility {
@@ -273,6 +286,16 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                         .load(&resolved_location, base_location)
                         .await?;
 
+                    // Detect custom resource templates (imported docs with $params)
+                    // Must check raw doc before process_imported_document consumes it
+                    let custom_template_params = if let Value::Mapping(ref map) = import_data.doc {
+                        map.get(&Value::String("$params".into()))
+                            .map(|v| parse_params(v))
+                            .transpose()?
+                    } else {
+                        None
+                    };
+
                     // CRITICAL: Recursively process the imported document if it has $imports or $defs
                     // This matches iidy-js loadImports() lines 524-527
                     let processed_doc = self
@@ -286,6 +309,18 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
 
                     // Add the fully processed document to environment
                     env_values.insert(import_key.clone(), processed_doc);
+
+                    // Store template definition if this import has $params
+                    if let Some(params) = custom_template_params {
+                        self.custom_template_defs.insert(
+                            import_key.clone(),
+                            TemplateInfo {
+                                params,
+                                raw_body: import_data.data.clone(),
+                                location: import_data.resolved_location.clone(),
+                            },
+                        );
+                    }
 
                     // Store variable metadata for scope tracking
                     self.variable_metadata.insert(
@@ -628,6 +663,37 @@ pub fn serialize_yaml_iidy_js_compatible(value: &Value) -> Result<String> {
             .map_err(|e| anyhow::anyhow!("YAML emission failed: {}", e))?;
     }
     Ok(yaml_output)
+}
+
+/// Merge accumulated global sections from custom resource expansion into the result.
+/// Only adds entries that don't already exist in the outer template's section,
+/// since the outer template's definitions are more complete (matching JS _.merge behavior).
+fn promote_global_sections(
+    mut result: Value,
+    accumulated: &Rc<RefCell<HashMap<String, Mapping>>>,
+) -> Value {
+    let globals = accumulated.borrow();
+    if globals.is_empty() {
+        return result;
+    }
+
+    if let Value::Mapping(ref mut result_map) = result {
+        for (section_name, section_entries) in globals.iter() {
+            let section_key = Value::String(section_name.clone());
+            let existing = result_map
+                .entry(section_key)
+                .or_insert_with(|| Value::Mapping(Mapping::new()));
+            if let Value::Mapping(existing_map) = existing {
+                for (k, v) in section_entries {
+                    if !existing_map.contains_key(k) {
+                        existing_map.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    result
 }
 
 #[cfg(test)]

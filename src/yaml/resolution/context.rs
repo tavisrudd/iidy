@@ -3,9 +3,14 @@
 //! Contains types and functionality for managing variable scopes and context
 //! during YAML preprocessing tag resolution.
 
-use serde_yaml::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+
+use serde_yaml::{Mapping, Value};
+
+use crate::yaml::custom_resources::TemplateInfo;
 
 /// Performance optimization: Global counter for scope ID generation
 static SCOPE_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
@@ -29,6 +34,10 @@ pub struct TagContext {
     pub global_accumulator: Option<GlobalAccumulator>,
     /// Enhanced scope tracking (optional - for advanced variable origin tracking)
     pub scope_context: Option<ScopeContext>,
+    /// Custom resource template definitions (import key -> TemplateInfo)
+    pub custom_template_defs: HashMap<String, TemplateInfo>,
+    /// Accumulated global sections from custom resource expansion (shared via Rc)
+    pub accumulated_globals: Rc<RefCell<HashMap<String, Mapping>>>,
 }
 
 /// Global accumulator for document-wide state (optional, not all docs need this)
@@ -171,10 +180,8 @@ impl TagContext {
     #[cfg(test)]
     pub fn from_file_location(location: &str) -> Self {
         Self {
-            variables: HashMap::new(),
             input_uri: Some(location.to_string()),
-            global_accumulator: None,
-            scope_context: None,
+            ..Self::default()
         }
     }
 
@@ -184,18 +191,15 @@ impl TagContext {
         Self {
             variables,
             input_uri: Some(location.to_string()),
-            global_accumulator: None,
-            scope_context: None,
+            ..Self::default()
         }
     }
 
     /// Create TagContext with CloudFormation global accumulator
     pub fn new_with_cfn_accumulator() -> Self {
         Self {
-            variables: HashMap::new(),
-            input_uri: None,
             global_accumulator: Some(GlobalAccumulator::default()),
-            scope_context: None,
+            ..Self::default()
         }
     }
 
@@ -208,6 +212,8 @@ impl TagContext {
             input_uri: self.input_uri.clone(),
             global_accumulator: self.global_accumulator.clone(),
             scope_context: self.scope_context.clone(),
+            custom_template_defs: self.custom_template_defs.clone(),
+            accumulated_globals: Rc::clone(&self.accumulated_globals),
         }
     }
 
@@ -222,6 +228,8 @@ impl TagContext {
                 input_uri: self.input_uri.clone(),
                 global_accumulator: self.global_accumulator.clone(),
                 scope_context: self.scope_context.clone(),
+                custom_template_defs: self.custom_template_defs.clone(),
+                accumulated_globals: Rc::clone(&self.accumulated_globals),
             }
         } else {
             let mut new_vars = HashMap::with_capacity(self.variables.len() + bindings.len());
@@ -232,6 +240,8 @@ impl TagContext {
                 input_uri: self.input_uri.clone(),
                 global_accumulator: self.global_accumulator.clone(),
                 scope_context: self.scope_context.clone(),
+                custom_template_defs: self.custom_template_defs.clone(),
+                accumulated_globals: Rc::clone(&self.accumulated_globals),
             }
         }
     }
@@ -275,10 +285,9 @@ impl TagContext {
         });
 
         Self {
-            variables: HashMap::new(),
             input_uri: Some(input_uri),
-            global_accumulator: None,
             scope_context,
+            ..Self::default()
         }
     }
 

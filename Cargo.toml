@@ -46,6 +46,8 @@ serde = { version = "1", features = ["derive"] }
 # TODO: serde_yaml is deprecated - migrate to serde_yml for better tagged value support
 serde_yaml = "0.9"
 serde_json = "1"
+# JSON Schema validation for custom resource template $params
+jsonschema = "0.28"
 # yaml-rust for better formatting control
 yaml-rust = "0.4"
 

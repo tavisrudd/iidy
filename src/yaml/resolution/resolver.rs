@@ -643,6 +643,69 @@ impl Resolver {
             )),
         }
     }
+
+    /// Resolve a mapping at the CFN Resources level, expanding custom resource types.
+    fn resolve_resources_mapping(
+        &self,
+        pairs: &[(YamlAst, YamlAst)],
+        context: &TagContext,
+        path_tracker: &mut PathTracker,
+    ) -> Result<Value> {
+        use crate::yaml::custom_resources::expansion::expand_custom_resource;
+
+        let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
+
+        for (key_ast, value_ast) in pairs {
+            let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
+
+            let is_preprocessing_key = key_value
+                .as_str()
+                .map_or(false, |s| s.starts_with('$'));
+            if is_preprocessing_key {
+                let key_str = key_value.as_str().unwrap();
+                if matches!(key_str, "$imports" | "$defs" | "$envValues" | "$params") {
+                    continue;
+                }
+            }
+
+            let path_segment = match &key_value {
+                Value::String(s) => s.clone(),
+                Value::Number(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                _ => format!("{:?}", key_value),
+            };
+
+            path_tracker.push(&path_segment);
+            let resolved_value = self.resolve_ast(value_ast, context, path_tracker)?;
+            path_tracker.pop();
+
+            // Check if this resource uses a custom resource type
+            let resource_type = resolved_value
+                .as_mapping()
+                .and_then(|m| m.get(&Value::String("Type".into())))
+                .and_then(|v| v.as_str());
+
+            if let Some(type_name) = resource_type {
+                if let Some(template_info) = context.custom_template_defs.get(type_name) {
+                    let key_str = key_value.as_str().unwrap_or(&path_segment);
+                    let expanded = expand_custom_resource(
+                        key_str,
+                        &resolved_value,
+                        template_info,
+                        context,
+                    )?;
+                    for (res_name, res_value) in expanded {
+                        result.insert(Value::String(res_name), res_value);
+                    }
+                    continue;
+                }
+            }
+
+            result.insert(key_value, resolved_value);
+        }
+
+        Ok(Value::Mapping(result))
+    }
 }
 
 impl TagResolver for Resolver {
@@ -711,6 +774,13 @@ impl TagResolver for Resolver {
                 result.insert(key_val, value_val);
             }
         } else {
+            // Custom resource expansion at the CFN Resources level
+            if !context.custom_template_defs.is_empty()
+                && path_tracker.segments() == ["Resources"]
+            {
+                return self.resolve_resources_mapping(pairs, context, path_tracker);
+            }
+
             // Complex path: need full processing with path tracking
             for (key_ast, value_ast) in pairs {
                 // Resolve key
@@ -754,7 +824,7 @@ impl TagResolver for Resolver {
 
                 if is_preprocessing_key {
                     let key_str = key_value.as_str().unwrap(); // Safe because we checked above
-                    if matches!(key_str, "$imports" | "$defs" | "$envValues") {
+                    if matches!(key_str, "$imports" | "$defs" | "$envValues" | "$params") {
                         continue;
                     }
                 }
