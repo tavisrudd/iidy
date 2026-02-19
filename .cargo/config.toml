@@ -1,5 +1,2 @@
 [build]
 jobs = 12  # 33 integration tests each link ~200MB+ binary; 24 cores OOMs
-
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
