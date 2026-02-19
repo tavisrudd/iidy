@@ -8,7 +8,6 @@ pub mod aws_conversion;
 pub mod color;
 pub mod data;
 pub mod fixtures;
-pub mod keyboard;
 pub mod manager;
 pub mod renderer;
 pub mod renderers;
@@ -21,10 +20,6 @@ pub use aws_conversion::*;
 pub use color::*;
 pub use data::*;
 pub use fixtures::FixtureLoader;
-pub use keyboard::{
-    KeyboardCommand, KeyboardConfig, KeyboardListener, create_for_environment,
-    handle_keyboard_commands, is_tty_environment,
-};
 pub use manager::DynamicOutputManager;
 pub use renderer::{OutputMode, OutputRenderer};
 pub use renderers::*;

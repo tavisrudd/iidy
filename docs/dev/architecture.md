@@ -179,12 +179,6 @@ the last 1000 events for mode switching (replays through new renderer),
 routes data to the active renderer, and provides `request_confirmation()`
 which hides `oneshot::channel` complexity from handlers.
 
-### Keyboard listener
-
-`src/output/keyboard.rs` captures crossterm key events for mode switching
-(toggle between Interactive/Plain/JSON) and confirmation prompts during
-interactive sessions.
-
 For the full output system design, see
 [output-architecture.md](output-architecture.md) and
 [ADR-001](adr/001-output-sequencing.md).

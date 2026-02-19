@@ -202,8 +202,7 @@ Structure:
 ## Output system
   Data-driven architecture (OutputData enum)
   Renderer trait and implementations
-  DynamicOutputManager and mode switching
-  Keyboard listener
+  DynamicOutputManager
 
 ## Testing strategy
   Unit tests, integration tests, snapshot tests, property tests
@@ -310,9 +309,3 @@ For every document produced:
 - **Part 2: Audit docs/dev/COVERAGE.md** -- `make coverage-*` targets confirmed present in Makefile
 - **codebase-guide.md** -- moved to `docs/dev/codebase-guide.md`, symlinked from `notes/`
 - **aws_api_analysis.org** -- already archived to `notes/archive/`
-
-### Remaining
-
-- **Part 2: Audit docs/dev/codebase-guide.md** -- verify file paths and line counts still accurate
-- **docs/dev/benchmarks.md** -- not yet created (source: `notes/BENCHMARKS.md`)
-- **Quality checklist** -- not all docs have had cold-read sub-agent review

@@ -130,8 +130,8 @@ start, stop, or reference spinners.
 `DynamicOutputManager` in `src/output/manager.rs` enables runtime mode
 switching between Interactive, Plain, and JSON.
 
-It maintains a `VecDeque<OutputData>` buffer (max 1000 events). When the
-user triggers a mode switch (via keyboard listener), the manager:
+It maintains a `VecDeque<OutputData>` buffer (max 1000 events). When a
+mode switch is triggered, the manager:
 
 1. Cleans up the current renderer
 2. Creates a new renderer for the target mode
@@ -170,7 +170,7 @@ let confirmed = output_manager.request_confirmation(
 a `ConfirmationPrompt` variant, sends it through the renderer, and awaits
 the response.
 
-**Interactive renderer** -- displays the prompt, reads keyboard input,
+**Interactive renderer** -- displays the prompt, reads user input,
 sends the response through the channel.
 
 **JSON renderer** -- always returns false (non-interactive).

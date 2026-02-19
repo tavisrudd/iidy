@@ -27,7 +27,7 @@ reference colors, spinners, section titles, or display order.
 
 **Layer 2 -- Output manager (`src/output/manager.rs`)**: A `DynamicOutputManager` sits
 between handlers and renderers. It routes each `OutputData` value to the active renderer,
-buffers up to 1000 events for mode-switching transitions, and hides async coordination
+buffers recent events for ordering context, and hides async coordination
 primitives (e.g., `oneshot::channel` for confirmation prompts) from handlers. Handlers call
 `output_manager.request_confirmation(message)` and receive a `bool`; the channel mechanics
 are internal to the manager.
@@ -54,7 +54,7 @@ modification. Section ordering is guaranteed regardless of which API call comple
 The trade-offs are real. The indirection through `OutputData` adds a conversion step between
 SDK types and display. Section ordering in the renderer must be kept in sync with the
 sections a handler actually emits -- a mismatch causes silent buffering. The 1000-event
-buffer for mode switching has a memory cost proportional to operation duration.
+event buffer has a memory cost proportional to operation duration.
 
 The `run_command_handler!` migration is incremental: handlers that have not been touched
 since the macro was introduced still use `await_and_render!`, so two patterns coexist during

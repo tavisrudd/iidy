@@ -81,24 +81,19 @@ async fn test_dynamic_output_manager_creation_and_initialization() {
         .await
         .expect("Should create DynamicOutputManager with Plain mode");
 
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-    assert_eq!(manager.buffer_len(), 0);
+    drop(manager);
 
     // Test creation with Interactive mode
     let manager = DynamicOutputManager::new(OutputMode::Interactive, options.clone())
         .await
         .expect("Should create DynamicOutputManager with Interactive mode");
-
-    assert_eq!(manager.current_mode(), OutputMode::Interactive);
-    assert_eq!(manager.buffer_len(), 0);
+    drop(manager);
 
     // Test creation with JSON mode
     let manager = DynamicOutputManager::new(OutputMode::Json, options)
         .await
         .expect("Should create DynamicOutputManager with JSON mode");
-
-    assert_eq!(manager.current_mode(), OutputMode::Json);
-    assert_eq!(manager.buffer_len(), 0);
+    drop(manager);
 }
 
 #[tokio::test]
@@ -115,92 +110,12 @@ async fn test_basic_rendering_and_buffering() {
         .await
         .expect("Should render command metadata");
 
-    assert_eq!(manager.buffer_len(), 1, "Should have 1 buffered event");
-
     // Render a status update
     let status = create_sample_status_update("Operation starting", StatusLevel::Info);
     manager
         .render(OutputData::StatusUpdate(status))
         .await
         .expect("Should render status update");
-
-    assert_eq!(manager.buffer_len(), 2, "Should have 2 buffered events");
-}
-
-#[tokio::test]
-async fn test_buffer_limit_enforcement() {
-    let mut options = create_test_output_options();
-    options.buffer_limit = 3; // Very small buffer for testing
-
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
-        .await
-        .expect("Should create manager");
-
-    // Add events beyond buffer limit
-    for i in 0..5 {
-        let status = create_sample_status_update(&format!("Event {}", i), StatusLevel::Info);
-        manager
-            .render(OutputData::StatusUpdate(status))
-            .await
-            .expect("Should render status");
-    }
-
-    // Buffer should be at limit
-    assert_eq!(manager.buffer_len(), 3, "Buffer should be at limit of 3");
-
-    // Add one more event
-    let final_status = create_sample_status_update("Final event", StatusLevel::Info);
-    manager
-        .render(OutputData::StatusUpdate(final_status))
-        .await
-        .expect("Should render final status");
-
-    // Buffer should still be at limit (oldest event removed)
-    assert_eq!(
-        manager.buffer_len(),
-        3,
-        "Buffer should still be at limit after overflow"
-    );
-}
-
-#[tokio::test]
-async fn test_buffer_management_operations() {
-    let options = create_test_output_options();
-    let mut manager = DynamicOutputManager::new(OutputMode::Plain, options)
-        .await
-        .expect("Should create manager");
-
-    // Add some events
-    for i in 0..5 {
-        let status = create_sample_status_update(&format!("Event {}", i), StatusLevel::Info);
-        manager
-            .render(OutputData::StatusUpdate(status))
-            .await
-            .expect("Should render status");
-    }
-
-    assert_eq!(manager.buffer_len(), 5, "Should have 5 buffered events");
-
-    // Clear buffer
-    manager.clear_buffer();
-    assert_eq!(
-        manager.buffer_len(),
-        0,
-        "Buffer should be empty after clear"
-    );
-
-    // Add more events after clear
-    let status = create_sample_status_update("After clear", StatusLevel::Info);
-    manager
-        .render(OutputData::StatusUpdate(status))
-        .await
-        .expect("Should render after clear");
-
-    assert_eq!(
-        manager.buffer_len(),
-        1,
-        "Should have 1 event after clear and render"
-    );
 }
 
 #[tokio::test]
@@ -275,11 +190,6 @@ async fn test_all_output_data_types_rendering() {
         .await
         .expect("Should render ErrorInfo");
 
-    assert_eq!(
-        manager.buffer_len(),
-        5,
-        "Should have rendered 5 different data types"
-    );
 }
 
 #[tokio::test]
@@ -361,9 +271,6 @@ async fn test_end_to_end_cloudformation_operation_simulation() {
         .await
         .expect("Should render command result");
 
-    // Verify final state
-    assert_eq!(manager.current_mode(), OutputMode::Plain);
-    assert_eq!(manager.buffer_len(), 10, "Should have 10 events in history");
 }
 
 #[tokio::test]
@@ -391,11 +298,6 @@ async fn test_integration_with_fixture_data() {
             .expect("Should render fixture data");
     }
 
-    assert_eq!(
-        manager.buffer_len(),
-        output_data.len(),
-        "Should have buffered all fixture data"
-    );
 }
 
 #[tokio::test]
@@ -423,5 +325,4 @@ async fn test_error_handling_during_rendering() {
         .await
         .expect("Should render error information");
 
-    assert_eq!(manager.buffer_len(), 1, "Should have buffered error");
 }

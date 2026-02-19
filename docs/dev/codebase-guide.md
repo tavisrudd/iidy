@@ -123,7 +123,6 @@ output/
   mod.rs               -- OutputData enum (25 variants), OutputRenderer trait
   data.rs              -- all payload structs (CommandMetadata, StackDefinition, etc.)
   manager.rs           -- DynamicOutputManager: buffer, dispatch, mode switching
-  keyboard.rs          -- KeyboardListener: crossterm key capture, mode switch commands
   status.rs            -- CFN status categorization and styling
   color.rs             -- theme system (dark/light/high-contrast)
   aws_conversion.rs    -- AWS SDK types -> output data types

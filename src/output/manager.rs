@@ -74,62 +74,6 @@ impl DynamicOutputManager {
             .await
     }
 
-    /// Switch to a different output mode
-    pub async fn switch_to_mode(&mut self, new_mode: OutputMode) -> Result<()> {
-        if new_mode == self.current_mode {
-            return Ok(());
-        }
-
-        // Clean up current renderer
-        self.current_renderer.cleanup().await?;
-
-        // Clear screen logic will be added when TUI is implemented
-
-        // Create new renderer using stored options
-        self.current_renderer = create_renderer(new_mode, &self.options)?;
-        self.current_renderer.init().await?;
-
-        // Re-render all buffered data in new mode
-        let buffered_data: Vec<OutputData> = self.event_buffer.iter().cloned().collect();
-        for data in buffered_data {
-            self.current_renderer
-                .render_output_data(data, Some(&self.event_buffer))
-                .await?;
-        }
-
-        self.current_mode = new_mode;
-
-        // Show switch notification
-        let switch_msg = StatusUpdate {
-            message: format!("Switched to {} mode", new_mode),
-            timestamp: chrono::Utc::now(),
-            level: crate::output::data::StatusLevel::Info,
-        };
-        self.current_renderer
-            .render_output_data(
-                OutputData::StatusUpdate(switch_msg),
-                Some(&self.event_buffer),
-            )
-            .await?;
-
-        Ok(())
-    }
-
-    /// Get current output mode
-    pub fn current_mode(&self) -> OutputMode {
-        self.current_mode
-    }
-
-    /// Clear the event buffer
-    pub fn clear_buffer(&mut self) {
-        self.event_buffer.clear();
-    }
-
-    /// Get the number of buffered events
-    pub fn buffer_len(&self) -> usize {
-        self.event_buffer.len()
-    }
-
     /// Request user confirmation and return whether user confirmed
     pub async fn request_confirmation(&mut self, message: String) -> Result<bool> {
         self.request_confirmation_impl(message, None).await
