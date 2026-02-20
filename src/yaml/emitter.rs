@@ -594,53 +594,6 @@ mod tests {
         assert_eq!(output.trim(), expected);
     }
 
-    // #[test]
-    // fn test_iidy_vs_js_yaml_quoting_differences() {
-    //     let test_strings = vec![
-    //         "arn:aws:iam::123456789012:role/MyRole",
-    //         "key:value",
-    //         "key : value",
-    //         "value:",
-    //         ":value",
-    //         "normaltext",
-    //         "a:b:c:d",
-    //     ];
-
-    //     let mut buffer = String::new();
-    //     let emitter = IidyYamlEmitter::new(&mut buffer);
-
-    //     for test_str in test_strings {
-    //         println!("Testing string: '{}'", test_str);
-
-    //         // Test current js-yaml logic
-    //         let js_yaml_safe = emitter.is_plain_safe_string(test_str);
-
-    //         // Test iidy-js logic
-    //         let chars: Vec<char> = test_str.chars().collect();
-    //         let first_char_safe = is_plain_safe_first_old_iidy(chars[0]);
-    //         let last_char_safe = is_plain_safe_last(chars[chars.len() - 1]);
-
-    //         let mut all_chars_safe = first_char_safe && last_char_safe;
-    //         if all_chars_safe {
-    //             let mut prev_char: Option<char> = None;
-    //             for &ch in &chars {
-    //                 if !is_plain_safe_old_iidy(ch, prev_char) {
-    //                     all_chars_safe = false;
-    //                     break;
-    //                 }
-    //                 prev_char = Some(ch);
-    //             }
-    //         }
-
-    //         println!("  js-yaml safe: {}, iidy-js safe: {}", js_yaml_safe, all_chars_safe);
-
-    //         if js_yaml_safe != all_chars_safe {
-    //             println!("  *** DIFFERENCE DETECTED ***");
-    //         }
-    //         println!();
-    //     }
-    // }
-
     #[test]
     fn test_standard_yaml_rust_behavior() {
         let yaml_str = r#"
@@ -679,54 +632,4 @@ nested_config:
         // This difference is intentional for iidy-js compatibility
         println!("Our emitter successfully processes the same YAML structure");
     }
-
-    // #[test]
-    // fn test_yaml_version_quoting() {
-    //     let mut map = serde_yaml::Mapping::new();
-    //     map.insert(
-    //         Value::String("AWSTemplateFormatVersion".to_string()),
-    //         Value::String("2010-09-09".to_string())
-    //     );
-    //     map.insert(
-    //         Value::String("Description".to_string()),
-    //         Value::String("Test template".to_string())
-    //     );
-    //     map.insert(
-    //         Value::String("Version".to_string()),
-    //         Value::String("1.2.3".to_string())
-    //     );
-    //     map.insert(
-    //         Value::String("RegularNumber".to_string()),
-    //         Value::Number(serde_yaml::Number::from(123))
-    //     );
-    //     map.insert(
-    //         Value::String("RegularFloat".to_string()),
-    //         Value::Number(serde_yaml::Number::from(1.5))
-    //     );
-    //     map.insert(
-    //         Value::String("DateString".to_string()),
-    //         Value::String("2023-12-25".to_string())
-    //     );
-    //     map.insert(
-    //         Value::String("DashVersion".to_string()),
-    //         Value::String("1-2-3".to_string())
-    //     );
-    //     let value = Value::Mapping(map);
-
-    //     let result = serialize_yaml_iidy_js_compatible(&value).unwrap();
-
-    //     // Should quote version numbers, dates, and dash versions
-    //     assert!(result.contains("AWSTemplateFormatVersion: '2010-09-09'"));
-    //     assert!(result.contains("Version: '1.2.3'"));
-    //     assert!(result.contains("DateString: '2023-12-25'"));
-    //     assert!(result.contains("DashVersion: '1-2-3'"));
-
-    //     // Should not quote regular text, regular numbers, or regular floats
-    //     assert!(result.contains("Description: Test template"));
-    //     assert!(!result.contains("Description: 'Test template'"));
-    //     assert!(result.contains("RegularNumber: 123"));
-    //     assert!(!result.contains("RegularNumber: '123'"));
-    //     assert!(result.contains("RegularFloat: 1.5"));
-    //     assert!(!result.contains("RegularFloat: '1.5'"));
-    // }
 }

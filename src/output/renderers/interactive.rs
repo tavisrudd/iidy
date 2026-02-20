@@ -1102,8 +1102,11 @@ impl InteractiveRenderer {
             && !reason.is_empty()
             && event.resource_status.contains("FAILED")
         {
-            // TODO: review: Remove ".*Initiated" from reason like iidy-js does
-            let cleaned_reason = reason.replace("Initiated", "").trim().to_string();
+            // Remove everything up to and including "Initiated" (matches iidy-js behavior)
+            let cleaned_reason = match reason.rfind("Initiated") {
+                Some(pos) => reason[pos + "Initiated".len()..].trim().to_string(),
+                None => reason.trim().to_string(),
+            };
             if !cleaned_reason.is_empty() {
                 let indent = "  ";
 
@@ -1403,7 +1406,6 @@ impl InteractiveRenderer {
     }
 
     async fn render_stack_contents(&mut self, data: &StackContents) -> Result<()> {
-        // TODO fix the handling of titles in here.
         if !data.resources.is_empty() {
             if !self.suppress_main_heading {
                 self.print_section_heading_with_newline("Stack Resources");

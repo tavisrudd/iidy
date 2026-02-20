@@ -20,23 +20,24 @@ Already has its own handoff (do NOT include):
 
 ---
 
-## Finding A: `{{lookup}}` Handlebars helper
+## RESOLVED (no action needed)
 
-`src/yaml/handlebars/tests.rs:330-336` -- test early-returns because the
-`lookup` helper is not registered. The `lookup` helper does array/object
-index access: `{{lookup myArray 0}}`, `{{lookup myObject "key"}}`.
-The handlebars crate may provide this as a built-in -- check whether
-`handlebars::Handlebars::new()` includes it or if it needs explicit
-registration.
+- **Finding A** (`{{lookup}}` helper): Already implemented at `engine.rs:58` and
+  `helpers/object_access.rs`. Stale test early-return removed.
+- **Finding B** (`ToggleTimestamps`): Already removed from codebase. No keyboard.rs
+  file exists.
+- **Finding H** (Commented-out tests in emitter.rs): Deleted.
+- **Finding I** (`.*Initiated` suffix): Fixed to match iidy-js regex behavior
+  using `rfind("Initiated")`.
+- **Finding J** (Section title handling): Stale TODO removed. Title handling
+  works correctly with conditional `print_section_heading` vs
+  `print_section_heading_with_newline`.
+- **Finding K** (`disable_rollback` hardcoded): Already reads from stack data via
+  `stack.disable_rollback().unwrap_or(false)`. Was never hardcoded to false.
 
-## Finding B: `ToggleTimestamps` keyboard command (dead code)
+---
 
-`src/output/keyboard.rs` -- enum variant, keybinding (T), help text all
-exist, but the handler does nothing. The help text uses an emoji (lightbulb)
-which violates project standards. Either implement timestamp toggling in
-the interactive renderer or remove the dead keybinding entirely.
-
-Related: `notes/2026-02-17-code-review-findings.md:110,112`
+## REMAINING FINDINGS
 
 ## Finding C: `render_token_info` empty implementation
 
@@ -82,32 +83,6 @@ actually test resolution produces valid output.
 `tests/output/output_renderer_snapshots.rs:458,466,474` -- three snapshot
 tests snapshot hardcoded placeholder strings instead of actual renderer
 output. Need stdout capture to produce real snapshots.
-
-## Finding H: Commented-out tests in emitter.rs
-
-`src/yaml/emitter.rs:597-642,683-731` -- two test functions with bodies
-entirely commented out:
-- `test_iidy_vs_js_yaml_quoting_differences` -- tested quoting differences
-- `test_yaml_version_quoting` -- tested version string quoting
-
-Either fix and uncomment or delete the dead code.
-
-## Finding I: `.*Initiated` suffix in failure reasons
-
-`src/output/renderers/interactive.rs:1105` -- TODO to remove `.*Initiated`
-suffix from stack event failure reasons, matching iidy-js behavior.
-One-line fix with a regex or string replace.
-
-## Finding J: Section title handling in render_stack_contents
-
-`src/output/renderers/interactive.rs:1406` -- TODO acknowledging broken
-title handling in the stack contents renderer. Need to read surrounding
-code to understand the issue.
-
-## Finding K: `disable_rollback: false` hardcoded
-
-`src/output/aws_conversion.rs:286` -- hardcoded `disable_rollback: false`
-with a TODO. Should read from the actual stack data.
 
 ## Finding L: Tech debt TODOs (low priority, catalog only)
 

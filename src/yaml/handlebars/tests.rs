@@ -327,14 +327,6 @@ fn test_dynamic_key_access() {
     let template = "{{lookup obj keyName}}";
     let result = interpolate_handlebars_string(template, &env, "test");
 
-    // This might fail if lookup helper is not available, which is expected
-    // We should implement a lookup helper
-    if let Err(e) = result {
-        // Expected for now, we'll implement lookup helper
-        println!("lookup helper not yet implemented: {e}");
-        return;
-    }
-
     assert_eq!(result.unwrap(), "value1");
 }
 
