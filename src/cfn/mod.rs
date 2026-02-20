@@ -229,6 +229,7 @@ pub mod exec_changeset;
 pub mod get_import;
 pub mod get_stack_instances;
 pub mod get_stack_template;
+pub mod init_stack_args;
 pub mod is_terminal_status;
 pub mod list_stacks;
 pub mod operations;

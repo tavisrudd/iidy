@@ -230,7 +230,12 @@ fn handle_command(cli: Cli) {
         }
         Commands::LintTemplate(args) => println!("lint-template {args:?}"),
         Commands::ConvertStackToIidy(args) => println!("convert-stack-to-iidy {args:?}"),
-        Commands::InitStackArgs(args) => println!("init-stack-args {args:?}"),
+        Commands::InitStackArgs(args) => {
+            if let Err(e) = cfn::init_stack_args::init_stack_args(&args) {
+                eprintln!("error initializing stack args: {e:?}");
+                std::process::exit(1);
+            }
+        }
         Commands::DummySpacer6 => {}
         Commands::Completion { shell } => {
             let shell = shell
