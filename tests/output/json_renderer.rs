@@ -8,7 +8,6 @@ use iidy::output::fixtures::FixtureLoader;
 use iidy::output::renderer::OutputRenderer;
 use iidy::output::renderers::json::{JsonOptions, JsonRenderer};
 use serde_json::Value;
-use tokio;
 
 #[tokio::test]
 async fn test_json_renderer_with_fixture_data() {

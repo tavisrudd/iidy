@@ -290,8 +290,8 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     // Detect custom resource templates (imported docs with $params)
                     // Must check raw doc before process_imported_document consumes it
                     let custom_template_params = if let Value::Mapping(ref map) = import_data.doc {
-                        map.get(&Value::String("$params".into()))
-                            .map(|v| parse_params(v))
+                        map.get(Value::String("$params".into()))
+                            .map(parse_params)
                             .transpose()?
                     } else {
                         None
@@ -492,7 +492,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                     .enumerate()
                     .map(|(i, item)| {
                         let mut new_path = path.to_vec();
-                        new_path.push(format!("[{}]", i));
+                        new_path.push(format!("[{i}]"));
                         self.convert_yaml_12_to_11_compatibility_with_context(item, &new_path)
                     })
                     .collect();
@@ -504,7 +504,7 @@ impl<L: ImportLoader> YamlPreprocessor<L> {
                 for (k, v) in map {
                     let key_str = match &k {
                         Value::String(s) => s.clone(),
-                        _ => format!("{:?}", k),
+                        _ => format!("{k:?}"),
                     };
                     let mut new_path = path.to_vec();
                     new_path.push(key_str);
@@ -635,7 +635,7 @@ fn convert_serde_value_to_yaml_rust(value: &Value) -> Yaml {
             let tag_key = if tag_str.starts_with('!') {
                 Yaml::String(tag_str) // Already has !, don't add another
             } else {
-                Yaml::String(format!("!{}", tag_str)) // Add ! prefix
+                Yaml::String(format!("!{tag_str}")) // Add ! prefix
             };
             let tag_value = convert_serde_value_to_yaml_rust(&tagged.value);
             h.insert(tag_key, tag_value);
@@ -726,7 +726,7 @@ region: "us-west-2"
         // Check that the environment variables were properly resolved
         if let Value::Mapping(map) = result {
             if let Some(Value::String(stack_name)) =
-                map.get(&Value::String("stack_name".to_string()))
+                map.get(Value::String("stack_name".to_string()))
             {
                 assert_eq!(stack_name, "my-app-test");
             } else {
@@ -750,13 +750,12 @@ region: "us-west-2"
         let yaml_input = format!(
             r#"
 $imports:
-  config: "{}"
+  config: "{temp_path}"
 
 database:
   host: !$ config.database_host
   port: !$ config.database_port
-"#,
-            temp_path
+"#
         );
 
         let loader = ProductionImportLoader::new();
@@ -765,14 +764,11 @@ database:
 
         // The database values should be resolved from the imported file
         if let Value::Mapping(map) = result {
-            if let Some(Value::Mapping(database)) = map.get(&Value::String("database".to_string()))
-            {
-                if let Some(Value::String(host)) = database.get(&Value::String("host".to_string()))
-                {
+            if let Some(Value::Mapping(database)) = map.get(Value::String("database".to_string())) {
+                if let Some(Value::String(host)) = database.get(Value::String("host".to_string())) {
                     assert_eq!(host, "db.example.com");
                 }
-                if let Some(Value::String(port)) = database.get(&Value::String("port".to_string()))
-                {
+                if let Some(Value::String(port)) = database.get(Value::String("port".to_string())) {
                     assert_eq!(port, "5432");
                 }
             } else {
@@ -825,8 +821,8 @@ database:
             let value = Value::Mapping(map);
 
             let output = serialize_yaml_iidy_js_compatible(&value).unwrap();
-            println!("Key: {}, Input: {:?}", key, test_str);
-            println!("Output:\n{}", output);
+            println!("Key: {key}, Input: {test_str:?}");
+            println!("Output:\n{output}");
             println!("---");
         }
     }

@@ -13,6 +13,12 @@ pub struct PathTracker {
     // TODO consider SmallVec<[Cow<'a, str>; 8]>,
 }
 
+impl Default for PathTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PathTracker {
     /// Create a new empty path tracker with optimal default capacity
     pub fn new() -> Self {

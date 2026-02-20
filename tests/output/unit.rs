@@ -10,7 +10,6 @@ use chrono::Utc;
 use iidy::cli::{ColorChoice, Theme};
 use iidy::output::data::*;
 use iidy::output::theme::{IidyTheme, get_terminal_width};
-use serde_json;
 use std::collections::HashMap;
 
 #[test]
@@ -78,7 +77,7 @@ fn test_stack_definition_with_times() {
     // Test Clone
     let cloned = stack_def.clone();
     assert_eq!(cloned.name, stack_def.name);
-    assert_eq!(cloned.termination_protection, true);
+    assert!(cloned.termination_protection);
 
     // Test serialization with timestamps
     let json = serde_json::to_string(&stack_def).expect("Should serialize with timestamps");

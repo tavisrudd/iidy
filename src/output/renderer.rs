@@ -55,6 +55,6 @@ impl std::fmt::Display for OutputMode {
             OutputMode::Interactive => "interactive",
             OutputMode::Json => "json",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }

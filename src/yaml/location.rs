@@ -128,6 +128,12 @@ impl LocationFinder for ManualLocationFinder {
     }
 }
 
+impl Default for TreeSitterLocationFinder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TreeSitterLocationFinder {
     /// Create a new tree-sitter location finder
     pub fn new() -> Self {
@@ -177,11 +183,9 @@ impl LocationFinder for TreeSitterLocationFinder {
     }
 
     fn find_position_of(&self, source: &str, search_text: &str) -> Option<Position> {
-        if let Some(found_offset) = source.find(search_text) {
-            Some(self.offset_to_position(source, found_offset))
-        } else {
-            None
-        }
+        source
+            .find(search_text)
+            .map(|found_offset| self.offset_to_position(source, found_offset))
     }
 
     fn offset_to_position(&self, source: &str, offset: usize) -> Position {
@@ -281,7 +285,7 @@ impl ManualLocationFinder {
 
         // Find each preceding segment in order
         for &segment in preceding_segments {
-            let pattern = format!("{}:", segment);
+            let pattern = format!("{segment}:");
             if let Some(segment_pos) =
                 self.find_position_of_from_offset(source, &pattern, search_offset)
             {
@@ -292,7 +296,7 @@ impl ManualLocationFinder {
         }
 
         // Now look for the target key after the last segment
-        let target_pattern = format!("{}:", target_key);
+        let target_pattern = format!("{target_key}:");
         let mut target_offset = search_offset;
         let mut target_occurrence = 0;
 
@@ -338,7 +342,7 @@ impl ManualLocationFinder {
         let target_occurrence = array_index.unwrap_or(0);
 
         while let Some(key_pos) =
-            self.find_position_of_from_offset(source, &format!("{}:", key_name), key_offset)
+            self.find_position_of_from_offset(source, &format!("{key_name}:"), key_offset)
         {
             if key_occurrence == target_occurrence {
                 // Look for the tag within a reasonable distance after this key

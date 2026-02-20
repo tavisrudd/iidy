@@ -391,8 +391,7 @@ impl Commands {
 
             // All other commands should not be calling to_cfn_operation()
             _ => panic!(
-                "Command {:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands",
-                self
+                "Command {self:?} should not be mapped to a CFN operation - this indicates a bug where to_cfn_operation() is being called for non-CFN commands"
             ),
         }
     }

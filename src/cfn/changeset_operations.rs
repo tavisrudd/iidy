@@ -101,6 +101,7 @@ pub async fn check_stack_exists(context: &CfnContext, stack_name: &str) -> Resul
 }
 
 /// Comprehensive changeset creation that handles both CREATE and UPDATE changesets
+#[allow(clippy::too_many_arguments)] // TODO: refactor to use a params struct
 pub async fn create_changeset_comprehensive(
     context: &CfnContext,
     stack_args: &StackArgs,
@@ -131,7 +132,7 @@ pub async fn create_changeset_comprehensive(
         let existing_changeset_result = build_existing_changeset_result(
             context,
             stack_name,
-            &existing_changeset_name,
+            existing_changeset_name,
             &changeset_type,
         )
         .await?;
@@ -171,6 +172,7 @@ pub async fn create_changeset_comprehensive(
     .await
 }
 
+#[allow(clippy::too_many_arguments)] // TODO: refactor to use a params struct
 async fn perform_changeset_creation(
     context: &CfnContext,
     stack_args: &StackArgs,
@@ -210,6 +212,7 @@ async fn perform_changeset_creation(
     Ok((response, changeset_name.to_string()))
 }
 
+#[allow(clippy::too_many_arguments)] // TODO: refactor to use a params struct
 async fn build_create_changeset_with_type(
     stack_args: &StackArgs,
     changeset_name: &str,
@@ -382,8 +385,7 @@ fn generate_changeset_console_url(response: &CreateChangeSetOutput) -> Result<St
 
     // Generate AWS Console URL (exact iidy-js format)
     let console_url = format!(
-        "https://{}.console.aws.amazon.com/cloudformation/home?region={}#/changeset/detail?stackId={}&changeSetId={}",
-        region, region, encoded_stack_arn, encoded_changeset_arn
+        "https://{region}.console.aws.amazon.com/cloudformation/home?region={region}#/changeset/detail?stackId={encoded_stack_arn}&changeSetId={encoded_changeset_arn}"
     );
 
     Ok(console_url)
@@ -561,8 +563,7 @@ async fn build_existing_changeset_result(
 
     // Generate console URL
     let console_url = format!(
-        "https://console.aws.amazon.com/cloudformation/home#/stacks/stackinfo?stackId={}",
-        stack_name
+        "https://console.aws.amazon.com/cloudformation/home#/stacks/stackinfo?stackId={stack_name}"
     );
 
     // Get pending changesets (reuse existing logic)
@@ -595,19 +596,17 @@ pub async fn confirm_changeset_execution(
 ) -> Result<bool> {
     let confirmed = if yes_flag {
         true
+    } else if use_key {
+        output_manager
+            .request_confirmation_with_key(
+                "Do you want to execute this changeset now?".to_string(),
+                "execute_changeset".to_string(),
+            )
+            .await?
     } else {
-        if use_key {
-            output_manager
-                .request_confirmation_with_key(
-                    "Do you want to execute this changeset now?".to_string(),
-                    "execute_changeset".to_string(),
-                )
-                .await?
-        } else {
-            output_manager
-                .request_confirmation("Do you want to execute this changeset now?".to_string())
-                .await?
-        }
+        output_manager
+            .request_confirmation("Do you want to execute this changeset now?".to_string())
+            .await?
     };
 
     if !confirmed {

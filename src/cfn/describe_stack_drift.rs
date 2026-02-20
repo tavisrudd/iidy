@@ -129,9 +129,11 @@ async fn collect_stack_drift_data(client: &Client, stack_name: &str) -> Result<S
 
     let drifted_resources: Vec<DriftedResource> = all_drifts
         .into_iter()
-        .filter(|d| match d.stack_resource_drift_status() {
-            Some(StackResourceDriftStatus::InSync) => false,
-            _ => true,
+        .filter(|d| {
+            !matches!(
+                d.stack_resource_drift_status(),
+                Some(StackResourceDriftStatus::InSync)
+            )
         })
         .map(|drift| DriftedResource {
             logical_resource_id: drift.logical_resource_id().unwrap_or("unknown").to_string(),

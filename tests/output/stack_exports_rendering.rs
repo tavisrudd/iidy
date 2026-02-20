@@ -7,7 +7,6 @@ use iidy::cli::{ColorChoice, Theme};
 use iidy::output::data::*;
 use iidy::output::renderer::OutputRenderer;
 use iidy::output::renderers::interactive::{InteractiveOptions, InteractiveRenderer};
-use tokio;
 
 #[tokio::test]
 async fn test_stack_exports_with_importing_stacks() {

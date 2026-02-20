@@ -16,7 +16,7 @@ pub trait TimeProvider: Send + Sync {
     /// This subtracts 500ms from current time to account for timing precision.
     async fn start_time(&self) -> Result<DateTime<Utc>> {
         let mut time = self.now().await?;
-        time = time - chrono::Duration::milliseconds(500);
+        time -= chrono::Duration::milliseconds(500);
         Ok(time)
     }
 }
@@ -84,19 +84,19 @@ impl TimeProvider for ReliableTimeProvider {
         // First attempt: try NTP
         match self.try_ntp().await {
             Ok(time) => {
-                log::debug!("Using NTP time: {}", time);
+                log::debug!("Using NTP time: {time}");
                 Ok(time)
             }
             Err(e) => {
-                log::debug!("NTP failed, retrying once: {}", e);
+                log::debug!("NTP failed, retrying once: {e}");
                 // Second attempt: retry NTP once
                 match self.try_ntp().await {
                     Ok(time) => {
-                        log::debug!("Using NTP time (retry): {}", time);
+                        log::debug!("Using NTP time (retry): {time}");
                         Ok(time)
                     }
                     Err(e) => {
-                        log::debug!("NTP retry failed, falling back to system time: {}", e);
+                        log::debug!("NTP retry failed, falling back to system time: {e}");
                         // Fallback: use system time
                         Ok(Utc::now())
                     }

@@ -152,8 +152,8 @@ impl Scope {
         let type_prefix = match &scope_type {
             ScopeType::Global => "global".to_string(),
             ScopeType::LocalDefs => "defs".to_string(),
-            ScopeType::ImportedDocument(key) => format!("import_{}", key),
-            ScopeType::TagExecution(tag) => format!("tag_{}", tag),
+            ScopeType::ImportedDocument(key) => format!("import_{key}"),
+            ScopeType::TagExecution(tag) => format!("tag_{tag}"),
             ScopeType::BuiltIn => "builtin".to_string(),
         };
 
@@ -356,8 +356,8 @@ impl TagContext {
         if let Some(var) = self.resolve_scoped_variable(name) {
             match &var.source {
                 VariableSource::LocalDefs => Some("local $defs".to_string()),
-                VariableSource::ImportedDocument(key) => Some(format!("imported from '{}'", key)),
-                VariableSource::TagBinding(tag) => Some(format!("bound in {}", tag)),
+                VariableSource::ImportedDocument(key) => Some(format!("imported from '{key}'")),
+                VariableSource::TagBinding(tag) => Some(format!("bound in {tag}")),
                 VariableSource::BuiltIn => Some("built-in".to_string()),
                 VariableSource::External => Some("external".to_string()),
             }
@@ -420,7 +420,7 @@ impl TagContext {
         let mut deps = HashMap::new();
 
         if let Some(ref scope_context) = self.scope_context {
-            for (_scope_id, scope) in &scope_context.scopes {
+            for scope in scope_context.scopes.values() {
                 if let Some(ref source_uri) = scope.source_uri {
                     let children: Vec<String> = scope
                         .child_scope_ids
@@ -647,28 +647,24 @@ mod tests {
             // Test that input_uri is stored correctly
             assert!(
                 context.input_uri.is_some(),
-                "Expected input_uri for location: {}",
-                location
+                "Expected input_uri for location: {location}"
             );
             assert_eq!(
                 context.input_uri.as_ref().unwrap(),
                 location,
-                "input_uri mismatch for location: {}",
-                location
+                "input_uri mismatch for location: {location}"
             );
 
             // Test that base path can be derived on demand
             let derived_base = derive_base_path_from_location(location);
             assert!(
                 derived_base.is_some(),
-                "Expected derived base_path for location: {}",
-                location
+                "Expected derived base_path for location: {location}"
             );
             assert_eq!(
                 derived_base.unwrap().to_string_lossy(),
                 expected_base,
-                "Derived base path mismatch for location: {}",
-                location
+                "Derived base path mismatch for location: {location}"
             );
         }
     }
@@ -773,21 +769,18 @@ mod tests {
                 Some(expected_path) => {
                     assert!(
                         base_path.is_some(),
-                        "Expected base_path for location: {}",
-                        location
+                        "Expected base_path for location: {location}"
                     );
                     assert_eq!(
                         base_path.unwrap().to_string_lossy(),
                         expected_path,
-                        "Mismatch for location: {}",
-                        location
+                        "Mismatch for location: {location}"
                     );
                 }
                 None => {
                     assert!(
                         base_path.is_none(),
-                        "Expected no base_path for location: {}",
-                        location
+                        "Expected no base_path for location: {location}"
                     );
                 }
             }
@@ -1003,7 +996,7 @@ mod tests {
 
         // Should have dependencies
         assert!(!deps.is_empty());
-        println!("Dependency graph: {:?}", deps);
+        println!("Dependency graph: {deps:?}");
 
         // The graph should show the import relationships
         // Note: The exact structure depends on how we build scopes

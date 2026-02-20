@@ -7,7 +7,7 @@ pub fn parse_yaml_from_file(source: &str, file_path: &str) -> anyhow::Result<ast
         url::Url::parse(file_path)?
     } else {
         url::Url::from_file_path(file_path).unwrap_or_else(|_| {
-            url::Url::parse(&format!("file://{}", file_path)).expect("Failed to create file URI")
+            url::Url::parse(&format!("file://{file_path}")).expect("Failed to create file URI")
         })
     };
 

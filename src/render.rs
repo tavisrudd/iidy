@@ -53,7 +53,7 @@ pub async fn handle_render_command(args: &RenderArgs) -> Result<()> {
 
     // Output to file or stdout
     if args.outfile == "stdout" || args.outfile == "-" {
-        println!("{}", formatted_output);
+        println!("{formatted_output}");
     } else {
         // Check if file exists and handle overwrite logic
         if Path::new(&args.outfile).exists() && !args.overwrite {

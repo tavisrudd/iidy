@@ -20,7 +20,7 @@ fn discover_templates(dir: &Path) -> Vec<(PathBuf, String)> {
             let name = entry.file_name().to_string_lossy().to_string();
 
             if path.is_file()
-                && path.extension().map_or(false, |ext| ext == "yaml")
+                && path.extension().is_some_and(|ext| ext == "yaml")
                 && !name.starts_with(".")
             {
                 templates.push((path, name));
@@ -41,8 +41,8 @@ async fn test_error_template(path: &Path) {
         std::env::set_var("NO_COLOR", "1");
     }
 
-    let content = std::fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", path, e));
+    let content =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("Failed to read {path:?}: {e}"));
     let snapshot_name = format!(
         "auto_discovered_{}",
         path.to_str()
@@ -52,7 +52,7 @@ async fn test_error_template(path: &Path) {
             .replace(".yaml", "")
     );
 
-    match preprocess_yaml(&content, &path.to_str().unwrap(), &YamlSpec::Auto).await {
+    match preprocess_yaml(&content, path.to_str().unwrap(), &YamlSpec::Auto).await {
         Ok(_) => panic!(
             "Expected {} to fail but it succeeded",
             path.to_str().unwrap()
@@ -82,7 +82,7 @@ async fn test_all_example_errors_auto_discovery() {
         let content = match std::fs::read_to_string(&path) {
             Ok(content) => content,
             Err(e) => {
-                failures.push(format!("Failed to read {:?}: {}", path, e));
+                failures.push(format!("Failed to read {path:?}: {e}"));
                 continue;
             }
         };
@@ -96,7 +96,7 @@ async fn test_all_example_errors_auto_discovery() {
                 .replace(".yaml", "")
         );
 
-        match preprocess_yaml(&content, &path.to_str().unwrap(), &YamlSpec::Auto).await {
+        match preprocess_yaml(&content, path.to_str().unwrap(), &YamlSpec::Auto).await {
             Ok(_) => {
                 failures.push(format!(
                     "Expected {} to fail but it succeeded",

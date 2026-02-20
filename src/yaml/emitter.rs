@@ -108,11 +108,9 @@ fn is_plain_safe(c: char, prev_char: Option<char>, inblock: bool) -> bool {
     };
 
     // ns-plain-char logic
-    plain_safe
-        && c != '#' // false on '#'
-        && !(prev_char == Some(':') && !c_is_ns_char) // false on ': '
-        || (prev_char.map_or(false, |p| is_ns_char_or_whitespace(p) && !is_whitespace(p)) && c == '#') // true on '[^ ]#'
-        || (prev_char == Some(':') && c_is_ns_char) // true on ':[^ ]'
+    plain_safe && c != '#' && (prev_char != Some(':') || c_is_ns_char)
+        || (prev_char.is_some_and(|p| is_ns_char_or_whitespace(p) && !is_whitespace(p)) && c == '#')
+        || (prev_char == Some(':') && c_is_ns_char)
 }
 
 // /// iidy-js isPlainSafe equivalent (simplified version)
@@ -300,11 +298,11 @@ impl<'a> IidyYamlEmitter<'a> {
                 Ok(())
             }
             Yaml::Integer(v) => {
-                write!(self.writer, "{}", v)?;
+                write!(self.writer, "{v}")?;
                 Ok(())
             }
             Yaml::Real(ref v) => {
-                write!(self.writer, "{}", v)?;
+                write!(self.writer, "{v}")?;
                 Ok(())
             }
             Yaml::Null => {
@@ -403,7 +401,7 @@ impl<'a> IidyYamlEmitter<'a> {
 
         // For single-line strings, prefer no quotes when possible
         if !self.need_quotes_iidy(v) {
-            return write!(self.writer, "{}", v);
+            return write!(self.writer, "{v}");
         }
 
         // String needs quoting - prefer single quotes unless they contain single quotes
@@ -492,10 +490,8 @@ impl<'a> IidyYamlEmitter<'a> {
     fn is_tagged_value_mapping(&self, h: &Hash) -> bool {
         // Tagged values should be single-key hashes with keys starting with !
         if h.len() == 1 {
-            if let Some((key, _)) = h.iter().next() {
-                if let Yaml::String(key_str) = key {
-                    return key_str.starts_with('!');
-                }
+            if let Some((Yaml::String(key_str), _)) = h.iter().next() {
+                return key_str.starts_with('!');
             }
         }
         false
@@ -504,31 +500,24 @@ impl<'a> IidyYamlEmitter<'a> {
     /// Emit a tagged value in the proper !Tag value format
     /// Handles any tag (CloudFormation, custom, etc.) with any value type (string, array, hash, etc.)
     fn emit_tagged_value_iidy(&mut self, h: &Hash) -> Result<(), fmt::Error> {
-        if let Some((key, value)) = h.iter().next() {
-            if let Yaml::String(tag_name) = key {
-                // Write the tag name directly (e.g., "!Ref" -> !Ref)
-                self.writer.write_str(tag_name)?;
+        if let Some((Yaml::String(tag_name), value)) = h.iter().next() {
+            self.writer.write_str(tag_name)?;
 
-                // Handle the value based on its type
-                match value {
-                    // Simple scalar values - write inline with space
-                    Yaml::String(_)
-                    | Yaml::Integer(_)
-                    | Yaml::Real(_)
-                    | Yaml::Boolean(_)
-                    | Yaml::Null => {
-                        self.writer.write_str(" ")?;
-                        self.emit_node(value, true)?;
-                    }
-                    // Complex values (arrays, hashes) - use emit_val_iidy for proper formatting
-                    Yaml::Array(_) | Yaml::Hash(_) => {
-                        self.emit_val_iidy(value)?;
-                    }
-                    _ => {
-                        // Fallback to inline for other types
-                        self.writer.write_str(" ")?;
-                        self.emit_node(value, true)?;
-                    }
+            match value {
+                Yaml::String(_)
+                | Yaml::Integer(_)
+                | Yaml::Real(_)
+                | Yaml::Boolean(_)
+                | Yaml::Null => {
+                    self.writer.write_str(" ")?;
+                    self.emit_node(value, true)?;
+                }
+                Yaml::Array(_) | Yaml::Hash(_) => {
+                    self.emit_val_iidy(value)?;
+                }
+                _ => {
+                    self.writer.write_str(" ")?;
+                    self.emit_node(value, true)?;
                 }
             }
         }
@@ -567,7 +556,7 @@ mod tests {
             emitter.emit_node(&cf_tag_yaml, true).unwrap();
         }
 
-        println!("CloudFormation tag emission test output: '{}'", output);
+        println!("CloudFormation tag emission test output: '{output}'");
 
         // Should emit "!Ref MyResource", not "'!Ref': MyResource"
         assert_eq!(output.trim(), "!Ref MyResource");
@@ -598,7 +587,7 @@ mod tests {
         }
 
         println!("Parent hash with CloudFormation tag emission test output:");
-        println!("{}", output);
+        println!("{output}");
 
         // Should emit "test_ref: !Ref MyResource", not "test_ref:\n  '!Ref': MyResource"
         let expected = "test_ref: !Ref MyResource";
@@ -682,9 +671,9 @@ nested_config:
         }
 
         println!("Standard yaml-rust output:");
-        println!("{}", std_out);
+        println!("{std_out}");
         println!("\nOur emitter output:");
-        println!("{}", our_out);
+        println!("{our_out}");
 
         // Our emitter is designed to prefer single quotes while yaml-rust prefers double quotes
         // This difference is intentional for iidy-js compatibility

@@ -22,8 +22,7 @@ pub enum CfnOperation {
 }
 
 impl CfnOperation {
-    /// Convert from string (for backward compatibility)
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "create-stack" => Some(Self::CreateStack),
             "update-stack" => Some(Self::UpdateStack),

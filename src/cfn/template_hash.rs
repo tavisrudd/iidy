@@ -37,11 +37,11 @@ pub fn generate_versioned_location(
         .and_then(|ext| ext.to_str())
         .unwrap_or("yaml");
 
-    let filename = format!("{}.{}", hash, extension);
+    let filename = format!("{hash}.{extension}");
     let key = if base_path.ends_with('/') {
-        format!("{}{}", base_path, filename)
+        format!("{base_path}{filename}")
     } else {
-        format!("{}/{}", base_path, filename)
+        format!("{base_path}/{filename}")
     };
 
     Ok((bucket, key))

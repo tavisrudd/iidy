@@ -94,7 +94,7 @@ async fn watch_stack_impl(
     // Create events display for PREVIOUS events (separate from live events)
     let events_output_data = convert_stack_events_to_display_with_max(
         all_events.clone(), // Clone for live events task to use
-        &format!("Previous Stack Events (max {}):", event_count),
+        &format!("Previous Stack Events (max {event_count}):"),
         Some(event_count),
     );
 
@@ -107,7 +107,7 @@ async fn watch_stack_impl(
     };
     let final_status = watch_stack_live_events_with_seen_events(
         &client,
-        &context,
+        context,
         &stack_id,
         manager_output,
         Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS),
@@ -128,7 +128,7 @@ async fn watch_stack_impl(
 
     // Normal case - show stack contents
     let stack_contents = match handle_aws_error(
-        collect_stack_contents(&context, &stack_id).await,
+        collect_stack_contents(context, &stack_id).await,
         output_manager,
     )
     .await?
@@ -273,13 +273,9 @@ pub async fn watch_stack_live_events_with_seen_events(
                     let converted_event = convert_aws_stack_event(aws_event);
 
                     // Calculate duration from operation start time
-                    let duration_seconds = if let Some(event_time) = &converted_event.timestamp {
-                        Some(
-                            (event_time.timestamp() - context.start_time.timestamp()).max(0) as u64,
-                        )
-                    } else {
-                        None
-                    };
+                    let duration_seconds = converted_event.timestamp.as_ref().map(|event_time| {
+                        (event_time.timestamp() - context.start_time.timestamp()).max(0) as u64
+                    });
 
                     StackEventWithTiming {
                         event: converted_event,
@@ -298,7 +294,7 @@ pub async fn watch_stack_live_events_with_seen_events(
                 operation_start_time: context.start_time,
                 skip_remaining_sections: final_stack_status
                     .as_ref()
-                    .map_or(false, |s| s == "DELETE_COMPLETE"),
+                    .is_some_and(|s| s == "DELETE_COMPLETE"),
             };
             let _ = output.send_operation_complete(completion_info).await;
             done = true;

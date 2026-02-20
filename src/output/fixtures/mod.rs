@@ -57,10 +57,10 @@ impl FixtureLoader {
     pub fn load_test_fixture(&self, fixture_name: &str) -> Result<TestFixture> {
         let path = format!("{}/{}.yaml", self.fixtures_dir, fixture_name);
         let content = std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read fixture file: {}", path))?;
+            .with_context(|| format!("Failed to read fixture file: {path}"))?;
 
         serde_yaml::from_str(&content)
-            .with_context(|| format!("Failed to parse YAML fixture: {}", path))
+            .with_context(|| format!("Failed to parse YAML fixture: {path}"))
     }
 
     /// Convert test fixture to OutputData structures
@@ -98,7 +98,7 @@ impl FixtureLoader {
                         from: fixture.tokens.primary.clone(),
                         step: step.clone(),
                     },
-                    operation_id: format!("op-001-{}", step),
+                    operation_id: format!("op-001-{step}"),
                 })
                 .collect(),
         };
@@ -339,10 +339,7 @@ impl FixtureLoader {
         };
 
         Ok(StackEventsDisplay {
-            title: format!(
-                "Previous Stack Events (max {}):",
-                DEFAULT_FIXTURE_EVENTS_COUNT
-            ),
+            title: format!("Previous Stack Events (max {DEFAULT_FIXTURE_EVENTS_COUNT}):"),
             events: events_vec,
             max_events: Some(DEFAULT_FIXTURE_EVENTS_COUNT),
             truncated: Some(TruncationInfo { shown: 4, total: 8 }),

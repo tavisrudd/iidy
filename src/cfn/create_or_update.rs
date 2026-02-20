@@ -44,19 +44,18 @@ async fn create_or_update_impl(
         .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     let command_metadata =
-        create_command_metadata(&context, &opts, &final_stack_args, &global_opts.environment)
-            .await?;
+        create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager
         .render(OutputData::CommandMetadata(command_metadata))
         .await?;
 
-    let stack_exists = check_stack_exists(&context, stack_name).await?;
+    let stack_exists = check_stack_exists(context, stack_name).await?;
 
     // Check stack existence and determine change type
     let stack_change_details = if stack_exists {
         if args.changeset {
             return update_stack_with_changeset_data(
-                &context,
+                context,
                 args,
                 &final_stack_args,
                 output_manager,
@@ -66,8 +65,7 @@ async fn create_or_update_impl(
             .await;
         } else {
             // Try update and check for no-changes case
-            match try_update_stack(&context, args, &final_stack_args, &global_opts.environment)
-                .await
+            match try_update_stack(context, args, &final_stack_args, &global_opts.environment).await
             {
                 Ok(UpdateResult::NoChanges) => StackChangeDetails {
                     change_type: StackChangeType::UpdateNoChanges,
@@ -84,12 +82,12 @@ async fn create_or_update_impl(
         if args.changeset {
             // Use CREATE changeset for new stacks when --changeset is specified
             return create_stack_with_changeset_data(
-                &context,
+                context,
                 args,
                 &final_stack_args,
                 output_manager,
-                &global_opts,
-                &opts,
+                global_opts,
+                opts,
             )
             .await;
         }
@@ -113,7 +111,7 @@ async fn create_or_update_impl(
         }
         StackChangeType::Create => {
             let stack_id = create_stack_direct_data(
-                &context,
+                context,
                 &final_stack_args,
                 &args.base.argsfile,
                 &global_opts.environment,
@@ -121,7 +119,7 @@ async fn create_or_update_impl(
             )
             .await?;
             watch_stack_operation_and_summarize(
-                &context,
+                context,
                 &stack_id,
                 output_manager,
                 CREATE_SUCCESS_STATES,
@@ -135,7 +133,7 @@ async fn create_or_update_impl(
                 .render(OutputData::TokenInfo(output_token))
                 .await?;
             watch_stack_operation_and_summarize(
-                &context,
+                context,
                 &stack_id,
                 output_manager,
                 UPDATE_SUCCESS_STATES,
@@ -153,7 +151,7 @@ async fn create_stack_direct_data(
     environment: &str,
     output_manager: &mut DynamicOutputManager,
 ) -> Result<String> {
-    let builder = CfnRequestBuilder::new(&context, stack_args);
+    let builder = CfnRequestBuilder::new(context, stack_args);
 
     let (create_request, token) = builder
         .build_create_stack(
@@ -191,7 +189,7 @@ async fn try_update_stack(
     stack_args: &StackArgs,
     environment: &str,
 ) -> Result<UpdateResult> {
-    let builder = CfnRequestBuilder::new(&context, stack_args);
+    let builder = CfnRequestBuilder::new(context, stack_args);
 
     let (update_request, _token) = builder
         .build_update_stack(
@@ -326,7 +324,7 @@ async fn create_stack_with_changeset_data(
 
     // Fetch and render stack definition (stack now exists in REVIEW_IN_PROGRESS state)
     let stack_name = stack_args.stack_name.as_ref().unwrap();
-    let stack = StackInfoService::get_stack(&context.client, &stack_name).await?;
+    let stack = StackInfoService::get_stack(&context.client, stack_name).await?;
     let stack_definition = convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
 

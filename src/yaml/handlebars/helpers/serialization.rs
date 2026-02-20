@@ -16,9 +16,8 @@ pub fn to_json_helper(
         handlebars::RenderError::new("toJson helper requires exactly one parameter")
     })?;
 
-    let json_str = serde_json::to_string(param.value()).map_err(|e| {
-        handlebars::RenderError::new(&format!("Failed to serialize to JSON: {}", e))
-    })?;
+    let json_str = serde_json::to_string(param.value())
+        .map_err(|e| handlebars::RenderError::new(format!("Failed to serialize to JSON: {e}")))?;
 
     out.write(&json_str)?;
     Ok(())
@@ -37,7 +36,7 @@ pub fn to_json_pretty_helper(
     })?;
 
     let json_str = serde_json::to_string_pretty(param.value()).map_err(|e| {
-        handlebars::RenderError::new(&format!("Failed to serialize to pretty JSON: {}", e))
+        handlebars::RenderError::new(format!("Failed to serialize to pretty JSON: {e}"))
     })?;
 
     out.write(&json_str)?;
@@ -56,9 +55,8 @@ pub fn to_yaml_helper(
         handlebars::RenderError::new("toYaml helper requires exactly one parameter")
     })?;
 
-    let yaml_str = serde_yaml::to_string(param.value()).map_err(|e| {
-        handlebars::RenderError::new(&format!("Failed to serialize to YAML: {}", e))
-    })?;
+    let yaml_str = serde_yaml::to_string(param.value())
+        .map_err(|e| handlebars::RenderError::new(format!("Failed to serialize to YAML: {e}")))?;
 
     out.write(&yaml_str)?;
     Ok(())

@@ -719,7 +719,7 @@ mod tests {
         );
 
         // All tokens should be different
-        let tokens = vec![
+        let tokens = [
             &create_token.value,
             &update_token.value,
             &changeset_token.value,

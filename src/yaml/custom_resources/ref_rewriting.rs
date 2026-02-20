@@ -55,7 +55,7 @@ fn rewrite_ref_tag(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<Str
     if let Value::String(name) = &tagged.value {
         let trimmed = name.trim();
         if should_rewrite(trimmed, global_refs) {
-            return make_tagged("Ref", Value::String(format!("{}{}", prefix, trimmed)));
+            return make_tagged("Ref", Value::String(format!("{prefix}{trimmed}")));
         }
     }
     // If not a string or not rewritable, return as-is
@@ -68,10 +68,10 @@ fn rewrite_getatt_tag(tagged: &TaggedValue, prefix: &str, global_refs: &HashSet<
         if let Some(first_dot) = trimmed.find('.') {
             let resource_name = &trimmed[..first_dot];
             if should_rewrite(resource_name, global_refs) {
-                return make_tagged("GetAtt", Value::String(format!("{}{}", prefix, trimmed)));
+                return make_tagged("GetAtt", Value::String(format!("{prefix}{trimmed}")));
             }
         } else if should_rewrite(trimmed, global_refs) {
-            return make_tagged("GetAtt", Value::String(format!("{}{}", prefix, trimmed)));
+            return make_tagged("GetAtt", Value::String(format!("{prefix}{trimmed}")));
         }
     }
     Value::Tagged(Box::new(tagged.clone()))
@@ -127,7 +127,7 @@ fn rewrite_sub_template(template: &str, prefix: &str, global_refs: &HashSet<Stri
 
 fn walk_mapping(map: &serde_yaml::Mapping, prefix: &str, global_refs: &HashSet<String>) -> Value {
     // Check if this is a CFN resource entry (has a "Type" key)
-    let is_resource_entry = map.contains_key(&Value::String("Type".into()));
+    let is_resource_entry = map.contains_key(Value::String("Type".into()));
 
     let mut result = serde_yaml::Mapping::new();
     for (key, value) in map {
@@ -296,7 +296,7 @@ mod tests {
                 assert_eq!(seq[0].as_str().unwrap(), "${LocalVar}-${PrefixQueue}");
                 // The vars mapping values should be walked (SomeResource ref rewritten)
                 if let Value::Mapping(m) = &seq[1] {
-                    let ref_val = m.get(&Value::String("LocalVar".into())).unwrap();
+                    let ref_val = m.get(Value::String("LocalVar".into())).unwrap();
                     assert_eq!(extract_tagged_string(ref_val), "PrefixSomeResource");
                 } else {
                     panic!("expected mapping");
@@ -327,7 +327,7 @@ mod tests {
 
         let result = rewrite_refs(&Value::Mapping(resource), "Prefix", &HashSet::new());
         if let Value::Mapping(m) = result {
-            let cond = m.get(&Value::String("Condition".into())).unwrap();
+            let cond = m.get(Value::String("Condition".into())).unwrap();
             assert_eq!(cond.as_str().unwrap(), "PrefixIsProduction");
         } else {
             panic!("expected mapping");
@@ -348,7 +348,7 @@ mod tests {
 
         let result = rewrite_refs(&Value::Mapping(resource), "Prefix", &HashSet::new());
         if let Value::Mapping(m) = result {
-            let dep = m.get(&Value::String("DependsOn".into())).unwrap();
+            let dep = m.get(Value::String("DependsOn".into())).unwrap();
             assert_eq!(dep.as_str().unwrap(), "PrefixOtherResource");
         } else {
             panic!("expected mapping");
@@ -372,7 +372,7 @@ mod tests {
 
         let result = rewrite_refs(&Value::Mapping(resource), "Prefix", &HashSet::new());
         if let Value::Mapping(m) = result {
-            let dep = m.get(&Value::String("DependsOn".into())).unwrap();
+            let dep = m.get(Value::String("DependsOn".into())).unwrap();
             if let Value::Sequence(seq) = dep {
                 assert_eq!(seq[0].as_str().unwrap(), "PrefixResourceA");
                 assert_eq!(seq[1].as_str().unwrap(), "PrefixResourceB");
@@ -406,13 +406,13 @@ mod tests {
 
         if let Value::Mapping(m) = result {
             let props = m
-                .get(&Value::String("Properties".into()))
+                .get(Value::String("Properties".into()))
                 .unwrap()
                 .as_mapping()
                 .unwrap();
-            let queue_arn = props.get(&Value::String("QueueArn".into())).unwrap();
+            let queue_arn = props.get(Value::String("QueueArn".into())).unwrap();
             assert_eq!(extract_tagged_string(queue_arn), "PrefixQueue.Arn");
-            let topic_arn = props.get(&Value::String("TopicArn".into())).unwrap();
+            let topic_arn = props.get(Value::String("TopicArn".into())).unwrap();
             assert_eq!(extract_tagged_string(topic_arn), "AlertTopicArn");
         } else {
             panic!("expected mapping");

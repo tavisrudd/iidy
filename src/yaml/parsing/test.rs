@@ -14,7 +14,7 @@ fn test_parse_simple_scalar() {
 
     match result {
         YamlAst::PlainString(s, _) => assert_eq!(s, "hello world"),
-        _ => panic!("Expected PlainString, got {:?}", result),
+        _ => panic!("Expected PlainString, got {result:?}"),
     }
 }
 
@@ -25,7 +25,7 @@ fn test_parse_templated_string() {
 
     match result {
         YamlAst::TemplatedString(s, _) => assert_eq!(s, "hello {{ name }}"),
-        _ => panic!("Expected TemplatedString, got {:?}", result),
+        _ => panic!("Expected TemplatedString, got {result:?}"),
     }
 }
 
@@ -36,7 +36,7 @@ fn test_parse_boolean() {
 
     match result {
         YamlAst::Bool(b, _) => assert!(b),
-        _ => panic!("Expected Bool, got {:?}", result),
+        _ => panic!("Expected Bool, got {result:?}"),
     }
 }
 
@@ -47,7 +47,7 @@ fn test_parse_number() {
 
     match result {
         YamlAst::Number(n, _) => assert_eq!(n.as_i64(), Some(42)),
-        _ => panic!("Expected Number, got {:?}", result),
+        _ => panic!("Expected Number, got {result:?}"),
     }
 }
 
@@ -58,7 +58,7 @@ fn test_parse_null() {
 
     match result {
         YamlAst::Null(_) => {}
-        _ => panic!("Expected Null, got {:?}", result),
+        _ => panic!("Expected Null, got {result:?}"),
     }
 }
 
@@ -78,7 +78,7 @@ fn test_parse_sequence() {
             assert!(matches!(items[1], YamlAst::PlainString(ref s, _) if s == "item2"));
             assert!(matches!(items[2], YamlAst::Number(ref n, _) if n.as_i64() == Some(42)));
         }
-        _ => panic!("Expected Sequence, got {:?}", result),
+        _ => panic!("Expected Sequence, got {result:?}"),
     }
 }
 
@@ -109,7 +109,7 @@ key3: true
             assert!(matches!(key3, YamlAst::PlainString(s, _) if s == "key3"));
             assert!(matches!(val3, YamlAst::Bool(true, _)));
         }
-        _ => panic!("Expected Mapping, got {:?}", result),
+        _ => panic!("Expected Mapping, got {result:?}"),
     }
 }
 
@@ -126,7 +126,7 @@ fn test_parse_preprocessing_tag() {
             // Expected for now since we don't fully implement preprocessing tag parsing
             assert_eq!(tag.tag, "!$let");
         }
-        _ => panic!("Expected PreprocessingTag or UnknownTag, got {:?}", result),
+        _ => panic!("Expected PreprocessingTag or UnknownTag, got {result:?}"),
     }
 }
 
@@ -140,10 +140,7 @@ fn test_parse_preprocessing_include_tag() {
             assert_eq!(include_tag.path, "path/to/file.yaml");
             assert_eq!(include_tag.query, None);
         }
-        _ => panic!(
-            "Expected PreprocessingTag::Include for !$, got {:?}",
-            result
-        ),
+        _ => panic!("Expected PreprocessingTag::Include for !$, got {result:?}"),
     }
 }
 
@@ -163,7 +160,7 @@ else: "no""#;
                 matches!(if_tag.else_value.as_ref(), Some(else_val) if matches!(else_val.as_ref(), YamlAst::PlainString(s, _) if s == "no"))
             );
         }
-        _ => panic!("Expected PreprocessingTag::If, got {:?}", result),
+        _ => panic!("Expected PreprocessingTag::If, got {result:?}"),
     }
 }
 
@@ -176,7 +173,7 @@ fn test_parse_cloudformation_tag() {
         YamlAst::CloudFormationTag(CloudFormationTag::Ref(content), _) => {
             assert!(matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "MyResource"));
         }
-        _ => panic!("Expected CloudFormationTag::Ref, got {:?}", result),
+        _ => panic!("Expected CloudFormationTag::Ref, got {result:?}"),
     }
 }
 
@@ -191,7 +188,7 @@ fn test_parse_cloudformation_getatt_tag() {
                 matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "Resource.Property")
             );
         }
-        _ => panic!("Expected CloudFormationTag::GetAtt, got {:?}", result),
+        _ => panic!("Expected CloudFormationTag::GetAtt, got {result:?}"),
     }
 }
 
@@ -204,7 +201,7 @@ fn test_parse_cloudformation_sub_tag() {
         YamlAst::CloudFormationTag(CloudFormationTag::Sub(content), _) => {
             assert!(matches!(content.as_ref(), YamlAst::PlainString(s, _) if s == "Hello ${Name}"));
         }
-        _ => panic!("Expected CloudFormationTag::Sub, got {:?}", result),
+        _ => panic!("Expected CloudFormationTag::Sub, got {result:?}"),
     }
 }
 
@@ -218,7 +215,7 @@ fn test_parse_unknown_tag() {
             assert_eq!(tag, "!CustomTag");
             assert!(matches!(value.as_ref(), YamlAst::PlainString(s, _) if s == "value"));
         }
-        _ => panic!("Expected UnknownYamlTag, got {:?}", result),
+        _ => panic!("Expected UnknownYamlTag, got {result:?}"),
     }
 }
 
@@ -244,7 +241,7 @@ Properties:
                 .any(|(key, _)| matches!(key, YamlAst::PlainString(s, _) if s == "Resources"));
             assert!(has_resources);
         }
-        _ => panic!("Expected top-level Mapping, got {:?}", result),
+        _ => panic!("Expected top-level Mapping, got {result:?}"),
     }
 }
 
@@ -297,7 +294,7 @@ in:
                 YamlAst::Mapping(_, _)
             ));
         }
-        _ => panic!("Expected PreprocessingTag::Let, got {:?}", result),
+        _ => panic!("Expected PreprocessingTag::Let, got {result:?}"),
     }
 }
 
@@ -326,7 +323,7 @@ template:
             // Default var should be None (uses "item")
             assert_eq!(map_tag.var, None);
         }
-        _ => panic!("Expected PreprocessingTag::Map, got {:?}", result),
+        _ => panic!("Expected PreprocessingTag::Map, got {result:?}"),
     }
 }
 
@@ -360,7 +357,7 @@ template: !$merge
                 YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)
             ));
         }
-        _ => panic!("Expected nested PreprocessingTag::Map, got {:?}", result),
+        _ => panic!("Expected nested PreprocessingTag::Map, got {result:?}"),
     }
 }
 
@@ -381,7 +378,7 @@ fn test_mixed_flow_and_block_styles() {
                 YamlAst::PreprocessingTag(PreprocessingTag::If(_), _)
             ));
         }
-        _ => panic!("Expected Mapping with If tag, got {:?}", result),
+        _ => panic!("Expected Mapping with If tag, got {result:?}"),
     }
 }
 
@@ -414,10 +411,10 @@ fn test_complex_indentation_scenarios() {
                         YamlAst::TemplatedString(_, _)
                     ));
                 }
-                _ => panic!("Expected MapValues tag, got {:?}", value),
+                _ => panic!("Expected MapValues tag, got {value:?}"),
             }
         }
-        _ => panic!("Expected Mapping, got {:?}", result),
+        _ => panic!("Expected Mapping, got {result:?}"),
     }
 }
 
@@ -450,7 +447,7 @@ else: !$merge
                 matches!(if_tag.else_value.as_ref(), Some(else_val) if matches!(else_val.as_ref(), YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)))
             );
         }
-        _ => panic!("Expected PreprocessingTag::If, got {:?}", result),
+        _ => panic!("Expected PreprocessingTag::If, got {result:?}"),
     }
 }
 
@@ -476,7 +473,7 @@ fn test_empty_mapping_value() {
             assert!(matches!(key, YamlAst::PlainString(s, _) if s == "key"));
             assert!(matches!(value, YamlAst::Null(_)));
         }
-        _ => panic!("Expected Mapping, got {:?}", result),
+        _ => panic!("Expected Mapping, got {result:?}"),
     }
 }
 
@@ -487,7 +484,7 @@ fn test_quoted_strings() {
 
     match result {
         YamlAst::PlainString(s, _) => assert_eq!(s, "quoted string"),
-        _ => panic!("Expected PlainString, got {:?}", result),
+        _ => panic!("Expected PlainString, got {result:?}"),
     }
 }
 
@@ -531,7 +528,7 @@ template: !$merge
                 YamlAst::PreprocessingTag(PreprocessingTag::Merge(_), _)
             ));
         }
-        _ => panic!("Expected deeply nested Map tag, got {:?}", result),
+        _ => panic!("Expected deeply nested Map tag, got {result:?}"),
     }
 }
 
@@ -564,10 +561,7 @@ fn test_mixed_cloudformation_and_preprocessing() {
             assert!(matches!(key, YamlAst::PlainString(s, _) if s == "Resources"));
             assert!(matches!(value, YamlAst::Mapping(_, _)));
         }
-        _ => panic!(
-            "Expected CloudFormation/preprocessing mix, got {:?}",
-            result
-        ),
+        _ => panic!("Expected CloudFormation/preprocessing mix, got {result:?}"),
     }
 }
 
@@ -592,7 +586,7 @@ escape_sequences: "backslash\\ quote\" newline\n"
                 assert!(matches!(value, YamlAst::PlainString(_, _)));
             }
         }
-        _ => panic!("Expected Mapping with unicode content, got {:?}", result),
+        _ => panic!("Expected Mapping with unicode content, got {result:?}"),
     }
 }
 
@@ -622,7 +616,7 @@ mixed_tags:
                 assert!(matches!(key, YamlAst::PlainString(_, _)));
             }
         }
-        _ => panic!("Expected mixed flow/block styles, got {:?}", result),
+        _ => panic!("Expected mixed flow/block styles, got {result:?}"),
     }
 }
 
@@ -671,11 +665,11 @@ nested_empty:
                         assert!(matches!(value, YamlAst::Mapping(_, _)));
                     }
                     _ => {
-                        panic!("Unexpected key: {:?}", key);
+                        panic!("Unexpected key: {key:?}");
                     }
                 }
             }
         }
-        _ => panic!("Expected null/empty variations mapping, got {:?}", result),
+        _ => panic!("Expected null/empty variations mapping, got {result:?}"),
     }
 }

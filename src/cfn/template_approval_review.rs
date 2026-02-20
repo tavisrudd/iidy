@@ -54,7 +54,7 @@ async fn template_approval_review_impl(
         already_approved,
         pending_location: args.url.clone(),
         approved_location: if already_approved {
-            Some(format!("s3://{}/{}", bucket, approved_key))
+            Some(format!("s3://{bucket}/{approved_key}"))
         } else {
             None
         },
@@ -91,8 +91,8 @@ async fn template_approval_review_impl(
     if !has_changes {
         let result = crate::output::data::ApprovalResult {
             approved: true,
-            approved_location: Some(format!("s3://{}/{}", bucket, approved_key)),
-            latest_location: Some(format!("s3://{}/latest", bucket)),
+            approved_location: Some(format!("s3://{bucket}/{approved_key}")),
+            latest_location: Some(format!("s3://{bucket}/latest")),
             cleanup_completed: true,
         };
         output_manager
@@ -127,8 +127,8 @@ async fn template_approval_review_impl(
 
         let result = crate::output::data::ApprovalResult {
             approved: true,
-            approved_location: Some(format!("s3://{}/{}", bucket, approved_key)),
-            latest_location: Some(format!("s3://{}/latest", bucket)),
+            approved_location: Some(format!("s3://{bucket}/{approved_key}")),
+            latest_location: Some(format!("s3://{bucket}/latest")),
             cleanup_completed: true,
         };
         output_manager

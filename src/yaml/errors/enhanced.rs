@@ -144,10 +144,10 @@ impl EnhancedPreprocessingError {
         };
 
         let short_message = match self {
-            Self::VariableNotFound { variable, .. } => format!("'{}' not found", variable),
+            Self::VariableNotFound { variable, .. } => format!("'{variable}' not found"),
             Self::TypeMismatch {
                 expected, found, ..
-            } => format!("expected {}, found {}", expected, found),
+            } => format!("expected {expected}, found {found}"),
             Self::CloudFormationValidation { message, .. } => message.clone(),
             Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
                 unreachable!()
@@ -453,7 +453,7 @@ impl EnhancedPreprocessingError {
     fn inline_description(&self) -> String {
         match self {
             Self::VariableNotFound { .. } => "variable not defined".to_string(),
-            Self::TypeMismatch { expected, .. } => format!("expected {}", expected),
+            Self::TypeMismatch { expected, .. } => format!("expected {expected}"),
             Self::CloudFormationValidation { .. } => "invalid CloudFormation tag".to_string(),
             // New variants use their own render methods, these aren't called
             Self::YamlSyntax { .. } => String::new(),
@@ -488,7 +488,7 @@ impl EnhancedPreprocessingError {
                     ));
                 }
                 for suggestion in suggestions {
-                    help.push(format!("did you mean '{}'?", suggestion));
+                    help.push(format!("did you mean '{suggestion}'?"));
                 }
             }
             Self::TypeMismatch {
@@ -662,8 +662,8 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
     let mut matrix = vec![vec![0; n + 1]; m + 1];
 
-    for i in 0..=m {
-        matrix[i][0] = i;
+    for (i, row) in matrix.iter_mut().enumerate().take(m + 1) {
+        row[0] = i;
     }
     for j in 0..=n {
         matrix[0][j] = j;

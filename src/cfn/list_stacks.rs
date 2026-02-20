@@ -132,7 +132,7 @@ async fn list_stacks_impl(
         });
 
         for (k, v) in &tag_filters {
-            filters_applied.push(format!("tag:{}={}", k, v));
+            filters_applied.push(format!("tag:{k}={v}"));
         }
     }
 
@@ -168,18 +168,15 @@ async fn list_stacks_impl(
                 anyhow::anyhow!("Failed to convert filtered JSON back to stacks: {}", e)
             })?;
 
-        filtered_stacks = filtered_stacks
-            .into_iter()
-            .filter(|stack| {
-                let serializable = SerializableStack::from(stack);
-                filtered_serializable.iter().any(|filtered| {
-                    filtered.stack_name == serializable.stack_name
-                        && filtered.stack_id == serializable.stack_id
-                })
+        filtered_stacks.retain(|stack| {
+            let serializable = SerializableStack::from(stack);
+            filtered_serializable.iter().any(|filtered| {
+                filtered.stack_name == serializable.stack_name
+                    && filtered.stack_id == serializable.stack_id
             })
-            .collect();
+        });
 
-        filters_applied.push(format!("jmespath:{}", jmespath_filter));
+        filters_applied.push(format!("jmespath:{jmespath_filter}"));
     }
 
     let is_query_mode = args.query.is_some();
@@ -187,7 +184,7 @@ async fn list_stacks_impl(
         columns_str
             .split(',')
             .map(|s| s.trim())
-            .filter_map(StackListColumn::from_str)
+            .filter_map(StackListColumn::parse)
             .collect()
     } else {
         StackListColumn::default_columns()
@@ -218,10 +215,7 @@ fn convert_stacks_to_list_display_with_filters(
     columns: Vec<StackListColumn>,
     query_mode: bool,
 ) -> OutputData {
-    let mut entries: Vec<StackListEntry> = stacks
-        .iter()
-        .map(|stack| convert_stack_to_list_entry(stack))
-        .collect();
+    let mut entries: Vec<StackListEntry> = stacks.iter().map(convert_stack_to_list_entry).collect();
 
     entries.sort_by(|a, b| {
         let time_a = a.creation_time.or(a.last_updated_time);

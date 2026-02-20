@@ -12,7 +12,6 @@ use iidy::output::renderer::OutputRenderer;
 use iidy::output::renderers::interactive::{InteractiveOptions, InteractiveRenderer};
 use iidy::output::theme::IidyTheme;
 use std::collections::HashMap;
-use tokio;
 
 /// Test helper to create consistent options for plain mode testing
 fn create_test_plain_options() -> InteractiveOptions {

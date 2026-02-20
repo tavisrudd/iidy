@@ -240,7 +240,7 @@ impl StackEventsService {
             .filter(|event| {
                 event
                     .timestamp()
-                    .and_then(|ts| Self::aws_timestamp_to_chrono(ts))
+                    .and_then(Self::aws_timestamp_to_chrono)
                     .map(|event_time| event_time > start_time)
                     .unwrap_or(false)
             })
@@ -432,7 +432,7 @@ pub async fn watch_stack_operation_and_summarize(
         }
     }
 
-    let stack_contents = collect_stack_contents(&context, &stack_id).await?;
+    let stack_contents = collect_stack_contents(context, stack_id).await?;
     output_manager
         .render(OutputData::StackContents(stack_contents))
         .await?;

@@ -116,7 +116,7 @@ fn calculate_filehash(path: &str) -> Result<String, handlebars::RenderError> {
         let mut file_hashes = Vec::new();
         for entry in paths {
             let file_path = entry.map_err(|e| {
-                handlebars::RenderError::new(format!("Failed to process glob entry: {}", e))
+                handlebars::RenderError::new(format!("Failed to process glob entry: {e}"))
             })?;
 
             // Skip directories (only process files)
@@ -189,7 +189,7 @@ pub fn filehash_base64_helper(
 
     // Convert hex to base64 (matching iidy-js behavior)
     let hex_bytes = hex::decode(&hex_hash)
-        .map_err(|e| handlebars::RenderError::new(format!("Failed to decode hex hash: {}", e)))?;
+        .map_err(|e| handlebars::RenderError::new(format!("Failed to decode hex hash: {e}")))?;
 
     let base64_hash = general_purpose::STANDARD.encode(&hex_bytes);
     out.write(&base64_hash)?;

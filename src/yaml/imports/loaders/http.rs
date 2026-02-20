@@ -56,8 +56,8 @@ mod tests {
 
         // Should parse as YAML
         if let Value::Mapping(map) = result.doc {
-            assert!(map.contains_key(&Value::String("test".to_string())));
-            assert!(map.contains_key(&Value::String("other".to_string())));
+            assert!(map.contains_key(Value::String("test".to_string())));
+            assert!(map.contains_key(Value::String("other".to_string())));
         } else {
             panic!("Expected parsed YAML object");
         }
@@ -88,11 +88,11 @@ mod tests {
         // Should parse as JSON (converted to YAML Value)
         if let Value::Mapping(map) = result.doc {
             assert_eq!(
-                map.get(&Value::String("key".to_string())),
+                map.get(Value::String("key".to_string())),
                 Some(&Value::String("value".to_string()))
             );
             assert_eq!(
-                map.get(&Value::String("number".to_string())),
+                map.get(Value::String("number".to_string())),
                 Some(&Value::Number(serde_yaml::Number::from(42)))
             );
         } else {

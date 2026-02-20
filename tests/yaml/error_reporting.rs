@@ -185,13 +185,13 @@ section2:
     // Verify the valid variable references were resolved correctly
     let section1 = processed.get("section1").unwrap().as_mapping().unwrap();
     let subsection = section1
-        .get(&serde_yaml::Value::String("subsection".to_string()))
+        .get(serde_yaml::Value::String("subsection".to_string()))
         .unwrap()
         .as_mapping()
         .unwrap();
     assert_eq!(
         subsection
-            .get(&serde_yaml::Value::String("valid_access".to_string()))
+            .get(serde_yaml::Value::String("valid_access".to_string()))
             .unwrap(),
         &serde_yaml::Value::String("this_works".to_string())
     );

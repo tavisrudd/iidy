@@ -45,10 +45,10 @@ fn variable_name_strategy() -> impl Strategy<Value = String> {
 /// Strategy for generating handlebars template strings
 fn handlebars_template_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
-        ".*",                                                                // Plain strings
-        variable_name_strategy().prop_map(|var| format!("{{{{{}}}}}", var)), // Simple variable
+        ".*",                                                              // Plain strings
+        variable_name_strategy().prop_map(|var| format!("{{{{{var}}}}}")), // Simple variable
         (variable_name_strategy(), ".*")
-            .prop_map(|(var, text)| format!("{}{{{{{}}}}}suffix", text, var)), // Mixed content
+            .prop_map(|(var, text)| format!("{text}{{{{{var}}}}}suffix")), // Mixed content
     ]
 }
 
@@ -101,7 +101,7 @@ proptest! {
     ) {
         use iidy::yaml::handlebars::interpolate_handlebars_string;
 
-        let template = format!("{{{{{}}}}}", var_name);
+        let template = format!("{{{{{var_name}}}}}");
 
         // Create variables map for handlebars engine
         let mut variables = HashMap::new();
@@ -129,7 +129,7 @@ proptest! {
         use std::collections::HashMap;
 
         // Test camelCase helper
-        let camel_template = format!("{{{{camelCase '{}'}}}}", input);
+        let camel_template = format!("{{{{camelCase '{input}'}}}}");
         let result = interpolate_handlebars_string(&camel_template, &HashMap::new(), "test");
 
         if result.is_ok() {
@@ -145,7 +145,7 @@ proptest! {
         }
 
         // Test snake_case helper
-        let snake_template = format!("{{{{snakeCase '{}'}}}}", input);
+        let snake_template = format!("{{{{snakeCase '{input}'}}}}");
         let result = interpolate_handlebars_string(&snake_template, &HashMap::new(), "test");
 
         if result.is_ok() {
@@ -167,8 +167,7 @@ proptest! {
     ) {
         // Create a !$join tag for parsing tests
         let yaml_content = format!(
-            "result: !$join\n  array: {:?}\n  delimiter: \"{}\"",
-            array, delimiter
+            "result: !$join\n  array: {array:?}\n  delimiter: \"{delimiter}\""
         );
 
         // Parse the same content twice
@@ -201,8 +200,7 @@ proptest! {
 
             // Test that split tag parses correctly
             let split_yaml = format!(
-                "result: !$split [\"{}\", \"{}\"]",
-                delimiter, joined
+                "result: !$split [\"{delimiter}\", \"{joined}\"]"
             );
 
             let ast = parse_yaml_from_file(&split_yaml, "prop-test-split.yaml");
@@ -274,8 +272,7 @@ mod standard_tests {
             let serialized = serde_yaml::to_string(&value);
             assert!(
                 serialized.is_ok(),
-                "Generated value should be serializable: {:?}",
-                value
+                "Generated value should be serializable: {value:?}"
             );
         }
     }

@@ -326,15 +326,12 @@ mod tests {
             let result = parse_import_type(import, base_location);
             assert!(
                 result.is_err(),
-                "Expected error for import '{}' from S3 template",
-                import
+                "Expected error for import '{import}' from S3 template"
             );
             let error_msg = result.unwrap_err().to_string();
             assert!(
                 error_msg.contains("not allowed from remote template"),
-                "Expected security error message for '{}', got: {}",
-                import,
-                error_msg
+                "Expected security error message for '{import}', got: {error_msg}"
             );
         }
     }
@@ -360,8 +357,7 @@ mod tests {
             let result = parse_import_type(import, base_location);
             assert!(
                 result.is_err(),
-                "Expected error for import '{}' from HTTPS template",
-                import
+                "Expected error for import '{import}' from HTTPS template"
             );
         }
     }
@@ -386,9 +382,7 @@ mod tests {
                 let result = parse_import_type(import, base_location);
                 assert!(
                     result.is_ok(),
-                    "Expected success for import '{}' from remote template '{}'",
-                    import,
-                    base_location
+                    "Expected success for import '{import}' from remote template '{base_location}'"
                 );
                 assert_eq!(result.unwrap(), *expected_type);
             }
@@ -417,12 +411,10 @@ mod tests {
         ];
 
         for (base_location, relative_import, expected_type) in test_cases {
-            let result = parse_import_type(&relative_import, &base_location);
+            let result = parse_import_type(relative_import, base_location);
             assert!(
                 result.is_ok(),
-                "Expected success for relative import '{}' from '{}'",
-                relative_import,
-                base_location
+                "Expected success for relative import '{relative_import}' from '{base_location}'"
             );
             assert_eq!(result.unwrap(), expected_type);
         }
@@ -453,12 +445,10 @@ mod tests {
 
         for base_location in local_bases {
             for (import, expected_type) in &all_import_types {
-                let result = parse_import_type(import, &base_location);
+                let result = parse_import_type(import, base_location);
                 assert!(
                     result.is_ok(),
-                    "Expected success for import '{}' from local template '{}'",
-                    import,
-                    base_location
+                    "Expected success for import '{import}' from local template '{base_location}'"
                 );
                 assert_eq!(result.unwrap(), *expected_type);
             }
@@ -488,16 +478,14 @@ mod tests {
         for import_type in local_only_types {
             assert!(
                 import_type.is_local_only(),
-                "{:?} should be local-only",
-                import_type
+                "{import_type:?} should be local-only"
             );
         }
 
         for import_type in remote_allowed_types {
             assert!(
                 !import_type.is_local_only(),
-                "{:?} should be allowed from remote",
-                import_type
+                "{import_type:?} should be allowed from remote"
             );
         }
     }

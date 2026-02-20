@@ -193,7 +193,7 @@ pub async fn load_stack_args(
             // Pass 1: Process without CommandsBefore to get full context for handlebars
             let mut value_pass1 = value.clone();
             if let Value::Mapping(map) = &mut value_pass1 {
-                map.remove(&Value::String("CommandsBefore".to_string()));
+                map.remove(Value::String("CommandsBefore".to_string()));
             }
 
             // Process pass 1 to get complete context
@@ -222,7 +222,7 @@ pub async fn load_stack_args(
         } else {
             // Remove CommandsBefore for operations that don't support it
             if let Value::Mapping(map) = &mut value {
-                map.remove(&Value::String("CommandsBefore".to_string()));
+                map.remove(Value::String("CommandsBefore".to_string()));
             }
         }
     }
@@ -302,22 +302,18 @@ fn inject_env_values(argsdata: &mut Value, env_values: Value) {
         // Merge with existing $envValues if present, new values take precedence
         let env_values_key = Value::String("$envValues".to_string());
         match map.get(&env_values_key) {
-            Some(existing) => {
-                if let Value::Mapping(existing_map) = existing {
-                    if let Value::Mapping(new_map) = &env_values {
-                        let mut merged_map = existing_map.clone();
-                        for (k, v) in new_map {
-                            merged_map.insert(k.clone(), v.clone());
-                        }
-                        map.insert(env_values_key, Value::Mapping(merged_map));
-                    } else {
-                        map.insert(env_values_key, env_values);
+            Some(Value::Mapping(existing_map)) => {
+                if let Value::Mapping(new_map) = &env_values {
+                    let mut merged_map = existing_map.clone();
+                    for (k, v) in new_map {
+                        merged_map.insert(k.clone(), v.clone());
                     }
+                    map.insert(env_values_key, Value::Mapping(merged_map));
                 } else {
                     map.insert(env_values_key, env_values);
                 }
             }
-            None => {
+            _ => {
                 map.insert(env_values_key, env_values);
             }
         }
@@ -354,8 +350,7 @@ async fn apply_global_configuration(
                                     && args.approved_template_location.is_some()
                                 {
                                     eprintln!(
-                                        "Disabling template approval based on global {} parameter store configuration",
-                                        name
+                                        "Disabling template approval based on global {name} parameter store configuration"
                                     );
                                     args.approved_template_location = None;
                                 }
@@ -390,10 +385,7 @@ async fn apply_sns_notification_global_configuration(
             notification_arns.push(topic_arn.to_string());
         }
         Err(_) => {
-            eprintln!(
-                "iidy's default NotificationARN set in this region is invalid: {}",
-                topic_arn
-            );
+            eprintln!("iidy's default NotificationARN set in this region is invalid: {topic_arn}");
         }
     }
 
@@ -497,7 +489,7 @@ fn process_commands_before(
             if let Value::String(key) = k {
                 // Convert serde_yaml::Value to serde_json::Value
                 let json_value = serde_json::to_value(v).with_context(|| {
-                    format!("Failed to convert YAML value to JSON for key: {}", key)
+                    format!("Failed to convert YAML value to JSON for key: {key}")
                 })?;
                 json_map.insert(key.clone(), json_value);
             }
@@ -516,11 +508,11 @@ fn process_commands_before(
         println!("\n-- Command {} {}", index + 1, "-".repeat(50));
         if expanded_command != *cmd {
             println!("# raw command before processing handlebars variables:");
-            println!("{}", cmd);
+            println!("{cmd}");
             println!("# command after processing handlebars variables:");
-            println!("{}", expanded_command);
+            println!("{expanded_command}");
         } else {
-            println!("{}", cmd);
+            println!("{cmd}");
         }
 
         println!("-- Command {} Output {}", index + 1, "-".repeat(25));
@@ -558,7 +550,7 @@ fn process_commands_before(
         // Execute command
         let output = command
             .output()
-            .with_context(|| format!("Failed to execute command: {}", expanded_command))?;
+            .with_context(|| format!("Failed to execute command: {expanded_command}"))?;
 
         // Print output
         if !output.stdout.is_empty() {
@@ -703,30 +695,30 @@ Region: us-west-2
         if let Value::Mapping(map) = env_values {
             // Legacy values
             assert_eq!(
-                map.get(&Value::String("region".to_string())),
+                map.get(Value::String("region".to_string())),
                 Some(&Value::String("us-west-2".to_string()))
             );
             assert_eq!(
-                map.get(&Value::String("environment".to_string())),
+                map.get(Value::String("environment".to_string())),
                 Some(&Value::String("production".to_string()))
             );
 
             // Namespaced iidy values
-            if let Some(Value::Mapping(iidy_map)) = map.get(&Value::String("iidy".to_string())) {
+            if let Some(Value::Mapping(iidy_map)) = map.get(Value::String("iidy".to_string())) {
                 assert_eq!(
-                    iidy_map.get(&Value::String("command".to_string())),
+                    iidy_map.get(Value::String("command".to_string())),
                     Some(&Value::String("create-stack".to_string()))
                 );
                 assert_eq!(
-                    iidy_map.get(&Value::String("environment".to_string())),
+                    iidy_map.get(Value::String("environment".to_string())),
                     Some(&Value::String("production".to_string()))
                 );
                 assert_eq!(
-                    iidy_map.get(&Value::String("region".to_string())),
+                    iidy_map.get(Value::String("region".to_string())),
                     Some(&Value::String("us-west-2".to_string()))
                 );
                 assert_eq!(
-                    iidy_map.get(&Value::String("profile".to_string())),
+                    iidy_map.get(Value::String("profile".to_string())),
                     Some(&Value::String("prod-profile".to_string()))
                 );
             } else {
@@ -754,16 +746,16 @@ Template: template.yaml
 
         // Verify $envValues was injected
         if let Value::Mapping(map) = &argsdata {
-            assert!(map.contains_key(&Value::String("$envValues".to_string())));
+            assert!(map.contains_key(Value::String("$envValues".to_string())));
 
-            if let Some(Value::Mapping(env_map)) = map.get(&Value::String("$envValues".to_string()))
+            if let Some(Value::Mapping(env_map)) = map.get(Value::String("$envValues".to_string()))
             {
                 assert_eq!(
-                    env_map.get(&Value::String("environment".to_string())),
+                    env_map.get(Value::String("environment".to_string())),
                     Some(&Value::String("dev".to_string()))
                 );
                 assert_eq!(
-                    env_map.get(&Value::String("region".to_string())),
+                    env_map.get(Value::String("region".to_string())),
                     Some(&Value::String("us-east-1".to_string()))
                 );
             }

@@ -2,7 +2,6 @@
 ///
 /// Internal helpers used by enhanced.rs and wrapper.rs to avoid
 /// duplicating source context rendering, color setup, and file path parsing.
-
 /// Parse a file path that may contain a line number suffix (e.g., "file.yaml:42").
 ///
 /// Returns `(file_path, Some(line_num))` or `(original_input, None)`.
@@ -238,11 +237,11 @@ pub(crate) fn search_field_on_subsequent_lines<S: AsRef<str>>(
 /// Searches for `{{variable}}`, `!$ variable`, and `!$variable` patterns.
 /// Returns 0 when not found.
 pub(crate) fn find_variable_column(line: &str, variable: &str) -> usize {
-    if let Some(col) = line.find(&format!("!$ {}", variable)) {
+    if let Some(col) = line.find(&format!("!$ {variable}")) {
         col + 4
-    } else if let Some(col) = line.find(&format!("!${}", variable)) {
+    } else if let Some(col) = line.find(&format!("!${variable}")) {
         col + 3
-    } else if let Some(col) = line.find(&format!("{{{{{}}}}}", variable)) {
+    } else if let Some(col) = line.find(&format!("{{{{{variable}}}}}")) {
         col + 2
     } else {
         0

@@ -8,7 +8,6 @@ use iidy::output::data::*;
 use iidy::output::renderer::OutputRenderer;
 use iidy::output::renderers::interactive::{InteractiveOptions, InteractiveRenderer};
 use std::sync::Arc;
-use tokio;
 
 /// Create a test CLI context for describe-stack with custom event count
 fn create_test_cli_with_events(events: u32) -> Cli {
@@ -62,10 +61,7 @@ async fn test_stack_events_title_configured_correctly() {
         // We can't directly access section_titles (private), but we can verify
         // that rendering doesn't produce ANSI escape sequences for rewriting
 
-        println!(
-            "✅ Stack events title for {} events configured correctly",
-            event_count
-        );
+        println!("✅ Stack events title for {event_count} events configured correctly");
     }
 }
 

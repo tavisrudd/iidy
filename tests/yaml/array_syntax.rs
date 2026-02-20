@@ -21,19 +21,19 @@ test_not_false_array: !$not [false]
     if let Value::Mapping(map) = result {
         // Both syntaxes should produce identical results
         assert_eq!(
-            map.get(&Value::String("test_not_direct".to_string())),
+            map.get(Value::String("test_not_direct".to_string())),
             Some(&Value::Bool(false))
         );
         assert_eq!(
-            map.get(&Value::String("test_not_array".to_string())),
+            map.get(Value::String("test_not_array".to_string())),
             Some(&Value::Bool(false))
         );
         assert_eq!(
-            map.get(&Value::String("test_not_false_direct".to_string())),
+            map.get(Value::String("test_not_false_direct".to_string())),
             Some(&Value::Bool(true))
         );
         assert_eq!(
-            map.get(&Value::String("test_not_false_array".to_string())),
+            map.get(Value::String("test_not_false_array".to_string())),
             Some(&Value::Bool(true))
         );
     } else {
@@ -58,11 +58,11 @@ test_escape_array: !$escape ["{{test_var}}"]
     if let Value::Mapping(map) = result {
         // Both should escape handlebars processing (not process the template)
         assert_eq!(
-            map.get(&Value::String("test_escape_direct".to_string())),
+            map.get(Value::String("test_escape_direct".to_string())),
             Some(&Value::String("{{test_var}}".to_string()))
         );
         assert_eq!(
-            map.get(&Value::String("test_escape_array".to_string())),
+            map.get(Value::String("test_escape_array".to_string())),
             Some(&Value::String("{{test_var}}".to_string()))
         );
     } else {
@@ -91,8 +91,8 @@ test_yaml_array: !$toYamlString
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(map) = result {
-        let direct_result = map.get(&Value::String("test_yaml_direct".to_string()));
-        let array_result = map.get(&Value::String("test_yaml_array".to_string()));
+        let direct_result = map.get(Value::String("test_yaml_direct".to_string()));
+        let array_result = map.get(Value::String("test_yaml_array".to_string()));
 
         // Both should produce YAML strings (array should unpack to single element)
         assert!(direct_result.is_some());
@@ -133,8 +133,8 @@ test_json_array: !$toJsonString
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(map) = result {
-        let direct_result = map.get(&Value::String("test_json_direct".to_string()));
-        let array_result = map.get(&Value::String("test_json_array".to_string()));
+        let direct_result = map.get(Value::String("test_json_direct".to_string()));
+        let array_result = map.get(Value::String("test_json_array".to_string()));
 
         // Both should produce JSON strings (array should unpack to single element)
         assert!(direct_result.is_some());
@@ -166,8 +166,8 @@ test_parse_array: !$parseYaml ["key: value\nnumber: 42"]
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(map) = result {
-        let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
-        let array_result = map.get(&Value::String("test_parse_array".to_string()));
+        let direct_result = map.get(Value::String("test_parse_direct".to_string()));
+        let array_result = map.get(Value::String("test_parse_array".to_string()));
 
         // Both should produce identical parsed structures
         assert!(direct_result.is_some());
@@ -177,11 +177,11 @@ test_parse_array: !$parseYaml ["key: value\nnumber: 42"]
         // Should be a parsed mapping
         if let Some(Value::Mapping(parsed)) = direct_result {
             assert_eq!(
-                parsed.get(&Value::String("key".to_string())),
+                parsed.get(Value::String("key".to_string())),
                 Some(&Value::String("value".to_string()))
             );
             assert_eq!(
-                parsed.get(&Value::String("number".to_string())),
+                parsed.get(Value::String("number".to_string())),
                 Some(&Value::Number(serde_yaml::Number::from(42)))
             );
         }
@@ -202,8 +202,8 @@ test_parse_array: !$parseJson ['{"key": "value", "number": 42}']
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(map) = result {
-        let direct_result = map.get(&Value::String("test_parse_direct".to_string()));
-        let array_result = map.get(&Value::String("test_parse_array".to_string()));
+        let direct_result = map.get(Value::String("test_parse_direct".to_string()));
+        let array_result = map.get(Value::String("test_parse_array".to_string()));
 
         // Both should produce identical parsed structures
         assert!(direct_result.is_some());
@@ -213,11 +213,11 @@ test_parse_array: !$parseJson ['{"key": "value", "number": 42}']
         // Should be a parsed mapping
         if let Some(Value::Mapping(parsed)) = direct_result {
             assert_eq!(
-                parsed.get(&Value::String("key".to_string())),
+                parsed.get(Value::String("key".to_string())),
                 Some(&Value::String("value".to_string()))
             );
             assert_eq!(
-                parsed.get(&Value::String("number".to_string())),
+                parsed.get(Value::String("number".to_string())),
                 Some(&Value::Number(serde_yaml::Number::from(42)))
             );
         }
@@ -276,8 +276,7 @@ test_filter: !$map
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(map) = result {
-        if let Some(Value::Sequence(filtered)) = map.get(&Value::String("test_filter".to_string()))
-        {
+        if let Some(Value::Sequence(filtered)) = map.get(Value::String("test_filter".to_string())) {
             // Should exclude "worker" and include "api" and "web"
             assert_eq!(filtered.len(), 2);
             assert_eq!(filtered[0], Value::String("service: api".to_string()));
@@ -306,26 +305,26 @@ test_nested_array: !$not [[true]]
     if let Value::Mapping(map) = result {
         // Empty array should be treated as direct empty array (not unpacked)
         if let Some(Value::Bool(empty_result)) =
-            map.get(&Value::String("test_empty_array".to_string()))
+            map.get(Value::String("test_empty_array".to_string()))
         {
             // Empty array is falsy, so !$not [] should be true
-            assert_eq!(*empty_result, true);
+            assert!(*empty_result);
         }
 
         // Multi-element array should be treated as direct array (not unpacked)
         if let Some(Value::Bool(multi_result)) =
-            map.get(&Value::String("test_multi_element_array".to_string()))
+            map.get(Value::String("test_multi_element_array".to_string()))
         {
             // Non-empty array is truthy, so !$not [true, false] should be false
-            assert_eq!(*multi_result, false);
+            assert!(!(*multi_result));
         }
 
         // Nested array should be treated as direct array (not unpacked)
         if let Some(Value::Bool(nested_result)) =
-            map.get(&Value::String("test_nested_array".to_string()))
+            map.get(Value::String("test_nested_array".to_string()))
         {
             // Non-empty array is truthy, so !$not [[true]] should be false
-            assert_eq!(*nested_result, false);
+            assert!(!(*nested_result));
         }
     } else {
         panic!("Expected mapping result");

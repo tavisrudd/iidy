@@ -26,7 +26,7 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-pub type ParseResult<T> = Result<T, ParseError>;
+pub type ParseResult<T> = Result<T, Box<ParseError>>;
 
 #[derive(Debug, Clone)]
 pub struct ParseWarning {
@@ -84,6 +84,12 @@ impl ParseError {
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = Some(code.into());
         self
+    }
+}
+
+impl Default for ParseDiagnostics {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

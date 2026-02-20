@@ -59,7 +59,7 @@ pub async fn create_command_metadata(
     }
 
     // Always include the primary token, but renderers will decide whether to display it
-    let primary_token = convert_token_info(&context.primary_token());
+    let primary_token = convert_token_info(context.primary_token());
 
     // Only include derived tokens if we actually derived new ones (not just the primary)
     let all_tokens = context.get_used_tokens();
@@ -116,7 +116,7 @@ pub async fn get_caller_identity(context: &CfnContext) -> Result<(String, String
         }
         Err(e) => {
             // Fall back to placeholders if STS call fails (e.g., no internet, permissions issue)
-            eprintln!("Warning: Could not get caller identity: {}", e);
+            eprintln!("Warning: Could not get caller identity: {e}");
             Ok((
                 "unknown".to_string(),
                 "arn:aws:iam::unknown:user/current".to_string(),
@@ -308,8 +308,7 @@ pub fn convert_stack_to_definition(stack: &Stack, show_times: bool) -> OutputDat
         stack_policy: None, // Not available from DescribeStacks; would need GetStackPolicy API call
         arn: stack_id.to_string(),
         console_url: format!(
-            "https://{}.console.aws.amazon.com/cloudformation/home?region={}#/stacks/stackinfo?stackId={}",
-            region_from_arn, region_from_arn, stack_id
+            "https://{region_from_arn}.console.aws.amazon.com/cloudformation/home?region={region_from_arn}#/stacks/stackinfo?stackId={stack_id}"
         ),
         region: region_from_arn.to_string(),
     };
@@ -485,6 +484,191 @@ pub fn convert_outputs_to_exports(
         .iter()
         .filter_map(|output| create_stack_export(output, stack_id, vec![]))
         .collect()
+}
+
+pub async fn convert_aws_error_to_error_info(
+    error: &anyhow::Error,
+    context: Option<(&CfnContext, &crate::cli::Cli)>,
+) -> ErrorInfo {
+    let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
+    let (error_type, message, suggestions) = analyze_aws_error(&error_chain);
+
+    let error_details = if let Some((ctx, cli)) = context {
+        if is_stack_absent_error(&message) {
+            match create_stack_absent_context(ctx, cli, &message).await {
+                Ok(context_info) => ErrorDetails::StackAbsent(context_info),
+                Err(_) => ErrorDetails::Generic(None),
+            }
+        } else {
+            ErrorDetails::Generic(None)
+        }
+    } else {
+        ErrorDetails::Generic(None)
+    };
+
+    ErrorInfo {
+        error_type,
+        message,
+        timestamp: Utc::now(),
+        suggestions,
+        error_details,
+    }
+}
+
+fn is_stack_absent_error(message: &str) -> bool {
+    message.contains("Stack with id") && message.contains("does not exist")
+}
+
+async fn create_stack_absent_context(
+    context: &CfnContext,
+    cli: &crate::cli::Cli,
+    error_message: &str,
+) -> anyhow::Result<crate::output::data::StackAbsentInfo> {
+    let stack_name = extract_stack_name_from_error(error_message);
+    let (account, auth_arn) = get_caller_identity(context).await?;
+
+    Ok(crate::output::data::StackAbsentInfo {
+        stack_name,
+        environment: cli.global_opts.environment.clone(),
+        region: context
+            .aws_config
+            .region()
+            .map(|r| r.as_ref().to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        account,
+        auth_arn,
+    })
+}
+
+fn extract_stack_name_from_error(error_message: &str) -> String {
+    if let Some(start) = error_message.find("Stack with id ") {
+        let after_prefix = &error_message[start + "Stack with id ".len()..];
+        if let Some(end) = after_prefix.find(" does not exist") {
+            return after_prefix[..end].to_string();
+        }
+    }
+    "unknown-stack".to_string()
+}
+
+/// Analyze AWS error chain and return structured error information
+fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
+    for err_msg in error_chain {
+        let lower_msg = err_msg.to_lowercase();
+
+        if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
+            return (
+                "ExpiredCredentials".to_string(),
+                "AWS credentials have expired. Please refresh your credentials.".to_string(),
+                vec![
+                    "Run 'aws sts get-caller-identity' to check your credentials".to_string(),
+                    "Refresh your AWS SSO session if using SSO".to_string(),
+                    "Check your AWS credentials configuration".to_string(),
+                ],
+            );
+        }
+
+        if lower_msg.contains("no providers in chain provided credentials") {
+            return (
+                "NoCredentials".to_string(),
+                "AWS credentials not found. Please configure your AWS credentials.".to_string(),
+                vec![
+                    "Run 'aws configure' to set up your credentials".to_string(),
+                    "Set AWS_PROFILE environment variable if using named profiles".to_string(),
+                    "Ensure ~/.aws/credentials file exists and is properly formatted".to_string(),
+                ],
+            );
+        }
+
+        if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
+            return (
+                "AccessDenied".to_string(),
+                "Access denied. Please check your AWS permissions.".to_string(),
+                vec![
+                    "Verify your IAM user/role has CloudFormation permissions".to_string(),
+                    "Check if you're using the correct AWS account/region".to_string(),
+                    "Review IAM policies attached to your user/role".to_string(),
+                ],
+            );
+        }
+
+        if lower_msg.contains("invalidclienttokenid")
+            || lower_msg.contains("invalid security token")
+            || lower_msg.contains("tokenfreshfailed")
+            || lower_msg.contains("unrecognizedclientexception")
+        {
+            return (
+                "InvalidToken".to_string(),
+                "Invalid AWS security token. Please refresh your credentials.".to_string(),
+                vec![
+                    "Refresh your AWS credentials".to_string(),
+                    "Check if your AWS region is correct".to_string(),
+                    "Verify you're using the correct AWS profile".to_string(),
+                    "If using SSO, run 'aws sso login' to refresh your session".to_string(),
+                ],
+            );
+        }
+
+        if lower_msg.contains("network") || lower_msg.contains("timeout") {
+            return (
+                "NetworkError".to_string(),
+                "Network error connecting to AWS. Please check your internet connection."
+                    .to_string(),
+                vec![
+                    "Check your internet connection".to_string(),
+                    "Verify AWS service endpoints are accessible".to_string(),
+                    "Try again in a few moments".to_string(),
+                ],
+            );
+        }
+
+        if lower_msg.contains("insufficientcapabilitiesexception")
+            && lower_msg.contains("requires capabilities")
+        {
+            // Extract the required capabilities from the error message
+            // Message format: "Requires capabilities : [CAPABILITY_NAMED_IAM]"
+            let capabilities_list = if let Some(start) = err_msg.find('[') {
+                if let Some(end) = err_msg.find(']') {
+                    let caps_str = &err_msg[start + 1..end];
+                    // Split by comma and clean up
+                    caps_str
+                        .split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .map(|s| format!("\"{s}\""))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else {
+                    "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
+                }
+            } else {
+                "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
+            };
+
+            return (
+                "InsufficientCapabilities".to_string(),
+                "CloudFormation stack requires additional capabilities".to_string(),
+                vec![format!(
+                    "Add \"Capabilities: [{}]\" to your stack-args.yaml file",
+                    capabilities_list
+                )],
+            );
+        }
+    }
+
+    // If no specific pattern matches, show the most relevant error from the chain
+    let message = if error_chain.len() > 1 {
+        format!("AWS error - {}", error_chain[error_chain.len() - 1])
+    } else if !error_chain.is_empty() {
+        error_chain[0].clone()
+    } else {
+        "Unknown AWS error".to_string()
+    };
+
+    (
+        "AWSError".to_string(),
+        message,
+        vec!["Check the AWS CloudFormation console for more details".to_string()],
+    )
 }
 
 #[cfg(test)]
@@ -719,189 +903,4 @@ mod tests {
         // Second event (COMPLETE) should have 5 second duration
         assert_eq!(events_with_timing[1].duration_seconds, Some(5));
     }
-}
-
-pub async fn convert_aws_error_to_error_info(
-    error: &anyhow::Error,
-    context: Option<(&CfnContext, &crate::cli::Cli)>,
-) -> ErrorInfo {
-    let error_chain: Vec<String> = error.chain().map(|e| e.to_string()).collect();
-    let (error_type, message, suggestions) = analyze_aws_error(&error_chain);
-
-    let error_details = if let Some((ctx, cli)) = context {
-        if is_stack_absent_error(&message) {
-            match create_stack_absent_context(ctx, cli, &message).await {
-                Ok(context_info) => ErrorDetails::StackAbsent(context_info),
-                Err(_) => ErrorDetails::Generic(None),
-            }
-        } else {
-            ErrorDetails::Generic(None)
-        }
-    } else {
-        ErrorDetails::Generic(None)
-    };
-
-    ErrorInfo {
-        error_type,
-        message,
-        timestamp: Utc::now(),
-        suggestions,
-        error_details,
-    }
-}
-
-fn is_stack_absent_error(message: &str) -> bool {
-    message.contains("Stack with id") && message.contains("does not exist")
-}
-
-async fn create_stack_absent_context(
-    context: &CfnContext,
-    cli: &crate::cli::Cli,
-    error_message: &str,
-) -> anyhow::Result<crate::output::data::StackAbsentInfo> {
-    let stack_name = extract_stack_name_from_error(error_message);
-    let (account, auth_arn) = get_caller_identity(context).await?;
-
-    Ok(crate::output::data::StackAbsentInfo {
-        stack_name,
-        environment: cli.global_opts.environment.clone(),
-        region: context
-            .aws_config
-            .region()
-            .map(|r| r.as_ref().to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
-        account,
-        auth_arn,
-    })
-}
-
-fn extract_stack_name_from_error(error_message: &str) -> String {
-    if let Some(start) = error_message.find("Stack with id ") {
-        let after_prefix = &error_message[start + "Stack with id ".len()..];
-        if let Some(end) = after_prefix.find(" does not exist") {
-            return after_prefix[..end].to_string();
-        }
-    }
-    "unknown-stack".to_string()
-}
-
-/// Analyze AWS error chain and return structured error information
-fn analyze_aws_error(error_chain: &[String]) -> (String, String, Vec<String>) {
-    for err_msg in error_chain {
-        let lower_msg = err_msg.to_lowercase();
-
-        if lower_msg.contains("expiredtoken") || lower_msg.contains("expired") {
-            return (
-                "ExpiredCredentials".to_string(),
-                "AWS credentials have expired. Please refresh your credentials.".to_string(),
-                vec![
-                    "Run 'aws sts get-caller-identity' to check your credentials".to_string(),
-                    "Refresh your AWS SSO session if using SSO".to_string(),
-                    "Check your AWS credentials configuration".to_string(),
-                ],
-            );
-        }
-
-        if lower_msg.contains("no providers in chain provided credentials") {
-            return (
-                "NoCredentials".to_string(),
-                "AWS credentials not found. Please configure your AWS credentials.".to_string(),
-                vec![
-                    "Run 'aws configure' to set up your credentials".to_string(),
-                    "Set AWS_PROFILE environment variable if using named profiles".to_string(),
-                    "Ensure ~/.aws/credentials file exists and is properly formatted".to_string(),
-                ],
-            );
-        }
-
-        if lower_msg.contains("access denied") || lower_msg.contains("unauthorized") {
-            return (
-                "AccessDenied".to_string(),
-                "Access denied. Please check your AWS permissions.".to_string(),
-                vec![
-                    "Verify your IAM user/role has CloudFormation permissions".to_string(),
-                    "Check if you're using the correct AWS account/region".to_string(),
-                    "Review IAM policies attached to your user/role".to_string(),
-                ],
-            );
-        }
-
-        if lower_msg.contains("invalidclienttokenid")
-            || lower_msg.contains("invalid security token")
-            || lower_msg.contains("tokenfreshfailed")
-            || lower_msg.contains("unrecognizedclientexception")
-        {
-            return (
-                "InvalidToken".to_string(),
-                "Invalid AWS security token. Please refresh your credentials.".to_string(),
-                vec![
-                    "Refresh your AWS credentials".to_string(),
-                    "Check if your AWS region is correct".to_string(),
-                    "Verify you're using the correct AWS profile".to_string(),
-                    "If using SSO, run 'aws sso login' to refresh your session".to_string(),
-                ],
-            );
-        }
-
-        if lower_msg.contains("network") || lower_msg.contains("timeout") {
-            return (
-                "NetworkError".to_string(),
-                "Network error connecting to AWS. Please check your internet connection."
-                    .to_string(),
-                vec![
-                    "Check your internet connection".to_string(),
-                    "Verify AWS service endpoints are accessible".to_string(),
-                    "Try again in a few moments".to_string(),
-                ],
-            );
-        }
-
-        if lower_msg.contains("insufficientcapabilitiesexception")
-            && lower_msg.contains("requires capabilities")
-        {
-            // Extract the required capabilities from the error message
-            // Message format: "Requires capabilities : [CAPABILITY_NAMED_IAM]"
-            let capabilities_list = if let Some(start) = err_msg.find('[') {
-                if let Some(end) = err_msg.find(']') {
-                    let caps_str = &err_msg[start + 1..end];
-                    // Split by comma and clean up
-                    caps_str
-                        .split(',')
-                        .map(|s| s.trim())
-                        .filter(|s| !s.is_empty())
-                        .map(|s| format!("\"{}\"", s))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                } else {
-                    "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
-                }
-            } else {
-                "\"CAPABILITY_IAM\" or \"CAPABILITY_NAMED_IAM\"".to_string()
-            };
-
-            return (
-                "InsufficientCapabilities".to_string(),
-                format!("CloudFormation stack requires additional capabilities"),
-                vec![format!(
-                    "Add \"Capabilities: [{}]\" to your stack-args.yaml file",
-                    capabilities_list
-                )],
-            );
-        }
-    }
-
-    // If no specific pattern matches, show the most relevant error from the chain
-    let message = if error_chain.len() > 1 {
-        format!("AWS error - {}", error_chain[error_chain.len() - 1])
-    } else if !error_chain.is_empty() {
-        error_chain[0].clone()
-    } else {
-        "Unknown AWS error".to_string()
-    };
-
-    (
-        "AWSError".to_string(),
-        message,
-        vec!["Check the AWS CloudFormation console for more details".to_string()],
-    )
 }

@@ -78,10 +78,7 @@ pub async fn exec_changeset_impl(
                 .collect();
 
             let events_display = StackEventsDisplay {
-                title: format!(
-                    "Previous Stack Events (max {}):",
-                    DEFAULT_PREVIOUS_EVENTS_COUNT
-                ),
+                title: format!("Previous Stack Events (max {DEFAULT_PREVIOUS_EVENTS_COUNT}):"),
                 events: events_with_timing,
                 max_events: Some(DEFAULT_PREVIOUS_EVENTS_COUNT),
                 truncated: None,

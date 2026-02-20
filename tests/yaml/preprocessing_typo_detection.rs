@@ -67,11 +67,11 @@ async fn test_other_common_typos() {
     let mut failures = Vec::new();
 
     for (typo, snapshot_name) in test_cases {
-        let yaml_input = format!("test: {} \"value\"", typo);
+        let yaml_input = format!("test: {typo} \"value\"");
         let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await;
 
         if result.is_ok() {
-            failures.push(format!("Should fail for typo: {}", typo));
+            failures.push(format!("Should fail for typo: {typo}"));
             continue;
         }
 
@@ -87,8 +87,7 @@ async fn test_other_common_typos() {
             Err(_) => {
                 // Snapshot failed - insta should have created .new files
                 failures.push(format!(
-                    "Snapshot mismatch for typo '{}' (check .snap.new files)",
-                    typo
+                    "Snapshot mismatch for typo '{typo}' (check .snap.new files)"
                 ));
             }
         }
@@ -151,21 +150,21 @@ test_escape: !$escape "{{test_var}}"
     // Should succeed and process correctly
     if let serde_yaml::Value::Mapping(map) = result {
         assert_eq!(
-            map.get(&serde_yaml::Value::String("test_if".to_string())),
+            map.get(serde_yaml::Value::String("test_if".to_string())),
             Some(&serde_yaml::Value::String("success".to_string()))
         );
         assert_eq!(
-            map.get(&serde_yaml::Value::String("test_not".to_string())),
+            map.get(serde_yaml::Value::String("test_not".to_string())),
             Some(&serde_yaml::Value::Bool(true))
         );
         assert_eq!(
-            map.get(&serde_yaml::Value::String("test_escape".to_string())),
+            map.get(serde_yaml::Value::String("test_escape".to_string())),
             Some(&serde_yaml::Value::String("{{test_var}}".to_string()))
         );
 
         // Check map result
         if let Some(serde_yaml::Value::Sequence(map_result)) =
-            map.get(&serde_yaml::Value::String("test_map".to_string()))
+            map.get(serde_yaml::Value::String("test_map".to_string()))
         {
             assert_eq!(map_result.len(), 2);
             assert_eq!(map_result[0], serde_yaml::Value::String("a".to_string()));

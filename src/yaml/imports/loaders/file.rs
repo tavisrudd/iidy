@@ -206,7 +206,7 @@ mod tests {
         let mut temp_file = NamedTempFile::new()?;
         writeln!(temp_file, "prefixed: value")?;
         let temp_path = temp_file.path().to_string_lossy().to_string();
-        let file_url = format!("file:{}", temp_path);
+        let file_url = format!("file:{temp_path}");
 
         let result = load_file_import(&file_url, "/some/base").await?;
 
@@ -230,7 +230,7 @@ mod tests {
         writeln!(temp_file, "hash test content")?;
         let temp_path = temp_file.path().to_string_lossy().to_string();
 
-        let location = format!("filehash:{}", temp_path);
+        let location = format!("filehash:{temp_path}");
         let result = load_filehash_import(&location, "/base", false).await?;
 
         assert_eq!(result.import_type, ImportType::Filehash);
@@ -249,7 +249,7 @@ mod tests {
         writeln!(temp_file, "base64 test content")?;
         let temp_path = temp_file.path().to_string_lossy().to_string();
 
-        let location = format!("filehash-base64:{}", temp_path);
+        let location = format!("filehash-base64:{temp_path}");
         let result = load_filehash_import(&location, "/base", true).await?;
 
         assert_eq!(result.import_type, ImportType::FilehashBase64);

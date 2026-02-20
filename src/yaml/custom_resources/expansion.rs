@@ -41,7 +41,7 @@ pub fn expand_custom_resource(
 
     // Extract prefix: NamePrefix override or the resource name
     let prefix = resource_map
-        .get(&Value::String("NamePrefix".into()))
+        .get(Value::String("NamePrefix".into()))
         .and_then(|v| v.as_str())
         .unwrap_or(name);
 
@@ -64,7 +64,7 @@ pub fn expand_custom_resource(
     let mut resolved = resolve_ast(&ast, &sub_context)?;
 
     // Deep-merge Overrides into the resolved template (Overrides already resolved by outer context)
-    if let Some(overrides) = resource_map.get(&Value::String("Overrides".into())) {
+    if let Some(overrides) = resource_map.get(Value::String("Overrides".into())) {
         deep_merge(&mut resolved, overrides);
     }
 
@@ -80,7 +80,7 @@ pub fn expand_custom_resource(
 
     // Extract and process the Resources section
     let resources_value = resolved_map
-        .get(&Value::String("Resources".into()))
+        .get(Value::String("Resources".into()))
         .ok_or_else(|| {
             anyhow!(
                 "Custom resource template for '{}' must have a Resources section",
@@ -122,7 +122,7 @@ fn deep_merge(target: &mut Value, source: &Value) {
 /// Extract Properties mapping from a resource value into a HashMap.
 fn extract_properties(resource_map: &Mapping) -> HashMap<String, Value> {
     let mut result = HashMap::new();
-    if let Some(props) = resource_map.get(&Value::String("Properties".into())) {
+    if let Some(props) = resource_map.get(Value::String("Properties".into())) {
         if let Some(props_map) = props.as_mapping() {
             for (k, v) in props_map {
                 if let Some(key_str) = k.as_str() {
@@ -152,7 +152,7 @@ fn collect_global_refs(
     // Scan sections for entries with $global: true
     let sections_to_scan = ["Parameters", "Resources", "Mappings", "Conditions"];
     for section_name in &sections_to_scan {
-        if let Some(section) = resolved_map.get(&Value::String((*section_name).to_string())) {
+        if let Some(section) = resolved_map.get(Value::String((*section_name).to_string())) {
             if let Some(section_map) = section.as_mapping() {
                 for (key, value) in section_map {
                     if has_global_flag(value) {
@@ -172,7 +172,7 @@ fn collect_global_refs(
 fn has_global_flag(value: &Value) -> bool {
     value
         .as_mapping()
-        .and_then(|m| m.get(&Value::String("$global".into())))
+        .and_then(|m| m.get(Value::String("$global".into())))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
 }
@@ -194,7 +194,7 @@ fn prefix_and_strip_global(resources: &Value, prefix: &str) -> Result<Vec<(Strin
         let output_name = if is_global {
             key_str.to_string()
         } else {
-            format!("{}{}", prefix, key_str)
+            format!("{prefix}{key_str}")
         };
 
         // Strip $global from the value
@@ -236,9 +236,7 @@ fn accumulate_globals(
             continue;
         };
 
-        let target = acc
-            .entry(section_name.to_string())
-            .or_insert_with(Mapping::new);
+        let target = acc.entry(section_name.to_string()).or_default();
 
         for (key, value) in section_map {
             let key_str = key.as_str().unwrap_or("");
@@ -246,7 +244,7 @@ fn accumulate_globals(
             let output_key = if is_global {
                 key_str.to_string()
             } else {
-                format!("{}{}", prefix, key_str)
+                format!("{prefix}{key_str}")
             };
             let clean_value = strip_global_key(value);
 
@@ -318,8 +316,8 @@ mod tests {
         let result = strip_global_key(&Value::Mapping(map));
         let result_map = result.as_mapping().unwrap();
         assert_eq!(result_map.len(), 1);
-        assert!(result_map.contains_key(&Value::String("Type".into())));
-        assert!(!result_map.contains_key(&Value::String("$global".into())));
+        assert!(result_map.contains_key(Value::String("Type".into())));
+        assert!(!result_map.contains_key(Value::String("$global".into())));
     }
 
     #[test]
@@ -390,7 +388,7 @@ mod tests {
                 .1
                 .as_mapping()
                 .unwrap()
-                .contains_key(&Value::String("$global".into()))
+                .contains_key(Value::String("$global".into()))
         );
         // Non-global resource gets prefixed
         assert_eq!(result[1].0, "PrefixLocalQueue");

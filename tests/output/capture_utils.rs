@@ -141,12 +141,10 @@ impl RendererTestUtils {
         use std::collections::HashMap;
 
         let mut color_map = HashMap::new();
+        let ansi_re = Regex::new(r"\x1b\[([0-9;]*)m([^\x1b]*?)(?:\x1b\[0m|$)").unwrap();
         let lines: Vec<&str> = output.lines().collect();
 
         for line in lines {
-            // Find ANSI codes and the text they apply to
-            let ansi_re = Regex::new(r"\x1b\[([0-9;]*)m([^\x1b]*?)(?:\x1b\[0m|$)").unwrap();
-
             for cap in ansi_re.captures_iter(line) {
                 let color_code = cap[1].to_string();
                 let text_content = cap[2].trim().to_string();
@@ -177,8 +175,7 @@ impl RendererTestUtils {
                     found_match = true;
                     if !colors.contains(&expected_color.to_string()) {
                         errors.push(format!(
-                            "Content '{}' should use color '{}' but found colors: {:?}",
-                            text, expected_color, colors
+                            "Content '{text}' should use color '{expected_color}' but found colors: {colors:?}"
                         ));
                     }
                 }
@@ -186,8 +183,7 @@ impl RendererTestUtils {
 
             if !found_match {
                 errors.push(format!(
-                    "No content found matching pattern '{}' for color validation",
-                    content_pattern
+                    "No content found matching pattern '{content_pattern}' for color validation"
                 ));
             }
         }
@@ -279,8 +275,7 @@ Account: 987654321098
         let errors = RendererTestUtils::validate_color_usage(output, &patterns);
         assert!(
             errors.is_empty(),
-            "Should have no color validation errors: {:?}",
-            errors
+            "Should have no color validation errors: {errors:?}"
         );
 
         // Test with wrong expected color

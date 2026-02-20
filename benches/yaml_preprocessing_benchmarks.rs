@@ -137,7 +137,7 @@ region: "us-west-2"
         b.to_async(&rt).iter(|| async {
             let config_content = "database_host: db.example.com\ndatabase_port: 5432";
             let mut config_file = NamedTempFile::with_suffix(".yaml").unwrap();
-            writeln!(config_file, "{}", config_content).unwrap();
+            writeln!(config_file, "{config_content}").unwrap();
             let config_path = config_file.path().to_string_lossy();
 
             let medium_yaml = format!(
@@ -147,7 +147,7 @@ $defs:
   environment: "prod"
 
 $imports:
-  config: "{}"
+  config: "{config_path}"
 
 name: "{{{{app_name}}}}-{{{{environment}}}}"
 database_url: !$if
@@ -158,8 +158,7 @@ database_url: !$if
 services: !$map
   items: ["api", "web", "worker"]
   template: "{{{{app_name}}}}-{{{{item}}}}-{{{{environment}}}}"
-"#,
-                config_path
+"#
             );
 
             preprocess_yaml_v11(black_box(&medium_yaml), "medium.yaml")
@@ -418,8 +417,7 @@ fn bench_memory_usage(c: &mut Criterion) {
 
     for size in sizes.iter() {
         // Generate YAML with many repeated elements
-        let mut yaml_content = format!(
-            r#"
+        let mut yaml_content = r#"
 $defs:
   app_name: "memory-test"
   base_config:
@@ -429,10 +427,10 @@ $defs:
 
 services: !$map
   items: ["#
-        );
+            .to_string();
 
         for i in 0..*size {
-            yaml_content.push_str(&format!("service-{}", i));
+            yaml_content.push_str(&format!("service-{i}"));
             if i < size - 1 {
                 yaml_content.push_str("\", \"");
             }
@@ -450,7 +448,7 @@ large_mapping: !$fromPairs
         );
 
         for i in 0..*size {
-            yaml_content.push_str(&format!("key-{}", i));
+            yaml_content.push_str(&format!("key-{i}"));
             if i < size - 1 {
                 yaml_content.push_str("\", \"");
             }

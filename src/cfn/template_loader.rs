@@ -84,7 +84,7 @@ pub async fn load_cfn_template(
         // Local file or S3/HTTP that needs processing
         let import_result = load_file_import(&processed_location, base_location)
             .await
-            .with_context(|| format!("Failed to load template from: {}", processed_location))?;
+            .with_context(|| format!("Failed to load template from: {processed_location}"))?;
         import_result.data
     };
 
@@ -95,10 +95,9 @@ pub async fn load_cfn_template(
              You need to prefix the template with \"render:\"."
         } else {
             &format!(
-                "Your cloudformation Template from {} appears to use iidy's yaml pre-processor syntax.\n\
+                "Your cloudformation Template from {processed_location} appears to use iidy's yaml pre-processor syntax.\n\
                  You need to prefix the template location with \"render:\".\n\
-                 e.g.   Template: \"render:{}\"",
-                processed_location, processed_location
+                 e.g.   Template: \"render:{processed_location}\""
             )
         };
         bail!("{}", msg);
@@ -110,7 +109,7 @@ pub async fn load_cfn_template(
             if is_inline_content {
                 "Failed to parse YAML template".to_string()
             } else {
-                format!("Failed to parse YAML template: {}", processed_location)
+                format!("Failed to parse YAML template: {processed_location}")
             }
         })?;
 
@@ -277,7 +276,7 @@ fn parse_s3_http_url(input: &str) -> Result<(String, String)> {
         bail!("HTTP URL '{}' is not a well-formed S3 URL", input);
     }
 
-    let url = url::Url::parse(input).with_context(|| format!("Failed to parse URL: {}", input))?;
+    let url = url::Url::parse(input).with_context(|| format!("Failed to parse URL: {input}"))?;
 
     let hostname = url
         .host_str()
@@ -405,13 +404,13 @@ pub async fn load_cfn_stack_policy(
             let import_result = load_file_import(&processed_location, base_location)
                 .await
                 .with_context(|| {
-                    format!("Failed to load stack policy from: {}", processed_location)
+                    format!("Failed to load stack policy from: {processed_location}")
                 })?;
 
             let body = if should_render {
                 // Parse YAML and process
                 let doc: Value = serde_yaml::from_str(&import_result.data).with_context(|| {
-                    format!("Failed to parse YAML stack policy: {}", processed_location)
+                    format!("Failed to parse YAML stack policy: {processed_location}")
                 })?;
 
                 let yaml_spec = YamlSpec::V11;

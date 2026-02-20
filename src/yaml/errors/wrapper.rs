@@ -77,8 +77,8 @@ pub fn missing_required_field_error(
     _yaml_path: &str,
     _required_fields: Vec<String>,
 ) -> anyhow::Error {
-    let message = format!("'{}' missing in {} tag", missing_field, tag_name);
-    let suggestion = format!("add '{}' field to {} tag", missing_field, tag_name);
+    let message = format!("'{missing_field}' missing in {tag_name} tag");
+    let suggestion = format!("add '{missing_field}' field to {tag_name} tag");
     tag_parsing_error(
         tag_name,
         &message,
@@ -287,7 +287,7 @@ fn cloudformation_validation_error_impl(
     let (line_number, column_number) = if let Some(ref lines) = source_lines {
         // Always search for the actual CloudFormation tag location, ignoring provided line number
         // because it's often inaccurate for CloudFormation tags
-        let tag_pattern = format!("!{}", tag_name);
+        let tag_pattern = format!("!{tag_name}");
         let found = lines.iter().enumerate().find_map(|(idx, line)| {
             if line.trim_start().starts_with('#') {
                 return None;

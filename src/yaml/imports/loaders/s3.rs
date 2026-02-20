@@ -124,7 +124,7 @@ mod tests {
         }
 
         fn expect_get_object(mut self, bucket: &str, key: &str, response: Result<String>) -> Self {
-            let lookup_key = format!("{}/{}", bucket, key);
+            let lookup_key = format!("{bucket}/{key}");
             self.responses.insert(lookup_key, response);
             self
         }
@@ -133,7 +133,7 @@ mod tests {
     #[async_trait]
     impl S3Client for MockS3Client {
         async fn get_object(&self, bucket: &str, key: &str) -> Result<String> {
-            let lookup_key = format!("{}/{}", bucket, key);
+            let lookup_key = format!("{bucket}/{key}");
             match self.responses.get(&lookup_key) {
                 Some(Ok(content)) => Ok(content.clone()),
                 Some(Err(e)) => Err(anyhow!("{}", e)),
@@ -186,8 +186,8 @@ mod tests {
 
         // Should parse as YAML
         if let serde_yaml::Value::Mapping(map) = result.doc {
-            assert!(map.contains_key(&serde_yaml::Value::String("test".to_string())));
-            assert!(map.contains_key(&serde_yaml::Value::String("other".to_string())));
+            assert!(map.contains_key(serde_yaml::Value::String("test".to_string())));
+            assert!(map.contains_key(serde_yaml::Value::String("other".to_string())));
         } else {
             panic!("Expected parsed YAML object");
         }
@@ -212,11 +212,11 @@ mod tests {
         // Should parse as JSON
         if let serde_yaml::Value::Mapping(map) = result.doc {
             assert_eq!(
-                map.get(&serde_yaml::Value::String("key".to_string())),
+                map.get(serde_yaml::Value::String("key".to_string())),
                 Some(&serde_yaml::Value::String("value".to_string()))
             );
             assert_eq!(
-                map.get(&serde_yaml::Value::String("number".to_string())),
+                map.get(serde_yaml::Value::String("number".to_string())),
                 Some(&serde_yaml::Value::Number(serde_yaml::Number::from(42)))
             );
         } else {

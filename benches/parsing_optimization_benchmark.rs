@@ -25,7 +25,7 @@ fn create_yaml_parser() -> Parser {
 
 /// Benchmark baseline serde_yaml parsing
 fn bench_serde_yaml_baseline(c: &mut Criterion, yaml_content: &str, name: &str) {
-    c.bench_function(&format!("baseline_serde_yaml_{}", name), |b| {
+    c.bench_function(&format!("baseline_serde_yaml_{name}"), |b| {
         b.iter(|| serde_yaml::from_str::<Value>(black_box(yaml_content)).unwrap())
     });
 }
@@ -34,14 +34,14 @@ fn bench_serde_yaml_baseline(c: &mut Criterion, yaml_content: &str, name: &str) 
 fn bench_tree_sitter_baseline(c: &mut Criterion, yaml_content: &str, name: &str) {
     let mut parser = create_yaml_parser();
 
-    c.bench_function(&format!("baseline_tree_sitter_{}", name), |b| {
+    c.bench_function(&format!("baseline_tree_sitter_{name}"), |b| {
         b.iter(|| parser.parse(black_box(yaml_content), None).unwrap())
     });
 }
 
 /// Benchmark our custom parser (tree-sitter + custom tag processing)
 fn bench_custom_parser(c: &mut Criterion, yaml_content: &str, name: &str) {
-    c.bench_function(&format!("custom_parser_{}", name), |b| {
+    c.bench_function(&format!("custom_parser_{name}"), |b| {
         b.iter(|| parse_yaml_from_file(black_box(yaml_content), black_box("test.yaml")).unwrap())
     });
 }
@@ -315,17 +315,16 @@ fn bench_large_documents(c: &mut Criterion) {
     let mut large_yaml = String::from("AWSTemplateFormatVersion: '2010-09-09'\nResources:\n");
     for i in 0..200 {
         large_yaml.push_str(&format!(
-            r#"  Resource{}:
+            r#"  Resource{i}:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${{AWS::StackName}}-bucket-{}"
+      BucketName: !Sub "${{AWS::StackName}}-bucket-{i}"
       Tags:
         - Key: "Name"
-          Value: !Ref ResourceName{}
+          Value: !Ref ResourceName{i}
         - Key: "Index"
-          Value: "{}"
-"#,
-            i, i, i, i
+          Value: "{i}"
+"#
         ));
     }
 

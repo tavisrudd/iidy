@@ -61,7 +61,7 @@ pub fn generate_dashed_name() -> String {
     let adj = adjectives[rng.gen_range(0..adjectives.len())];
     let noun = nouns[rng.gen_range(0..nouns.len())];
 
-    format!("{}-{}", adj, noun)
+    format!("{adj}-{noun}")
 }
 
 /// Generate a name (no dashes) for random imports
@@ -126,7 +126,7 @@ mod tests {
 
         // Check that the result is a valid integer
         let parsed: i32 = result.data.parse().expect("Should be a valid integer");
-        assert!(parsed >= 1 && parsed < 1000);
+        assert!((1..1000).contains(&parsed));
 
         Ok(())
     }
@@ -209,7 +209,7 @@ mod tests {
         let parsed: i32 = int_str.parse().expect("Should be valid integer");
 
         // Should be in expected range
-        assert!(parsed >= 1 && parsed < 1000);
+        assert!((1..1000).contains(&parsed));
     }
 
     #[test]
@@ -226,6 +226,6 @@ mod tests {
         // Very unlikely to get all the same values
         assert!(names.len() > 1, "Generated names should be different");
         // Integers might occasionally collide, so be more lenient
-        assert!(ints.len() >= 1, "Generated integers should be valid");
+        assert!(!ints.is_empty(), "Generated integers should be valid");
     }
 }

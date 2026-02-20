@@ -25,16 +25,15 @@ async fn test_handlebars_interpolation(var_name: &str, var_value: &Value) -> Res
     let yaml_content = format!(
         r#"
 $defs:
-  {}: {}
-result: '{{{{{}}}}}'
-"#,
-        var_name, yaml_value_str, var_name
+  {var_name}: {yaml_value_str}
+result: '{{{{{var_name}}}}}'
+"#
     );
 
     let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
 
     if let Value::Mapping(map) = processed {
-        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+        if let Some(result_value) = map.get(Value::String("result".to_string())) {
             Ok(result_value.clone())
         } else {
             Err(anyhow::anyhow!("Expected 'result' key in processed YAML"))
@@ -50,16 +49,15 @@ async fn test_handlebars_with_parse_yaml(var_name: &str, var_value: &Value) -> R
     let yaml_content = format!(
         r#"
 $defs:
-  {}: {}
-result: !$parseYaml '{{{{{}}}}}'
-"#,
-        var_name, yaml_value_str, var_name
+  {var_name}: {yaml_value_str}
+result: !$parseYaml '{{{{{var_name}}}}}'
+"#
     );
 
     let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
 
     if let Value::Mapping(map) = processed {
-        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+        if let Some(result_value) = map.get(Value::String("result".to_string())) {
             Ok(result_value.clone())
         } else {
             Err(anyhow::anyhow!("Expected 'result' key in processed YAML"))
@@ -76,16 +74,15 @@ async fn test_include_syntax(var_name: &str, var_value: &Value) -> Result<Value>
     let yaml_content = format!(
         r#"
 $defs:
-  {}: {}
-result: !$ {}
-"#,
-        var_name, yaml_value_str, var_name
+  {var_name}: {yaml_value_str}
+result: !$ {var_name}
+"#
     );
     let processed = preprocess_yaml_v11(&yaml_content, "equivalence-test.yaml").await?;
 
     // Extract the "result" field from the processed YAML
     if let Value::Mapping(map) = processed {
-        if let Some(result_value) = map.get(&Value::String("result".to_string())) {
+        if let Some(result_value) = map.get(Value::String("result".to_string())) {
             //Ok(result_value.clone())
             Ok(result_value.clone())
         } else {
@@ -105,8 +102,7 @@ async fn run_test_cases(cases: Vec<(&str, Value)>) -> Result<()> {
                 let handlebars_result = test_handlebars_interpolation(var_name, &var_value).await?;
                 assert_eq!(
                     handlebars_result, include_result,
-                    "String case '{}' handlebars_result != include_result",
-                    var_name
+                    "String case '{var_name}' handlebars_result != include_result"
                 );
             }
             _ => {
@@ -114,15 +110,13 @@ async fn run_test_cases(cases: Vec<(&str, Value)>) -> Result<()> {
                     test_handlebars_with_parse_yaml(var_name, &var_value).await?;
                 assert_eq!(
                     handlebars_parsed, include_result,
-                    "Non-string case '{}' handlebars_result != include_result",
-                    var_name
+                    "Non-string case '{var_name}' handlebars_result != include_result"
                 );
             }
         }
         assert_eq!(
             include_result, var_value,
-            "'{}' include_result != original_value",
-            var_name
+            "'{var_name}' include_result != original_value"
         );
     }
 
@@ -148,6 +142,7 @@ mod scalar_equivalence_tests {
             ("integer_zero", Value::Number(0.into())),
             ("positive_integer", Value::Number(42.into())),
             ("negative_integer", Value::Number((-123).into())),
+            #[allow(clippy::approx_constant)]
             ("float_value", Value::Number(serde_yaml::Number::from(3.14))),
             (
                 "negative_float",
@@ -251,8 +246,7 @@ result: !$join ['', ['Value is: ', !$ {}]]
 
             assert_eq!(
                 handlebars_processed, include_processed,
-                "Full workflow equivalence failed for variable '{}'",
-                var_name
+                "Full workflow equivalence failed for variable '{var_name}'"
             );
         }
 
@@ -297,7 +291,7 @@ tags:
 
         if let Value::Mapping(map) = &handlebars_result {
             assert_eq!(
-                map.get(&Value::String("stack_name".to_string())),
+                map.get(Value::String("stack_name".to_string())),
                 Some(&Value::String("web-service-staging".to_string()))
             );
         }

@@ -67,14 +67,14 @@ pub fn format_aws_error(error: &anyhow::Error) -> String {
     if error_chain.len() > 1 {
         format!("ERROR: AWS error - {}", error_chain[error_chain.len() - 1])
     } else {
-        format!("ERROR: {}", error)
+        format!("ERROR: {error}")
     }
 }
 
 /// Display a user-friendly AWS error message and return a custom error that won't print additional details
 pub fn display_and_return_user_friendly_error(error: &anyhow::Error) -> UserFriendlyAwsError {
     let message = format_aws_error(error);
-    eprintln!("{}", message);
+    eprintln!("{message}");
     UserFriendlyAwsError {
         message: "User-friendly error already displayed".to_string(),
         exit_code: 1,

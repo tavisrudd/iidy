@@ -104,7 +104,7 @@ impl TagConfig {
 fn simple_scalar_strategy() -> BoxedStrategy<String> {
     prop_oneof![
         // String values
-        "[a-zA-Z][a-zA-Z0-9_-]{0,10}".prop_map(|s| format!("\"{}\"", s)),
+        "[a-zA-Z][a-zA-Z0-9_-]{0,10}".prop_map(|s| format!("\"{s}\"")),
         // Numeric values
         any::<i32>().prop_map(|n| n.to_string()),
         // Boolean values
@@ -125,7 +125,7 @@ fn tag_value_strategy(config: &TagConfig) -> BoxedStrategy<String> {
     if !cf_tags.is_empty() {
         strategies.push(
             (prop::sample::select(cf_tags), simple_scalar_strategy())
-                .prop_map(|(tag, value)| format!("!{} {}", tag, value))
+                .prop_map(|(tag, value)| format!("!{tag} {value}"))
                 .boxed(),
         );
     }
@@ -134,7 +134,7 @@ fn tag_value_strategy(config: &TagConfig) -> BoxedStrategy<String> {
         // Simple preprocessing tags
         strategies.push(
             prop::sample::select(prep_tags.clone())
-                .prop_map(|tag| format!("!{} true", tag))
+                .prop_map(|tag| format!("!{tag} true"))
                 .boxed(),
         );
 
@@ -169,7 +169,7 @@ fn tag_value_strategy(config: &TagConfig) -> BoxedStrategy<String> {
 fn yaml_mapping_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<String> {
     if depth >= config.max_depth {
         return simple_scalar_strategy()
-            .prop_map(|v| format!("leaf: {}", v))
+            .prop_map(|v| format!("leaf: {v}"))
             .boxed();
     }
 
@@ -180,7 +180,7 @@ fn yaml_mapping_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<Stri
         .prop_map(|pairs| {
             pairs
                 .into_iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
+                .map(|(k, v)| format!("{k}: {v}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -199,7 +199,7 @@ fn yaml_sequence_strategy(config: &TagConfig, depth: usize) -> BoxedStrategy<Str
         .prop_map(|values| {
             values
                 .into_iter()
-                .map(|v| format!("- {}", v))
+                .map(|v| format!("- {v}"))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -243,7 +243,7 @@ fn test_generated_yaml_robustness(yaml_doc: String, context: &str) -> Result<(),
         Ok(ast) => {
             // Successfully parsed - verify AST is well-formed
             prop_assert!(
-                !format!("{:?}", ast).is_empty(),
+                !format!("{ast:?}").is_empty(),
                 "AST should not be empty for: {}",
                 context
             );
@@ -393,22 +393,19 @@ mod tests {
             match result {
                 Ok(ast) => {
                     assert!(
-                        !format!("{:?}", ast).is_empty(),
-                        "AST should not be empty for: {}",
-                        yaml_doc
+                        !format!("{ast:?}").is_empty(),
+                        "AST should not be empty for: {yaml_doc}"
                     );
                 }
                 Err(error) => {
                     let error_msg = error.to_string();
                     assert!(
                         !error_msg.is_empty(),
-                        "Error message should not be empty for: {}",
-                        yaml_doc
+                        "Error message should not be empty for: {yaml_doc}"
                     );
                     assert!(
                         !error_msg.contains("panic"),
-                        "Error should not mention panic for: {}",
-                        yaml_doc
+                        "Error should not mention panic for: {yaml_doc}"
                     );
                 }
             }
@@ -421,13 +418,13 @@ mod tests {
         let yaml_doc = "A: !$include true";
         let test_uri = Url::parse("file:///proptest.yaml").unwrap();
 
-        println!("Testing: {}", yaml_doc);
+        println!("Testing: {yaml_doc}");
 
         // Test main parsing API
         let parse_result = parse_yaml_from_file(yaml_doc, "proptest.yaml");
         println!("Main parser result: {:?}", parse_result.is_ok());
         if let Err(e) = &parse_result {
-            println!("Main parser error: {}", e);
+            println!("Main parser error: {e}");
         }
 
         // Test diagnostic API
@@ -478,8 +475,7 @@ mod tests {
 
             assert!(
                 result.is_ok(),
-                "Parser should not panic on problematic input: {:?}",
-                yaml_doc
+                "Parser should not panic on problematic input: {yaml_doc:?}"
             );
         }
     }

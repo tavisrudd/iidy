@@ -10,7 +10,6 @@ use iidy::output::fixtures::FixtureLoader;
 use iidy::output::manager::{DynamicOutputManager, OutputOptions};
 use iidy::output::renderer::OutputMode;
 use std::collections::HashMap;
-use tokio;
 
 /// Helper function to create test output options
 fn create_test_output_options() -> OutputOptions {

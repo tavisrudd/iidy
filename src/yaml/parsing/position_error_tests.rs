@@ -18,8 +18,7 @@ fn test_unknown_tag_error_position() {
     // Should contain the correct line number where the unknown tag appears
     assert!(
         error_msg.contains("test.yaml:5:19"),
-        "Error should contain correct position test.yaml:5:19, but got: {}",
-        error_msg
+        "Error should contain correct position test.yaml:5:19, but got: {error_msg}"
     );
     assert!(error_msg.contains("!$unknownTag"));
     assert!(error_msg.contains("not a valid iidy tag"));
@@ -42,8 +41,7 @@ fn test_missing_required_field_error_position() {
     // Should contain the correct line number where the !$map tag appears
     assert!(
         error_msg.contains("test.yaml:4:18") || error_msg.contains("!$map"),
-        "Error should contain position info for !$map tag, but got: {}",
-        error_msg
+        "Error should contain position info for !$map tag, but got: {error_msg}"
     );
     assert!(error_msg.contains("template"));
     assert!(error_msg.contains("missing") || error_msg.contains("required"));
@@ -66,14 +64,12 @@ fn test_wrong_field_name_suggestion_error_position() {
     // The error should mention the missing required field 'template'
     assert!(
         error_msg.contains("template"),
-        "Error should mention missing 'template' field, but got: {}",
-        error_msg
+        "Error should mention missing 'template' field, but got: {error_msg}"
     );
     // Position should point to the !$map tag location
     assert!(
         error_msg.contains("test.yaml:4:18") || error_msg.contains("!$map"),
-        "Error should contain position info for !$map tag, but got: {}",
-        error_msg
+        "Error should contain position info for !$map tag, but got: {error_msg}"
     );
 }
 
@@ -93,8 +89,7 @@ fn test_if_tag_missing_field_error_position() {
     // Should report missing 'test' field with correct position
     assert!(
         error_msg.contains("test.yaml:2:17") || error_msg.contains("!$if"),
-        "Error should contain position info for !$if tag, but got: {}",
-        error_msg
+        "Error should contain position info for !$if tag, but got: {error_msg}"
     );
     assert!(error_msg.contains("test"));
     assert!(error_msg.contains("missing") || error_msg.contains("required"));
@@ -117,8 +112,7 @@ fn test_nested_tag_error_position() {
     // Should show the correct deep position
     assert!(
         error_msg.contains("test.yaml:6:18") || error_msg.contains("!$invalidTag"),
-        "Error should contain position info for nested invalid tag, but got: {}",
-        error_msg
+        "Error should contain position info for nested invalid tag, but got: {error_msg}"
     );
     assert!(error_msg.contains("!$invalidTag"));
 }
@@ -137,8 +131,7 @@ fn test_multiple_errors_first_one_reported() {
     // Should report the first error encountered (badTag1)
     assert!(
         error_msg.contains("!$badTag1") || error_msg.contains("test.yaml:2:10"),
-        "Error should report first invalid tag, but got: {}",
-        error_msg
+        "Error should report first invalid tag, but got: {error_msg}"
     );
 }
 
@@ -158,8 +151,7 @@ fn test_tag_in_array_error_position() {
     // Should show correct position in array
     assert!(
         error_msg.contains("test.yaml:4:7") || error_msg.contains("!$wrongTag"),
-        "Error should contain position info for tag in array, but got: {}",
-        error_msg
+        "Error should contain position info for tag in array, but got: {error_msg}"
     );
     assert!(error_msg.contains("!$wrongTag"));
 }
@@ -180,8 +172,7 @@ fn test_malformed_yaml_syntax_error_position() {
     // Should report YAML syntax error with position
     assert!(
         error_msg.contains("test.yaml") && error_msg.contains("syntax"),
-        "Error should be a YAML syntax error with file position, but got: {}",
-        error_msg
+        "Error should be a YAML syntax error with file position, but got: {error_msg}"
     );
 }
 
@@ -204,8 +195,7 @@ fn test_error_with_complex_yaml_path() {
     // Should show position and might include YAML path context
     assert!(
         error_msg.contains("test.yaml:6:21") || error_msg.contains("!$map"),
-        "Error should contain position for deeply nested tag, but got: {}",
-        error_msg
+        "Error should contain position for deeply nested tag, but got: {error_msg}"
     );
     assert!(error_msg.contains("template"));
 }
@@ -223,8 +213,7 @@ fn test_eq_tag_wrong_number_of_elements_error() {
     // Should report error about wrong number of elements
     assert!(
         error_msg.contains("2 elements") || error_msg.contains("exactly 2"),
-        "Error should mention exactly 2 elements for !$eq, but got: {}",
-        error_msg
+        "Error should mention exactly 2 elements for !$eq, but got: {error_msg}"
     );
 }
 
@@ -241,8 +230,7 @@ fn test_join_tag_wrong_format_error() {
     // Should report error about join format
     assert!(
         error_msg.contains("two elements") || error_msg.contains("[delimiter, array]"),
-        "Error should mention join format requirement, but got: {}",
-        error_msg
+        "Error should mention join format requirement, but got: {error_msg}"
     );
 }
 
@@ -260,7 +248,6 @@ fn test_split_tag_missing_delimiter_error() {
     // Should report wrong format for split tag
     assert!(
         error_msg.contains("delimiter, string") || error_msg.contains("two elements"),
-        "Error should mention split format requirements, but got: {}",
-        error_msg
+        "Error should mention split format requirements, but got: {error_msg}"
     );
 }

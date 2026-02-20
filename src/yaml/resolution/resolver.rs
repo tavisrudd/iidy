@@ -61,13 +61,10 @@ impl ValueTypeStr for Value {
 /// Check if an AST value is simple (no processing needed)
 #[inline(always)]
 fn is_simple_ast_value(ast: &YamlAst) -> bool {
-    match ast {
-        YamlAst::Null(_)
-        | YamlAst::Bool(_, _)
-        | YamlAst::Number(_, _)
-        | YamlAst::PlainString(_, _) => true,
-        _ => false,
-    }
+    matches!(
+        ast,
+        YamlAst::Null(_) | YamlAst::Bool(_, _) | YamlAst::Number(_, _) | YamlAst::PlainString(_, _)
+    )
 }
 
 /// Check if all items in a sequence are simple values
@@ -306,7 +303,7 @@ impl Resolver {
     }
 
     /// Helper function to compare values for equality
-    fn values_equal(&self, left: &Value, right: &Value) -> bool {
+    fn values_equal(left: &Value, right: &Value) -> bool {
         match (left, right) {
             (Value::Null, Value::Null) => true,
             (Value::Bool(a), Value::Bool(b)) => a == b,
@@ -315,12 +312,15 @@ impl Resolver {
             }
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Sequence(a), Value::Sequence(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| self.values_equal(x, y))
+                a.len() == b.len()
+                    && a.iter()
+                        .zip(b.iter())
+                        .all(|(x, y)| Self::values_equal(x, y))
             }
             (Value::Mapping(a), Value::Mapping(b)) => {
                 a.len() == b.len()
                     && a.iter()
-                        .all(|(k, v)| b.get(k).map_or(false, |v2| self.values_equal(v, v2)))
+                        .all(|(k, v)| b.get(k).is_some_and(|v2| Self::values_equal(v, v2)))
             }
             _ => false,
         }
@@ -411,9 +411,7 @@ impl Resolver {
         // Start with the root variable
         let root_var = &path_segments[0];
         let current_value = context.get_variable(root_var);
-        if current_value.is_none() {
-            return None;
-        }
+        current_value?;
         let mut current_value = current_value.unwrap();
 
         // Traverse the path segments using references until the end
@@ -422,9 +420,7 @@ impl Resolver {
                 Value::Mapping(map) => {
                     let key = Value::String(segment.clone());
                     let next_value = map.get(&key);
-                    if next_value.is_none() {
-                        return None;
-                    }
+                    next_value?;
                     current_value = next_value.unwrap();
                 }
                 _ => return None, // Can't traverse further
@@ -439,17 +435,16 @@ impl Resolver {
     fn apply_query_selector(&self, value: &Value, query: &str) -> Result<Value> {
         match value {
             Value::Mapping(map) => {
-                if query.starts_with('.') {
+                if let Some(path) = query.strip_prefix('.') {
                     // TODO: remove dot-prefixed query support -- it's redundant
                     // with dot notation in the path itself (e.g. config.database.host)
-                    let path = &query[1..];
                     self.apply_nested_path_query(value, path)
                 } else if query.contains(',') {
                     let properties: Vec<&str> = query.split(',').map(|s| s.trim()).collect();
                     let mut result = serde_yaml::Mapping::with_capacity(properties.len());
 
                     for prop in &properties {
-                        if let Some(prop_value) = map.get(&Value::String(prop.to_string())) {
+                        if let Some(prop_value) = map.get(Value::String(prop.to_string())) {
                             result.insert(Value::String(prop.to_string()), prop_value.clone());
                         } else {
                             return Err(anyhow!("property '{}' not found in mapping", prop,));
@@ -460,7 +455,7 @@ impl Resolver {
                 } else {
                     // TODO: remove single-key query support -- it's redundant
                     // with dot notation in the path (e.g. config.database.host)
-                    if let Some(prop_value) = map.get(&Value::String(query.to_string())) {
+                    if let Some(prop_value) = map.get(Value::String(query.to_string())) {
                         Ok(prop_value.clone())
                     } else {
                         Err(anyhow!("Property '{}' not found in mapping", query))
@@ -517,9 +512,9 @@ impl Resolver {
             .enumerate()
             .find_map(|(idx, line)| {
                 let patterns = [
-                    format!("!$ {}", variable_path),
-                    format!("!$include {}", variable_path), // deprecated alias
-                    format!("path: {}", variable_path),
+                    format!("!$ {variable_path}"),
+                    format!("!$include {variable_path}"), // deprecated alias
+                    format!("path: {variable_path}"),
                 ];
                 for pattern in &patterns {
                     if line.contains(pattern) {
@@ -590,7 +585,7 @@ impl Resolver {
                     file_path,
                     s
                 ))
-                .with_context(|| format!("Handlebars processing failed: {}", e))
+                .with_context(|| format!("Handlebars processing failed: {e}"))
                 .with_context(|| {
                     format!(
                         "processing template at path /{}",
@@ -601,7 +596,7 @@ impl Resolver {
         }
     }
     /// Convert AST to Value without any preprocessing (for escape tag)
-    fn ast_to_value_without_preprocessing(&self, ast: &YamlAst) -> Result<Value> {
+    fn ast_to_value_without_preprocessing(ast: &YamlAst) -> Result<Value> {
         match ast {
             YamlAst::Null(_) => Ok(Value::Null),
             YamlAst::Bool(b, _) => Ok(Value::Bool(*b)),
@@ -612,15 +607,15 @@ impl Resolver {
             YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
-                    result.push(self.ast_to_value_without_preprocessing(item)?);
+                    result.push(Self::ast_to_value_without_preprocessing(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
             YamlAst::Mapping(pairs, _) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
-                    let key_val = self.ast_to_value_without_preprocessing(key)?;
-                    let value_val = self.ast_to_value_without_preprocessing(value)?;
+                    let key_val = Self::ast_to_value_without_preprocessing(key)?;
+                    let value_val = Self::ast_to_value_without_preprocessing(value)?;
                     result.insert(key_val, value_val);
                 }
                 Ok(Value::Mapping(result))
@@ -633,20 +628,21 @@ impl Resolver {
                 // Escaped CloudFormation tags should preserve their structure
                 let mut result = serde_yaml::Mapping::with_capacity(1);
                 let tag_name = format!("!{}", cfn_tag.tag_name());
-                let inner_val = self.ast_to_value_without_preprocessing(cfn_tag.inner_value())?;
+                let inner_val = Self::ast_to_value_without_preprocessing(cfn_tag.inner_value())?;
                 result.insert(Value::String(tag_name), inner_val);
                 Ok(Value::Mapping(result))
             }
             YamlAst::UnknownYamlTag(unknown, _) => {
-                self.ast_to_value_without_preprocessing(&unknown.value)
+                Self::ast_to_value_without_preprocessing(&unknown.value)
             }
             YamlAst::ImportedDocument(doc, _) => {
-                self.ast_to_value_without_preprocessing(&doc.content)
+                Self::ast_to_value_without_preprocessing(&doc.content)
             }
         }
     }
 
     /// Core map logic shared by resolve_map, resolve_concat_map, and resolve_merge_map
+    #[allow(clippy::too_many_arguments)] // TODO: refactor to use a params struct
     fn resolve_map_items(
         &self,
         items: &YamlAst,
@@ -668,7 +664,7 @@ impl Resolver {
                     let mut item_bindings = HashMap::with_capacity(2);
                     item_bindings.insert(var_name.to_string(), item);
                     item_bindings.insert(
-                        format!("{}Idx", var_name),
+                        format!("{var_name}Idx"),
                         Value::Number(serde_yaml::Number::from(idx)),
                     );
                     let item_context = context.with_bindings_ref(&item_bindings);
@@ -690,7 +686,7 @@ impl Resolver {
             _ => Err(self.create_type_mismatch_error(
                 "sequence",
                 &items_result,
-                &format!("{} items field", tag_name),
+                &format!("{tag_name} items field"),
                 context,
                 path_tracker,
             )),
@@ -711,7 +707,7 @@ impl Resolver {
         for (key_ast, value_ast) in pairs {
             let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
 
-            let is_preprocessing_key = key_value.as_str().map_or(false, |s| s.starts_with('$'));
+            let is_preprocessing_key = key_value.as_str().is_some_and(|s| s.starts_with('$'));
             if is_preprocessing_key {
                 let key_str = key_value.as_str().unwrap();
                 if matches!(key_str, "$imports" | "$defs" | "$envValues" | "$params") {
@@ -723,7 +719,7 @@ impl Resolver {
                 Value::String(s) => s.clone(),
                 Value::Number(n) => n.to_string(),
                 Value::Bool(b) => b.to_string(),
-                _ => format!("{:?}", key_value),
+                _ => format!("{key_value:?}"),
             };
 
             path_tracker.push(&path_segment);
@@ -733,7 +729,7 @@ impl Resolver {
             // Check if this resource uses a custom resource type
             let resource_type = resolved_value
                 .as_mapping()
-                .and_then(|m| m.get(&Value::String("Type".into())))
+                .and_then(|m| m.get(Value::String("Type".into())))
                 .and_then(|v| v.as_str());
 
             if let Some(type_name) = resource_type {
@@ -836,17 +832,17 @@ impl TagResolver for Resolver {
                 if let Value::String(key_str) = &key_value {
                     if key_str == "<<" {
                         let location_info = if let Some(input_uri) = &context.input_uri {
-                            format!("in file '{}'", input_uri)
+                            format!("in file '{input_uri}'")
                         } else {
                             context
                                 .input_uri
                                 .as_deref()
-                                .map(|loc| format!("in '{}'", loc))
+                                .map(|loc| format!("in '{loc}'"))
                                 .unwrap_or_else(|| "in unknown location".to_string())
                         };
                         let yaml_path = format!("/{}", path_tracker.segments().join("/"));
                         let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
-                            format!(" at path '{}'", yaml_path)
+                            format!(" at path '{yaml_path}'")
                         } else {
                             String::new()
                         };
@@ -880,7 +876,7 @@ impl TagResolver for Resolver {
                     Value::String(s) => s.clone(),
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
-                    _ => format!("{:?}", key_value),
+                    _ => format!("{key_value:?}"),
                 };
 
                 // Resolve value with path tracking
@@ -913,7 +909,7 @@ impl TagResolver for Resolver {
         } else {
             // Complex path: need full processing with path tracking
             for (index, item) in items.iter().enumerate() {
-                path_tracker.push(&format!("[{}]", index));
+                path_tracker.push(&format!("[{index}]"));
                 let resolved_item = self.resolve_ast(item, context, path_tracker)?;
                 path_tracker.pop();
 
@@ -1075,10 +1071,10 @@ impl TagResolver for Resolver {
                     .enumerate()
                     .find_map(|(idx, line)| {
                         let patterns = [
-                            format!("!$ {}", base_path),
-                            format!("!$include {}", base_path), // deprecated alias
-                            format!("!$include: {}", base_path), // deprecated alias
-                            format!("path: {}", base_path),
+                            format!("!$ {base_path}"),
+                            format!("!$include {base_path}"), // deprecated alias
+                            format!("!$include: {base_path}"), // deprecated alias
+                            format!("path: {base_path}"),
                             base_path.clone(),
                         ];
 
@@ -1092,7 +1088,7 @@ impl TagResolver for Resolver {
                     .unwrap_or(0);
 
                 if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
+                    format!("{file_path}:{line_number}")
                 } else {
                     file_path.clone()
                 }
@@ -1101,12 +1097,12 @@ impl TagResolver for Resolver {
             };
 
             use crate::yaml::errors::variable_not_found_error_with_path_tracker;
-            return Err(variable_not_found_error_with_path_tracker(
-                &format!("{}.{}", root_var, property_path),
+            Err(variable_not_found_error_with_path_tracker(
+                &format!("{root_var}.{property_path}"),
                 &location,
                 path_tracker,
                 available_vars,
-            ));
+            ))
         } else {
             // Note: blocking read in a sync method called from async context. Acceptable because
             // this is an error-only path reading a local file already loaded by the resolver.
@@ -1116,10 +1112,10 @@ impl TagResolver for Resolver {
                     .enumerate()
                     .find_map(|(idx, line)| {
                         let patterns = [
-                            format!("!$ {}", root_var),
-                            format!("!$include {}", root_var), // deprecated alias
-                            format!("!$include: {}", root_var), // deprecated alias
-                            format!("path: {}", root_var),
+                            format!("!$ {root_var}"),
+                            format!("!$include {root_var}"), // deprecated alias
+                            format!("!$include: {root_var}"), // deprecated alias
+                            format!("path: {root_var}"),
                             root_var.to_string(),
                         ];
 
@@ -1133,7 +1129,7 @@ impl TagResolver for Resolver {
                     .unwrap_or(0);
 
                 if line_number > 0 {
-                    format!("{}:{}", file_path, line_number)
+                    format!("{file_path}:{line_number}")
                 } else {
                     file_path.clone()
                 }
@@ -1276,7 +1272,7 @@ impl TagResolver for Resolver {
         let left = self.resolve_ast(&tag.left, context, path_tracker)?;
         let right = self.resolve_ast(&tag.right, context, path_tracker)?;
 
-        let is_equal = self.values_equal(&left, &right);
+        let is_equal = Self::values_equal(&left, &right);
         Ok(Value::Bool(is_equal))
     }
 
@@ -1599,8 +1595,8 @@ impl TagResolver for Resolver {
                         Value::Mapping(map) => {
                             // Try standard key/value fields first
                             if let (Some(key), Some(value)) = (
-                                map.get(&Value::String("key".to_string())),
-                                map.get(&Value::String("value".to_string())),
+                                map.get(Value::String("key".to_string())),
+                                map.get(Value::String("value".to_string())),
                             ) {
                                 result.insert(key.clone(), value.clone());
                             } else {
@@ -1682,7 +1678,7 @@ impl TagResolver for Resolver {
                         other => serde_yaml::to_string(&other)?.trim().to_string(),
                     };
 
-                    groups.entry(key_str).or_insert_with(Vec::new).push(item);
+                    groups.entry(key_str).or_default().push(item);
                 }
 
                 // Convert to mapping
@@ -1865,22 +1861,22 @@ impl TagResolver for Resolver {
             YamlAst::Sequence(seq, _) => {
                 let mut result = Vec::with_capacity(seq.len());
                 for item in seq {
-                    result.push(self.ast_to_value_without_preprocessing(item)?);
+                    result.push(Self::ast_to_value_without_preprocessing(item)?);
                 }
                 Ok(Value::Sequence(result))
             }
             YamlAst::Mapping(pairs, _) => {
                 let mut result = serde_yaml::Mapping::with_capacity(pairs.len());
                 for (key, value) in pairs {
-                    let key_val = self.ast_to_value_without_preprocessing(key)?;
-                    let value_val = self.ast_to_value_without_preprocessing(value)?;
+                    let key_val = Self::ast_to_value_without_preprocessing(key)?;
+                    let value_val = Self::ast_to_value_without_preprocessing(value)?;
                     result.insert(key_val, value_val);
                 }
                 Ok(Value::Mapping(result))
             }
             _ => {
                 // For complex types, we need to convert without processing
-                self.ast_to_value_without_preprocessing(&tag.content)
+                Self::ast_to_value_without_preprocessing(&tag.content)
             }
         }
     }
@@ -2004,8 +2000,7 @@ impl TagResolver for Resolver {
                         Err(cloudformation_validation_error_with_path_tracker(
                             "Ref",
                             &format!(
-                                "!Ref expects a string (resource or parameter name), found {}",
-                                type_name
+                                "!Ref expects a string (resource or parameter name), found {type_name}"
                             ),
                             file_path,
                             path_tracker,
@@ -2132,8 +2127,7 @@ impl TagResolver for Resolver {
                                 Err(cloudformation_validation_error_with_path_tracker(
                                     "Join",
                                     &format!(
-                                        "!Join expects [delimiter, array], found [string, {}]",
-                                        type_name
+                                        "!Join expects [delimiter, array], found [string, {type_name}]"
                                     ),
                                     file_path,
                                     path_tracker,
@@ -2153,8 +2147,7 @@ impl TagResolver for Resolver {
                                 Err(cloudformation_validation_error_with_path_tracker(
                                     "Join",
                                     &format!(
-                                        "!Join expects [string, array], found [{}, {}]",
-                                        first_type, second_type
+                                        "!Join expects [string, array], found [{first_type}, {second_type}]"
                                     ),
                                     file_path,
                                     path_tracker,
@@ -2185,7 +2178,7 @@ impl TagResolver for Resolver {
                         };
                         Err(cloudformation_validation_error_with_path_tracker(
                             "Join",
-                            &format!("!Join expects a 2-element array, found {}", type_name),
+                            &format!("!Join expects a 2-element array, found {type_name}"),
                             file_path,
                             path_tracker,
                         ))
@@ -2429,7 +2422,7 @@ fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
 /// Note: blocking read in a sync function called from async context. Acceptable because
 /// this is an error-only path reading a local file already loaded by the resolver.
 fn find_template_variable_location(file_path: &str, var_name: &str) -> String {
-    let needle = format!("{{{{{}}}}}", var_name);
+    let needle = format!("{{{{{var_name}}}}}");
     if let Ok(content) = std::fs::read_to_string(file_path) {
         if let Some(line_number) = content.lines().position(|line| line.contains(&needle)) {
             return format!("{}:{}", file_path, line_number + 1);
@@ -2472,7 +2465,7 @@ pub fn yaml_to_json_value(yaml_value: &Value) -> Result<serde_json::Value> {
                     Value::Number(n) => n.to_string(),
                     Value::Bool(b) => b.to_string(),
                     Value::Null => "null".to_string(),
-                    other => format!("{:?}", other),
+                    other => format!("{other:?}"),
                 };
                 json_map.insert(key_str, yaml_to_json_value(value)?);
             }
@@ -2558,7 +2551,7 @@ mod tests {
             Value::Mapping(map) => {
                 assert_eq!(map.len(), 1);
                 assert_eq!(
-                    map.get(&Value::String("test_key".to_string())),
+                    map.get(Value::String("test_key".to_string())),
                     Some(&Value::String("test_value".to_string()))
                 );
             }
@@ -2589,10 +2582,10 @@ mod tests {
             Value::Mapping(outer_map) => {
                 assert_eq!(outer_map.len(), 1);
                 if let Some(Value::Mapping(inner_map)) =
-                    outer_map.get(&Value::String("outer".to_string()))
+                    outer_map.get(Value::String("outer".to_string()))
                 {
                     assert_eq!(
-                        inner_map.get(&Value::String("inner".to_string())),
+                        inner_map.get(Value::String("inner".to_string())),
                         Some(&Value::String("value".to_string()))
                     );
                 } else {

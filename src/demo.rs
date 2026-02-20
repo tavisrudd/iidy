@@ -294,7 +294,7 @@ fn exec_with_masking(
     Command::new("/usr/bin/env")
         .arg("sh")
         .arg("-c")
-        .arg(format!("exit {}", exit_code))
+        .arg(format!("exit {exit_code}"))
         .status()
         .context("failed to create exit status")
 }
@@ -367,6 +367,28 @@ async fn print_command(cmd: &str, timescaling: f64) -> Result<()> {
     }
     println!();
     Ok(())
+}
+
+fn display_banner(text: &str) {
+    let (cols, _) = size().unwrap_or((80, 0));
+    let line = " ".repeat(cols as usize);
+
+    // Use ANSI 256-color 236 to match iidy-js exactly (cli.bgXterm(236))
+    let bg_color = Color::AnsiValue(236);
+
+    println!(); // Blank line before banner
+    println!("{}", line.clone().on(bg_color));
+    for ln in text.split('\n') {
+        let padding = if ln.len() + 2 >= cols as usize {
+            0
+        } else {
+            cols as usize - ln.len() - 2
+        };
+        let msg = format!("  {}{}", ln, " ".repeat(padding));
+        println!("{}", msg.yellow().on(bg_color).bold());
+    }
+    println!("{}", line.on(bg_color));
+    println!(); // Blank line after banner
 }
 
 #[cfg(test)]
@@ -450,10 +472,7 @@ mod tests {
     #[test]
     fn test_is_iidy_on_path_same_as_current_exe() {
         // Test with non-existent path
-        assert_eq!(
-            is_iidy_on_path_same_as_current_exe("/non/existent/path"),
-            false
-        );
+        assert!(!is_iidy_on_path_same_as_current_exe("/non/existent/path"));
 
         // Test with current executable if we can determine it
         if let Ok(current_exe) = std::env::current_exe() {
@@ -588,26 +607,4 @@ mod tests {
             "The account is ************"
         );
     }
-}
-
-fn display_banner(text: &str) {
-    let (cols, _) = size().unwrap_or((80, 0));
-    let line = " ".repeat(cols as usize);
-
-    // Use ANSI 256-color 236 to match iidy-js exactly (cli.bgXterm(236))
-    let bg_color = Color::AnsiValue(236);
-
-    println!(); // Blank line before banner
-    println!("{}", line.clone().on(bg_color));
-    for ln in text.split('\n') {
-        let padding = if ln.len() + 2 >= cols as usize {
-            0
-        } else {
-            cols as usize - ln.len() - 2
-        };
-        let msg = format!("  {}{}", ln, " ".repeat(padding));
-        println!("{}", msg.yellow().on(bg_color).bold());
-    }
-    println!("{}", line.on(bg_color));
-    println!(); // Blank line after banner
 }

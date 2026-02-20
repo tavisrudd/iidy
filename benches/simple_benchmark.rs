@@ -7,7 +7,6 @@ use iidy::yaml::handlebars::engine::interpolate_handlebars_string;
 use iidy::yaml::preprocess_yaml_v11;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use tokio;
 
 /// Simple benchmark runner
 struct SimpleBenchmark {
@@ -188,10 +187,10 @@ fn benchmark_memory_scaling() {
     let sizes = [10, 50, 100];
 
     for size in sizes.iter() {
-        let services: Vec<String> = (0..*size).map(|i| format!("service-{}", i)).collect();
+        let services: Vec<String> = (0..*size).map(|i| format!("service-{i}")).collect();
         let services_yaml = services
             .iter()
-            .map(|s| format!("\"{}\"", s))
+            .map(|s| format!("\"{s}\""))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -199,19 +198,18 @@ fn benchmark_memory_scaling() {
         let yaml_content = format!(
             r#"
 $defs:
-  services: [{}]
-  count: {}
+  services: [{services_yaml}]
+  count: {size}
 
 simple_map: !$map
   items: !$ services
   template: "service-{{{{item}}}}"
-"#,
-            services_yaml, size
+"#
         );
 
         // Removed debug output for clean benchmark results
 
-        SimpleBenchmark::new(&format!("Size {} services", size), 10).run(|| {
+        SimpleBenchmark::new(&format!("Size {size} services"), 10).run(|| {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(preprocess_yaml_v11(&yaml_content, "scaling.yaml"))
                 .unwrap();

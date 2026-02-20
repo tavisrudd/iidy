@@ -40,9 +40,8 @@ pub fn lookup_helper(
                     Value::Bool(b) => b.to_string(),
                     Value::Null => "".to_string(),
                     _ => serde_json::to_string(value).map_err(|e| {
-                        handlebars::RenderError::new(&format!(
-                            "Failed to serialize lookup result: {}",
-                            e
+                        handlebars::RenderError::new(format!(
+                            "Failed to serialize lookup result: {e}"
                         ))
                     })?,
                 };
@@ -59,9 +58,8 @@ pub fn lookup_helper(
                         Value::Bool(b) => b.to_string(),
                         Value::Null => "".to_string(),
                         _ => serde_json::to_string(value).map_err(|e| {
-                            handlebars::RenderError::new(&format!(
-                                "Failed to serialize lookup result: {}",
-                                e
+                            handlebars::RenderError::new(format!(
+                                "Failed to serialize lookup result: {e}"
                             ))
                         })?,
                     };

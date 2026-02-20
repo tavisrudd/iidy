@@ -205,7 +205,7 @@ pub fn pad_helper(
     } else {
         let pad_count = target_len - string_value.len();
         let padding = pad_char.repeat(pad_count);
-        out.write(&format!("{}{}", string_value, padding))?;
+        out.write(&format!("{string_value}{padding}"))?;
     }
 
     Ok(())

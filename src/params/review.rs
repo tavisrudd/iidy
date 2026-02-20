@@ -13,14 +13,14 @@ pub async fn review_param(cli: &Cli, args: &ParamPathArg) -> Result<i32> {
     let (ssm, config) = create_ssm_client(&opts).await?;
 
     let name = &args.path;
-    let pending_name = format!("{}.pending", name);
+    let pending_name = format!("{name}.pending");
 
     let pending_param = maybe_fetch_param(&ssm, &pending_name, true).await?;
 
     let pending_param = match pending_param {
         Some(p) => p,
         None => {
-            println!("There is no pending change for parameter {}", name);
+            println!("There is no pending change for parameter {name}");
             return Ok(1);
         }
     };
@@ -38,12 +38,12 @@ pub async fn review_param(cli: &Cli, args: &ParamPathArg) -> Result<i32> {
         .map(|t| t.as_str().to_string())
         .unwrap_or_else(|| "SecureString".to_string());
 
-    println!("Current: {}", current_value);
-    println!("Pending: {}", value);
+    println!("Current: {current_value}");
+    println!("Pending: {value}");
     println!();
 
     if let Some(message) = pending_tags.get(MESSAGE_TAG) {
-        println!("Message: {}", message);
+        println!("Message: {message}");
         println!();
     }
 

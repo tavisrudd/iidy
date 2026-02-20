@@ -77,7 +77,7 @@ impl std::fmt::Display for Theme {
             Theme::Dark => "dark",
             Theme::HighContrast => "high-contrast",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

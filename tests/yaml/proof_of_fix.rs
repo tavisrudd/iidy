@@ -47,7 +47,7 @@ fn proof_thirteenth_if_error_points_to_correct_line() {
 
     let error_msg = result.unwrap_err().to_string();
     println!("\n=== ERROR MESSAGE ===");
-    println!("{}", error_msg);
+    println!("{error_msg}");
     println!("====================\n");
 
     // Verify the error is about missing 'test' field
@@ -64,8 +64,7 @@ fn proof_thirteenth_if_error_points_to_correct_line() {
     // NOT to line 2 (where Condition01 is)
     assert!(
         error_msg.contains("proof.yaml:14:"),
-        "❌ FAIL: Error should point to line 14 (Condition13), but got: {}",
-        error_msg
+        "❌ FAIL: Error should point to line 14 (Condition13), but got: {error_msg}"
     );
 
     // Verify it's NOT pointing to the first occurrence
@@ -104,14 +103,13 @@ fn proof_different_occurrence_different_error() {
 
     let error_msg = result.unwrap_err().to_string();
     println!("\n=== 7TH OCCURRENCE ERROR ===");
-    println!("{}", error_msg);
+    println!("{error_msg}");
     println!("===========================\n");
 
     // Should point to line 8 (where Cond7 is), NOT line 2 (where Cond1 is)
     assert!(
         error_msg.contains("proof7.yaml:8:"),
-        "❌ FAIL: Error should point to line 8 (Cond7), but got: {}",
-        error_msg
+        "❌ FAIL: Error should point to line 8 (Cond7), but got: {error_msg}"
     );
 
     assert!(

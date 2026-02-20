@@ -59,17 +59,14 @@ pub fn find_yaml_node_by_path<'a>(
 
     // First, navigate through the tree-sitter wrapper nodes
     // YAML structure is: stream -> document -> block_node -> block_mapping
-    match current.kind() {
-        "stream" => {
-            // Find the document child
-            for child in current.named_children(&mut cursor) {
-                if child.kind() == "document" {
-                    current = child;
-                    break;
-                }
+    if current.kind() == "stream" {
+        // Find the document child
+        for child in current.named_children(&mut cursor) {
+            if child.kind() == "document" {
+                current = child;
+                break;
             }
         }
-        _ => {}
     }
 
     // Now navigate through the document to the actual content
@@ -352,7 +349,7 @@ pub fn parse_path_with_indices<'a>(
     let mut clean_path = Vec::new();
     let mut index_positions = Vec::new();
 
-    for (_segment_idx, &segment) in path_segments.iter().enumerate() {
+    for &segment in path_segments.iter() {
         if let Some(bracket_start) = segment.find('[') {
             if let Some(bracket_end) = segment.find(']') {
                 // Extract the key part before the bracket
@@ -398,7 +395,7 @@ Resources:
             "Resources.MyBucket.Properties.BucketName",
             "!$if",
         );
-        assert!(result.is_ok(), "Should find !$if tag: {:?}", result);
+        assert!(result.is_ok(), "Should find !$if tag: {result:?}");
 
         let position = result.unwrap();
         assert_eq!(position.line, 6); // The line with !$if
@@ -426,7 +423,7 @@ ListOperations:
         // Test finding the third !$map (index 2)
         let result =
             find_tag_position_with_tree_sitter(yaml_source, "ListOperations[2].operation", "!$map");
-        assert!(result.is_ok(), "Should find third !$map tag: {:?}", result);
+        assert!(result.is_ok(), "Should find third !$map tag: {result:?}");
 
         let position = result.unwrap();
         assert_eq!(position.line, 9); // The line with the third !$map

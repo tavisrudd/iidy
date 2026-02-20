@@ -28,32 +28,32 @@ pub fn parse_params(value: &Value) -> Result<Vec<ParamDef>> {
             .ok_or_else(|| anyhow!("Each $params entry must be a mapping"))?;
 
         let name = map
-            .get(&Value::String("Name".into()))
+            .get(Value::String("Name".into()))
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow!("Each $params entry must have a 'Name' string field"))?
             .to_string();
 
-        let default = map.get(&Value::String("Default".into())).cloned();
+        let default = map.get(Value::String("Default".into())).cloned();
 
         let param_type = map
-            .get(&Value::String("Type".into()))
+            .get(Value::String("Type".into()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
         let allowed_values = map
-            .get(&Value::String("AllowedValues".into()))
+            .get(Value::String("AllowedValues".into()))
             .and_then(|v| v.as_sequence())
             .cloned();
 
         let allowed_pattern = map
-            .get(&Value::String("AllowedPattern".into()))
+            .get(Value::String("AllowedPattern".into()))
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let schema = map.get(&Value::String("Schema".into())).cloned();
+        let schema = map.get(Value::String("Schema".into())).cloned();
 
         let is_global = map
-            .get(&Value::String("$global".into()))
+            .get(Value::String("$global".into()))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 

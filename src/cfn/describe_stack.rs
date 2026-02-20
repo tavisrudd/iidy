@@ -65,7 +65,7 @@ async fn describe_stack_impl(
 
             let output_data = convert_stack_events_to_display_with_max(
                 all_events,
-                &format!("Previous Stack Events (max {}):", event_count),
+                &format!("Previous Stack Events (max {event_count}):"),
                 Some(event_count),
             );
 

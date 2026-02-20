@@ -136,13 +136,10 @@ impl CredentialSource {
             } => {
                 let source_str = source.display_name();
                 if let Some(role) = profile_role_arn {
-                    let short_role = role.split('/').last().unwrap_or(role);
-                    format!(
-                        "profile '{}' ({}, assumes role {})",
-                        name, source_str, short_role
-                    )
+                    let short_role = role.split('/').next_back().unwrap_or(role);
+                    format!("profile '{name}' ({source_str}, assumes role {short_role})")
                 } else {
-                    format!("profile '{}' ({})", name, source_str)
+                    format!("profile '{name}' ({source_str})")
                 }
             }
             Self::AssumeRole {
@@ -150,7 +147,7 @@ impl CredentialSource {
                 role_arn,
                 source,
             } => {
-                let short_arn = role_arn.split('/').last().unwrap_or(role_arn);
+                let short_arn = role_arn.split('/').next_back().unwrap_or(role_arn);
                 let source_str = source.display_name();
                 format!(
                     "AssumeRole {} ({}) via {}",
@@ -234,7 +231,7 @@ fn get_profile_role_arn(profile_name: &str, env: &impl EnvVarProvider) -> Option
     let section = if profile_name == "default" {
         "[default]".to_string()
     } else {
-        format!("[profile {}]", profile_name)
+        format!("[profile {profile_name}]")
     };
 
     let in_section = content

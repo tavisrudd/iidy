@@ -106,7 +106,7 @@ pub async fn maybe_fetch_param(
                 Ok(None)
             } else {
                 Err(anyhow::Error::from(service_err)
-                    .context(format!("Failed to get parameter '{}'", name)))
+                    .context(format!("Failed to get parameter '{name}'")))
             }
         }
     }
@@ -120,7 +120,7 @@ pub async fn get_param_tags(ssm: &SsmClient, name: &str) -> Result<BTreeMap<Stri
         .resource_type(aws_sdk_ssm::types::ResourceTypeForTagging::Parameter)
         .send()
         .await
-        .context(format!("Failed to list tags for parameter '{}'", name))?;
+        .context(format!("Failed to list tags for parameter '{name}'"))?;
     let mut tags = BTreeMap::new();
     for tag in resp.tag_list() {
         tags.insert(tag.key().to_string(), tag.value().to_string());
@@ -136,7 +136,7 @@ pub async fn set_param_tags(ssm: &SsmClient, name: &str, tags: Vec<Tag>) -> Resu
         .set_tags(Some(tags))
         .send()
         .await
-        .context(format!("Failed to set tags on parameter '{}'", name))?;
+        .context(format!("Failed to set tags on parameter '{name}'"))?;
     Ok(())
 }
 
@@ -165,7 +165,7 @@ impl ParamOutput {
             r#type: param.r#type().map(|t| t.as_str().to_string()),
             value: param.value().map(|s| s.to_string()),
             version: Some(param.version()),
-            last_modified_date: param.last_modified_date().map(|d| format_aws_datetime(d)),
+            last_modified_date: param.last_modified_date().map(format_aws_datetime),
             arn: param.arn().map(|s| s.to_string()),
             data_type: param.data_type().map(|s| s.to_string()),
             tags: None,
@@ -205,7 +205,7 @@ impl ParamHistoryOutput {
             name: entry.name().map(|s| s.to_string()),
             r#type: entry.r#type().map(|t| t.as_str().to_string()),
             key_id: entry.key_id().map(|s| s.to_string()),
-            last_modified_date: entry.last_modified_date().map(|d| format_aws_datetime(d)),
+            last_modified_date: entry.last_modified_date().map(format_aws_datetime),
             last_modified_user: entry.last_modified_user().map(|s| s.to_string()),
             description: entry.description().map(|s| s.to_string()),
             value: entry.value().map(|s| s.to_string()),

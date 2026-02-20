@@ -329,11 +329,11 @@ mod tests {
         // Should parse as JSON
         if let serde_yaml::Value::Mapping(map) = result.doc {
             assert_eq!(
-                map.get(&serde_yaml::Value::String("host".to_string())),
+                map.get(serde_yaml::Value::String("host".to_string())),
                 Some(&serde_yaml::Value::String("localhost".to_string()))
             );
             assert_eq!(
-                map.get(&serde_yaml::Value::String("port".to_string())),
+                map.get(serde_yaml::Value::String("port".to_string())),
                 Some(&serde_yaml::Value::Number(serde_yaml::Number::from(5432)))
             );
         } else {
@@ -356,11 +356,11 @@ mod tests {
         // Should parse as YAML
         if let serde_yaml::Value::Mapping(map) = result.doc {
             assert_eq!(
-                map.get(&serde_yaml::Value::String("host".to_string())),
+                map.get(serde_yaml::Value::String("host".to_string())),
                 Some(&serde_yaml::Value::String("localhost".to_string()))
             );
             assert_eq!(
-                map.get(&serde_yaml::Value::String("port".to_string())),
+                map.get(serde_yaml::Value::String("port".to_string())),
                 Some(&serde_yaml::Value::Number(serde_yaml::Number::from(5432)))
             );
         } else {
@@ -387,9 +387,9 @@ mod tests {
 
         // Should parse as JSON object with nested structure
         if let serde_yaml::Value::Mapping(map) = result.doc {
-            assert!(map.contains_key(&serde_yaml::Value::String("database/host".to_string())));
-            assert!(map.contains_key(&serde_yaml::Value::String("database/port".to_string())));
-            assert!(map.contains_key(&serde_yaml::Value::String("cache/host".to_string())));
+            assert!(map.contains_key(serde_yaml::Value::String("database/host".to_string())));
+            assert!(map.contains_key(serde_yaml::Value::String("database/port".to_string())));
+            assert!(map.contains_key(serde_yaml::Value::String("cache/host".to_string())));
         } else {
             panic!("Expected parsed object");
         }

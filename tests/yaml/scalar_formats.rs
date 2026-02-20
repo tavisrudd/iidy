@@ -60,7 +60,7 @@ Resources:
     if let Value::Mapping(root) = &result {
         // Check literal scalar with handlebars processing
         if let Some(Value::String(user_data_basic)) =
-            root.get(&Value::String("user_data_basic".to_string()))
+            root.get(Value::String("user_data_basic".to_string()))
         {
             assert!(user_data_basic.contains("Environment: production"));
             assert!(user_data_basic.contains("Region: us-east-1"));
@@ -72,7 +72,7 @@ Resources:
 
         // Check stripped version
         if let Some(Value::String(user_data_strip)) =
-            root.get(&Value::String("user_data_strip".to_string()))
+            root.get(Value::String("user_data_strip".to_string()))
         {
             assert!(user_data_strip.contains("Environment: production"));
             assert!(user_data_strip.ends_with("yum update -y")); // Should strip final newline
@@ -82,15 +82,15 @@ Resources:
         }
 
         // Check CloudFormation tag with literal scalar
-        if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
             if let Some(Value::Mapping(instance)) =
-                resources.get(&Value::String("EC2Instance".to_string()))
+                resources.get(Value::String("EC2Instance".to_string()))
             {
                 if let Some(Value::Mapping(properties)) =
-                    instance.get(&Value::String("Properties".to_string()))
+                    instance.get(Value::String("Properties".to_string()))
                 {
                     if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(&Value::String("UserData".to_string()))
+                        properties.get(Value::String("UserData".to_string()))
                     {
                         // Should be a tagged value preserving !Base64
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
@@ -160,7 +160,7 @@ policy_document: >
     if let Value::Mapping(root) = &result {
         // Check folded scalar with handlebars processing
         if let Some(Value::String(description_basic)) =
-            root.get(&Value::String("description_basic".to_string()))
+            root.get(Value::String("description_basic".to_string()))
         {
             assert!(description_basic.contains("MyApplication version 1.2.3"));
             // Folded scalars should fold lines into single spaces
@@ -175,7 +175,7 @@ policy_document: >
 
         // Check stripped version
         if let Some(Value::String(description_strip)) =
-            root.get(&Value::String("description_strip".to_string()))
+            root.get(Value::String("description_strip".to_string()))
         {
             assert!(description_strip.contains("MyApplication version 1.2.3"));
             // Should strip final newline
@@ -186,7 +186,7 @@ policy_document: >
         }
 
         // Check JSON policy document (real-world CloudFormation use case)
-        if let Some(Value::String(policy)) = root.get(&Value::String("policy_document".to_string()))
+        if let Some(Value::String(policy)) = root.get(Value::String("policy_document".to_string()))
         {
             assert!(policy.contains("MyApplication-bucket"));
             assert!(policy.contains("\"Version\": \"2012-10-17\""));
@@ -272,16 +272,16 @@ Resources:
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
     if let Value::Mapping(root) = &result {
-        if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
             // Check ConfigMap with nested YAML
             if let Some(Value::Mapping(config_map)) =
-                resources.get(&Value::String("ConfigMap".to_string()))
+                resources.get(Value::String("ConfigMap".to_string()))
             {
                 if let Some(Value::Mapping(data)) =
-                    config_map.get(&Value::String("data".to_string()))
+                    config_map.get(Value::String("data".to_string()))
                 {
                     if let Some(Value::String(app_config)) =
-                        data.get(&Value::String("app-config.yaml".to_string()))
+                        data.get(Value::String("app-config.yaml".to_string()))
                     {
                         // Check handlebars substitution in nested YAML
                         assert!(app_config.contains("name: production-cluster"));
@@ -295,7 +295,7 @@ Resources:
                     }
 
                     if let Some(Value::String(db_config)) =
-                        data.get(&Value::String("database-config.json".to_string()))
+                        data.get(Value::String("database-config.json".to_string()))
                     {
                         // Check JSON folded content
                         assert!(db_config.contains("postgresql://user:pass@db.default.svc.cluster.local:5432/production-cluster"));
@@ -306,16 +306,16 @@ Resources:
 
             // Check LaunchTemplate with CloudFormation tag
             if let Some(Value::Mapping(launch_template)) =
-                resources.get(&Value::String("LaunchTemplate".to_string()))
+                resources.get(Value::String("LaunchTemplate".to_string()))
             {
                 if let Some(Value::Mapping(properties)) =
-                    launch_template.get(&Value::String("Properties".to_string()))
+                    launch_template.get(Value::String("Properties".to_string()))
                 {
                     if let Some(Value::Mapping(template_data)) =
-                        properties.get(&Value::String("LaunchTemplateData".to_string()))
+                        properties.get(Value::String("LaunchTemplateData".to_string()))
                     {
                         if let Some(Value::Tagged(user_data_tagged)) =
-                            template_data.get(&Value::String("UserData".to_string()))
+                            template_data.get(Value::String("UserData".to_string()))
                         {
                             // Should preserve !Base64 tag
                             assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
@@ -404,17 +404,17 @@ Resources:
     // Verify structure preservation
     if let Value::Mapping(root) = &reparsed {
         // Check that strings section is preserved
-        if let Some(Value::Mapping(strings)) = root.get(&Value::String("strings".to_string())) {
-            assert!(strings.contains_key(&Value::String("plain".to_string())));
-            assert!(strings.contains_key(&Value::String("literal".to_string())));
-            assert!(strings.contains_key(&Value::String("folded".to_string())));
+        if let Some(Value::Mapping(strings)) = root.get(Value::String("strings".to_string())) {
+            assert!(strings.contains_key(Value::String("plain".to_string())));
+            assert!(strings.contains_key(Value::String("literal".to_string())));
+            assert!(strings.contains_key(Value::String("folded".to_string())));
 
             // Check variable substitution occurred
-            if let Some(Value::String(plain)) = strings.get(&Value::String("plain".to_string())) {
+            if let Some(Value::String(plain)) = strings.get(Value::String("plain".to_string())) {
                 assert!(plain.contains("staging"));
             }
 
-            if let Some(Value::String(literal)) = strings.get(&Value::String("literal".to_string()))
+            if let Some(Value::String(literal)) = strings.get(Value::String("literal".to_string()))
             {
                 assert!(literal.contains("Line 2 with staging"));
                 // Should preserve literal newlines
@@ -423,38 +423,38 @@ Resources:
         }
 
         // Check CloudFormation structure preservation
-        if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
             if let Some(Value::Mapping(my_resource)) =
-                resources.get(&Value::String("MyResource".to_string()))
+                resources.get(Value::String("MyResource".to_string()))
             {
                 assert_eq!(
-                    my_resource.get(&Value::String("Type".to_string())),
+                    my_resource.get(Value::String("Type".to_string())),
                     Some(&Value::String("AWS::EC2::Instance".to_string()))
                 );
 
                 if let Some(Value::Mapping(properties)) =
-                    my_resource.get(&Value::String("Properties".to_string()))
+                    my_resource.get(Value::String("Properties".to_string()))
                 {
                     // UserData should be preserved as tagged value
                     if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(&Value::String("UserData".to_string()))
+                        properties.get(Value::String("UserData".to_string()))
                     {
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
                     }
 
                     // Tags should be preserved as sequence
                     if let Some(Value::Sequence(tags)) =
-                        properties.get(&Value::String("Tags".to_string()))
+                        properties.get(Value::String("Tags".to_string()))
                     {
                         assert_eq!(tags.len(), 2);
 
                         if let Value::Mapping(first_tag) = &tags[0] {
                             assert_eq!(
-                                first_tag.get(&Value::String("Key".to_string())),
+                                first_tag.get(Value::String("Key".to_string())),
                                 Some(&Value::String("Environment".to_string()))
                             );
                             assert_eq!(
-                                first_tag.get(&Value::String("Value".to_string())),
+                                first_tag.get(Value::String("Value".to_string())),
                                 Some(&Value::String("staging".to_string()))
                             );
                         }
@@ -526,11 +526,11 @@ Resources:
 
     if let Value::Mapping(root) = &result {
         if let Some(Value::Mapping(whitespace_tests)) =
-            root.get(&Value::String("whitespace_tests".to_string()))
+            root.get(Value::String("whitespace_tests".to_string()))
         {
             // Check that tabs are preserved in literal content
             if let Some(Value::String(with_tabs)) =
-                whitespace_tests.get(&Value::String("with_tabs".to_string()))
+                whitespace_tests.get(Value::String("with_tabs".to_string()))
             {
                 assert!(with_tabs.contains("Line with tab:\t\tend")); // Tab should be preserved
                 assert!(with_tabs.contains("Line with spaces:    end")); // Spaces should be preserved
@@ -539,7 +539,7 @@ Resources:
 
             // Check nested indentation
             if let Some(Value::String(nested_literal)) =
-                whitespace_tests.get(&Value::String("nested_literal".to_string()))
+                whitespace_tests.get(Value::String("nested_literal".to_string()))
             {
                 assert!(nested_literal.contains("def function():"));
                 assert!(nested_literal.contains("    if condition:")); // Python indentation preserved
@@ -549,15 +549,15 @@ Resources:
         }
 
         // Check CloudFormation function with whitespace handling
-        if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
             if let Some(Value::Mapping(my_function)) =
-                resources.get(&Value::String("MyFunction".to_string()))
+                resources.get(Value::String("MyFunction".to_string()))
             {
                 if let Some(Value::Mapping(properties)) =
-                    my_function.get(&Value::String("Properties".to_string()))
+                    my_function.get(Value::String("Properties".to_string()))
                 {
                     if let Some(Value::Tagged(code_tagged)) =
-                        properties.get(&Value::String("Code".to_string()))
+                        properties.get(Value::String("Code".to_string()))
                     {
                         // Should preserve !Sub tag
                         assert_eq!(code_tagged.tag.to_string(), "!Sub");
@@ -633,21 +633,21 @@ Outputs:
     // Verify key structure is preserved
     if let Value::Mapping(root) = &parsed_output {
         // Check CloudFormation template structure
-        assert!(root.contains_key(&Value::String("AWSTemplateFormatVersion".to_string())));
-        assert!(root.contains_key(&Value::String("Resources".to_string())));
-        assert!(root.contains_key(&Value::String("Outputs".to_string())));
+        assert!(root.contains_key(Value::String("AWSTemplateFormatVersion".to_string())));
+        assert!(root.contains_key(Value::String("Resources".to_string())));
+        assert!(root.contains_key(Value::String("Outputs".to_string())));
 
-        if let Some(Value::Mapping(resources)) = root.get(&Value::String("Resources".to_string())) {
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
             // Check EC2 instance with UserData
             if let Some(Value::Mapping(ec2_instance)) =
-                resources.get(&Value::String("EC2Instance".to_string()))
+                resources.get(Value::String("EC2Instance".to_string()))
             {
                 if let Some(Value::Mapping(properties)) =
-                    ec2_instance.get(&Value::String("Properties".to_string()))
+                    ec2_instance.get(Value::String("Properties".to_string()))
                 {
                     // UserData should be preserved as tagged value
                     if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(&Value::String("UserData".to_string()))
+                        properties.get(Value::String("UserData".to_string()))
                     {
                         assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
 
@@ -722,7 +722,7 @@ folded_keep: >+
 
     if let Value::Mapping(root) = &result {
         // Test literal_clip: should have single final newline
-        if let Some(Value::String(s)) = root.get(&Value::String("literal_clip".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("literal_clip".to_string())) {
             assert_eq!(
                 s, "line one\nline two\n",
                 "literal_clip should have single final newline"
@@ -732,7 +732,7 @@ folded_keep: >+
         }
 
         // Test literal_strip: should have NO final newline
-        if let Some(Value::String(s)) = root.get(&Value::String("literal_strip".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("literal_strip".to_string())) {
             assert_eq!(
                 s, "line one\nline two",
                 "literal_strip should have no final newline"
@@ -742,7 +742,7 @@ folded_keep: >+
         }
 
         // Test literal_keep: should preserve all 3 trailing newlines
-        if let Some(Value::String(s)) = root.get(&Value::String("literal_keep".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("literal_keep".to_string())) {
             assert_eq!(
                 s, "line one\nline two\n\n\n",
                 "literal_keep should preserve 3 trailing newlines"
@@ -752,7 +752,7 @@ folded_keep: >+
         }
 
         // Test folded_clip: lines should be folded with space, with single final newline
-        if let Some(Value::String(s)) = root.get(&Value::String("folded_clip".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("folded_clip".to_string())) {
             assert_eq!(
                 s, "line one line two\n",
                 "folded_clip should fold lines and have single final newline"
@@ -762,7 +762,7 @@ folded_keep: >+
         }
 
         // Test folded_strip: lines should be folded with NO final newline
-        if let Some(Value::String(s)) = root.get(&Value::String("folded_strip".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("folded_strip".to_string())) {
             assert_eq!(
                 s, "line one line two",
                 "folded_strip should fold lines with no final newline"
@@ -772,7 +772,7 @@ folded_keep: >+
         }
 
         // Test folded_keep: lines should be folded and preserve trailing newlines
-        if let Some(Value::String(s)) = root.get(&Value::String("folded_keep".to_string())) {
+        if let Some(Value::String(s)) = root.get(Value::String("folded_keep".to_string())) {
             assert_eq!(
                 s, "line one line two\n\n\n",
                 "folded_keep should fold lines and preserve 3 trailing newlines"

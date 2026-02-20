@@ -53,8 +53,8 @@ async fn test_variable_origin_access_in_context() -> Result<()> {
     );
 
     println!("✅ Variable origin access test passed");
-    println!("   Local variable origin: {:?}", local_origin);
-    println!("   Imported variable origin: {:?}", imported_origin);
+    println!("   Local variable origin: {local_origin:?}");
+    println!("   Imported variable origin: {imported_origin:?}");
 
     Ok(())
 }
@@ -86,7 +86,7 @@ async fn test_import_dependency_graph_generation() -> Result<()> {
     let deps = context.get_import_dependency_graph();
 
     println!("✅ Import dependency graph generation test passed");
-    println!("   Dependency graph: {:?}", deps);
+    println!("   Dependency graph: {deps:?}");
 
     // The graph should show import relationships
     assert!(!deps.is_empty(), "Dependency graph should not be empty");
@@ -155,7 +155,7 @@ fn test_variable_source_enum_display() {
 
     println!("✅ Variable source types available for error reporting:");
     for source in sources {
-        println!("   {:?}", source);
+        println!("   {source:?}");
     }
 
     // Test that they can be compared
@@ -265,7 +265,7 @@ fn test_error_message_formatting_helpers() {
     println!("✅ Error message formatting helpers test passed");
     println!("   Available origin types:");
     for (var_name, origin) in origins {
-        println!("   {} -> {:?}", var_name, origin);
+        println!("   {var_name} -> {origin:?}");
     }
 }
 
@@ -276,13 +276,13 @@ fn format_enhanced_variable_error(
     available_vars: &[(String, String)], // (name, origin)
     suggested_vars: &[String],
 ) -> String {
-    let mut error = format!("Error: Variable '{}' not found\n", variable_name);
-    error.push_str(&format!("  in {}\n\n", location));
+    let mut error = format!("Error: Variable '{variable_name}' not found\n");
+    error.push_str(&format!("  in {location}\n\n"));
 
     if !available_vars.is_empty() {
         error.push_str("Available variables in scope:\n");
         for (name, origin) in available_vars {
-            error.push_str(&format!("  - {}: ({})\n", name, origin));
+            error.push_str(&format!("  - {name}: ({origin})\n"));
         }
         error.push('\n');
     }
@@ -323,7 +323,7 @@ fn test_enhanced_error_message_formatting() {
 
     println!("✅ Enhanced error message formatting test passed");
     println!("Example enhanced error message:");
-    println!("{}", error_msg);
+    println!("{error_msg}");
 
     // Verify the error message contains expected components
     assert!(error_msg.contains("Variable 'databse_host' not found"));

@@ -287,8 +287,8 @@ async fn test_fixture_json_expected_output_structure() {
         }
 
         // Each line should be valid JSON
-        let json_value: serde_json::Value =
-            serde_json::from_str(line).expect(&format!("Each line should be valid JSON: {}", line));
+        let json_value: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|_| panic!("Each line should be valid JSON: {line}"));
 
         // Verify JSON structure has required fields
         assert!(

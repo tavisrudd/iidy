@@ -82,7 +82,7 @@ pub async fn get_history(cli: &Cli, args: &ParamGetArgs) -> Result<i32> {
                 value: current.value().map(|s| s.to_string()),
                 last_modified_date: current
                     .last_modified_date()
-                    .map(|d| crate::params::format_aws_datetime(d)),
+                    .map(crate::params::format_aws_datetime),
                 last_modified_user: current.last_modified_user().map(|s| s.to_string()),
                 message,
             },
@@ -92,7 +92,7 @@ pub async fn get_history(cli: &Cli, args: &ParamGetArgs) -> Result<i32> {
                     value: p.value().map(|s| s.to_string()),
                     last_modified_date: p
                         .last_modified_date()
-                        .map(|d| crate::params::format_aws_datetime(d)),
+                        .map(crate::params::format_aws_datetime),
                     last_modified_user: p.last_modified_user().map(|s| s.to_string()),
                 })
                 .collect(),

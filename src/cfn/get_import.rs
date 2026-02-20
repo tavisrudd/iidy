@@ -34,9 +34,9 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
             let error_msg = if e.to_string().contains("AWS") {
                 format_aws_error(&e)
             } else {
-                format!("Import error: {}", e)
+                format!("Import error: {e}")
             };
-            eprintln!("{}", error_msg);
+            eprintln!("{error_msg}");
             return Ok(1);
         }
     };
@@ -46,7 +46,7 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
         match apply_jmespath_query(&output_doc, query_str) {
             Ok(result) => output_doc = result,
             Err(e) => {
-                eprintln!("{}", e);
+                eprintln!("{e}");
                 return Ok(1);
             }
         }
@@ -54,16 +54,16 @@ pub async fn get_import(cli: &Cli, args: &GetImportArgs) -> Result<i32> {
 
     match args.format.as_str() {
         "yaml" => match serde_yaml::to_string(&output_doc) {
-            Ok(yaml_str) => print!("{}", yaml_str),
+            Ok(yaml_str) => print!("{yaml_str}"),
             Err(e) => {
-                eprintln!("YAML serialization error: {}", e);
+                eprintln!("YAML serialization error: {e}");
                 return Ok(1);
             }
         },
         "json" => match serde_json::to_string_pretty(&yaml_to_json_value(&output_doc)?) {
-            Ok(json_str) => println!("{}", json_str),
+            Ok(json_str) => println!("{json_str}"),
             Err(e) => {
-                eprintln!("JSON serialization error: {}", e);
+                eprintln!("JSON serialization error: {e}");
                 return Ok(1);
             }
         },
@@ -117,9 +117,9 @@ mod tests {
         let yaml_value = json_to_yaml_value(&json_value).unwrap();
 
         if let YamlValue::Mapping(map) = yaml_value {
-            assert!(map.contains_key(&YamlValue::String("name".to_string())));
-            assert!(map.contains_key(&YamlValue::String("values".to_string())));
-            assert!(map.contains_key(&YamlValue::String("nested".to_string())));
+            assert!(map.contains_key(YamlValue::String("name".to_string())));
+            assert!(map.contains_key(YamlValue::String("values".to_string())));
+            assert!(map.contains_key(YamlValue::String("nested".to_string())));
         } else {
             panic!("Expected YAML mapping");
         }

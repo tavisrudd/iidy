@@ -25,7 +25,7 @@ $defs:
   app_name: "my-app"
 
 $imports:
-  config: "{}"
+  config: "{config_path}"
 
 stack_name: "{{{{app_name}}}}-{{{{environment}}}}"
 region: "us-west-2"
@@ -53,8 +53,7 @@ merged_config: !$merge
   - name: "{{{{app_name}}}}"
     env: "{{{{environment}}}}"
   - !$ config
-"#,
-        config_path
+"#
     );
 
     let result = preprocess_yaml_v11(&yaml_input, "test.yaml").await?;
@@ -63,24 +62,24 @@ merged_config: !$merge
     if let Value::Mapping(map) = result {
         // Check basic interpolation
         assert_eq!(
-            map.get(&Value::String("stack_name".to_string())),
+            map.get(Value::String("stack_name".to_string())),
             Some(&Value::String("my-app-prod".to_string()))
         );
 
         // Check region passthrough
         assert_eq!(
-            map.get(&Value::String("region".to_string())),
+            map.get(Value::String("region".to_string())),
             Some(&Value::String("us-west-2".to_string()))
         );
 
         // Check include resolution
-        if let Some(Value::Mapping(database)) = map.get(&Value::String("database".to_string())) {
+        if let Some(Value::Mapping(database)) = map.get(Value::String("database".to_string())) {
             assert_eq!(
-                database.get(&Value::String("host".to_string())),
+                database.get(Value::String("host".to_string())),
                 Some(&Value::String("db.example.com".to_string()))
             );
             assert_eq!(
-                database.get(&Value::String("port".to_string())),
+                database.get(Value::String("port".to_string())),
                 Some(&Value::Number(serde_yaml::Number::from(5432)))
             );
         } else {
@@ -89,12 +88,12 @@ merged_config: !$merge
 
         // Check conditional logic
         assert_eq!(
-            map.get(&Value::String("database_url".to_string())),
+            map.get(Value::String("database_url".to_string())),
             Some(&Value::String("prod://db.example.com:5432".to_string()))
         );
 
         // Check map transformation
-        if let Some(Value::Sequence(services)) = map.get(&Value::String("services".to_string())) {
+        if let Some(Value::Sequence(services)) = map.get(Value::String("services".to_string())) {
             assert_eq!(services.len(), 3);
             assert_eq!(services[0], Value::String("my-app-api-prod".to_string()));
             assert_eq!(services[1], Value::String("my-app-web-prod".to_string()));
@@ -104,17 +103,17 @@ merged_config: !$merge
         }
 
         // Check merge transformation
-        if let Some(Value::Mapping(merged)) = map.get(&Value::String("merged_config".to_string())) {
+        if let Some(Value::Mapping(merged)) = map.get(Value::String("merged_config".to_string())) {
             assert_eq!(
-                merged.get(&Value::String("name".to_string())),
+                merged.get(Value::String("name".to_string())),
                 Some(&Value::String("my-app".to_string()))
             );
             assert_eq!(
-                merged.get(&Value::String("env".to_string())),
+                merged.get(Value::String("env".to_string())),
                 Some(&Value::String("prod".to_string()))
             );
             assert_eq!(
-                merged.get(&Value::String("database_host".to_string())),
+                merged.get(Value::String("database_host".to_string())),
                 Some(&Value::String("db.example.com".to_string()))
             );
         } else {
@@ -177,45 +176,45 @@ Outputs:
     if let Value::Mapping(template) = result {
         // Check template format version
         assert_eq!(
-            template.get(&Value::String("AWSTemplateFormatVersion".to_string())),
+            template.get(Value::String("AWSTemplateFormatVersion".to_string())),
             Some(&Value::String("2010-09-09".to_string()))
         );
 
         // Check description interpolation
         assert_eq!(
-            template.get(&Value::String("Description".to_string())),
+            template.get(Value::String("Description".to_string())),
             Some(&Value::String("my-app infrastructure for prod".to_string()))
         );
 
         // Check resources
         if let Some(Value::Mapping(resources)) =
-            template.get(&Value::String("Resources".to_string()))
+            template.get(Value::String("Resources".to_string()))
         {
             // Check S3 bucket
             if let Some(Value::Mapping(s3_bucket)) =
-                resources.get(&Value::String("S3Bucket".to_string()))
+                resources.get(Value::String("S3Bucket".to_string()))
             {
                 assert_eq!(
-                    s3_bucket.get(&Value::String("Type".to_string())),
+                    s3_bucket.get(Value::String("Type".to_string())),
                     Some(&Value::String("AWS::S3::Bucket".to_string()))
                 );
 
                 if let Some(Value::Mapping(properties)) =
-                    s3_bucket.get(&Value::String("Properties".to_string()))
+                    s3_bucket.get(Value::String("Properties".to_string()))
                 {
                     // Note: The actual handlebars toLowerCase and concat would need to be implemented
                     // For now, we check that the structure is correct
-                    assert!(properties.contains_key(&Value::String("BucketName".to_string())));
-                    assert!(properties.contains_key(&Value::String("Tags".to_string())));
+                    assert!(properties.contains_key(Value::String("BucketName".to_string())));
+                    assert!(properties.contains_key(Value::String("Tags".to_string())));
                 }
             }
 
             // Check fromPairs result
             if let Some(Value::Mapping(security_groups)) =
-                resources.get(&Value::String("SecurityGroups".to_string()))
+                resources.get(Value::String("SecurityGroups".to_string()))
             {
-                assert!(security_groups.contains_key(&Value::String("WebSG".to_string())));
-                assert!(security_groups.contains_key(&Value::String("DBSG".to_string())));
+                assert!(security_groups.contains_key(Value::String("WebSG".to_string())));
+                assert!(security_groups.contains_key(Value::String("DBSG".to_string())));
             }
         }
     } else {
@@ -237,7 +236,7 @@ async fn test_nested_imports_and_complex_transformations() -> Result<()> {
     // Create environment-specific config
     let mut env_config = NamedTempFile::with_suffix(".yaml")?;
     writeln!(env_config, "$imports:")?;
-    writeln!(env_config, "  base: \"{}\"", base_config_path)?;
+    writeln!(env_config, "  base: \"{base_config_path}\"")?;
     writeln!(env_config, "environment:")?;
     writeln!(env_config, "  name: prod")?;
     writeln!(env_config, "  replicas: 3")?;
@@ -249,7 +248,7 @@ async fn test_nested_imports_and_complex_transformations() -> Result<()> {
     let yaml_input = format!(
         r#"
 $imports:
-  config: "{}"
+  config: "{env_config_path}"
 
 $defs:
   services: ["api", "web", "worker"]
@@ -282,8 +281,7 @@ all_endpoints: !$concatMap
       type: "internal"
     - name: "{{item}}-external"
       type: "external"
-"#,
-        env_config_path
+"#
     );
 
     let result = preprocess_yaml_v11(&yaml_input, "complex.yaml").await?;
@@ -301,28 +299,28 @@ all_endpoints: !$concatMap
         // );
 
         assert_eq!(
-            map.get(&Value::String("environment".to_string())),
+            map.get(Value::String("environment".to_string())),
             Some(&Value::String("prod".to_string()))
         );
 
         // Check mapValues transformation (debugging)
         if let Some(Value::Mapping(service_configs)) =
-            map.get(&Value::String("service_configs".to_string()))
+            map.get(Value::String("service_configs".to_string()))
         {
-            assert!(service_configs.contains_key(&Value::String("api".to_string())));
-            assert!(service_configs.contains_key(&Value::String("web".to_string())));
+            assert!(service_configs.contains_key(Value::String("api".to_string())));
+            assert!(service_configs.contains_key(Value::String("web".to_string())));
 
             if let Some(Value::Mapping(api_config)) =
-                service_configs.get(&Value::String("api".to_string()))
+                service_configs.get(Value::String("api".to_string()))
             {
                 // TODO: handlebars {{item.key}} not resolving inside !$mapValues template
-                assert!(api_config.contains_key(&Value::String("name".to_string())));
+                assert!(api_config.contains_key(Value::String("name".to_string())));
             }
         }
 
         // Check concatMap result
         if let Some(Value::Sequence(endpoints)) =
-            map.get(&Value::String("all_endpoints".to_string()))
+            map.get(Value::String("all_endpoints".to_string()))
         {
             // Should have internal and external endpoints for each service
             assert_eq!(endpoints.len(), 6); // 3 services * 2 endpoints each
@@ -386,66 +384,64 @@ parsed_json: !$parseJson '{"key": "value", "number": 456}'
     if let Value::Mapping(map) = result {
         // Check string case transformations
         if let Some(Value::Mapping(formatted)) =
-            map.get(&Value::String("formatted_strings".to_string()))
+            map.get(Value::String("formatted_strings".to_string()))
         {
             assert_eq!(
-                formatted.get(&Value::String("upper".to_string())),
+                formatted.get(Value::String("upper".to_string())),
                 Some(&Value::String("HELLO WORLD".to_string()))
             );
             assert_eq!(
-                formatted.get(&Value::String("lower".to_string())),
+                formatted.get(Value::String("lower".to_string())),
                 Some(&Value::String("hello world".to_string()))
             );
         }
 
         // Check encoding
-        if let Some(Value::Mapping(encoded)) = map.get(&Value::String("encoded_data".to_string())) {
+        if let Some(Value::Mapping(encoded)) = map.get(Value::String("encoded_data".to_string())) {
             assert_eq!(
-                encoded.get(&Value::String("base64_secret".to_string())),
+                encoded.get(Value::String("base64_secret".to_string())),
                 Some(&Value::String("bXktc2VjcmV0LWtleQ==".to_string()))
             );
         }
 
         // Check string manipulation
         if let Some(Value::Mapping(processed)) =
-            map.get(&Value::String("processed_strings".to_string()))
+            map.get(Value::String("processed_strings".to_string()))
         {
             assert_eq!(
-                processed.get(&Value::String("trimmed".to_string())),
+                processed.get(Value::String("trimmed".to_string())),
                 Some(&Value::String("extra spaces".to_string()))
             );
             assert_eq!(
-                processed.get(&Value::String("length".to_string())),
+                processed.get(Value::String("length".to_string())),
                 Some(&Value::String("11".to_string()))
             );
         }
 
         // Check YAML serialization
-        if let Some(Value::String(yaml_str)) =
-            map.get(&Value::String("serialized_data".to_string()))
+        if let Some(Value::String(yaml_str)) = map.get(Value::String("serialized_data".to_string()))
         {
             assert!(yaml_str.contains("message: Hello World"));
         }
 
         // Check parsed YAML
-        if let Some(Value::Mapping(parsed)) = map.get(&Value::String("parsed_back".to_string())) {
+        if let Some(Value::Mapping(parsed)) = map.get(Value::String("parsed_back".to_string())) {
             assert_eq!(
-                parsed.get(&Value::String("message".to_string())),
+                parsed.get(Value::String("message".to_string())),
                 Some(&Value::String("converted".to_string()))
             );
         }
 
         // Check JSON serialization
-        if let Some(Value::String(json_str)) = map.get(&Value::String("json_data".to_string())) {
+        if let Some(Value::String(json_str)) = map.get(Value::String("json_data".to_string())) {
             assert!(json_str.contains("\"test\":true"));
         }
 
         // Check parsed JSON
-        if let Some(Value::Mapping(parsed_json)) =
-            map.get(&Value::String("parsed_json".to_string()))
+        if let Some(Value::Mapping(parsed_json)) = map.get(Value::String("parsed_json".to_string()))
         {
             assert_eq!(
-                parsed_json.get(&Value::String("key".to_string())),
+                parsed_json.get(Value::String("key".to_string())),
                 Some(&Value::String("value".to_string()))
             );
         }

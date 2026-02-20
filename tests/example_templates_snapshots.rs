@@ -15,9 +15,9 @@ use std::path::Path;
 async fn render_template_file(
     template_path: &str,
 ) -> Result<serde_yaml::Value, Box<dyn std::error::Error>> {
-    let full_path = format!("example-templates/{}", template_path);
+    let full_path = format!("example-templates/{template_path}");
     let content = std::fs::read_to_string(&full_path)
-        .map_err(|e| format!("Failed to read {}: {}", full_path, e))?;
+        .map_err(|e| format!("Failed to read {full_path}: {e}"))?;
 
     let result = preprocess_yaml(&content, &full_path, &YamlSpec::Auto).await?;
     Ok(result)
@@ -38,14 +38,14 @@ async fn test_all_example_templates_auto_discovery() {
                 let name = entry.file_name().to_string_lossy().to_string();
 
                 if path.is_file()
-                    && path.extension().map_or(false, |ext| ext == "yaml")
+                    && path.extension().is_some_and(|ext| ext == "yaml")
                     && !name.starts_with(".")
                     && !name.ends_with("-template.yaml")
                 {
                     let relative_file_path = if relative_path.is_empty() {
                         name.clone()
                     } else {
-                        format!("{}/{}", relative_path, name)
+                        format!("{relative_path}/{name}")
                     };
 
                     templates.push((relative_file_path, name));
@@ -59,7 +59,7 @@ async fn test_all_example_templates_auto_discovery() {
                     let sub_relative = if relative_path.is_empty() {
                         name
                     } else {
-                        format!("{}/{}", relative_path, name)
+                        format!("{relative_path}/{name}")
                     };
 
                     templates.extend(discover_templates(&path, &sub_relative));
@@ -97,14 +97,12 @@ async fn test_all_example_templates_auto_discovery() {
                 // Files in yaml-iidy-syntax/ should never fail - these are demonstration files
                 if relative_path.starts_with("yaml-iidy-syntax/") {
                     panic!(
-                        "yaml-iidy-syntax template {} must render without errors, but failed with: {}",
-                        relative_path, e
+                        "yaml-iidy-syntax template {relative_path} must render without errors, but failed with: {e}"
                     );
                 }
                 // Log but don't fail for other auto-discovered templates that might be invalid
                 eprintln!(
-                    "Warning: Auto-discovered template {} failed to render: {}",
-                    relative_path, e
+                    "Warning: Auto-discovered template {relative_path} failed to render: {e}"
                 );
             }
         }
@@ -167,7 +165,7 @@ async fn test_invalid_templates_fail_gracefully() {
     ];
 
     for template in &invalid_templates {
-        let template_path = format!("example-templates/{}", template);
+        let template_path = format!("example-templates/{template}");
         if Path::new(&template_path).exists() {
             let result = render_template_file(template).await;
 
@@ -176,8 +174,7 @@ async fn test_invalid_templates_fail_gracefully() {
                 Ok(_) => {
                     // Log a warning but don't fail the test - the template might have been fixed
                     eprintln!(
-                        "Warning: {} unexpectedly succeeded - consider moving it to the valid examples",
-                        template
+                        "Warning: {template} unexpectedly succeeded - consider moving it to the valid examples"
                     );
                 }
                 Err(_) => {
@@ -326,7 +323,7 @@ mod performance_tests {
         for template in &templates {
             let _ = render_template_file(template)
                 .await
-                .expect(&format!("Failed to render {}", template));
+                .unwrap_or_else(|_| panic!("Failed to render {template}"));
         }
 
         let duration = start.elapsed();
@@ -334,8 +331,7 @@ mod performance_tests {
         // All templates should render in under 5 seconds (very generous limit)
         assert!(
             duration.as_secs() < 5,
-            "Template rendering took too long: {:?}",
-            duration
+            "Template rendering took too long: {duration:?}"
         );
 
         println!("Rendered {} templates in {:?}", templates.len(), duration);

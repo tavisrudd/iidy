@@ -24,7 +24,7 @@ pub fn handle_explain_command(codes: Vec<String>) {
             println!("{}", error_id.explain());
             println!();
         } else {
-            eprintln!("Unknown error code: {}", code);
+            eprintln!("Unknown error code: {code}");
         }
     }
 }

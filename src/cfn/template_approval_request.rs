@@ -33,14 +33,14 @@ async fn template_approval_request_impl(
 
     // Render command metadata
     let command_metadata =
-        create_command_metadata(context, opts, &stack_args, &global_opts.environment).await?;
+        create_command_metadata(context, opts, stack_args, &global_opts.environment).await?;
     output_manager
         .render(OutputData::CommandMetadata(command_metadata))
         .await?;
 
     // Load template using standard loader (includes all preprocessing)
     let template_result = load_cfn_template(
-        stack_args.template.as_ref().map(|x| x.as_str()),
+        stack_args.template.as_deref(),
         &args.argsfile,
         Some(&global_opts.environment),
         TEMPLATE_MAX_BYTES,
@@ -65,8 +65,8 @@ async fn template_approval_request_impl(
 
     if already_approved {
         let result = crate::output::data::ApprovalRequestResult {
-            template_location: format!("s3://{}/{}", bucket, key),
-            pending_location: format!("s3://{}/{}.pending", bucket, key),
+            template_location: format!("s3://{bucket}/{key}"),
+            pending_location: format!("s3://{bucket}/{key}.pending"),
             already_approved: true,
             next_steps: vec!["Template has already been approved".to_string()],
         };
@@ -81,7 +81,7 @@ async fn template_approval_request_impl(
         let validation_result = validate_template(
             context,
             &template_body,
-            &stack_args,
+            stack_args,
             args.lint_using_parameters,
         )
         .await?;
@@ -91,13 +91,13 @@ async fn template_approval_request_impl(
     }
 
     // Upload pending template
-    let pending_key = format!("{}.pending", key);
+    let pending_key = format!("{key}.pending");
     upload_template_to_s3(&s3_client, &bucket, &pending_key, &template_body).await?;
 
     // Render approval request result
     let result = crate::output::data::ApprovalRequestResult {
-        template_location: format!("s3://{}/{}", bucket, key),
-        pending_location: format!("s3://{}/{}", bucket, pending_key),
+        template_location: format!("s3://{bucket}/{key}"),
+        pending_location: format!("s3://{bucket}/{pending_key}"),
         already_approved: false,
         next_steps: vec![format!(
             "Review template with: iidy template-approval review s3://{}/{}",
@@ -153,7 +153,7 @@ async fn validate_template(
             // Template is valid
         }
         Err(e) => {
-            errors.push(format!("Template validation failed: {}", e));
+            errors.push(format!("Template validation failed: {e}"));
         }
     }
 

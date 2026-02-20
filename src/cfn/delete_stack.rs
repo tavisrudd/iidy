@@ -152,10 +152,7 @@ async fn delete_stack_impl(
             let events = StackEventsService::fetch_events(&client, &stack_id).await?;
             let events_display = convert_stack_events_to_display_with_max(
                 events,
-                &format!(
-                    "Previous Stack Events (max {}):",
-                    DEFAULT_PREVIOUS_EVENTS_COUNT
-                ),
+                &format!("Previous Stack Events (max {DEFAULT_PREVIOUS_EVENTS_COUNT}):"),
                 Some(DEFAULT_PREVIOUS_EVENTS_COUNT),
             );
             Ok::<OutputData, anyhow::Error>(events_display)
@@ -177,7 +174,7 @@ async fn delete_stack_impl(
     let confirmed = if args.yes {
         true
     } else {
-        let message = format!("Are you sure you want to DELETE the stack {}?", stack_name);
+        let message = format!("Are you sure you want to DELETE the stack {stack_name}?");
         output_manager.request_confirmation(message).await?
     };
 
