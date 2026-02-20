@@ -396,131 +396,52 @@ after the specific variant checks but before the generic `!$` fallback.
 
 ---
 
-## Part 3: Further Cleanup (not yet started)
+## Part 3: Further Cleanup
 
-Execute these in order. Each is independent and can be committed separately. Run
-`make check-fast` after each change, `make test` after each step is complete.
+**Status**: Complete (2026-02-19). All 610 tests pass, zero warnings, zero snapshot changes.
 
-### Step 1: Remove dead `EnhancedPreprocessingError` variants (high impact, ~80-100 lines)
+**Line counts (current)**:
+- `wrapper.rs`: 343 lines (was 440 after Part 2, 1096 originally)
+- `enhanced.rs`: 770 lines (was 884 after Part 2, 700 originally)
+- `display.rs`: 510 lines (was 432 after Part 2)
+- `ids.rs`: 397 (untouched)
+- `mod.rs`: 14 (untouched)
 
-Three variants are never constructed anywhere in the codebase:
+**Total across all 3 parts**: wrapper.rs went from 1096 to 343 lines (69% reduction).
+Net across all error files: ~130 fewer lines than after Part 2 (excluding ids.rs/mod.rs).
 
-- **`ImportError`**: No constructor call, no wrapper function. Only defined + matched in enhanced.rs.
-- **`HandlebarsError`**: Same -- defined + matched but never instantiated.
-- **`MissingRequiredField`**: Has a constructor method (`EnhancedPreprocessingError::missing_required_field()`)
-  but no caller. The wrapper function `missing_required_field_error()` in wrapper.rs delegates
-  to `tag_parsing_error()`, which creates a `TagParsing` variant instead.
+### Step 1: Remove dead variants -- done
 
-**To remove each variant**:
-1. Delete the variant definition from the enum
-2. Delete its match arms in: `error_id()`, `location()`, `display_with_context()` (error_type,
-   short_message, guidance matches + the help section match), `inline_description()`,
-   `error_span_length()`, `help_messages()`
-3. Delete its constructor method (e.g., `missing_required_field()`)
-4. For `MissingRequiredField`: the specific help section in `display_with_context()` (lines
-   that format "add '{}' field to {} tag") should be removed since the rendering now lives
-   in `render_tag_parsing` via the `TagParsing` variant path.
+Removed `ImportError`, `HandlebarsError`, `MissingRequiredField` from the enum.
+Deleted match arms in `error_id()`, `location()`, `display_with_context()` (error_type,
+short_message, guidance, help section), `inline_description()`, `error_span_length()`,
+`help_messages()`, and the `missing_required_field()` constructor. -114 lines from enhanced.rs.
 
-**Verification**: `make check-fast` will catch any remaining references. `make test` must
-pass with zero changes -- if any test constructs these variants directly, it would have
-been caught in the search.
+### Step 2: Data-driven tag search -- done
 
-### Step 2: Data-driven tag search in `type_mismatch_error_impl` (moderate, ~50 lines saved)
+Added `TAG_SEARCH_PATTERNS` const and `search_for_tag_line()` to display.rs.
+Replaced the 53-line if/else chain in `type_mismatch_error_impl` with a one-liner call.
+Adding new tags now requires a single table entry.
 
-The "search without line number" path in `type_mismatch_error_impl` (wrapper.rs, currently
-the `else` branch after `if let Some(line_num) = provided_line_number`) is a 65-line
-if/else chain matching tag names against `context_description`. Replace with a table:
+### Step 3: Extract `read_source_lines` -- done
 
-```rust
-// (tag_name, optional_field_to_search_on_subsequent_lines)
-const TAG_SEARCH_PATTERNS: &[(&str, Option<(&str, &str)>)] = &[
-    ("!$split", None),
-    ("!$join", None),
-    ("!$groupBy", Some(("items field", "items:"))),
-    ("!$mapListToHash", Some(("items field", "items:"))),
-    ("!$fromPairs", Some(("source field", "source:"))),
-    ("!$map", None),
-    ("!$merge", None),
-];
-```
+Added `read_source_lines()` to display.rs (combines `parse_file_location` + `read_to_string`
++ lines collection). Applied to `variable_not_found_error`, `type_mismatch_error_impl`,
+and `cloudformation_validation_error_impl`. Also simplified the CFN validation search loop
+from mutable variables to a `find_map` iterator.
 
-Then a single loop:
-```rust
-let (line_num, column_num) = lines.iter().enumerate().find_map(|(idx, line)| {
-    let trimmed = line.trim_start();
-    if trimmed.starts_with('#') { return None; }
-    for &(tag, field_search) in TAG_SEARCH_PATTERNS {
-        if context_description.contains(tag) && line.contains(tag) {
-            if let Some((field_ctx, field_kw)) = field_search {
-                if context_description.contains(field_ctx) {
-                    if let Some(result) = display::search_field_on_subsequent_lines(
-                        &lines, idx, field_kw, context_description,
-                    ) {
-                        return Some(result);
-                    }
-                }
-            }
-            return Some((idx + 1, display::find_tag_column(line, context_description)));
-        }
-    }
-    None
-}).unwrap_or((0, 0));
-```
+`tag_parsing_error` was not converted because it uses `parse_file_location_full` (3-part).
+`lookup_query_error` was not converted because it takes `line_number` as a separate parameter.
 
-Place the const in display.rs (it's tag-matching data, same domain as `find_tag_column`).
-The loop replaces the entire if/else chain. Adding new tags becomes a one-line table entry.
+### Step 4: Extract `find_variable_column` -- done
 
-### Step 3: Extract `read_source_lines` helper (moderate, ~30 lines saved)
-
-Every wrapper function repeats:
-```rust
-let (actual_file_path, provided_line_number) = display::parse_file_location(file_path);
-// ... then ...
-if let Ok(content) = std::fs::read_to_string(actual_file_path) {
-    let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    // ...
-}
-```
-
-Extract to display.rs:
-```rust
-pub(crate) fn read_source_lines(file_path: &str) -> (&str, Option<usize>, Option<Vec<String>>) {
-    let (actual_file, line_num) = parse_file_location(file_path);
-    let lines = std::fs::read_to_string(actual_file)
-        .ok()
-        .map(|content| content.lines().map(|s| s.to_string()).collect());
-    (actual_file, line_num, lines)
-}
-```
-
-Saves ~5-8 lines per wrapper function (6 functions). Note: `tag_parsing_error` uses
-`parse_file_location_full` for the column -- either add a variant or handle separately.
-
-### Step 4: Extract `find_variable_column` (minor, ~15 lines saved)
-
-`variable_not_found_error` has duplicate pattern-matching for finding `{{var}}` / `!$ var` /
-`!$var` -- once for the known-line path (lines ~47-57) and once for the search path (lines
-~66-76). Extract to display.rs:
-
-```rust
-pub(crate) fn find_variable_column(line: &str, variable: &str) -> usize {
-    if let Some(col) = line.find(&format!("!$ {}", variable)) {
-        col + 4
-    } else if let Some(col) = line.find(&format!("!${}", variable)) {
-        col + 3
-    } else if let Some(col) = line.find(&format!("{{{{{}}}}}", variable)) {
-        col + 2
-    } else {
-        0
-    }
-}
-```
-
-The known-line path calls it directly; the search path calls it inside `find_map`.
+Added `find_variable_column()` to display.rs. Deduplicated the `{{var}}` / `!$ var` /
+`!$var` pattern matching in `variable_not_found_error` -- the known-line path and the
+search path both call the same function now.
 
 ---
 
-## Lower-priority improvements (not blocking)
+## Remaining low-priority improvements (not blocking)
 
 ### Standardize "For more info" footer
 YamlSyntax and TagParsing use "For more info, run: iidy explain" while all other

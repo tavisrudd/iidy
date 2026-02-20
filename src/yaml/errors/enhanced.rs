@@ -61,31 +61,6 @@ pub enum EnhancedPreprocessingError {
         help: Option<String>,
     },
 
-    MissingRequiredField {
-        error_id: ErrorId,
-        tag_name: String,
-        missing_field: String,
-        location: SourceLocation,
-        required_fields: Vec<String>,
-    },
-
-    ImportError {
-        error_id: ErrorId,
-        import_type: String,
-        location_str: String,
-        location: SourceLocation,
-        underlying_error: String,
-        suggestions: Vec<String>,
-    },
-
-    HandlebarsError {
-        error_id: ErrorId,
-        template: String,
-        location: SourceLocation,
-        underlying_error: String,
-        available_helpers: Vec<String>,
-    },
-
     CloudFormationValidation {
         error_id: ErrorId,
         tag_name: String,
@@ -127,9 +102,6 @@ impl EnhancedPreprocessingError {
         match self {
             Self::VariableNotFound { error_id, .. }
             | Self::TypeMismatch { error_id, .. }
-            | Self::MissingRequiredField { error_id, .. }
-            | Self::ImportError { error_id, .. }
-            | Self::HandlebarsError { error_id, .. }
             | Self::CloudFormationValidation { error_id, .. }
             | Self::YamlSyntax { error_id, .. }
             | Self::TagParsing { error_id, .. }
@@ -141,9 +113,6 @@ impl EnhancedPreprocessingError {
         match self {
             Self::VariableNotFound { location, .. }
             | Self::TypeMismatch { location, .. }
-            | Self::MissingRequiredField { location, .. }
-            | Self::ImportError { location, .. }
-            | Self::HandlebarsError { location, .. }
             | Self::CloudFormationValidation { location, .. }
             | Self::YamlSyntax { location, .. }
             | Self::TagParsing { location, .. }
@@ -168,9 +137,6 @@ impl EnhancedPreprocessingError {
         let error_type = match self {
             Self::VariableNotFound { .. } => "Variable error",
             Self::TypeMismatch { .. } => "Type error",
-            Self::MissingRequiredField { .. } => "Missing field error",
-            Self::ImportError { .. } => "Import error",
-            Self::HandlebarsError { .. } => "Template error",
             Self::CloudFormationValidation { .. } => "CloudFormation error",
             Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
                 unreachable!()
@@ -182,17 +148,6 @@ impl EnhancedPreprocessingError {
             Self::TypeMismatch {
                 expected, found, ..
             } => format!("expected {}, found {}", expected, found),
-            Self::MissingRequiredField {
-                missing_field,
-                tag_name,
-                ..
-            } => format!("'{}' missing in {} tag", missing_field, tag_name),
-            Self::ImportError {
-                import_type,
-                location_str,
-                ..
-            } => format!("{} import failed: {}", import_type, location_str),
-            Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
             Self::CloudFormationValidation { message, .. } => message.clone(),
             Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
                 unreachable!()
@@ -216,9 +171,6 @@ impl EnhancedPreprocessingError {
         let guidance = match self {
             Self::VariableNotFound { .. } => "variable not defined in current scope",
             Self::TypeMismatch { .. } => "data type mismatch",
-            Self::MissingRequiredField { .. } => "required field missing",
-            Self::ImportError { .. } => "import failed",
-            Self::HandlebarsError { .. } => "template syntax error",
             Self::CloudFormationValidation { .. } => "invalid CloudFormation intrinsic function",
             Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
                 unreachable!()
@@ -266,22 +218,6 @@ impl EnhancedPreprocessingError {
                         sorted_vars.join(", "),
                         c.reset
                     ));
-                }
-            }
-            Self::MissingRequiredField {
-                missing_field,
-                tag_name,
-                ..
-            } => {
-                output.push_str(&format!(
-                    "{}   add '{}' field to {} tag{}\n",
-                    c.light_blue, missing_field, tag_name, c.reset
-                ));
-                let help_messages = self.help_messages();
-                if let Some(help) = help_messages.first() {
-                    if help.starts_with("example:") {
-                        output.push_str(&format!("{}   {}{}\n", c.light_blue, help, c.reset));
-                    }
                 }
             }
             Self::TypeMismatch {
@@ -528,11 +464,6 @@ impl EnhancedPreprocessingError {
         match self {
             Self::VariableNotFound { .. } => "variable not defined".to_string(),
             Self::TypeMismatch { expected, .. } => format!("expected {}", expected),
-            Self::MissingRequiredField { missing_field, .. } => {
-                format!("missing '{}'", missing_field)
-            }
-            Self::ImportError { .. } => "import failed".to_string(),
-            Self::HandlebarsError { .. } => "template error".to_string(),
             Self::CloudFormationValidation { .. } => "invalid CloudFormation tag".to_string(),
             // New variants use their own render methods, these aren't called
             Self::YamlSyntax { .. } => String::new(),
@@ -544,7 +475,6 @@ impl EnhancedPreprocessingError {
     fn error_span_length(&self) -> usize {
         match self {
             Self::VariableNotFound { variable, .. } => variable.len() + 3, // "!$ " prefix
-            Self::MissingRequiredField { tag_name, .. } => tag_name.len() + 2, // "!$" prefix
             Self::CloudFormationValidation { .. } => 4, // Reasonable span for values like "null", "[]"
             _ => 8,                                     // Default span length
         }
@@ -576,35 +506,6 @@ impl EnhancedPreprocessingError {
             } => {
                 if let Some(h) = type_help {
                     help.push(h.clone());
-                }
-            }
-            Self::MissingRequiredField {
-                missing_field,
-                tag_name,
-                ..
-            } => {
-                help.push(format!(
-                    "add a '{}' field to the {} tag",
-                    missing_field, tag_name
-                ));
-                match missing_field.as_str() {
-                    "template" => help.push("example: template: \"{{item}}\"".to_string()),
-                    "items" => help.push("example: items: [1, 2, 3]".to_string()),
-                    "test" => help.push("example: test: true".to_string()),
-                    _ => {}
-                }
-            }
-            Self::ImportError { suggestions, .. } => {
-                help.extend(suggestions.clone());
-            }
-            Self::HandlebarsError {
-                available_helpers, ..
-            } => {
-                if !available_helpers.is_empty() {
-                    help.push(format!(
-                        "available helpers: {}",
-                        available_helpers.join(", ")
-                    ));
                 }
             }
             Self::CloudFormationValidation {
@@ -706,21 +607,6 @@ impl EnhancedPreprocessingError {
             location,
             context: context.to_string(),
             help,
-        }
-    }
-
-    pub fn missing_required_field(
-        tag_name: &str,
-        missing_field: &str,
-        location: SourceLocation,
-        required_fields: Vec<String>,
-    ) -> Self {
-        Self::MissingRequiredField {
-            error_id: ErrorId::MissingRequiredTagField,
-            tag_name: tag_name.to_string(),
-            missing_field: missing_field.to_string(),
-            location,
-            required_fields,
         }
     }
 

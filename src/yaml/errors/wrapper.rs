@@ -37,50 +37,34 @@ pub fn variable_not_found_error(
     yaml_path: &str,
     available_vars: Vec<String>,
 ) -> anyhow::Error {
-    let (actual_file_path, provided_line_number) = display::parse_file_location(file_path);
+    let (actual_file_path, provided_line_number, source_lines) =
+        display::read_source_lines(file_path);
 
-    let (source_lines, line_number, column_number) =
-        if let Ok(content) = std::fs::read_to_string(actual_file_path) {
-            let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-
-            if let Some(line_num) = provided_line_number {
-                let column_num = if line_num > 0 && line_num <= lines.len() {
-                    let line_content = &lines[line_num - 1];
-                    if let Some(col) = line_content.find(&format!("{{{{{}}}}}", variable)) {
-                        col + 2
-                    } else if let Some(col) = line_content.find(&format!("!$ {}", variable)) {
-                        col + 4
-                    } else if let Some(col) = line_content.find(&format!("!${}", variable)) {
-                        col + 3
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                };
-                (Some(lines), line_num, column_num)
+    let (line_number, column_number) = if let Some(ref lines) = source_lines {
+        if let Some(line_num) = provided_line_number {
+            let column_num = if line_num > 0 && line_num <= lines.len() {
+                display::find_variable_column(&lines[line_num - 1], variable)
             } else {
-                let (line_num, column_num) = lines
-                    .iter()
-                    .enumerate()
-                    .find_map(|(idx, line)| {
-                        if let Some(col) = line.find(&format!("!$ {}", variable)) {
-                            Some((idx + 1, col + 4))
-                        } else if let Some(col) = line.find(&format!("!${}", variable)) {
-                            Some((idx + 1, col + 3))
-                        } else if let Some(col) = line.find(&format!("{{{{{}}}}}", variable)) {
-                            Some((idx + 1, col + 2))
-                        } else {
-                            None
-                        }
-                    })
-                    .unwrap_or((0, 0));
-
-                (Some(lines), line_num, column_num)
-            }
+                0
+            };
+            (line_num, column_num)
         } else {
-            (None, 0, 0)
-        };
+            lines
+                .iter()
+                .enumerate()
+                .find_map(|(idx, line)| {
+                    let col = display::find_variable_column(line, variable);
+                    if col > 0 {
+                        Some((idx + 1, col))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap_or((0, 0))
+        }
+    } else {
+        (0, 0)
+    };
 
     let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
     let error =
@@ -248,91 +232,22 @@ fn type_mismatch_error_impl(
     file_path: &str,
     yaml_path: &str,
 ) -> anyhow::Error {
-    let (actual_file_path, provided_line_number) = display::parse_file_location(file_path);
+    let (actual_file_path, provided_line_number, source_lines) =
+        display::read_source_lines(file_path);
 
-    let (source_lines, line_number, column_number) = if let Ok(content) =
-        std::fs::read_to_string(actual_file_path)
-    {
-        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-
+    let (line_number, column_number) = if let Some(ref lines) = source_lines {
         if let Some(line_num) = provided_line_number {
             let column_num = if line_num > 0 && line_num <= lines.len() {
                 display::find_tag_column(&lines[line_num - 1], context_description)
             } else {
                 0
             };
-            (Some(lines), line_num, column_num)
+            (line_num, column_num)
         } else {
-            // Search for the tag that likely caused the error, ignoring comments
-            let (line_num, column_num) = lines
-                .iter()
-                .enumerate()
-                .find_map(|(idx, line)| {
-                    let trimmed_line = line.trim_start();
-                    if trimmed_line.starts_with('#') {
-                        return None;
-                    }
-
-                    if context_description.contains("!$split") && line.contains("!$split") {
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$join") && line.contains("!$join") {
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$groupBy")
-                        && line.contains("!$groupBy")
-                    {
-                        if context_description.contains("items field") {
-                            if let Some(result) = display::search_field_on_subsequent_lines(
-                                &lines,
-                                idx,
-                                "items:",
-                                context_description,
-                            ) {
-                                return Some(result);
-                            }
-                        }
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$mapListToHash")
-                        && line.contains("!$mapListToHash")
-                    {
-                        if context_description.contains("items field") {
-                            if let Some(result) = display::search_field_on_subsequent_lines(
-                                &lines,
-                                idx,
-                                "items:",
-                                context_description,
-                            ) {
-                                return Some(result);
-                            }
-                        }
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$fromPairs")
-                        && line.contains("!$fromPairs")
-                    {
-                        if context_description.contains("source field") {
-                            if let Some(result) = display::search_field_on_subsequent_lines(
-                                &lines,
-                                idx,
-                                "source:",
-                                context_description,
-                            ) {
-                                return Some(result);
-                            }
-                        }
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$map") && line.contains("!$map") {
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else if context_description.contains("!$merge") && line.contains("!$merge") {
-                        Some((idx + 1, display::find_tag_column(line, context_description)))
-                    } else {
-                        None
-                    }
-                })
-                .unwrap_or((0, 0));
-
-            (Some(lines), line_num, column_num)
+            display::search_for_tag_line(lines, context_description)
         }
     } else {
-        (None, 0, 0)
+        (0, 0)
     };
 
     let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
@@ -364,46 +279,34 @@ fn cloudformation_validation_error_impl(
     file_path: &str,
     yaml_path: &str,
 ) -> anyhow::Error {
-    let (actual_file_path, provided_line_number) = display::parse_file_location(file_path);
+    let (actual_file_path, provided_line_number, source_lines) =
+        display::read_source_lines(file_path);
 
-    let (source_lines, line_number, column_number) =
-        if let Ok(content) = std::fs::read_to_string(actual_file_path) {
-            let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-
-            // Always search for the actual CloudFormation tag location, ignoring provided line number
-            // because it's often inaccurate for CloudFormation tags
-            let mut found_line = 0;
-            let mut found_col = 1;
-
-            for (idx, line) in lines.iter().enumerate() {
-                let trimmed_line = line.trim_start();
-                if !trimmed_line.starts_with('#') {
-                    if let Some(tag_col) = line.find(&format!("!{}", tag_name)) {
-                        let tag_end = tag_col + tag_name.len() + 1;
-                        if tag_end < line.len() {
-                            let next_char = line.chars().nth(tag_end);
-                            if matches!(next_char, Some(' ') | Some('[') | Some('\t')) {
-                                found_line = idx + 1;
-                                let after_tag = &line[tag_end..];
-                                let value_start =
-                                    after_tag.chars().take_while(|c| c.is_whitespace()).count();
-                                found_col = tag_end + value_start + 1;
-                                break;
-                            }
-                        }
-                    }
+    let (line_number, column_number) = if let Some(ref lines) = source_lines {
+        // Always search for the actual CloudFormation tag location, ignoring provided line number
+        // because it's often inaccurate for CloudFormation tags
+        let tag_pattern = format!("!{}", tag_name);
+        let found = lines.iter().enumerate().find_map(|(idx, line)| {
+            if line.trim_start().starts_with('#') {
+                return None;
+            }
+            let tag_col = line.find(&tag_pattern)?;
+            let tag_end = tag_col + tag_pattern.len();
+            if tag_end < line.len() {
+                let next_char = line.chars().nth(tag_end);
+                if matches!(next_char, Some(' ') | Some('[') | Some('\t')) {
+                    let after_tag = &line[tag_end..];
+                    let value_start =
+                        after_tag.chars().take_while(|c| c.is_whitespace()).count();
+                    return Some((idx + 1, tag_end + value_start + 1));
                 }
             }
-
-            if found_line > 0 {
-                (Some(lines), found_line, found_col)
-            } else {
-                let fallback_line = provided_line_number.unwrap_or(1);
-                (Some(lines), fallback_line, 1)
-            }
-        } else {
-            (None, 1, 1)
-        };
+            None
+        });
+        found.unwrap_or((provided_line_number.unwrap_or(1), 1))
+    } else {
+        (1, 1)
+    };
 
     let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
     let error = EnhancedPreprocessingError::cloudformation_validation(tag_name, message, location);

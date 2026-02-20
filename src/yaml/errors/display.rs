@@ -17,6 +17,18 @@ pub(crate) fn parse_file_location(file_path: &str) -> (&str, Option<usize>) {
     (file_path, None)
 }
 
+/// Parse a file path, read the file, and return source lines.
+///
+/// Combines `parse_file_location` with `fs::read_to_string` -- the common preamble
+/// in most wrapper functions.
+pub(crate) fn read_source_lines(file_path: &str) -> (&str, Option<usize>, Option<Vec<String>>) {
+    let (actual_file, line_num) = parse_file_location(file_path);
+    let lines = std::fs::read_to_string(actual_file)
+        .ok()
+        .map(|content| content.lines().map(|s| s.to_string()).collect());
+    (actual_file, line_num, lines)
+}
+
 /// Parse a file path with optional line and column: "file.yaml:42:10" -> ("file.yaml", Some(42), Some(10)).
 pub(crate) fn parse_file_location_full(file_path: &str) -> (&str, Option<usize>, Option<usize>) {
     if let Some(colon_pos) = file_path.find(':') {
@@ -220,6 +232,72 @@ pub(crate) fn search_field_on_subsequent_lines<S: AsRef<str>>(
         }
     }
     None
+}
+
+/// Find the 1-based column of a variable reference in a line.
+///
+/// Searches for `{{variable}}`, `!$ variable`, and `!$variable` patterns.
+/// Returns 0 when not found.
+pub(crate) fn find_variable_column(line: &str, variable: &str) -> usize {
+    if let Some(col) = line.find(&format!("!$ {}", variable)) {
+        col + 4
+    } else if let Some(col) = line.find(&format!("!${}", variable)) {
+        col + 3
+    } else if let Some(col) = line.find(&format!("{{{{{}}}}}", variable)) {
+        col + 2
+    } else {
+        0
+    }
+}
+
+/// Tag patterns for searching source lines when no line number is provided.
+/// Each entry: (tag_name, optional (context_keyword, field_keyword) for sub-field search).
+const TAG_SEARCH_PATTERNS: &[(&str, Option<(&str, &str)>)] = &[
+    ("!$split", None),
+    ("!$join", None),
+    ("!$groupBy", Some(("items field", "items:"))),
+    ("!$mapListToHash", Some(("items field", "items:"))),
+    ("!$fromPairs", Some(("source field", "source:"))),
+    ("!$map", None),
+    ("!$merge", None),
+];
+
+/// Search source lines for a tag mentioned in `context_description`, handling
+/// optional sub-field searches on subsequent lines.
+///
+/// Returns `(1-based line, 1-based column)` or `(0, 0)` if not found.
+pub(crate) fn search_for_tag_line<S: AsRef<str>>(
+    lines: &[S],
+    context_description: &str,
+) -> (usize, usize) {
+    lines
+        .iter()
+        .enumerate()
+        .find_map(|(idx, line)| {
+            let line_str = line.as_ref();
+            if line_str.trim_start().starts_with('#') {
+                return None;
+            }
+            for &(tag, field_search) in TAG_SEARCH_PATTERNS {
+                if context_description.contains(tag) && line_str.contains(tag) {
+                    if let Some((field_ctx, field_kw)) = field_search {
+                        if context_description.contains(field_ctx) {
+                            if let Some(result) = search_field_on_subsequent_lines(
+                                lines,
+                                idx,
+                                field_kw,
+                                context_description,
+                            ) {
+                                return Some(result);
+                            }
+                        }
+                    }
+                    return Some((idx + 1, find_tag_column(line_str, context_description)));
+                }
+            }
+            None
+        })
+        .unwrap_or((0, 0))
 }
 
 // -- private helpers --
