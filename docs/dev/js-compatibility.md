@@ -2,7 +2,6 @@
 
 This document lists behavioral differences between the Rust implementation
 and the original iidy-js. Many differences are intentional improvements.
-Others are features not yet ported.
 
 ## Resolved differences
 
@@ -32,34 +31,29 @@ These were identified during development and fixed to match JS behavior:
   `$globalRefs`, `Overrides`). Rust now implements this in
   `src/yaml/custom_resources/`.
 
+- **`!$string` alias**: JS supports `!$string` as an alias for
+  `!$toYamlString`. Rust now registers it as a deprecated alias.
+
+- **`!$expand`**: JS supports `!$expand` for inline template expansion
+  (`{template, params}` lookup and `$params` validation without
+  CFN-specific name-prefixing or ref rewriting). Now implemented in Rust.
+
 ## Not yet implemented
 
-### `!$string` alias
+### `param` subcommands
 
-- **JS**: `!$string` is an alias for `!$toYamlString`.
-- **Rust**: Not registered. Using `!$string` produces a parse error.
-- **Status**: Simple fix (register alias in parser).
+- **JS**: 5 subcommands for AWS SSM Parameter Store (`set`, `review`,
+  `get`, `get-by-path`, `get-history`) with KMS alias resolution,
+  approval workflow (`.pending` suffix), tag management, and multiple
+  output formats (`simple`, `json`, `yaml`).
+- **Rust**: CLI definitions and arg structs exist in `src/cli.rs`. Handlers
+  are stubs (`println!` only). No `src/params/` module yet.
+- **Status**: See `notes/2026-02-19-param-commands-handoff.md` for full
+  implementation plan.
 
-### `!$expand`
+## Intentionally removed
 
-- **JS**: `!$expand` is a preprocessing tag that takes `{template, params}`,
-  looks up a named template from the environment, validates parameters
-  against the template's `$params`, and expands inline. Unlike custom
-  resource types, it does not perform name-prefixing or ref rewriting --
-  it is a simple "inline this template with these parameters" operation.
-- **Rust**: Not implemented.
-- **Status**: The underlying machinery (`$params` validation, template
-  lookup) exists in the custom resource template system. Implementing
-  `!$expand` would reuse that but skip the CFN-specific transforms.
-
-### `$envValues` custom values
-
-- **JS**: Users can define custom `$envValues` entries.
-- **Rust**: Runtime values (`iidy.command`, `iidy.environment`,
-  `iidy.region`, `iidy.profile`) are injected and accessible, but
-  user-defined custom values are not supported.
-- **Status**: The core runtime injection works. Custom user-defined values
-  are not yet implemented.
+- **`list-stack-instances`**: Supported in JS but removed from this version.
 
 ## Intentional improvements over iidy-js
 

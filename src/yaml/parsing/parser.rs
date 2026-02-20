@@ -1230,12 +1230,9 @@ impl YamlParser {
                     source: Box::new(self.unwrap_single_sequence(content)),
                 }))
             }
-            "!$toYamlString" => {
-                // ToYamlString tag: !$toYamlString <data>
-                Ok(PreprocessingTag::ToYamlString(ToYamlStringTag {
-                    data: Box::new(self.unwrap_single_sequence(content)),
-                }))
-            }
+            "!$toYamlString" | "!$string" => Ok(PreprocessingTag::ToYamlString(ToYamlStringTag {
+                data: Box::new(self.unwrap_single_sequence(content)),
+            })),
             "!$parseYaml" => {
                 // ParseYaml tag: !$parseYaml <yaml_string>
                 Ok(PreprocessingTag::ParseYaml(ParseYamlTag {

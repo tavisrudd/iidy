@@ -21,7 +21,7 @@ use crate::{
 /// output system and returns appropriate exit codes.
 ///
 /// # Usage
-/// ```rust
+/// ```text
 /// let task = tokio::spawn(async { /* AWS API call */ });
 /// await_and_render!(task, output_manager);
 /// ```
@@ -64,7 +64,7 @@ macro_rules! await_and_render {
 /// 5. Converting and rendering any errors
 ///
 /// # Usage
-/// ```rust
+/// ```text
 /// pub async fn my_command(cli: &Cli, args: &MyArgs) -> Result<i32> {
 ///     crate::run_command_handler!(my_command_impl, cli, args)
 /// }
@@ -123,7 +123,7 @@ macro_rules! run_command_handler {
 /// 6. Converting and rendering any errors
 ///
 /// # Usage
-/// ```rust
+/// ```text
 /// pub async fn create_stack(cli: &Cli, args: &CreateStackArgs) -> Result<i32> {
 ///     crate::run_command_handler_with_stack_args!(create_stack_impl, cli, args, args.argsfile)
 /// }
@@ -522,7 +522,7 @@ pub const DELETE_SUCCESS_STATES: &[&str] = &["DELETE_COMPLETE"];
 /// * `false` if no status is available or the status doesn't match success states
 ///
 /// # Example
-/// ```rust
+/// ```text
 /// let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
 /// ```
 pub fn determine_operation_success(
@@ -550,7 +550,7 @@ pub fn determine_operation_success(
 /// * `Err` if no stack name is available after override and validation
 ///
 /// # Example
-/// ```rust
+/// ```text
 /// let final_stack_args = apply_stack_name_override_and_validate(stack_args, args.base.stack_name.as_ref())?;
 /// ```
 // TODO factor out

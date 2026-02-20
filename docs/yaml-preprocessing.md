@@ -625,7 +625,7 @@ rules: !$map
 
 ### `!$toYamlString`
 
-Serializes a value to a YAML string.
+Serializes a value to a YAML string. `!$string` is a deprecated alias for this tag.
 
 ```yaml
 config_text: !$toYamlString
