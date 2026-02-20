@@ -97,12 +97,12 @@ async fn create_stack_impl(
     let elapsed_seconds = context.elapsed_seconds().await?;
     let success = determine_operation_success(&final_status, CREATE_SUCCESS_STATES);
 
-    if let Some(ref status) = final_status {
-        if status == "DELETE_COMPLETE" {
-            let final_command_summary = create_final_command_summary(false, elapsed_seconds);
-            output_manager.render(final_command_summary).await?;
-            return Ok(1);
-        }
+    if let Some(ref status) = final_status
+        && status == "DELETE_COMPLETE"
+    {
+        let final_command_summary = create_final_command_summary(false, elapsed_seconds);
+        output_manager.render(final_command_summary).await?;
+        return Ok(1);
     }
 
     let stack_contents = collect_stack_contents(context, &stack_id).await?;

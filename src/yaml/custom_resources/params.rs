@@ -103,14 +103,14 @@ pub fn validate_params(
             ));
         };
 
-        if let Some(ref allowed) = def.allowed_values {
-            if !allowed.contains(value) {
-                return Err(anyhow!(
-                    "Parameter validation error for '{}' in {}: value not in AllowedValues",
-                    def.name,
-                    resource_name
-                ));
-            }
+        if let Some(ref allowed) = def.allowed_values
+            && !allowed.contains(value)
+        {
+            return Err(anyhow!(
+                "Parameter validation error for '{}' in {}: value not in AllowedValues",
+                def.name,
+                resource_name
+            ));
         }
 
         if let Some(ref pattern) = def.allowed_pattern {

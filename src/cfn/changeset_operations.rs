@@ -34,14 +34,13 @@ pub async fn check_stack_state(context: &CfnContext, stack_name: &str) -> Result
 
     match describe_request.send().await {
         Ok(response) => {
-            if let Some(stack) = response.stacks().first() {
-                if let Some(status) = stack.stack_status() {
-                    if status.as_str() == "REVIEW_IN_PROGRESS" {
-                        // Check for existing changesets
-                        let changeset_name = check_existing_changesets(context, stack_name).await?;
-                        return Ok(StackState::ReviewInProgress(changeset_name));
-                    }
-                }
+            if let Some(stack) = response.stacks().first()
+                && let Some(status) = stack.stack_status()
+                && status.as_str() == "REVIEW_IN_PROGRESS"
+            {
+                // Check for existing changesets
+                let changeset_name = check_existing_changesets(context, stack_name).await?;
+                return Ok(StackState::ReviewInProgress(changeset_name));
             }
             Ok(StackState::Exists)
         }
@@ -67,10 +66,10 @@ async fn check_existing_changesets(context: &CfnContext, stack_name: &str) -> Re
 
     match list_request.send().await {
         Ok(response) => {
-            if let Some(changeset) = response.summaries().first() {
-                if let Some(name) = changeset.change_set_name() {
-                    return Ok(name.to_string());
-                }
+            if let Some(changeset) = response.summaries().first()
+                && let Some(name) = changeset.change_set_name()
+            {
+                return Ok(name.to_string());
             }
             Ok("unknown-changeset".to_string())
         }

@@ -378,49 +378,47 @@ impl InteractiveRenderer {
     }
 
     fn start_live_events_timing(&mut self, start_time: DateTime<Utc>) {
-        if let Some(spinner) = &self.current_spinner {
-            if let Some(spinner_ref) = spinner.get_spinner_ref() {
-                // Create shared state for timing info (start_time, last_live_event_time)
-                // Start with None for last_live_event_time since we haven't seen any live events yet
-                let timing_state = Arc::new(Mutex::new((start_time, None)));
-                let timing_ref = Arc::clone(&timing_state);
+        if let Some(spinner) = &self.current_spinner
+            && let Some(spinner_ref) = spinner.get_spinner_ref()
+        {
+            // Create shared state for timing info (start_time, last_live_event_time)
+            // Start with None for last_live_event_time since we haven't seen any live events yet
+            let timing_state = Arc::new(Mutex::new((start_time, None)));
+            let timing_ref = Arc::clone(&timing_state);
 
-                let muted_color = self.theme.muted;
+            let muted_color = self.theme.muted;
 
-                // Spawn background task that updates spinner every second
-                let task = tokio::spawn(async move {
-                    let mut interval = tokio::time::interval(Duration::from_secs(
-                        LIVE_EVENTS_UPDATE_INTERVAL_SECS,
-                    ));
+            // Spawn background task that updates spinner every second
+            let task = tokio::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(Duration::from_secs(LIVE_EVENTS_UPDATE_INTERVAL_SECS));
 
-                    loop {
-                        interval.tick().await;
+                loop {
+                    interval.tick().await;
 
-                        let timing_guard = timing_ref.lock().unwrap();
-                        let (start, last_live_event): (DateTime<Utc>, Option<DateTime<Utc>>) =
-                            *timing_guard;
-                        drop(timing_guard);
+                    let timing_guard = timing_ref.lock().unwrap();
+                    let (start, last_live_event): (DateTime<Utc>, Option<DateTime<Utc>>) =
+                        *timing_guard;
+                    drop(timing_guard);
 
-                        let now = Utc::now();
-                        let total_elapsed = (now - start).num_seconds();
-                        let timing_text =
-                            Self::format_timing_text(total_elapsed, last_live_event, now);
-                        let styled_text = timing_text.color(muted_color).to_string();
-                        spinner_ref.set_message(styled_text);
-                    }
-                });
+                    let now = Utc::now();
+                    let total_elapsed = (now - start).num_seconds();
+                    let timing_text = Self::format_timing_text(total_elapsed, last_live_event, now);
+                    let styled_text = timing_text.color(muted_color).to_string();
+                    spinner_ref.set_message(styled_text);
+                }
+            });
 
-                self.timing_task_handle = Some(task);
-                self.timing_state = Some(timing_state);
-            }
+            self.timing_task_handle = Some(task);
+            self.timing_state = Some(timing_state);
         }
     }
 
     fn update_last_event_time(&mut self, event_time: DateTime<Utc>) {
-        if let Some(timing_state) = &self.timing_state {
-            if let Ok(mut state) = timing_state.lock() {
-                state.1 = Some(event_time); // Update last_live_event_time
-            }
+        if let Some(timing_state) = &self.timing_state
+            && let Ok(mut state) = timing_state.lock()
+        {
+            state.1 = Some(event_time); // Update last_live_event_time
         }
     }
 
@@ -1094,20 +1092,21 @@ impl InteractiveRenderer {
         );
 
         // Show resource status reason on new line for failed events
-        if let Some(reason) = &event.resource_status_reason {
-            if !reason.is_empty() && event.resource_status.contains("FAILED") {
-                // TODO: review: Remove ".*Initiated" from reason like iidy-js does
-                let cleaned_reason = reason.replace("Initiated", "").trim().to_string();
-                if !cleaned_reason.is_empty() {
-                    let indent = "  ";
+        if let Some(reason) = &event.resource_status_reason
+            && !reason.is_empty()
+            && event.resource_status.contains("FAILED")
+        {
+            // TODO: review: Remove ".*Initiated" from reason like iidy-js does
+            let cleaned_reason = reason.replace("Initiated", "").trim().to_string();
+            if !cleaned_reason.is_empty() {
+                let indent = "  ";
 
-                    // Wrap long messages at terminal width
-                    let max_width = self.terminal_width.saturating_sub(2); // Account for indent
-                    let wrapped_lines = textwrap::wrap(&cleaned_reason, max_width);
+                // Wrap long messages at terminal width
+                let max_width = self.terminal_width.saturating_sub(2); // Account for indent
+                let wrapped_lines = textwrap::wrap(&cleaned_reason, max_width);
 
-                    for line in wrapped_lines {
-                        println!("{}{}", indent, line.to_string().color(self.theme.error));
-                    }
+                for line in wrapped_lines {
+                    println!("{}{}", indent, line.to_string().color(self.theme.error));
                 }
             }
         }
@@ -1134,13 +1133,10 @@ impl InteractiveRenderer {
             &data.region.color(self.theme.primary).to_string(),
         )?;
 
-        if let Some(profile) = &data.profile {
-            if !profile.is_empty() {
-                self.print_section_entry(
-                    "Profile:",
-                    &profile.color(self.theme.primary).to_string(),
-                )?;
-            }
+        if let Some(profile) = &data.profile
+            && !profile.is_empty()
+        {
+            self.print_section_entry("Profile:", &profile.color(self.theme.primary).to_string())?;
         }
 
         let service_role = data.iam_service_role.as_deref().unwrap_or("None");
@@ -1523,11 +1519,11 @@ impl InteractiveRenderer {
                     ),
                 )?;
 
-                if let Some(description) = &changeset.description {
-                    if !description.is_empty() {
-                        println!("  Description: {}", description.color(self.theme.muted));
-                        println!();
-                    }
+                if let Some(description) = &changeset.description
+                    && !description.is_empty()
+                {
+                    println!("  Description: {}", description.color(self.theme.muted));
+                    println!();
                 }
 
                 for change in &changeset.changes {
@@ -1735,15 +1731,13 @@ impl InteractiveRenderer {
                 tags_display
             );
 
-            if stack.stack_status.contains("FAILED")
+            if (stack.stack_status.contains("FAILED")
                 || stack.stack_status == "ROLLBACK_COMPLETE"
-                || stack.stack_status == "UPDATE_ROLLBACK_COMPLETE"
+                || stack.stack_status == "UPDATE_ROLLBACK_COMPLETE")
+                && let Some(reason) = &stack.status_reason
+                && !reason.is_empty()
             {
-                if let Some(reason) = &stack.status_reason {
-                    if !reason.is_empty() {
-                        println!("  {}", reason.color(self.theme.muted));
-                    }
-                }
+                println!("  {}", reason.color(self.theme.muted));
             }
         }
 
@@ -1933,10 +1927,10 @@ impl InteractiveRenderer {
                 self.start_live_events_timing(start_time);
 
                 // Update last event time with the most recent event from this batch
-                if let Some(latest_event) = events.last() {
-                    if let Some(event_time) = latest_event.event.timestamp {
-                        self.update_last_event_time(event_time);
-                    }
+                if let Some(latest_event) = events.last()
+                    && let Some(event_time) = latest_event.event.timestamp
+                {
+                    self.update_last_event_time(event_time);
                 }
             }
         }

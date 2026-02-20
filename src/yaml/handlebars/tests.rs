@@ -329,9 +329,9 @@ fn test_dynamic_key_access() {
 
     // This might fail if lookup helper is not available, which is expected
     // We should implement a lookup helper
-    if result.is_err() {
+    if let Err(e) = result {
         // Expected for now, we'll implement lookup helper
-        println!("lookup helper not yet implemented: {}", result.unwrap_err());
+        println!("lookup helper not yet implemented: {e}");
         return;
     }
 

@@ -50,21 +50,21 @@ pub fn lookup_helper(
             // If key not found, output nothing (handlebars convention)
         }
         Value::Array(arr) => {
-            if let Ok(index) = key_str.parse::<usize>() {
-                if let Some(value) = arr.get(index) {
-                    let value_str = match value {
-                        Value::String(s) => s.clone(),
-                        Value::Number(n) => n.to_string(),
-                        Value::Bool(b) => b.to_string(),
-                        Value::Null => "".to_string(),
-                        _ => serde_json::to_string(value).map_err(|e| {
-                            handlebars::RenderError::new(format!(
-                                "Failed to serialize lookup result: {e}"
-                            ))
-                        })?,
-                    };
-                    out.write(&value_str)?;
-                }
+            if let Ok(index) = key_str.parse::<usize>()
+                && let Some(value) = arr.get(index)
+            {
+                let value_str = match value {
+                    Value::String(s) => s.clone(),
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => "".to_string(),
+                    _ => serde_json::to_string(value).map_err(|e| {
+                        handlebars::RenderError::new(format!(
+                            "Failed to serialize lookup result: {e}"
+                        ))
+                    })?,
+                };
+                out.write(&value_str)?;
             }
         }
         _ => {

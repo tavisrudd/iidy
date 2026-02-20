@@ -105,31 +105,29 @@ impl FixtureLoader {
         data.push(OutputData::CommandMetadata(command_metadata));
 
         // Create stack definition from AWS response
-        if let Some(stacks_response) = &fixture.aws_responses.describe_stacks {
-            if let Some(stacks) = stacks_response.get("stacks") {
-                if let Some(stack_array) = stacks.as_sequence() {
-                    if let Some(stack) = stack_array.first() {
-                        let stack_def = self.aws_stack_to_stack_definition(stack)?;
-                        data.push(OutputData::StackDefinition(stack_def, true));
-                    }
-                }
-            }
+        if let Some(stacks_response) = &fixture.aws_responses.describe_stacks
+            && let Some(stacks) = stacks_response.get("stacks")
+            && let Some(stack_array) = stacks.as_sequence()
+            && let Some(stack) = stack_array.first()
+        {
+            let stack_def = self.aws_stack_to_stack_definition(stack)?;
+            data.push(OutputData::StackDefinition(stack_def, true));
         }
 
         // Create stack events from AWS response
-        if let Some(events_response) = &fixture.aws_responses.describe_stack_events {
-            if let Some(events) = events_response.get("stack_events") {
-                let stack_events = self.aws_events_to_stack_events_display(events)?;
-                data.push(OutputData::StackEvents(stack_events));
-            }
+        if let Some(events_response) = &fixture.aws_responses.describe_stack_events
+            && let Some(events) = events_response.get("stack_events")
+        {
+            let stack_events = self.aws_events_to_stack_events_display(events)?;
+            data.push(OutputData::StackEvents(stack_events));
         }
 
         // Create stack contents from AWS responses
-        if let Some(resources_response) = &fixture.aws_responses.describe_stack_resources {
-            if let Some(resources) = resources_response.get("stack_resources") {
-                let stack_contents = self.aws_resources_to_stack_contents(resources)?;
-                data.push(OutputData::StackContents(stack_contents));
-            }
+        if let Some(resources_response) = &fixture.aws_responses.describe_stack_resources
+            && let Some(resources) = resources_response.get("stack_resources")
+        {
+            let stack_contents = self.aws_resources_to_stack_contents(resources)?;
+            data.push(OutputData::StackContents(stack_contents));
         }
 
         // Add command result

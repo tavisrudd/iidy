@@ -186,12 +186,12 @@ pub fn find_tag_in_node<'a>(node: &Node<'a>, tag_name: &str, source: &str) -> Op
     }
 
     // For tagged nodes, check the tag field
-    if node.kind() == "tagged_node" {
-        if let Some(tag_node) = node.child_by_field_name("tag") {
-            let tag_text = &source[tag_node.byte_range()];
-            if tag_text.trim() == tag_name {
-                return Some(tag_node);
-            }
+    if node.kind() == "tagged_node"
+        && let Some(tag_node) = node.child_by_field_name("tag")
+    {
+        let tag_text = &source[tag_node.byte_range()];
+        if tag_text.trim() == tag_name {
+            return Some(tag_node);
         }
     }
 
@@ -267,10 +267,10 @@ pub fn find_tag_position_with_tree_sitter(
             // For subsequent segments, we need to navigate from current position
             // First get to the mapping if we're at a mapping pair
             let mut search_node = target_node;
-            if target_node.kind() == "block_mapping_pair" {
-                if let Some(value_node) = target_node.child_by_field_name("value") {
-                    search_node = value_node;
-                }
+            if target_node.kind() == "block_mapping_pair"
+                && let Some(value_node) = target_node.child_by_field_name("value")
+            {
+                search_node = value_node;
             }
 
             // If search_node is a block_node, navigate to its mapping
@@ -295,10 +295,10 @@ pub fn find_tag_position_with_tree_sitter(
             .find(|(seg_idx, _)| *seg_idx == path_idx)
         {
             // We need to navigate into the value of this mapping pair to get to the sequence
-            if target_node.kind() == "block_mapping_pair" {
-                if let Some(value_node) = target_node.child_by_field_name("value") {
-                    target_node = value_node;
-                }
+            if target_node.kind() == "block_mapping_pair"
+                && let Some(value_node) = target_node.child_by_field_name("value")
+            {
+                target_node = value_node;
             }
 
             // If target_node is a block_node containing a block_sequence, navigate into it

@@ -375,30 +375,29 @@ impl Resolver {
     /// Handles both dot notation (config.database.host) and simple bracket notation (config[environment])
     fn resolve_dot_notation_path(&self, path: &str, context: &TagContext) -> Option<Value> {
         // Handle simple bracket notation like config[environment]
-        if let Some(bracket_start) = path.find('[') {
-            if let Some(bracket_end) = path.find(']') {
-                if bracket_start < bracket_end {
-                    let root_var = &path[..bracket_start];
-                    let bracket_content = &path[bracket_start + 1..bracket_end];
+        if let Some(bracket_start) = path.find('[')
+            && let Some(bracket_end) = path.find(']')
+            && bracket_start < bracket_end
+        {
+            let root_var = &path[..bracket_start];
+            let bracket_content = &path[bracket_start + 1..bracket_end];
 
-                    // Get the root variable
-                    let root_value = context.get_variable(root_var)?;
+            // Get the root variable
+            let root_value = context.get_variable(root_var)?;
 
-                    // Get the bracket variable value to use as key
-                    let key_value = context.get_variable(bracket_content)?;
+            // Get the bracket variable value to use as key
+            let key_value = context.get_variable(bracket_content)?;
 
-                    // Use the key value to look up in the root mapping
-                    if let Value::Mapping(map) = root_value {
-                        // Convert the key value to the appropriate map key
-                        let map_key = match key_value {
-                            Value::String(s) => Value::String(s.clone()),
-                            other => other.clone(),
-                        };
-                        return map.get(&map_key).cloned();
-                    }
-                    return None;
-                }
+            // Use the key value to look up in the root mapping
+            if let Value::Mapping(map) = root_value {
+                // Convert the key value to the appropriate map key
+                let map_key = match key_value {
+                    Value::String(s) => Value::String(s.clone()),
+                    other => other.clone(),
+                };
+                return map.get(&map_key).cloned();
             }
+            return None;
         }
 
         // Handle normal dot notation
@@ -732,16 +731,16 @@ impl Resolver {
                 .and_then(|m| m.get(Value::String("Type".into())))
                 .and_then(|v| v.as_str());
 
-            if let Some(type_name) = resource_type {
-                if let Some(template_info) = context.custom_template_defs.get(type_name) {
-                    let key_str = key_value.as_str().unwrap_or(&path_segment);
-                    let expanded =
-                        expand_custom_resource(key_str, &resolved_value, template_info, context)?;
-                    for (res_name, res_value) in expanded {
-                        result.insert(Value::String(res_name), res_value);
-                    }
-                    continue;
+            if let Some(type_name) = resource_type
+                && let Some(template_info) = context.custom_template_defs.get(type_name)
+            {
+                let key_str = key_value.as_str().unwrap_or(&path_segment);
+                let expanded =
+                    expand_custom_resource(key_str, &resolved_value, template_info, context)?;
+                for (res_name, res_value) in expanded {
+                    result.insert(Value::String(res_name), res_value);
                 }
+                continue;
             }
 
             result.insert(key_value, resolved_value);
@@ -829,33 +828,33 @@ impl TagResolver for Resolver {
                 let key_value = self.resolve_ast(key_ast, context, path_tracker)?;
 
                 // Check for YAML 1.1 merge keys which are not supported in YAML 1.2
-                if let Value::String(key_str) = &key_value {
-                    if key_str == "<<" {
-                        let location_info = if let Some(input_uri) = &context.input_uri {
-                            format!("in file '{input_uri}'")
-                        } else {
-                            context
-                                .input_uri
-                                .as_deref()
-                                .map(|loc| format!("in '{loc}'"))
-                                .unwrap_or_else(|| "in unknown location".to_string())
-                        };
-                        let yaml_path = format!("/{}", path_tracker.segments().join("/"));
-                        let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
-                            format!(" at path '{yaml_path}'")
-                        } else {
-                            String::new()
-                        };
-                        return Err(anyhow!(
-                            "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
-                            Consider using iidy's !$merge tag instead:\n\
-                              combined_config: !$merge\n\
-                                - *base_config\n\
-                                - additional_key: additional_value",
-                            location_info,
-                            path_info
-                        ));
-                    }
+                if let Value::String(key_str) = &key_value
+                    && key_str == "<<"
+                {
+                    let location_info = if let Some(input_uri) = &context.input_uri {
+                        format!("in file '{input_uri}'")
+                    } else {
+                        context
+                            .input_uri
+                            .as_deref()
+                            .map(|loc| format!("in '{loc}'"))
+                            .unwrap_or_else(|| "in unknown location".to_string())
+                    };
+                    let yaml_path = format!("/{}", path_tracker.segments().join("/"));
+                    let path_info = if !yaml_path.is_empty() && yaml_path != "/" {
+                        format!(" at path '{yaml_path}'")
+                    } else {
+                        String::new()
+                    };
+                    return Err(anyhow!(
+                        "YAML merge keys ('<<') are not supported in YAML 1.2 {}{}\n\
+                        Consider using iidy's !$merge tag instead:\n\
+                          combined_config: !$merge\n\
+                            - *base_config\n\
+                            - additional_key: additional_value",
+                        location_info,
+                        path_info
+                    ));
                 }
 
                 // Handle special preprocessing keys (only for string keys)
@@ -2423,10 +2422,10 @@ fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
 /// this is an error-only path reading a local file already loaded by the resolver.
 fn find_template_variable_location(file_path: &str, var_name: &str) -> String {
     let needle = format!("{{{{{var_name}}}}}");
-    if let Ok(content) = std::fs::read_to_string(file_path) {
-        if let Some(line_number) = content.lines().position(|line| line.contains(&needle)) {
-            return format!("{}:{}", file_path, line_number + 1);
-        }
+    if let Ok(content) = std::fs::read_to_string(file_path)
+        && let Some(line_number) = content.lines().position(|line| line.contains(&needle))
+    {
+        return format!("{}:{}", file_path, line_number + 1);
     }
     file_path.to_string()
 }

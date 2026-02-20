@@ -469,7 +469,7 @@ mod tests {
 
     #[test]
     fn param_output_sorted_map_json() {
-        let params = vec![
+        let params = [
             Parameter::builder().name("/z/param").value("z").build(),
             Parameter::builder().name("/a/param").value("a").build(),
             Parameter::builder().name("/m/param").value("m").build(),

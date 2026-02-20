@@ -420,13 +420,13 @@ impl EnhancedPreprocessingError {
             c.light_blue, variable_path, c.reset
         ));
 
-        if let Some(lines) = source_lines {
-            if location.line > 0 {
-                output.push('\n');
-                let ctx = display::format_source_context(lines, location.line, 0, 0, "", &c);
-                output.push_str(&ctx);
-                output.push('\n');
-            }
+        if let Some(lines) = source_lines
+            && location.line > 0
+        {
+            output.push('\n');
+            let ctx = display::format_source_context(lines, location.line, 0, 0, "", &c);
+            output.push_str(&ctx);
+            output.push('\n');
         }
 
         if !available_keys.is_empty() {
@@ -665,8 +665,8 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     for (i, row) in matrix.iter_mut().enumerate().take(m + 1) {
         row[0] = i;
     }
-    for j in 0..=n {
-        matrix[0][j] = j;
+    for (j, cell) in matrix[0].iter_mut().enumerate().take(n + 1) {
+        *cell = j;
     }
 
     for i in 1..=m {

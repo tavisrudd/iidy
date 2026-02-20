@@ -264,10 +264,10 @@ impl StackEventsService {
         }
 
         // Check if the resource status is terminal
-        if let Some(status) = event.resource_status() {
-            if is_terminal_resource_status(status) {
-                return Some(status.as_str().to_string());
-            }
+        if let Some(status) = event.resource_status()
+            && is_terminal_resource_status(status)
+        {
+            return Some(status.as_str().to_string());
         }
 
         None
@@ -303,14 +303,14 @@ impl StackEventsService {
         let mut final_status = None;
 
         for ev in filtered_events {
-            if let Some(id) = ev.event_id() {
-                if seen.insert(id.to_string()) {
-                    if let Some(status) = Self::check_terminal_event(&ev, stack_identifier) {
-                        done = true;
-                        final_status = Some(status);
-                    }
-                    new_events.push(ev);
+            if let Some(id) = ev.event_id()
+                && seen.insert(id.to_string())
+            {
+                if let Some(status) = Self::check_terminal_event(&ev, stack_identifier) {
+                    done = true;
+                    final_status = Some(status);
                 }
+                new_events.push(ev);
             }
         }
 
@@ -421,15 +421,15 @@ pub async fn watch_stack_operation_and_summarize(
     let success = determine_operation_success(&final_status, success_states);
 
     // Skip stack contents if the stack was deleted (can happen with failed operations)
-    if let Some(ref status) = final_status {
-        if status == "DELETE_COMPLETE" {
-            let final_command_summary = create_final_command_summary(
-                false, // Mark as failed since stack was deleted
-                elapsed_seconds,
-            );
-            output_manager.render(final_command_summary).await?;
-            return Ok(1); // Return exit code 1 for failure
-        }
+    if let Some(ref status) = final_status
+        && status == "DELETE_COMPLETE"
+    {
+        let final_command_summary = create_final_command_summary(
+            false, // Mark as failed since stack was deleted
+            elapsed_seconds,
+        );
+        output_manager.render(final_command_summary).await?;
+        return Ok(1); // Return exit code 1 for failure
     }
 
     let stack_contents = collect_stack_contents(context, stack_id).await?;

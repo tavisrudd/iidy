@@ -150,10 +150,10 @@ fn rewrite_resource_field(
     let key_str = key.as_str().unwrap_or("");
     match key_str {
         "Condition" => {
-            if let Value::String(name) = value {
-                if should_rewrite(name.trim(), global_refs) {
-                    return Value::String(format!("{}{}", prefix, name.trim()));
-                }
+            if let Value::String(name) = value
+                && should_rewrite(name.trim(), global_refs)
+            {
+                return Value::String(format!("{}{}", prefix, name.trim()));
             }
             value.clone()
         }

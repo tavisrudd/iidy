@@ -402,14 +402,14 @@ impl TagContext {
     /// Pop current scope back to parent (test helper)
     #[doc(hidden)]
     pub fn pop_scope(&mut self) {
-        if let Some(ref mut scope_context) = self.scope_context {
-            if scope_context.scope_stack.len() > 1 {
-                scope_context.scope_stack.pop();
-                if let Some(parent_scope_id) = scope_context.scope_stack.last() {
-                    if let Some(parent_scope) = scope_context.scopes.get(parent_scope_id) {
-                        scope_context.current_scope = parent_scope.clone();
-                    }
-                }
+        if let Some(ref mut scope_context) = self.scope_context
+            && scope_context.scope_stack.len() > 1
+        {
+            scope_context.scope_stack.pop();
+            if let Some(parent_scope_id) = scope_context.scope_stack.last()
+                && let Some(parent_scope) = scope_context.scopes.get(parent_scope_id)
+            {
+                scope_context.current_scope = parent_scope.clone();
             }
         }
     }

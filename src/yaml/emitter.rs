@@ -489,10 +489,10 @@ impl<'a> IidyYamlEmitter<'a> {
     /// e.g., { "!Ref": "MyResource" } or { "!CustomTag": {...} }
     fn is_tagged_value_mapping(&self, h: &Hash) -> bool {
         // Tagged values should be single-key hashes with keys starting with !
-        if h.len() == 1 {
-            if let Some((Yaml::String(key_str), _)) = h.iter().next() {
-                return key_str.starts_with('!');
-            }
+        if h.len() == 1
+            && let Some((Yaml::String(key_str), _)) = h.iter().next()
+        {
+            return key_str.starts_with('!');
         }
         false
     }

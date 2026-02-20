@@ -122,12 +122,12 @@ fn deep_merge(target: &mut Value, source: &Value) {
 /// Extract Properties mapping from a resource value into a HashMap.
 fn extract_properties(resource_map: &Mapping) -> HashMap<String, Value> {
     let mut result = HashMap::new();
-    if let Some(props) = resource_map.get(Value::String("Properties".into())) {
-        if let Some(props_map) = props.as_mapping() {
-            for (k, v) in props_map {
-                if let Some(key_str) = k.as_str() {
-                    result.insert(key_str.to_string(), v.clone());
-                }
+    if let Some(props) = resource_map.get(Value::String("Properties".into()))
+        && let Some(props_map) = props.as_mapping()
+    {
+        for (k, v) in props_map {
+            if let Some(key_str) = k.as_str() {
+                result.insert(key_str.to_string(), v.clone());
             }
         }
     }
@@ -152,14 +152,14 @@ fn collect_global_refs(
     // Scan sections for entries with $global: true
     let sections_to_scan = ["Parameters", "Resources", "Mappings", "Conditions"];
     for section_name in &sections_to_scan {
-        if let Some(section) = resolved_map.get(Value::String((*section_name).to_string())) {
-            if let Some(section_map) = section.as_mapping() {
-                for (key, value) in section_map {
-                    if has_global_flag(value) {
-                        if let Some(key_str) = key.as_str() {
-                            global_refs.insert(key_str.to_string());
-                        }
-                    }
+        if let Some(section) = resolved_map.get(Value::String((*section_name).to_string()))
+            && let Some(section_map) = section.as_mapping()
+        {
+            for (key, value) in section_map {
+                if has_global_flag(value)
+                    && let Some(key_str) = key.as_str()
+                {
+                    global_refs.insert(key_str.to_string());
                 }
             }
         }

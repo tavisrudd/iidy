@@ -117,12 +117,12 @@ async fn watch_stack_impl(
 
     // Final step: Show stack contents like iidy-js
     // Skip stack contents if the stack was deleted (DELETE_COMPLETE)
-    if let Some(ref status) = final_status {
-        if status == "DELETE_COMPLETE" {
-            // Stack was deleted, skip stack contents collection as it will fail
-            // No need to show empty stack contents
-            return Ok(0); // Return success exit code
-        }
+    if let Some(ref status) = final_status
+        && status == "DELETE_COMPLETE"
+    {
+        // Stack was deleted, skip stack contents collection as it will fail
+        // No need to show empty stack contents
+        return Ok(0); // Return success exit code
     }
 
     // Normal case - show stack contents

@@ -241,10 +241,10 @@ fn get_profile_role_arn(profile_name: &str, env: &impl EnvVarProvider) -> Option
         .take_while(|line| !line.trim_start().starts_with('['));
 
     for line in in_section {
-        if let Some(stripped) = line.trim_start().strip_prefix("role_arn") {
-            if let Some(value) = stripped.trim_start().strip_prefix('=') {
-                return Some(value.trim().to_string());
-            }
+        if let Some(stripped) = line.trim_start().strip_prefix("role_arn")
+            && let Some(value) = stripped.trim_start().strip_prefix('=')
+        {
+            return Some(value.trim().to_string());
         }
     }
 

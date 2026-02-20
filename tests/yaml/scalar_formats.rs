@@ -82,27 +82,19 @@ Resources:
         }
 
         // Check CloudFormation tag with literal scalar
-        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(instance)) =
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string()))
+            && let Some(Value::Mapping(instance)) =
                 resources.get(Value::String("EC2Instance".to_string()))
-            {
-                if let Some(Value::Mapping(properties)) =
-                    instance.get(Value::String("Properties".to_string()))
-                {
-                    if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(Value::String("UserData".to_string()))
-                    {
-                        // Should be a tagged value preserving !Base64
-                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
-                        if let Value::String(processed_content) = &user_data_tagged.value {
-                            assert!(
-                                processed_content
-                                    .contains("Starting production instance in us-east-1")
-                            );
-                            assert!(processed_content.contains("#!/bin/bash"));
-                        }
-                    }
-                }
+            && let Some(Value::Mapping(properties)) =
+                instance.get(Value::String("Properties".to_string()))
+            && let Some(Value::Tagged(user_data_tagged)) =
+                properties.get(Value::String("UserData".to_string()))
+        {
+            // Should be a tagged value preserving !Base64
+            assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+            if let Value::String(processed_content) = &user_data_tagged.value {
+                assert!(processed_content.contains("Starting production instance in us-east-1"));
+                assert!(processed_content.contains("#!/bin/bash"));
             }
         }
     }
@@ -271,70 +263,60 @@ Resources:
 
     let result = preprocess_yaml_v11(yaml_input, "test.yaml").await?;
 
-    if let Value::Mapping(root) = &result {
-        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
-            // Check ConfigMap with nested YAML
-            if let Some(Value::Mapping(config_map)) =
-                resources.get(Value::String("ConfigMap".to_string()))
+    if let Value::Mapping(root) = &result
+        && let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string()))
+    {
+        // Check ConfigMap with nested YAML
+        if let Some(Value::Mapping(config_map)) =
+            resources.get(Value::String("ConfigMap".to_string()))
+            && let Some(Value::Mapping(data)) = config_map.get(Value::String("data".to_string()))
+        {
+            if let Some(Value::String(app_config)) =
+                data.get(Value::String("app-config.yaml".to_string()))
             {
-                if let Some(Value::Mapping(data)) =
-                    config_map.get(Value::String("data".to_string()))
-                {
-                    if let Some(Value::String(app_config)) =
-                        data.get(Value::String("app-config.yaml".to_string()))
-                    {
-                        // Check handlebars substitution in nested YAML
-                        assert!(app_config.contains("name: production-cluster"));
-                        assert!(app_config.contains("namespace: default"));
-                        assert!(app_config.contains("host: db.default.svc.cluster.local"));
-                        // Check that nested literal scalar is preserved
-                        assert!(app_config.contains("echo \"Starting application in default\""));
-                        assert!(
-                            app_config.contains("export DB_HOST=\"db.default.svc.cluster.local\"")
-                        );
-                    }
-
-                    if let Some(Value::String(db_config)) =
-                        data.get(Value::String("database-config.json".to_string()))
-                    {
-                        // Check JSON folded content
-                        assert!(db_config.contains("postgresql://user:pass@db.default.svc.cluster.local:5432/production-cluster"));
-                        assert!(db_config.contains("\"pool_size\": 10"));
-                    }
-                }
+                // Check handlebars substitution in nested YAML
+                assert!(app_config.contains("name: production-cluster"));
+                assert!(app_config.contains("namespace: default"));
+                assert!(app_config.contains("host: db.default.svc.cluster.local"));
+                // Check that nested literal scalar is preserved
+                assert!(app_config.contains("echo \"Starting application in default\""));
+                assert!(app_config.contains("export DB_HOST=\"db.default.svc.cluster.local\""));
             }
 
-            // Check LaunchTemplate with CloudFormation tag
-            if let Some(Value::Mapping(launch_template)) =
-                resources.get(Value::String("LaunchTemplate".to_string()))
+            if let Some(Value::String(db_config)) =
+                data.get(Value::String("database-config.json".to_string()))
             {
-                if let Some(Value::Mapping(properties)) =
-                    launch_template.get(Value::String("Properties".to_string()))
-                {
-                    if let Some(Value::Mapping(template_data)) =
-                        properties.get(Value::String("LaunchTemplateData".to_string()))
-                    {
-                        if let Some(Value::Tagged(user_data_tagged)) =
-                            template_data.get(Value::String("UserData".to_string()))
-                        {
-                            // Should preserve !Base64 tag
-                            assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
-                            if let Value::String(user_data) = &user_data_tagged.value {
-                                // Check handlebars substitution in UserData
-                                assert!(user_data.contains("CLUSTER_NAME=\"production-cluster\""));
-                                assert!(user_data.contains("NAMESPACE=\"default\""));
-                                // Check complex multi-line structure is preserved
-                                assert!(user_data.contains("cat << 'EOF' > /etc/app/config.yaml"));
-                                assert!(user_data.contains("docker run \\\n"));
-                                assert!(user_data.contains("--name app-container"));
-                            }
-                        }
-                    }
-                }
+                // Check JSON folded content
+                assert!(db_config.contains(
+                    "postgresql://user:pass@db.default.svc.cluster.local:5432/production-cluster"
+                ));
+                assert!(db_config.contains("\"pool_size\": 10"));
+            }
+        }
+
+        // Check LaunchTemplate with CloudFormation tag
+        if let Some(Value::Mapping(launch_template)) =
+            resources.get(Value::String("LaunchTemplate".to_string()))
+            && let Some(Value::Mapping(properties)) =
+                launch_template.get(Value::String("Properties".to_string()))
+            && let Some(Value::Mapping(template_data)) =
+                properties.get(Value::String("LaunchTemplateData".to_string()))
+            && let Some(Value::Tagged(user_data_tagged)) =
+                template_data.get(Value::String("UserData".to_string()))
+        {
+            // Should preserve !Base64 tag
+            assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+            if let Value::String(user_data) = &user_data_tagged.value {
+                // Check handlebars substitution in UserData
+                assert!(user_data.contains("CLUSTER_NAME=\"production-cluster\""));
+                assert!(user_data.contains("NAMESPACE=\"default\""));
+                // Check complex multi-line structure is preserved
+                assert!(user_data.contains("cat << 'EOF' > /etc/app/config.yaml"));
+                assert!(user_data.contains("docker run \\\n"));
+                assert!(user_data.contains("--name app-container"));
             }
         }
     }
-
     Ok(())
 }
 
@@ -423,41 +405,40 @@ Resources:
         }
 
         // Check CloudFormation structure preservation
-        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(my_resource)) =
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string()))
+            && let Some(Value::Mapping(my_resource)) =
                 resources.get(Value::String("MyResource".to_string()))
+        {
+            assert_eq!(
+                my_resource.get(Value::String("Type".to_string())),
+                Some(&Value::String("AWS::EC2::Instance".to_string()))
+            );
+
+            if let Some(Value::Mapping(properties)) =
+                my_resource.get(Value::String("Properties".to_string()))
             {
-                assert_eq!(
-                    my_resource.get(Value::String("Type".to_string())),
-                    Some(&Value::String("AWS::EC2::Instance".to_string()))
-                );
-
-                if let Some(Value::Mapping(properties)) =
-                    my_resource.get(Value::String("Properties".to_string()))
+                // UserData should be preserved as tagged value
+                if let Some(Value::Tagged(user_data_tagged)) =
+                    properties.get(Value::String("UserData".to_string()))
                 {
-                    // UserData should be preserved as tagged value
-                    if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(Value::String("UserData".to_string()))
-                    {
-                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
-                    }
+                    assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+                }
 
-                    // Tags should be preserved as sequence
-                    if let Some(Value::Sequence(tags)) =
-                        properties.get(Value::String("Tags".to_string()))
-                    {
-                        assert_eq!(tags.len(), 2);
+                // Tags should be preserved as sequence
+                if let Some(Value::Sequence(tags)) =
+                    properties.get(Value::String("Tags".to_string()))
+                {
+                    assert_eq!(tags.len(), 2);
 
-                        if let Value::Mapping(first_tag) = &tags[0] {
-                            assert_eq!(
-                                first_tag.get(Value::String("Key".to_string())),
-                                Some(&Value::String("Environment".to_string()))
-                            );
-                            assert_eq!(
-                                first_tag.get(Value::String("Value".to_string())),
-                                Some(&Value::String("staging".to_string()))
-                            );
-                        }
+                    if let Value::Mapping(first_tag) = &tags[0] {
+                        assert_eq!(
+                            first_tag.get(Value::String("Key".to_string())),
+                            Some(&Value::String("Environment".to_string()))
+                        );
+                        assert_eq!(
+                            first_tag.get(Value::String("Value".to_string())),
+                            Some(&Value::String("staging".to_string()))
+                        );
                     }
                 }
             }
@@ -549,30 +530,25 @@ Resources:
         }
 
         // Check CloudFormation function with whitespace handling
-        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
-            if let Some(Value::Mapping(my_function)) =
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string()))
+            && let Some(Value::Mapping(my_function)) =
                 resources.get(Value::String("MyFunction".to_string()))
-            {
-                if let Some(Value::Mapping(properties)) =
-                    my_function.get(Value::String("Properties".to_string()))
-                {
-                    if let Some(Value::Tagged(code_tagged)) =
-                        properties.get(Value::String("Code".to_string()))
-                    {
-                        // Should preserve !Sub tag
-                        assert_eq!(code_tagged.tag.to_string(), "!Sub");
+            && let Some(Value::Mapping(properties)) =
+                my_function.get(Value::String("Properties".to_string()))
+            && let Some(Value::Tagged(code_tagged)) =
+                properties.get(Value::String("Code".to_string()))
+        {
+            // Should preserve !Sub tag
+            assert_eq!(code_tagged.tag.to_string(), "!Sub");
 
-                        if let Value::String(code_content) = &code_tagged.value {
-                            // Should have processed handlebars but preserved CloudFormation substitutions
-                            assert!(code_content.contains("'environment': '\t${Environment}'"));
-                            assert!(code_content.contains("'timestamp': '\n${AWS::Region}'"));
-                            // Python indentation should be preserved
-                            assert!(code_content.contains("def lambda_handler(event, context):"));
-                            assert!(code_content.contains("    # Process with ${tab_char}"));
-                            assert!(code_content.contains("        'environment':"));
-                        }
-                    }
-                }
+            if let Value::String(code_content) = &code_tagged.value {
+                // Should have processed handlebars but preserved CloudFormation substitutions
+                assert!(code_content.contains("'environment': '\t${Environment}'"));
+                assert!(code_content.contains("'timestamp': '\n${AWS::Region}'"));
+                // Python indentation should be preserved
+                assert!(code_content.contains("def lambda_handler(event, context):"));
+                assert!(code_content.contains("    # Process with ${tab_char}"));
+                assert!(code_content.contains("        'environment':"));
             }
         }
     }
@@ -637,33 +613,23 @@ Outputs:
         assert!(root.contains_key(Value::String("Resources".to_string())));
         assert!(root.contains_key(Value::String("Outputs".to_string())));
 
-        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string())) {
-            // Check EC2 instance with UserData
-            if let Some(Value::Mapping(ec2_instance)) =
+        if let Some(Value::Mapping(resources)) = root.get(Value::String("Resources".to_string()))
+            && let Some(Value::Mapping(ec2_instance)) =
                 resources.get(Value::String("EC2Instance".to_string()))
-            {
-                if let Some(Value::Mapping(properties)) =
-                    ec2_instance.get(Value::String("Properties".to_string()))
-                {
-                    // UserData should be preserved as tagged value
-                    if let Some(Value::Tagged(user_data_tagged)) =
-                        properties.get(Value::String("UserData".to_string()))
-                    {
-                        assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
+            && let Some(Value::Mapping(properties)) =
+                ec2_instance.get(Value::String("Properties".to_string()))
+            && let Some(Value::Tagged(user_data_tagged)) =
+                properties.get(Value::String("UserData".to_string()))
+        {
+            assert_eq!(user_data_tagged.tag.to_string(), "!Base64");
 
-                        if let Value::String(user_data_content) = &user_data_tagged.value {
-                            // Check that multi-line shell script structure is preserved
-                            assert!(user_data_content.contains("#!/bin/bash"));
-                            assert!(user_data_content.contains("yum update -y"));
-                            // Check that HERE document is preserved
-                            assert!(
-                                user_data_content
-                                    .contains("cat << 'INNER_EOF' > /opt/aws/config.json")
-                            );
-                            assert!(user_data_content.contains("\"namespace\": \"CWAgent\""));
-                        }
-                    }
-                }
+            if let Value::String(user_data_content) = &user_data_tagged.value {
+                // Check that multi-line shell script structure is preserved
+                assert!(user_data_content.contains("#!/bin/bash"));
+                assert!(user_data_content.contains("yum update -y"));
+                // Check that HERE document is preserved
+                assert!(user_data_content.contains("cat << 'INNER_EOF' > /opt/aws/config.json"));
+                assert!(user_data_content.contains("\"namespace\": \"CWAgent\""));
             }
         }
     } else {

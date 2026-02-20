@@ -313,10 +313,9 @@ impl ManualLocationFinder {
 
                 if let Some(tag_pos) =
                     self.find_position_of_from_offset(source, tag_name, search_start)
+                    && tag_pos.offset < search_end
                 {
-                    if tag_pos.offset < search_end {
-                        return Some(tag_pos);
-                    }
+                    return Some(tag_pos);
                 }
                 break;
             }
@@ -352,10 +351,9 @@ impl ManualLocationFinder {
                 // Look for the tag after this key position
                 if let Some(tag_pos) =
                     self.find_position_of_from_offset(source, tag_name, search_start)
+                    && tag_pos.offset < search_end
                 {
-                    if tag_pos.offset < search_end {
-                        return Some(tag_pos);
-                    }
+                    return Some(tag_pos);
                 }
                 break;
             }

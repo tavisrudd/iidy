@@ -1,6 +1,6 @@
 # iidy Development Makefile
 
-.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint check-fast
+.PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint check-fast setup
 
 # Test markers directory
 TEST_MARKERS_DIR := .make-markers
@@ -28,7 +28,13 @@ help:
 	@echo "  fmt            - Run cargo fmt"
 	@echo "  clippy         - Run clippy lints"
 	@echo "  lint           - Run fmt check + clippy"
+	@echo "  setup          - Configure git hooks for development"
 	@echo "  help           - Show this help message"
+
+# Configure git to use tracked hooks
+setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured to use .githooks/"
 
 # Create markers directory if it doesn't exist
 $(TEST_MARKERS_DIR):

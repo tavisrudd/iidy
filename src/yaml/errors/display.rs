@@ -278,17 +278,16 @@ pub(crate) fn search_for_tag_line<S: AsRef<str>>(
             }
             for &(tag, field_search) in TAG_SEARCH_PATTERNS {
                 if context_description.contains(tag) && line_str.contains(tag) {
-                    if let Some((field_ctx, field_kw)) = field_search {
-                        if context_description.contains(field_ctx) {
-                            if let Some(result) = search_field_on_subsequent_lines(
-                                lines,
-                                idx,
-                                field_kw,
-                                context_description,
-                            ) {
-                                return Some(result);
-                            }
-                        }
+                    if let Some((field_ctx, field_kw)) = field_search
+                        && context_description.contains(field_ctx)
+                        && let Some(result) = search_field_on_subsequent_lines(
+                            lines,
+                            idx,
+                            field_kw,
+                            context_description,
+                        )
+                    {
+                        return Some(result);
                     }
                     return Some((idx + 1, find_tag_column(line_str, context_description)));
                 }

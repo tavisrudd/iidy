@@ -310,16 +310,16 @@ impl YamlParser {
             "stream" => {
                 // Process all document children
                 for i in 0..node.named_child_count() {
-                    if let Some(child) = node.named_child(i) {
-                        if child.kind() == "document" {
-                            self.build_ast_with_error_collection(
-                                child,
-                                src,
-                                uri,
-                                diagnostics,
-                                anchor_map,
-                            );
-                        }
+                    if let Some(child) = node.named_child(i)
+                        && child.kind() == "document"
+                    {
+                        self.build_ast_with_error_collection(
+                            child,
+                            src,
+                            uri,
+                            diagnostics,
+                            anchor_map,
+                        );
                     }
                 }
             }
@@ -479,10 +479,10 @@ impl YamlParser {
 
         // Recursively check children
         for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if let Some(error_node) = Self::find_error_node(child) {
-                    return Some(error_node);
-                }
+            if let Some(child) = node.child(i)
+                && let Some(error_node) = Self::find_error_node(child)
+            {
+                return Some(error_node);
             }
         }
 
@@ -521,19 +521,19 @@ impl YamlParser {
             "stream" => {
                 // Stream is the root node, process its document children
                 for i in 0..node.named_child_count() {
-                    if let Some(child) = node.named_child(i) {
-                        if child.kind() == "document" {
-                            match self.build_ast(child, src, uri, anchor_map) {
-                                Ok(result) => {
-                                    if !matches!(result, YamlAst::Null(_)) {
-                                        return Ok(result);
-                                    }
+                    if let Some(child) = node.named_child(i)
+                        && child.kind() == "document"
+                    {
+                        match self.build_ast(child, src, uri, anchor_map) {
+                            Ok(result) => {
+                                if !matches!(result, YamlAst::Null(_)) {
+                                    return Ok(result);
                                 }
-                                Err(e) => {
-                                    // Only continue for syntax errors, not validation errors
-                                    // Validation errors should propagate up
-                                    return Err(e);
-                                }
+                            }
+                            Err(e) => {
+                                // Only continue for syntax errors, not validation errors
+                                // Validation errors should propagate up
+                                return Err(e);
                             }
                         }
                         // Skip comment nodes and other non-document children
@@ -664,10 +664,10 @@ impl YamlParser {
                     };
 
                     // Detect YAML 1.1 merge keys
-                    if let YamlAst::PlainString(ref key_str, ref key_meta) = key {
-                        if key_str == "<<" {
-                            return Err(self.merge_key_error(key_meta));
-                        }
+                    if let YamlAst::PlainString(ref key_str, ref key_meta) = key
+                        && key_str == "<<"
+                    {
+                        return Err(self.merge_key_error(key_meta));
                     }
 
                     // Look for value node, skipping any comments
@@ -767,10 +767,9 @@ impl YamlParser {
                 && (text_bytes[0].is_ascii_digit()
                     || text_bytes[0] == b'-'
                     || text_bytes[0] == b'+')
+                && let Ok(num) = Number::from_str(&text)
             {
-                if let Ok(num) = Number::from_str(&text) {
-                    return Ok(YamlAst::Number(num, meta));
-                }
+                return Ok(YamlAst::Number(num, meta));
             }
 
             return Ok(YamlAst::PlainString(text, meta));
@@ -1318,10 +1317,10 @@ impl YamlParser {
     fn extract_field_from_mapping(&self, content: &YamlAst, field_name: &str) -> Option<YamlAst> {
         if let YamlAst::Mapping(pairs, _) = content {
             for (key, value) in pairs {
-                if let YamlAst::PlainString(key_str, _) = key {
-                    if key_str == field_name {
-                        return Some(value.clone());
-                    }
+                if let YamlAst::PlainString(key_str, _) = key
+                    && key_str == field_name
+                {
+                    return Some(value.clone());
                 }
             }
         }
@@ -1396,29 +1395,29 @@ impl YamlParser {
             }
 
             for (key, _) in pairs {
-                if let YamlAst::PlainString(key_str, key_meta) = key {
-                    if !all_valid_fields.contains(key_str.as_str()) {
-                        let valid_fields_str = {
-                            let mut fields =
-                                Vec::with_capacity(required_fields.len() + optional_fields.len());
-                            for &field in required_fields {
-                                fields.push(field.to_string());
-                            }
-                            for &field in optional_fields {
-                                fields.push(format!("{field} (optional)"));
-                            }
-                            fields.join(", ")
-                        };
+                if let YamlAst::PlainString(key_str, key_meta) = key
+                    && !all_valid_fields.contains(key_str.as_str())
+                {
+                    let valid_fields_str = {
+                        let mut fields =
+                            Vec::with_capacity(required_fields.len() + optional_fields.len());
+                        for &field in required_fields {
+                            fields.push(field.to_string());
+                        }
+                        for &field in optional_fields {
+                            fields.push(format!("{field} (optional)"));
+                        }
+                        fields.join(", ")
+                    };
 
-                        return Err(self.tag_error(
-                            tag_name,
-                            &format!(
-                                "unexpected field '{key_str}'\n\nValid fields are: {valid_fields_str}"
-                            ),
-                            Some("check field spelling and tag documentation"),
-                            key_meta,
-                        ));
-                    }
+                    return Err(self.tag_error(
+                        tag_name,
+                        &format!(
+                            "unexpected field '{key_str}'\n\nValid fields are: {valid_fields_str}"
+                        ),
+                        Some("check field spelling and tag documentation"),
+                        key_meta,
+                    ));
                 }
             }
         }
@@ -1747,10 +1746,10 @@ impl YamlParser {
         let mut bindings = Vec::new(); // Size unknown, will grow as needed
         if let YamlAst::Mapping(pairs, _) = content {
             for (key, value) in pairs {
-                if let YamlAst::PlainString(key_str, _) = key {
-                    if key_str != "in" {
-                        bindings.push((key_str, value));
-                    }
+                if let YamlAst::PlainString(key_str, _) = key
+                    && key_str != "in"
+                {
+                    bindings.push((key_str, value));
                 }
             }
         }

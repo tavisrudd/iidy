@@ -90,10 +90,10 @@ pub async fn run(script_path: &str, timescaling: f64, mask_secrets: bool) -> Res
     env.insert("PKG_SKIP_EXECPATH_PATCH".into(), "yes".into());
 
     // Add current executable path for demo scripts to reference
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_path) = current_exe.to_str() {
-            env.insert("IIDY_EXE".into(), exe_path.to_string());
-        }
+    if let Ok(current_exe) = std::env::current_exe()
+        && let Some(exe_path) = current_exe.to_str()
+    {
+        env.insert("IIDY_EXE".into(), exe_path.to_string());
     }
 
     // Get current executable path for command substitution
@@ -475,14 +475,14 @@ mod tests {
         assert!(!is_iidy_on_path_same_as_current_exe("/non/existent/path"));
 
         // Test with current executable if we can determine it
-        if let Ok(current_exe) = std::env::current_exe() {
-            if let Some(current_path) = current_exe.to_str() {
-                // This should work regardless of whether iidy is on PATH
-                let result = is_iidy_on_path_same_as_current_exe(current_path);
-                // We can't assert a specific value since it depends on the environment
-                // but we can ensure the function doesn't panic
-                let _ = result;
-            }
+        if let Ok(current_exe) = std::env::current_exe()
+            && let Some(current_path) = current_exe.to_str()
+        {
+            // This should work regardless of whether iidy is on PATH
+            let result = is_iidy_on_path_same_as_current_exe(current_path);
+            // We can't assert a specific value since it depends on the environment
+            // but we can ensure the function doesn't panic
+            let _ = result;
         }
     }
 

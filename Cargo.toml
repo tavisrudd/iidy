@@ -4,6 +4,12 @@ version = "1.0.0"
 edition = "2024"
 license = "MIT"
 default-run = "iidy"
+description = "CloudFormation deployment tool with real-time event streaming, changeset workflow, template approval, and YAML preprocessing"
+repository = "https://github.com/tavisrudd/iidy"
+homepage = "https://github.com/tavisrudd/iidy"
+readme = "README.md"
+keywords = ["cloudformation", "aws", "infrastructure-as-code", "yaml", "devops"]
+categories = ["command-line-utilities", "development-tools"]
 
 [features]
 default = []
