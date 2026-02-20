@@ -107,7 +107,8 @@ cfn/
 create_stack, update_stack, create_or_update, delete_stack, describe_stack,
 watch_stack, describe_stack_drift, list_stacks, estimate_cost,
 create_changeset, exec_changeset, get_stack_template,
-get_import, template_approval_request, template_approval_review
+get_import, template_approval_request, template_approval_review,
+lint_template, convert_stack_to_iidy, init_stack_args
 
 ### Handler Pattern
 
@@ -123,9 +124,12 @@ commands that pipe raw content (YAML/JSON) to stdout. They manage their
 own error handling rather than using the macro, because their output style
 is fundamentally different from interactive CFN operations.
 
-### Stubs in main.rs (println! only)
+`lint_template` uses `run_command_handler_with_stack_args!` and delegates
+to the shared `template_validation` module (also used by
+`template_approval_request`).
 
-`param`, `lint-template`, `convert-stack-to-iidy`, `init-stack-args`
+`convert_stack_to_iidy` and `init_stack_args` are offline scaffolding
+commands that don't use the output rendering pipeline.
 
 ## Output System (`src/output/`)
 

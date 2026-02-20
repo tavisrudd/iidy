@@ -38,19 +38,6 @@ These were identified during development and fixed to match JS behavior:
   (`{template, params}` lookup and `$params` validation without
   CFN-specific name-prefixing or ref rewriting). Now implemented in Rust.
 
-## Not yet implemented
-
-### `param` subcommands
-
-- **JS**: 5 subcommands for AWS SSM Parameter Store (`set`, `review`,
-  `get`, `get-by-path`, `get-history`) with KMS alias resolution,
-  approval workflow (`.pending` suffix), tag management, and multiple
-  output formats (`simple`, `json`, `yaml`).
-- **Rust**: CLI definitions and arg structs exist in `src/cli.rs`. Handlers
-  are stubs (`println!` only). No `src/params/` module yet.
-- **Status**: See `notes/2026-02-19-param-commands-handoff.md` for full
-  implementation plan.
-
 ## Intentionally removed
 
 - **`list-stack-instances`**: Supported in JS but removed from this version.

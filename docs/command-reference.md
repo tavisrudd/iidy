@@ -650,34 +650,73 @@ iidy completion bash >> ~/.bashrc
 
 ---
 
-### Not Yet Implemented
-
-The following commands are defined in the CLI but are not yet functional. They are listed here
-for completeness.
+### Migration and Scaffolding
 
 ## lint-template
 
-Lints a CloudFormation template for errors and best-practice violations.
+Validates a CloudFormation template by loading it through the full iidy preprocessing pipeline
+and submitting it to the AWS `ValidateTemplate` API. Any preprocessing errors (bad tags, missing
+imports, Handlebars syntax) surface during template loading; structural CloudFormation errors are
+caught by the API. Returns exit code 0 if the template is valid, 1 if errors are found.
+
+The `--use-parameters` flag is accepted for CLI compatibility but has no effect (the AWS
+ValidateTemplate API does not accept parameters).
 
 ```
-iidy lint-template <argsfile>
+iidy lint-template <argsfile> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<argsfile>` | | Path to stack-args.yaml (required) |
+| `--use-parameters` | false | Accepted for compatibility; has no effect |
+
+```
+iidy lint-template stack-args.yaml
+iidy -e prod lint-template stack-args.yaml
 ```
 
 ## convert-stack-to-iidy
 
-Generates a stack-args.yaml and template file from an existing CloudFormation stack, creating
-an iidy project directory for a stack that was not originally deployed with iidy.
+Generates a `stack-args.yaml` and template file from an existing CloudFormation stack, creating
+an iidy project directory for a stack that was not originally deployed with iidy. Fetches the
+stack's current template, parameters, tags, and configuration from CloudFormation and writes
+them to the output directory. Use `--move-params-to-ssm` to convert parameters to SSM references.
 
 ```
-iidy convert-stack-to-iidy <stackname> <output-dir>
+iidy convert-stack-to-iidy <stackname> <output-dir> [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `<stackname>` | | Name or ID of the stack (required) |
+| `<output-dir>` | | Directory to write the generated files (required) |
+| `--move-params-to-ssm` | false | Convert parameters to SSM Parameter Store references |
+| `--sortkeys` | true | Sort keys in generated YAML files |
+| `--project <NAME>` | | Project name for SSM path prefix |
+
+```
+iidy convert-stack-to-iidy my-app-prod ./my-app
+iidy -e prod convert-stack-to-iidy my-app-prod ./my-app --move-params-to-ssm --project myapp
 ```
 
 ## init-stack-args
 
-Initializes a new `stack-args.yaml` and `cfn-template.yaml` in the current directory.
+Initializes a new `stack-args.yaml` and `cfn-template.yaml` in the specified directory (defaults
+to the current directory). Creates a commented template with common fields to help you get
+started quickly.
+
+```
+iidy init-stack-args [options] [global options]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--dir <DIR>` | `.` | Directory in which to create the files |
 
 ```
 iidy init-stack-args
+iidy init-stack-args --dir ./my-new-stack
 ```
 
 ---
