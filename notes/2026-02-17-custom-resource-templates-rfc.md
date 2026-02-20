@@ -1,7 +1,7 @@
 # RFC: Custom Resource Templates
 
 **Date**: 2026-02-17
-**Status**: Draft
+**Status**: Implemented (2026-02-19) -- see `handoffs/done/2026-02-19-custom-resource-templates-implementation.md`
 
 ## Problem
 

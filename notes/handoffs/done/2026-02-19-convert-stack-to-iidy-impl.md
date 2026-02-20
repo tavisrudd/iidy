@@ -176,4 +176,4 @@ data. Look at how `describe_stack.rs` and `get_stack_template.rs` are tested
 - [x] Add stub error for --move-params-to-ssm
 - [x] make check-fast + make test pass (638/638, 0 warnings)
 - [ ] Chunk 2 (follow-up): Key sorting
-- [ ] Chunk 3 (after param commands): --move-params-to-ssm
+- [x] Chunk 3: --move-params-to-ssm

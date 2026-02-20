@@ -3,12 +3,15 @@ use std::path::Path;
 
 use anyhow::{Result, anyhow, bail};
 use aws_sdk_cloudformation::types::TemplateStage;
+use aws_sdk_kms::Client as KmsClient;
+use aws_sdk_ssm::Client as SsmClient;
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 
 use crate::cfn::CfnContext;
 use crate::cli::{Cli, ConvertArgs, NormalizedAwsOpts};
 use crate::output::DynamicOutputManager;
+use crate::params::get_kms_alias_for_parameter;
 
 const ENVIRONMENTS: &[&str] = &[
     "production",
@@ -65,6 +68,7 @@ fn build_stack_args_yaml(
     stack: &aws_sdk_cloudformation::types::Stack,
     stack_name: &str,
     project: &str,
+    ssm_param_keys: &[String],
 ) -> Result<String> {
     let mut doc: BTreeMap<String, YamlValue> = BTreeMap::new();
 
@@ -76,12 +80,18 @@ fn build_stack_args_yaml(
     );
     doc.insert("$defs".to_string(), serde_yaml::to_value(&defs)?);
 
-    // $imports.build_number
+    // $imports.build_number (and ssmParams if moving to SSM)
     let mut imports = BTreeMap::new();
     imports.insert(
         "build_number".to_string(),
         YamlValue::String("env:build_number:0".to_string()),
     );
+    if !ssm_param_keys.is_empty() {
+        imports.insert(
+            "ssmParams".to_string(),
+            YamlValue::String("ssm-path:/{{environment}}/{{project}}/".to_string()),
+        );
+    }
     doc.insert("$imports".to_string(), serde_yaml::to_value(&imports)?);
 
     // Template
@@ -103,7 +113,7 @@ fn build_stack_args_yaml(
         YamlValue::String("./stack-policy.json".to_string()),
     );
 
-    // Parameters (parameterized)
+    // Parameters (parameterized; SSM params use !$ tag via placeholder)
     let params: BTreeMap<String, YamlValue> = stack
         .parameters()
         .iter()
@@ -112,6 +122,8 @@ fn build_stack_args_yaml(
             let value = p.parameter_value()?;
             let val = if key == "Environment" || key == "environment" {
                 "{{environment}}".to_string()
+            } else if ssm_param_keys.contains(&key.to_string()) {
+                format!("__SSM_REF__{key}")
             } else {
                 value.to_string()
             };
@@ -196,7 +208,19 @@ fn build_stack_args_yaml(
         doc.insert("DisableRollback".to_string(), YamlValue::Bool(true));
     }
 
-    serde_yaml::to_string(&doc).map_err(Into::into)
+    let mut yaml = serde_yaml::to_string(&doc)?;
+
+    // Post-process: replace SSM-migrated parameter values with !$ tags.
+    // serde_yaml cannot emit custom YAML tags, so we do string replacement
+    // on the serialized output. The serde output for these keys will be
+    // `  KeyName: __SSM_REF__KeyName` which we replace with `  KeyName: !$ ssmParams.KeyName`.
+    for key in ssm_param_keys {
+        let placeholder = format!("__SSM_REF__{key}");
+        let tag_ref = format!("!$ ssmParams.{key}");
+        yaml = yaml.replace(&placeholder, &tag_ref);
+    }
+
+    Ok(yaml)
 }
 
 async fn convert_stack_to_iidy_impl(
@@ -206,10 +230,6 @@ async fn convert_stack_to_iidy_impl(
     args: &ConvertArgs,
     _opts: &NormalizedAwsOpts,
 ) -> Result<i32> {
-    if args.move_params_to_ssm {
-        bail!("--move-params-to-ssm is not yet implemented");
-    }
-
     let stack_name = &args.stackname;
     let output_dir = Path::new(&args.output_dir);
 
@@ -280,7 +300,7 @@ async fn convert_stack_to_iidy_impl(
     std::fs::write(&cfn_template_path, &yaml_template)?;
     eprintln!("Wrote {}", cfn_template_path.display());
 
-    // 9. Determine project name
+    // 9. Determine project name and current environment
     let project = args.project.clone().unwrap_or_else(|| {
         stack
             .tags()
@@ -290,13 +310,79 @@ async fn convert_stack_to_iidy_impl(
             .unwrap_or_default()
     });
 
-    // 10. Build and write stack-args.yaml
-    let stack_args_content = build_stack_args_yaml(stack, stack_name, &project)?;
+    let current_environment = stack
+        .tags()
+        .iter()
+        .find(|t| matches!(t.key(), Some("environment" | "Environment")))
+        .and_then(|t| t.value().map(String::from))
+        .unwrap_or_else(|| "development".to_string());
+
+    // 10. Optionally migrate parameters to SSM
+    let ssm_param_keys = if args.move_params_to_ssm {
+        if project.is_empty() {
+            bail!(
+                "--move-params-to-ssm requires a project name (use --project or add a 'project' tag to the stack)"
+            );
+        }
+        move_params_to_ssm(context, stack, &current_environment, &project).await?
+    } else {
+        Vec::new()
+    };
+
+    // 11. Build and write stack-args.yaml
+    let stack_args_content = build_stack_args_yaml(stack, stack_name, &project, &ssm_param_keys)?;
     let stack_args_path = output_dir.join("stack-args.yaml");
     std::fs::write(&stack_args_path, &stack_args_content)?;
     eprintln!("Wrote {}", stack_args_path.display());
 
     Ok(0)
+}
+
+/// Write each non-environment parameter to SSM as SecureString.
+/// Returns the list of parameter keys that were migrated.
+async fn move_params_to_ssm(
+    context: &CfnContext,
+    stack: &aws_sdk_cloudformation::types::Stack,
+    current_environment: &str,
+    project: &str,
+) -> Result<Vec<String>> {
+    let ssm = SsmClient::new(&context.aws_config);
+    let kms = KmsClient::new(&context.aws_config);
+
+    let ssm_prefix = format!("/{current_environment}/{project}/");
+    let key_id = get_kms_alias_for_parameter(&kms, &ssm_prefix).await?;
+
+    let mut migrated_keys = Vec::new();
+
+    for param in stack.parameters() {
+        let Some(key) = param.parameter_key() else {
+            continue;
+        };
+        if key == "Environment" || key == "environment" {
+            continue;
+        }
+        let Some(value) = param.parameter_value() else {
+            continue;
+        };
+
+        let name = format!("{ssm_prefix}{key}");
+        eprintln!("Writing SSM parameter: {name}");
+
+        let mut req = ssm
+            .put_parameter()
+            .name(&name)
+            .value(value)
+            .r#type(aws_sdk_ssm::types::ParameterType::SecureString)
+            .overwrite(true);
+        if let Some(alias) = &key_id {
+            req = req.key_id(alias);
+        }
+        req.send().await?;
+
+        migrated_keys.push(key.to_string());
+    }
+
+    Ok(migrated_keys)
 }
 
 pub async fn convert_stack_to_iidy(cli: &Cli, args: &ConvertArgs) -> Result<i32> {
@@ -409,7 +495,7 @@ mod tests {
             .build();
 
         let yaml_str =
-            build_stack_args_yaml(&stack, "myproject-production-api-42", "myproject").unwrap();
+            build_stack_args_yaml(&stack, "myproject-production-api-42", "myproject", &[]).unwrap();
 
         // Parse back and verify structure
         let parsed: BTreeMap<String, YamlValue> = serde_yaml::from_str(&yaml_str).unwrap();
@@ -471,5 +557,56 @@ mod tests {
         // Capabilities
         let caps = parsed["Capabilities"].as_sequence().unwrap();
         assert_eq!(caps[0].as_str().unwrap(), "CAPABILITY_IAM");
+    }
+
+    #[test]
+    fn build_stack_args_yaml_with_ssm_params() {
+        use aws_sdk_cloudformation::types::{Parameter, Stack, Tag};
+
+        let stack = Stack::builder()
+            .stack_name("myproject-production-api-42")
+            .stack_status(aws_sdk_cloudformation::types::StackStatus::CreateComplete)
+            .set_parameters(Some(vec![
+                Parameter::builder()
+                    .parameter_key("Environment")
+                    .parameter_value("production")
+                    .build(),
+                Parameter::builder()
+                    .parameter_key("DatabasePassword")
+                    .parameter_value("secret123")
+                    .build(),
+                Parameter::builder()
+                    .parameter_key("ApiKey")
+                    .parameter_value("key456")
+                    .build(),
+                Parameter::builder()
+                    .parameter_key("InstanceType")
+                    .parameter_value("t3.medium")
+                    .build(),
+            ]))
+            .set_tags(Some(vec![
+                Tag::builder().key("project").value("myproject").build(),
+            ]))
+            .creation_time(aws_sdk_cloudformation::primitives::DateTime::from_secs(0))
+            .build();
+
+        let ssm_keys = vec!["DatabasePassword".to_string(), "ApiKey".to_string()];
+        let yaml_str = build_stack_args_yaml(
+            &stack,
+            "myproject-production-api-42",
+            "myproject",
+            &ssm_keys,
+        )
+        .unwrap();
+
+        // SSM-migrated params should have !$ tags
+        assert!(yaml_str.contains("DatabasePassword: !$ ssmParams.DatabasePassword"));
+        assert!(yaml_str.contains("ApiKey: !$ ssmParams.ApiKey"));
+        // Non-SSM param should retain its value
+        assert!(yaml_str.contains("InstanceType: t3.medium"));
+        // Environment should still be handlebars
+        assert!(yaml_str.contains("Environment: '{{environment}}'"));
+        // ssmParams import should be present
+        assert!(yaml_str.contains("ssmParams: ssm-path:/{{environment}}/{{project}}/"));
     }
 }

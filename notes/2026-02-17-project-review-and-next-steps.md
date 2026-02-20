@@ -3,6 +3,11 @@
 **Date**: 2026-02-17
 **Context**: Resuming work after ~7 month pause. Last activity was Oct 2025.
 
+**UPDATE 2026-02-19**: All items identified below have been completed:
+custom resource templates, all four stub commands (param, lint-template,
+convert-stack-to-iidy, init-stack-args). The remaining open item is
+`--move-params-to-ssm` on convert-stack-to-iidy.
+
 ## Current State
 
 The project is in strong shape. 608 tests pass, zero compiler warnings, and

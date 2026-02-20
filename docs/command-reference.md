@@ -691,7 +691,7 @@ iidy convert-stack-to-iidy <stackname> <output-dir> [options] [global options]
 |--------|---------|-------------|
 | `<stackname>` | | Name or ID of the stack (required) |
 | `<output-dir>` | | Directory to write the generated files (required) |
-| `--move-params-to-ssm` | false | Convert parameters to SSM Parameter Store references |
+| `--move-params-to-ssm` | false | Write each parameter value to SSM as SecureString at `/{environment}/{project}/{key}`, then reference them via `!$ ssmParams.{key}` in the generated stack-args.yaml. Requires `--project` or a `project` tag on the stack |
 | `--sortkeys` | true | Sort keys in generated YAML files |
 | `--project <NAME>` | | Project name for SSM path prefix |
 
