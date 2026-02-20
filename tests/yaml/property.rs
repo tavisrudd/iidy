@@ -4,6 +4,7 @@
 //! preprocessing system across a wide range of inputs.
 
 use iidy::yaml::parsing::parse_yaml_from_file;
+use iidy::yaml::resolution::{TagContext, resolve_ast};
 use proptest::prelude::*;
 use serde_yaml::Value;
 use std::collections::HashMap;
@@ -53,32 +54,23 @@ fn handlebars_template_strategy() -> impl Strategy<Value = String> {
 }
 
 proptest! {
-    /// Property: YAML parsing should handle valid scalar values consistently
+    /// Property: YAML parsing and resolution should handle valid scalar values consistently
     #[test]
     fn prop_yaml_parsing_scalars(value in yaml_scalar_strategy()) {
-        // Serialize to YAML string
         let yaml_str = serde_yaml::to_string(&value).unwrap();
-
-        // Parse with our custom parser - this tests the parsing layer
         let ast = parse_yaml_from_file(&yaml_str, "prop-test-scalar.yaml");
-
-        // Should successfully parse simple scalar values
         prop_assert!(ast.is_ok(), "Failed to parse valid YAML: {}", yaml_str);
 
-        // NOTE: Once AST resolution is implemented, add tests here to verify:
-        // - let mut preprocessor = YamlPreprocessor::new(, true);
-        // - let result = preprocessor.resolve_ast(ast.unwrap());
-        // - Type preservation and value correctness
+        let context = TagContext::new();
+        let resolved = resolve_ast(&ast.unwrap(), &context);
+        prop_assert!(resolved.is_ok(), "Failed to resolve valid scalar: {}", yaml_str);
     }
 
-    /// Property: Handlebars template processing (unit test for engine only)
+    /// Property: Handlebars templates without syntax should pass through unchanged
     #[test]
     fn prop_handlebars_engine_idempotent(template in ".*") {
-        // Test the handlebars engine directly, not through AST resolution
         use iidy::yaml::handlebars::interpolate_handlebars_string;
-        use std::collections::HashMap;
 
-        // Templates without handlebars syntax should remain unchanged
         if !template.contains("{{") {
             let empty_vars = HashMap::new();
             let result = interpolate_handlebars_string(&template, &empty_vars, "test");
@@ -87,13 +79,9 @@ proptest! {
                 prop_assert_eq!(template, result.unwrap());
             }
         }
-
-        // NOTE: Once AST resolution is implemented, add tests for:
-        // - Full YAML preprocessing with handlebars in strings
-        // - Variable substitution through YamlPreprocessor
     }
 
-    /// Property: Handlebars variable substitution (direct engine test)
+    /// Property: Handlebars variable substitution produces non-empty output for non-empty values
     #[test]
     fn prop_handlebars_variable_substitution(
         var_name in variable_name_strategy(),
@@ -102,24 +90,15 @@ proptest! {
         use iidy::yaml::handlebars::interpolate_handlebars_string;
 
         let template = format!("{{{{{var_name}}}}}");
-
-        // Create variables map for handlebars engine
         let mut variables = HashMap::new();
         variables.insert(var_name.clone(), serde_json::Value::String(var_value.clone()));
 
         let result = interpolate_handlebars_string(&template, &variables, "test");
-
-        // Should successfully substitute (accounting for HTML escaping)
         prop_assert!(result.is_ok());
 
         if let Ok(processed) = result {
-            // The result should contain the substituted value (possibly escaped)
             prop_assert!(!processed.is_empty() || var_value.is_empty());
         }
-
-        // NOTE: Once AST resolution is implemented, add tests for:
-        // - Variable substitution through YamlPreprocessor
-        // - TagContext integration with handlebars
     }
 
     /// Property: String transformation helpers should preserve certain invariants
@@ -159,46 +138,43 @@ proptest! {
         }
     }
 
-    /// Property: YAML parsing with custom tags should be deterministic
+    /// Property: YAML parsing and resolution should be deterministic
     #[test]
     fn prop_yaml_parsing_deterministic(
         array in prop::collection::vec(".*", 1..5),
         delimiter in "[,;|\\-_]"
     ) {
-        // Create a !$join tag for parsing tests
         let yaml_content = format!(
             "result: !$join\n  array: {array:?}\n  delimiter: \"{delimiter}\""
         );
 
-        // Parse the same content twice
         let ast_result1 = parse_yaml_from_file(&yaml_content, "prop-test-join.yaml");
         let ast_result2 = parse_yaml_from_file(&yaml_content, "prop-test-join.yaml");
-
-        // Both parsing attempts should have the same outcome
         prop_assert_eq!(ast_result1.is_ok(), ast_result2.is_ok());
 
-        // NOTE: Once AST resolution is implemented, add tests for:
-        // - Deterministic tag resolution with same inputs
-        // - Consistent output across multiple processing runs
-        // - let result1 = preprocessor1.resolve_ast(ast_result1.unwrap());
-        // - let result2 = preprocessor2.resolve_ast(ast_result2.unwrap());
+        if let (Ok(ast1), Ok(ast2)) = (ast_result1, ast_result2) {
+            let context = TagContext::new();
+            let result1 = resolve_ast(&ast1, &context);
+            let result2 = resolve_ast(&ast2, &context);
+            prop_assert_eq!(result1.is_ok(), result2.is_ok());
+            if let (Ok(v1), Ok(v2)) = (result1, result2) {
+                prop_assert_eq!(v1, v2);
+            }
+        }
     }
 
-    /// Property: YAML parsing for split/join tags should be consistent
+    /// Property: YAML split tag should parse and resolve correctly
     #[test]
     fn prop_yaml_split_join_parsing(
-        parts in prop::collection::vec("[a-zA-Z0-9]+", 1..5), // No delimiters in parts
+        parts in prop::collection::vec("[a-zA-Z0-9]+", 1..5),
         delimiter in "[,;|\\-_]"
     ) {
-        // Ensure delimiter doesn't appear in any part
         let clean_parts: Vec<String> = parts.into_iter()
             .filter(|s| !s.contains(&delimiter))
             .collect();
 
         if !clean_parts.is_empty() {
             let joined = clean_parts.join(&delimiter);
-
-            // Test that split tag parses correctly
             let split_yaml = format!(
                 "result: !$split [\"{delimiter}\", \"{joined}\"]"
             );
@@ -206,35 +182,38 @@ proptest! {
             let ast = parse_yaml_from_file(&split_yaml, "prop-test-split.yaml");
             prop_assert!(ast.is_ok(), "Failed to parse split tag YAML");
 
-            // NOTE: Once AST resolution is implemented, add tests for:
-            // - Split and join operations being inverse
-            // - let result = preprocessor.resolve_ast(ast.unwrap());
-            // - Verification that split recovers original parts
-            // - Join operation creating the original string
+            let context = TagContext::new();
+            let resolved = resolve_ast(&ast.unwrap(), &context);
+            prop_assert!(resolved.is_ok(), "Failed to resolve split tag");
+
+            if let Ok(Value::Mapping(map)) = resolved {
+                let result = map.get(Value::String("result".to_string()));
+                if let Some(Value::Sequence(seq)) = result {
+                    prop_assert_eq!(seq.len(), clean_parts.len());
+                }
+            }
         }
     }
 
-    /// Property: YAML parsing should handle errors gracefully
+    /// Property: YAML parsing and resolution should handle errors gracefully (no panics)
     #[test]
     fn prop_yaml_parsing_graceful(malformed_yaml in ".*") {
-        // Malformed YAML should not panic, just return errors
         let parse_result = parse_yaml_from_file(&malformed_yaml, "prop-test-malformed.yaml");
 
-        // Either succeeds or fails gracefully (no panics)
         match parse_result {
-            Ok(_) => {
-                // Success is fine - valid YAML was generated
+            Ok(ast) => {
+                let context = TagContext::new();
+                match resolve_ast(&ast, &context) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        prop_assert!(!e.to_string().is_empty());
+                    }
+                }
             },
             Err(e) => {
-                // Parse error messages should not be empty
                 prop_assert!(!e.to_string().is_empty());
             }
         }
-
-        // NOTE: Once AST resolution is implemented, add tests for:
-        // - Graceful handling of resolution errors
-        // - let process_result = preprocessor.resolve_ast(ast);
-        // - Error message quality and consistency
     }
 }
 

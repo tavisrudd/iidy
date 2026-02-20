@@ -6,6 +6,7 @@ use aws_sdk_cloudformation::types::TemplateStage;
 use aws_sdk_kms::Client as KmsClient;
 use aws_sdk_ssm::Client as SsmClient;
 use serde_json::Value as JsonValue;
+use serde_yaml::Mapping;
 use serde_yaml::Value as YamlValue;
 
 use crate::cfn::CfnContext;
@@ -53,14 +54,171 @@ fn parameterize_stack_name(name: &str, project: &str) -> String {
     result
 }
 
-fn template_body_to_yaml(template_body: &str) -> Result<String> {
+const DEFAULT_SORT_WEIGHT: i32 = 9999;
+
+fn cfn_document_weight(key: &str) -> i32 {
+    match key {
+        "AWSTemplateFormatVersion" => 0,
+        "Description" => 1,
+        "Metadata" => 2,
+        "Parameters" => 3,
+        "Mappings" => 4,
+        "Conditions" => 5,
+        "Transform" => 6,
+        "Resources" => 7,
+        "Outputs" => 8,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_parameter_weight(key: &str) -> i32 {
+    match key {
+        "Description" => 0,
+        "Type" => 1,
+        "MinValue" => 2,
+        "MaxValue" => 3,
+        "MinLength" => 4,
+        "MaxLength" => 5,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_resource_weight(key: &str) -> i32 {
+    match key {
+        "Type" => 0,
+        "Properties" => DEFAULT_SORT_WEIGHT + 1,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_output_weight(key: &str) -> i32 {
+    match key {
+        "Description" => 0,
+        "Value" => 1,
+        "Export" => 2,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_tag_weight(key: &str) -> i32 {
+    match key {
+        "Key" => 0,
+        "Value" => 1,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_iam_statement_weight(key: &str) -> i32 {
+    match key {
+        "Sid" => 0,
+        "Effect" => 1,
+        "Action" => 2,
+        "Resource" => 3,
+        "Condition" => 4,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_policy_doc_weight(key: &str) -> i32 {
+    match key {
+        "Version" => 0,
+        "Statement" => 1,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn cfn_policy_weight(key: &str) -> i32 {
+    match key {
+        "PolicyName" => 0,
+        "PolicyDocument" => 1,
+        _ => DEFAULT_SORT_WEIGHT,
+    }
+}
+
+fn sort_mapping(mapping: &Mapping, weight_fn: fn(&str) -> i32) -> Mapping {
+    let mut pairs: Vec<(YamlValue, YamlValue)> = mapping
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    pairs.sort_by(|(a, _), (b, _)| {
+        let a_key = a.as_str().unwrap_or("");
+        let b_key = b.as_str().unwrap_or("");
+        let a_weight = weight_fn(a_key);
+        let b_weight = weight_fn(b_key);
+        a_weight.cmp(&b_weight).then_with(|| a_key.cmp(b_key))
+    });
+
+    let mut result = Mapping::new();
+    for (k, v) in pairs {
+        result.insert(k, v);
+    }
+    result
+}
+
+fn sort_cfn_value(value: &YamlValue, parent_key: &str, current_key: &str) -> YamlValue {
+    match value {
+        YamlValue::Mapping(mapping) => {
+            let weight_fn: fn(&str) -> i32 = if parent_key.is_empty() && current_key.is_empty() {
+                cfn_document_weight
+            } else if parent_key == "Parameters" {
+                cfn_parameter_weight
+            } else if parent_key == "Resources" {
+                cfn_resource_weight
+            } else if parent_key == "Tags" {
+                cfn_tag_weight
+            } else if parent_key == "Outputs" {
+                cfn_output_weight
+            } else if parent_key == "Statement" {
+                cfn_iam_statement_weight
+            } else if current_key == "PolicyDocument" || current_key == "AssumeRolePolicyDocument" {
+                cfn_policy_doc_weight
+            } else if parent_key == "Policies" {
+                cfn_policy_weight
+            } else {
+                |_| DEFAULT_SORT_WEIGHT
+            };
+
+            let sorted = sort_mapping(mapping, weight_fn);
+            let mut result = Mapping::new();
+            for (k, v) in &sorted {
+                let key_str = k.as_str().unwrap_or("");
+                let new_parent = if parent_key.is_empty() && current_key.is_empty() {
+                    key_str.to_string()
+                } else {
+                    current_key.to_string()
+                };
+                result.insert(k.clone(), sort_cfn_value(v, &new_parent, key_str));
+            }
+            YamlValue::Mapping(result)
+        }
+        YamlValue::Sequence(seq) => {
+            let sorted_seq: Vec<YamlValue> = seq
+                .iter()
+                .enumerate()
+                .map(|(i, v)| sort_cfn_value(v, current_key, &i.to_string()))
+                .collect();
+            YamlValue::Sequence(sorted_seq)
+        }
+        _ => value.clone(),
+    }
+}
+
+fn sort_cfn_keys(value: &YamlValue) -> YamlValue {
+    sort_cfn_value(value, "", "")
+}
+
+fn template_body_to_yaml(template_body: &str, sortkeys: bool) -> Result<String> {
     let trimmed = template_body.trim_start();
-    let yaml_value: YamlValue = if trimmed.starts_with('{') {
+    let mut yaml_value: YamlValue = if trimmed.starts_with('{') {
         let json: JsonValue = serde_json::from_str(trimmed)?;
         serde_yaml::to_value(&json)?
     } else {
         serde_yaml::from_str(trimmed)?
     };
+    if sortkeys {
+        yaml_value = sort_cfn_keys(&yaml_value);
+    }
     Ok(serde_yaml::to_string(&yaml_value)?)
 }
 
@@ -295,7 +453,7 @@ async fn convert_stack_to_iidy_impl(
     eprintln!("Wrote {}", original_path.display());
 
     // 8. Write cfn-template.yaml (convert to YAML if needed)
-    let yaml_template = template_body_to_yaml(template_body)?;
+    let yaml_template = template_body_to_yaml(template_body, args.sortkeys)?;
     let cfn_template_path = output_dir.join("cfn-template.yaml");
     std::fs::write(&cfn_template_path, &yaml_template)?;
     eprintln!("Wrote {}", cfn_template_path.display());
@@ -443,17 +601,16 @@ mod tests {
     #[test]
     fn template_body_json_to_yaml() {
         let json = r#"{"AWSTemplateFormatVersion": "2010-09-09", "Resources": {}}"#;
-        let yaml = template_body_to_yaml(json).unwrap();
+        let yaml = template_body_to_yaml(json, false).unwrap();
         assert!(yaml.contains("AWSTemplateFormatVersion"));
         assert!(yaml.contains("Resources"));
-        // Should not start with '{'
         assert!(!yaml.trim().starts_with('{'));
     }
 
     #[test]
     fn template_body_yaml_passthrough() {
         let input = "AWSTemplateFormatVersion: '2010-09-09'\nResources: {}\n";
-        let yaml = template_body_to_yaml(input).unwrap();
+        let yaml = template_body_to_yaml(input, false).unwrap();
         assert!(yaml.contains("AWSTemplateFormatVersion"));
     }
 
@@ -608,5 +765,63 @@ mod tests {
         assert!(yaml_str.contains("Environment: '{{environment}}'"));
         // ssmParams import should be present
         assert!(yaml_str.contains("ssmParams: ssm-path:/{{environment}}/{{project}}/"));
+    }
+
+    #[test]
+    fn sort_cfn_keys_reorders_top_level() {
+        let input = "Resources: {}\nDescription: hello\nAWSTemplateFormatVersion: '2010-09-09'\nOutputs: {}\nParameters: {}\n";
+        let yaml = template_body_to_yaml(input, true).unwrap();
+        let version_pos = yaml.find("AWSTemplateFormatVersion").unwrap();
+        let desc_pos = yaml.find("Description").unwrap();
+        let params_pos = yaml.find("Parameters").unwrap();
+        let resources_pos = yaml.find("Resources").unwrap();
+        let outputs_pos = yaml.find("Outputs").unwrap();
+        assert!(version_pos < desc_pos);
+        assert!(desc_pos < params_pos);
+        assert!(params_pos < resources_pos);
+        assert!(resources_pos < outputs_pos);
+    }
+
+    #[test]
+    fn sort_cfn_keys_preserves_unknown_keys_after_known() {
+        let input =
+            "ZCustom: foo\nResources: {}\nAWSTemplateFormatVersion: '2010-09-09'\nACustom: bar\n";
+        let yaml = template_body_to_yaml(input, true).unwrap();
+        let version_pos = yaml.find("AWSTemplateFormatVersion").unwrap();
+        let resources_pos = yaml.find("Resources").unwrap();
+        let acustom_pos = yaml.find("ACustom").unwrap();
+        let zcustom_pos = yaml.find("ZCustom").unwrap();
+        assert!(version_pos < resources_pos);
+        assert!(resources_pos < acustom_pos);
+        assert!(acustom_pos < zcustom_pos);
+    }
+
+    #[test]
+    fn sort_cfn_keys_sorts_resource_entries() {
+        let input = "Resources:\n  MyBucket:\n    Properties:\n      BucketName: test\n    Type: AWS::S3::Bucket\n";
+        let yaml = template_body_to_yaml(input, true).unwrap();
+        let type_pos = yaml.find("Type:").unwrap();
+        let props_pos = yaml.find("Properties:").unwrap();
+        assert!(type_pos < props_pos);
+    }
+
+    #[test]
+    fn sort_cfn_keys_sorts_parameter_entries() {
+        let input = "Parameters:\n  MyParam:\n    MaxLength: '10'\n    Description: a param\n    Type: String\n";
+        let yaml = template_body_to_yaml(input, true).unwrap();
+        let desc_pos = yaml.find("Description:").unwrap();
+        let type_pos = yaml.find("Type:").unwrap();
+        let max_pos = yaml.find("MaxLength:").unwrap();
+        assert!(desc_pos < type_pos);
+        assert!(type_pos < max_pos);
+    }
+
+    #[test]
+    fn sort_cfn_keys_no_sort_when_disabled() {
+        let input = "Resources: {}\nAWSTemplateFormatVersion: '2010-09-09'\n";
+        let yaml = template_body_to_yaml(input, false).unwrap();
+        let resources_pos = yaml.find("Resources").unwrap();
+        let version_pos = yaml.find("AWSTemplateFormatVersion").unwrap();
+        assert!(resources_pos < version_pos);
     }
 }

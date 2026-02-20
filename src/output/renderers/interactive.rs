@@ -1889,10 +1889,8 @@ impl InteractiveRenderer {
     }
 
     async fn render_token_info(&mut self, data: &TokenInfo) -> Result<()> {
-        // In interactive mode, only show tokens in debug scenarios
-        // For now, we'll keep it simple and not display by default
-        // TODO: Add verbosity/debug flag checking
-        let _ = data; // Suppress unused parameter warning
+        // Intentionally not rendered in interactive mode. Token info is available in JSON mode.
+        let _ = data;
         Ok(())
     }
 
