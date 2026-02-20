@@ -232,6 +232,7 @@ pub mod get_stack_instances;
 pub mod get_stack_template;
 pub mod init_stack_args;
 pub mod is_terminal_status;
+pub mod lint_template;
 pub mod list_stacks;
 pub mod operations;
 pub mod request_builder;
@@ -243,6 +244,7 @@ pub mod template_approval_request;
 pub mod template_approval_review;
 pub mod template_hash;
 pub mod template_loader;
+pub mod template_validation;
 pub mod update_stack;
 pub mod watch_stack;
 

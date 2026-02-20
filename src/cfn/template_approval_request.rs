@@ -7,6 +7,7 @@ use crate::cfn::{
     s3_utils::check_template_exists,
     template_hash::generate_versioned_location,
     template_loader::{TEMPLATE_MAX_BYTES, load_cfn_template},
+    template_validation::validate_template,
 };
 use crate::cli::{ApprovalRequestArgs, Cli};
 use crate::output::aws_conversion::create_command_metadata;
@@ -124,37 +125,6 @@ async fn upload_template_to_s3(
         .send()
         .await?;
     Ok(())
-}
-
-/// Validate template using CloudFormation
-async fn validate_template(
-    context: &CfnContext,
-    template_body: &str,
-) -> Result<crate::output::data::TemplateValidation> {
-    let mut errors = Vec::new();
-    let mut warnings = Vec::new();
-
-    if template_body.len() > 51200 {
-        warnings.push(
-            "Template exceeds 51200 bytes; skipping CFN validation (will be validated on deploy)"
-                .to_string(),
-        );
-    } else {
-        let validation_request = context
-            .client
-            .validate_template()
-            .template_body(template_body);
-        match validation_request.send().await {
-            Ok(_) => {}
-            Err(e) => errors.push(format!("Template validation failed: {e}")),
-        }
-    }
-
-    Ok(crate::output::data::TemplateValidation {
-        enabled: true,
-        errors,
-        warnings,
-    })
 }
 
 pub async fn template_approval_request(cli: &Cli, args: &ApprovalRequestArgs) -> Result<i32> {

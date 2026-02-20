@@ -20,6 +20,7 @@ pub enum CfnOperation {
     TemplateApprovalRequest,
     TemplateApprovalReview,
     ConvertStackToIidy,
+    LintTemplate,
 }
 
 impl CfnOperation {
@@ -40,6 +41,7 @@ impl CfnOperation {
             "template-approval-request" => Some(Self::TemplateApprovalRequest),
             "template-approval-review" => Some(Self::TemplateApprovalReview),
             "convert-stack-to-iidy" => Some(Self::ConvertStackToIidy),
+            "lint-template" => Some(Self::LintTemplate),
             _ => None,
         }
     }
@@ -62,6 +64,7 @@ impl CfnOperation {
             Self::TemplateApprovalRequest => "template-approval-request",
             Self::TemplateApprovalReview => "template-approval-review",
             Self::ConvertStackToIidy => "convert-stack-to-iidy",
+            Self::LintTemplate => "lint-template",
         }
     }
 
@@ -75,6 +78,7 @@ impl CfnOperation {
                 | Self::GetStackTemplate
                 | Self::DescribeStackDrift
                 | Self::ConvertStackToIidy
+                | Self::LintTemplate
         )
     }
 }

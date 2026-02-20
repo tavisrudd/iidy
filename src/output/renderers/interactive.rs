@@ -623,6 +623,7 @@ impl InteractiveRenderer {
                 "approval_result",
             ],
             CfnOperation::ConvertStackToIidy => vec![],
+            CfnOperation::LintTemplate => vec!["template_validation"],
         };
 
         // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)
@@ -697,6 +698,10 @@ impl InteractiveRenderer {
         );
         self.section_titles
             .insert("cost_estimate".to_string(), "Cost Estimate".to_string());
+        self.section_titles.insert(
+            "template_validation".to_string(),
+            "Template Validation".to_string(),
+        );
 
         match operation {
             CfnOperation::DescribeStack => {

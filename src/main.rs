@@ -228,7 +228,15 @@ fn handle_command(cli: Cli) {
                 std::process::exit(1);
             }
         }
-        Commands::LintTemplate(args) => println!("lint-template {args:?}"),
+        Commands::LintTemplate(ref args) => {
+            match rt.block_on(cfn::lint_template::lint_template(&cli, args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error linting template: {e:?}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::ConvertStackToIidy(ref args) => {
             match rt.block_on(cfn::convert_stack_to_iidy::convert_stack_to_iidy(
                 &cli, args,
