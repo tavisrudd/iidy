@@ -6,7 +6,6 @@ use crate::output::{
     DynamicOutputManager, OutputData, aws_conversion::convert_stack_events_to_display_with_max,
     convert_stack_to_definition,
 };
-use crate::run_command_handler;
 
 async fn describe_stack_impl(
     output_manager: &mut DynamicOutputManager,

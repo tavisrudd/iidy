@@ -10,7 +10,6 @@ use crate::output::{
     DriftedResource, DynamicOutputManager, OutputData, PropertyDifference, StackDrift, StatusLevel,
     StatusUpdate, convert_stack_to_definition,
 };
-use crate::run_command_handler;
 
 async fn describe_stack_drift_impl(
     output_manager: &mut DynamicOutputManager,

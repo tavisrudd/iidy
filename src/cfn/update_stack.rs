@@ -11,7 +11,6 @@ use crate::output::{
     DynamicOutputManager, OutputData,
     aws_conversion::{convert_token_info, create_command_metadata},
 };
-use crate::run_command_handler_with_stack_args;
 
 async fn update_stack_impl(
     output_manager: &mut DynamicOutputManager,

@@ -16,7 +16,6 @@ use crate::{
         },
         convert_stack_to_definition,
     },
-    run_command_handler_with_stack_args,
 };
 
 async fn create_stack_impl(

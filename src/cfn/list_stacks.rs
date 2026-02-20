@@ -8,7 +8,6 @@ use crate::output::{
     DynamicOutputManager, OutputData, StackListColumn, StackListDisplay, StackListEntry,
     aws_conversion::convert_stack_to_list_entry,
 };
-use crate::run_command_handler;
 
 /// Serializable representation of a CloudFormation stack for JSON output
 #[derive(Serialize, Deserialize)]

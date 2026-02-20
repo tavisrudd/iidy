@@ -108,7 +108,7 @@ pub async fn config_from_merged_settings(
     // Detect credential sources BEFORE loading config
     let credential_sources = detect_credential_sources(detection_ctx, &SystemEnv);
 
-    let mut loader = aws_config::defaults(BehaviorVersion::v2025_01_17());
+    let mut loader = aws_config::defaults(BehaviorVersion::v2026_01_12());
 
     if let Some(ref region) = merged_settings.region {
         loader = loader.region(Region::new(region.clone()));

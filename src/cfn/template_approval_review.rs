@@ -10,7 +10,6 @@ use crate::cfn::{
 use crate::cli::{ApprovalReviewArgs, Cli};
 use crate::output::aws_conversion::create_command_metadata;
 use crate::output::{DynamicOutputManager, OutputData};
-use crate::run_command_handler;
 
 async fn template_approval_review_impl(
     output_manager: &mut DynamicOutputManager,

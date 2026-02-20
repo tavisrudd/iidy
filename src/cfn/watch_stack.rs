@@ -20,7 +20,6 @@ use crate::output::{
     aws_conversion::{convert_aws_stack_event, convert_stack_events_to_display_with_max},
     convert_stack_to_definition,
 };
-use crate::run_command_handler;
 
 use super::stack_operations::{StackEventsService, StackInfoService};
 

@@ -11,7 +11,6 @@ use crate::cfn::{
 use crate::cli::{ApprovalRequestArgs, Cli};
 use crate::output::aws_conversion::create_command_metadata;
 use crate::output::{DynamicOutputManager, OutputData};
-use crate::run_command_handler_with_stack_args;
 
 async fn template_approval_request_impl(
     output_manager: &mut DynamicOutputManager,
