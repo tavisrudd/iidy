@@ -70,7 +70,8 @@ yaml/
 `!$`, `!$if`, `!$map`, ... (20+ tags). See
 [architecture.md](architecture.md) for the full listing.
 
-NOT yet implemented: `!$expand` (template expansion with `$params`)
+See [custom-resource-templates.md](../custom-resource-templates.md) for
+`!$expand` and `$params` template expansion.
 
 ### Import Types (ImportType enum in imports/mod.rs)
 
@@ -180,11 +181,6 @@ Key intentional improvements over iidy-js:
 - **`$defs` sequential resolution** -- each def can reference prior defs (JS evaluates in parallel)
 - **Source-location-aware errors** -- line numbers and context snippets
 - **Tree-sitter parser** -- better error recovery than `js-yaml`
-
-The main remaining feature gap is **custom resource templates** (`!$expand`,
-`$params`, ref rewriting, `GlobalAccumulator`). See
-`notes/2026-02-17-project-review-and-next-steps.md` for full design analysis
-and `notes/2026-02-17-custom-resource-templates-rfc.md` for the RFC.
 
 For the full compatibility breakdown, see
 [js-compatibility.md](js-compatibility.md).

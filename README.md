@@ -275,9 +275,7 @@ The pronunciation comes from Cab Calloway's
 say it like the audience call-and-response: "eye-dee."
 
 This is a Rust rewrite of the original TypeScript
-[iidy](https://github.com/unbounce/iidy). The port is feature-complete for
-standard usage. Custom resource templates (`$params`, `!$expand`) are not yet
-implemented.
+[iidy](https://github.com/unbounce/iidy). The port is feature-complete.
 
 All code was written by Claude and Codex under strict guidance and review by
 [@tavisrudd](https://github.com/tavisrudd).
