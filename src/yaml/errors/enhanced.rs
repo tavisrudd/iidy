@@ -1,3 +1,4 @@
+use crate::yaml::errors::display;
 use crate::yaml::errors::ErrorId;
 use std::fmt;
 
@@ -92,48 +93,78 @@ pub enum EnhancedPreprocessingError {
         location: SourceLocation,
         help_text: String,
     },
+
+    YamlSyntax {
+        error_id: ErrorId,
+        short_message: String,
+        guidance: String,
+        location: SourceLocation,
+        fix_hint: Option<String>,
+        example: Option<String>,
+    },
+
+    TagParsing {
+        error_id: ErrorId,
+        tag_name: String,
+        message: String,
+        location: SourceLocation,
+        suggestion: Option<String>,
+        caret_column: usize,
+        span_len: usize,
+    },
+
+    LookupQuery {
+        error_id: ErrorId,
+        variable_path: String,
+        message: String,
+        location: SourceLocation,
+        available_keys: Vec<String>,
+    },
 }
 
 impl EnhancedPreprocessingError {
     pub fn error_id(&self) -> ErrorId {
         match self {
-            Self::VariableNotFound { error_id, .. } => *error_id,
-            Self::TypeMismatch { error_id, .. } => *error_id,
-            Self::MissingRequiredField { error_id, .. } => *error_id,
-            Self::ImportError { error_id, .. } => *error_id,
-            Self::HandlebarsError { error_id, .. } => *error_id,
-            Self::CloudFormationValidation { error_id, .. } => *error_id,
+            Self::VariableNotFound { error_id, .. }
+            | Self::TypeMismatch { error_id, .. }
+            | Self::MissingRequiredField { error_id, .. }
+            | Self::ImportError { error_id, .. }
+            | Self::HandlebarsError { error_id, .. }
+            | Self::CloudFormationValidation { error_id, .. }
+            | Self::YamlSyntax { error_id, .. }
+            | Self::TagParsing { error_id, .. }
+            | Self::LookupQuery { error_id, .. } => *error_id,
         }
     }
 
     pub fn location(&self) -> &SourceLocation {
         match self {
-            Self::VariableNotFound { location, .. } => location,
-            Self::TypeMismatch { location, .. } => location,
-            Self::MissingRequiredField { location, .. } => location,
-            Self::ImportError { location, .. } => location,
-            Self::HandlebarsError { location, .. } => location,
-            Self::CloudFormationValidation { location, .. } => location,
+            Self::VariableNotFound { location, .. }
+            | Self::TypeMismatch { location, .. }
+            | Self::MissingRequiredField { location, .. }
+            | Self::ImportError { location, .. }
+            | Self::HandlebarsError { location, .. }
+            | Self::CloudFormationValidation { location, .. }
+            | Self::YamlSyntax { location, .. }
+            | Self::TagParsing { location, .. }
+            | Self::LookupQuery { location, .. } => location,
         }
     }
 
     /// Display error with clean, user-friendly formatting
     pub fn display_with_context(&self, source_lines: Option<&[String]>) -> String {
+        // New variants have their own rendering to match existing output formats
+        match self {
+            Self::YamlSyntax { .. } => return self.render_yaml_syntax(source_lines),
+            Self::TagParsing { .. } => return self.render_tag_parsing(source_lines),
+            Self::LookupQuery { .. } => return self.render_lookup_query(source_lines),
+            _ => {}
+        }
+
         let mut output = String::new();
         let loc = self.location();
-        let use_color = std::env::var("NO_COLOR").is_err() && atty::is(atty::Stream::Stderr);
+        let c = display::ErrorColors::detect();
 
-        // Color codes
-        let red = if use_color { "\x1b[31m" } else { "" };
-        let bold_red = if use_color { "\x1b[1;31m" } else { "" };
-        let _yellow = if use_color { "\x1b[33m" } else { "" };
-        let cyan = if use_color { "\x1b[36m" } else { "" };
-        let blue_grey = if use_color { "\x1b[38;5;245m" } else { "" }; // lighter grey for source context
-        let light_blue = if use_color { "\x1b[38;5;75m" } else { "" }; // light blue for help text
-        let grey = if use_color { "\x1b[90m" } else { "" }; // grey for line numbers
-        let reset = if use_color { "\x1b[0m" } else { "" };
-
-        // Error header - concise and scannable
         let error_type = match self {
             Self::VariableNotFound { .. } => "Variable error",
             Self::TypeMismatch { .. } => "Type error",
@@ -141,6 +172,9 @@ impl EnhancedPreprocessingError {
             Self::ImportError { .. } => "Import error",
             Self::HandlebarsError { .. } => "Template error",
             Self::CloudFormationValidation { .. } => "CloudFormation error",
+            Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
+                unreachable!()
+            }
         };
 
         let short_message = match self {
@@ -160,23 +194,25 @@ impl EnhancedPreprocessingError {
             } => format!("{} import failed: {}", import_type, location_str),
             Self::HandlebarsError { template, .. } => format!("template error in: {}", template),
             Self::CloudFormationValidation { message, .. } => message.clone(),
+            Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
+                unreachable!()
+            }
         };
 
         output.push_str(&format!(
             "{}{}{}: {} @ {}{}{} {}(errno: {}){}\n",
-            bold_red,
+            c.bold_red,
             error_type,
-            reset,
+            c.reset,
             short_message,
-            cyan,
+            c.cyan,
             loc,
-            reset,
-            grey,
+            c.reset,
+            c.grey,
             self.error_id().code(),
-            reset
+            c.reset
         ));
 
-        // Add specific guidance on next line
         let guidance = match self {
             Self::VariableNotFound { .. } => "variable not defined in current scope",
             Self::TypeMismatch { .. } => "data type mismatch",
@@ -184,101 +220,51 @@ impl EnhancedPreprocessingError {
             Self::ImportError { .. } => "import failed",
             Self::HandlebarsError { .. } => "template syntax error",
             Self::CloudFormationValidation { .. } => "invalid CloudFormation intrinsic function",
+            Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {
+                unreachable!()
+            }
         };
 
-        output.push_str(&format!("{}  -> {}{}\n", light_blue, guidance, reset));
+        output.push_str(&format!("{}  -> {}{}\n", c.light_blue, guidance, c.reset));
 
-        // Show source context prominently (helps user find the problem quickly)
         if let Some(lines) = source_lines {
-            if loc.line > 0 && loc.line <= lines.len() {
-                output.push_str("\n");
-
-                // Show line before for context (if available) - in blue-grey with grey line number
-                if loc.line > 1 {
-                    let prev_line = &lines[loc.line - 2];
-                    output.push_str(&format!(
-                        "{}{:4}{} | {}{}{}\n",
-                        grey,
-                        loc.line - 1,
-                        reset,
-                        blue_grey,
-                        prev_line,
-                        reset
-                    ));
-                }
-
-                // Show the problematic line with highlighting - make line number red to draw attention
-                let line_content = &lines[loc.line - 1];
-                output.push_str(&format!(
-                    "{}{:4}{} | {}\n",
-                    red, loc.line, reset, line_content
-                ));
-
-                // Show caret pointing to the error with color
-                if loc.column > 0 && loc.column <= line_content.len() {
-                    let spaces = " ".repeat(loc.column - 1); // column offset
-                    let span_len = self
-                        .error_span_length()
-                        .min(line_content.len() - loc.column + 1);
-                    let carets = "^".repeat(span_len.max(1));
-
-                    // Use red color for the error highlight and blue-grey for description
-                    output.push_str(&format!(
-                        "     | {}{}{}{} {}{}{}\n",
-                        spaces,
-                        red,
-                        carets,
-                        reset,
-                        blue_grey,
-                        self.inline_description(),
-                        reset
-                    ));
-                }
-
-                // Show line after for context (if available) - in blue-grey with grey line number
-                if loc.line < lines.len() {
-                    let next_line = &lines[loc.line];
-                    output.push_str(&format!(
-                        "{}{:4}{} | {}{}{}\n",
-                        grey,
-                        loc.line + 1,
-                        reset,
-                        blue_grey,
-                        next_line,
-                        reset
-                    ));
-                }
-
-                output.push_str("\n");
+            let ctx = display::format_source_context(
+                lines,
+                loc.line,
+                loc.column,
+                self.error_span_length(),
+                &self.inline_description(),
+                &c,
+            );
+            if !ctx.is_empty() {
+                output.push('\n');
+                output.push_str(&ctx);
+                output.push('\n');
             }
         }
 
-        // Most important information - specific help for this error (in light blue, no prefixes)
         match self {
             Self::VariableNotFound {
                 suggestions,
                 available_vars,
                 ..
             } => {
-                // Show suggestions first (most actionable)
                 if !suggestions.is_empty() {
                     output.push_str(&format!(
                         "{}   did you mean '{}'?{}\n",
-                        light_blue,
+                        c.light_blue,
                         suggestions.join("' or '"),
-                        reset
+                        c.reset
                     ));
                 }
-
-                // Show available variables (scan-friendly, one line) - sort for stable output
                 if !available_vars.is_empty() {
                     let mut sorted_vars = available_vars.clone();
                     sorted_vars.sort();
                     output.push_str(&format!(
                         "{}   available variables: {}{}\n",
-                        light_blue,
+                        c.light_blue,
                         sorted_vars.join(", "),
-                        reset
+                        c.reset
                     ));
                 }
             }
@@ -287,17 +273,14 @@ impl EnhancedPreprocessingError {
                 tag_name,
                 ..
             } => {
-                // Show the specific fix needed
                 output.push_str(&format!(
                     "{}   add '{}' field to {} tag{}\n",
-                    light_blue, missing_field, tag_name, reset
+                    c.light_blue, missing_field, tag_name, c.reset
                 ));
-
-                // Show example if available
                 let help_messages = self.help_messages();
                 if let Some(help) = help_messages.first() {
                     if help.starts_with("example:") {
-                        output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                        output.push_str(&format!("{}   {}{}\n", c.light_blue, help, c.reset));
                     }
                 }
             }
@@ -309,40 +292,233 @@ impl EnhancedPreprocessingError {
             } => {
                 output.push_str(&format!(
                     "{}   expected {}, found {}{}\n",
-                    light_blue, expected, found, reset
+                    c.light_blue, expected, found, c.reset
                 ));
                 if let Some(type_help) = help {
-                    output.push_str(&format!("{}   {}{}\n", light_blue, type_help, reset));
+                    output.push_str(&format!("{}   {}{}\n", c.light_blue, type_help, c.reset));
                 }
             }
             Self::CloudFormationValidation { help_text, .. } => {
-                // Show the specific guidance
-                output.push_str(&format!("{}   {}{}\n", light_blue, help_text, reset));
-
-                // Show examples
+                output.push_str(&format!("{}   {}{}\n", c.light_blue, help_text, c.reset));
                 let help_messages = self.help_messages();
                 for help in &help_messages[1..] {
-                    // Skip first message (help_text already shown)
                     if help.starts_with("example:") {
-                        output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                        output.push_str(&format!("{}   {}{}\n", c.light_blue, help, c.reset));
                     }
                 }
             }
             _ => {
-                // For other error types, show first help message if available
                 let help_messages = self.help_messages();
                 if let Some(help) = help_messages.first() {
-                    output.push_str(&format!("{}   {}{}\n", light_blue, help, reset));
+                    output.push_str(&format!("{}   {}{}\n", c.light_blue, help, c.reset));
                 }
             }
         }
 
-        // Reference to detailed help (compact, in light blue)
         output.push_str(&format!(
             "\n{}   For more info: iidy explain {}{}\n",
-            light_blue,
+            c.light_blue,
             self.error_id().code(),
-            reset
+            c.reset
+        ));
+
+        output
+    }
+
+    fn render_yaml_syntax(&self, source_lines: Option<&[String]>) -> String {
+        let Self::YamlSyntax {
+            short_message,
+            guidance,
+            location,
+            fix_hint,
+            example,
+            ..
+        } = self
+        else {
+            unreachable!()
+        };
+
+        let c = display::ErrorColors::detect();
+        let mut output = format!(
+            "{}Syntax error{}: {} @ {}{}{} {}(errno: {}){}\n",
+            c.bold_red,
+            c.reset,
+            short_message,
+            c.cyan,
+            location,
+            c.reset,
+            c.grey,
+            self.error_id().code(),
+            c.reset
+        );
+        output.push_str(&format!("{}  -> {}{}\n", c.light_blue, guidance, c.reset));
+
+        if let Some(lines) = source_lines {
+            let ctx = display::format_source_context(
+                lines,
+                location.line,
+                location.column,
+                1,
+                "",
+                &c,
+            );
+            if !ctx.is_empty() {
+                output.push('\n');
+                output.push_str(&ctx);
+
+                if let Some(fix) = fix_hint {
+                    output.push_str(&format!(
+                        "\n{}   fix: {}{}\n",
+                        c.light_blue, fix, c.reset
+                    ));
+                }
+                if let Some(ex) = example {
+                    output.push_str(&format!(
+                        "{}   example: {}{}\n",
+                        c.light_blue, ex, c.reset
+                    ));
+                }
+
+                output.push_str(&format!(
+                    "\n{}   For more info, run: iidy explain {}{}\n",
+                    c.light_blue,
+                    self.error_id().code(),
+                    c.reset
+                ));
+            } else {
+                output.push_str(&format!(
+                    "\n{}   For more info, run: iidy explain {}{}\n",
+                    c.light_blue,
+                    self.error_id().code(),
+                    c.reset
+                ));
+            }
+        } else {
+            output.push_str(&format!(
+                "\n{}   For more info, run: iidy explain {}{}\n",
+                c.light_blue,
+                self.error_id().code(),
+                c.reset
+            ));
+        }
+
+        output
+    }
+
+    fn render_tag_parsing(&self, source_lines: Option<&[String]>) -> String {
+        let Self::TagParsing {
+            tag_name,
+            message,
+            location,
+            suggestion,
+            caret_column,
+            span_len,
+            ..
+        } = self
+        else {
+            unreachable!()
+        };
+
+        let c = display::ErrorColors::detect();
+        let mut output = format!(
+            "{}Tag error{}: {} @ {}{}{} {}(errno: {}){}\n",
+            c.bold_red,
+            c.reset,
+            message,
+            c.cyan,
+            location,
+            c.reset,
+            c.grey,
+            self.error_id().code(),
+            c.reset
+        );
+
+        let guidance_text = suggestion.as_deref().unwrap_or("invalid tag or syntax");
+        output.push_str(&format!("{}  -> {}{}\n", c.light_blue, guidance_text, c.reset));
+
+        // Source context (always preceded by blank line)
+        output.push('\n');
+        if let Some(lines) = source_lines {
+            let ctx = display::format_source_context(
+                lines,
+                location.line,
+                *caret_column,
+                *span_len,
+                "",
+                &c,
+            );
+            output.push_str(&ctx);
+        }
+
+        // Tag-specific example
+        output.push_str(&display::tag_example(tag_name, &c));
+
+        output.push_str(&format!(
+            "{}   For more info, run: iidy explain {}{}\n",
+            c.light_blue,
+            self.error_id().code(),
+            c.reset
+        ));
+
+        output
+    }
+
+    fn render_lookup_query(&self, source_lines: Option<&[String]>) -> String {
+        let Self::LookupQuery {
+            variable_path,
+            message,
+            location,
+            available_keys,
+            ..
+        } = self
+        else {
+            unreachable!()
+        };
+
+        let c = display::ErrorColors::detect();
+        let mut output = format!(
+            "{}Lookup error{}: {} @ {}{}{} {}(errno: {}){}\n",
+            c.bold_red,
+            c.reset,
+            message,
+            c.cyan,
+            location,
+            c.reset,
+            c.grey,
+            self.error_id().code(),
+            c.reset
+        );
+        output.push_str(&format!(
+            "{}  -> query failed on variable '{}'{}\n",
+            c.light_blue, variable_path, c.reset
+        ));
+
+        if let Some(lines) = source_lines {
+            if location.line > 0 {
+                output.push('\n');
+                let ctx =
+                    display::format_source_context(lines, location.line, 0, 0, "", &c);
+                output.push_str(&ctx);
+                output.push('\n');
+            }
+        }
+
+        if !available_keys.is_empty() {
+            let mut sorted = available_keys.clone();
+            sorted.sort();
+            output.push_str(&format!(
+                "{}   available keys: {}{}\n",
+                c.light_blue,
+                sorted.join(", "),
+                c.reset
+            ));
+        }
+
+        output.push_str(&format!(
+            "\n{}   For more info: iidy explain {}{}\n",
+            c.light_blue,
+            self.error_id().code(),
+            c.reset
         ));
 
         output
@@ -358,6 +534,10 @@ impl EnhancedPreprocessingError {
             Self::ImportError { .. } => "import failed".to_string(),
             Self::HandlebarsError { .. } => "template error".to_string(),
             Self::CloudFormationValidation { .. } => "invalid CloudFormation tag".to_string(),
+            // New variants use their own render methods, these aren't called
+            Self::YamlSyntax { .. } => String::new(),
+            Self::TagParsing { .. } => String::new(),
+            Self::LookupQuery { .. } => String::new(),
         }
     }
 
@@ -475,6 +655,10 @@ impl EnhancedPreprocessingError {
                     _ => {}
                 }
             }
+            // New variants use their own render methods
+            Self::YamlSyntax { .. }
+            | Self::TagParsing { .. }
+            | Self::LookupQuery { .. } => {}
         }
 
         help
