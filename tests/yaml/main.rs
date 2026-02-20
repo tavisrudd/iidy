@@ -12,4 +12,3 @@ mod property;
 mod scalar_formats;
 mod spec_detection;
 mod variable_origin;
-mod workflow;
