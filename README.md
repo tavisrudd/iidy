@@ -40,7 +40,7 @@ Command Metadata:
  IAM Service Role:     None
  Current IAM Principal: arn:aws:iam::123456789012:user/deployer
  CLI Arguments:        region=us-east-1, argsfile=stack-args.yaml
- iidy Version:         0.9.0
+ iidy Version:         1.0.0
  Client Req Token:     a1b2c3d4-e5f6-7890-abcd-ef1234567890 (auto-generated)
 
 Stack Details:
