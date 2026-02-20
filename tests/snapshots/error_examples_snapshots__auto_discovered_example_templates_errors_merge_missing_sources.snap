@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: must be a sequence of objects to merge @ example-templates/errors/merge-missing-sources.yaml:2:13 (errno: ERR_4002)
+Tag error: must be a sequence of objects to merge @ example-templates/errors/merge-missing-sources.yaml:2:13 (errno: ERR_4003)
   -> use format: [object1, object2, ...]
 
    1 | # !$merge with missing sources field
@@ -13,4 +13,4 @@ Tag error: must be a sequence of objects to merge @ example-templates/errors/mer
      - {key1: value1}
      - {key2: value2}
      - {key3: value3}
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4003

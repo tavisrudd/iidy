@@ -441,15 +441,36 @@ search path both call the same function now.
 
 ---
 
-## Remaining low-priority improvements (not blocking)
+## Part 4: Footer Standardization + ErrorId Precision
 
-### Standardize "For more info" footer
-YamlSyntax and TagParsing use "For more info, run: iidy explain" while all other
-variants use "For more info: iidy explain". Standardizing would touch ~25-30 snapshots.
-Low risk, minor consistency win.
+**Status**: Complete (2026-02-19). All 607 tests pass, zero warnings, 41 snapshots updated.
 
-### Add ErrorId variants for tag parsing subtypes
-`TagParsing` always uses `ErrorId::MissingRequiredTagField` (ERR_4002) and
-`LookupQuery` uses `ErrorId::VariableNotFound` (ERR_2001). These are reused error codes
-that don't precisely describe the error. Adding `ErrorId::UnknownTag`, `ErrorId::InvalidTagFormat`,
-`ErrorId::LookupQueryFailed` etc. would improve `iidy explain` output.
+### Footer standardization -- done
+
+Changed "For more info, run: iidy explain" to "For more info: iidy explain" in
+`render_yaml_syntax()` (3 occurrences) and `render_tag_parsing()` (1 occurrence).
+All 6 "For more info" footers in enhanced.rs now use identical wording.
+
+### TagParsing ErrorId precision -- done
+
+Added `error_id: ErrorId` parameter to `tag_parsing_error()` in wrapper.rs.
+`missing_required_field_error` passes `MissingRequiredTagField` (no change).
+`parser.rs::tag_error` classifies by message content:
+
+| Message pattern | ErrorId | Code |
+|---|---|---|
+| "is not a valid iidy tag" | UnknownPreprocessingTag | ERR_4001 |
+| "missing required" / "missing in" | MissingRequiredTagField | ERR_4002 |
+| "must be" / "must have" | InvalidTagFieldValue | ERR_4003 |
+| "mutually exclusive" / "invalid format" / "unexpected field" | TagSyntaxError | ERR_4005 |
+| fallback | TagSyntaxError | ERR_4005 |
+
+### LookupQueryFailed ErrorId -- done
+
+Added `LookupQueryFailed = 2006` to ErrorId enum (2xxx = variable/scope errors).
+Used in `lookup_query_error` instead of `VariableNotFound` (ERR_2001 -> ERR_2006).
+
+### Snapshot impact
+
+41 snapshots updated: 11 typo detection + 30 error example templates.
+Changes are errno code updates and footer wording only.

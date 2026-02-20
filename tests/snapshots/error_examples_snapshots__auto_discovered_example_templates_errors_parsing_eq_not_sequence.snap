@@ -2,7 +2,7 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: must be a sequence with exactly 2 elements @ example-templates/errors/parsing-eq-not-sequence.yaml:2:7 (errno: ERR_4002)
+Tag error: must be a sequence with exactly 2 elements @ example-templates/errors/parsing-eq-not-sequence.yaml:2:7 (errno: ERR_4003)
   -> use format: [value1, value2]
 
    1 | # !$eq with string instead of sequence
@@ -10,4 +10,4 @@ Tag error: must be a sequence with exactly 2 elements @ example-templates/errors
 
    example:
    !$eq ["{{env}}", "production"]
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4003

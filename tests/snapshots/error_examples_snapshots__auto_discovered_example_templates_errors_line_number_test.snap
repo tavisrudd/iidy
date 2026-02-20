@@ -14,4 +14,4 @@ Tag error: 'template' missing in !$mapListToHash tag @ example-templates/errors/
      items: [{"key": "a", "value": 1}, {"key": "b", "value": 2}]
      keyPath: key
      valuePath: value
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4002

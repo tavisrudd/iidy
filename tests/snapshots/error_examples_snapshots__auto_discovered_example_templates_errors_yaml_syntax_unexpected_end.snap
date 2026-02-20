@@ -8,4 +8,4 @@ Syntax error: unexpected end of file @ example-templates/errors/yaml-syntax-unex
    6 |       BucketName: "test-bucket
    7 |       Tags: []
 
-   For more info, run: iidy explain ERR_1001
+   For more info: iidy explain ERR_1001

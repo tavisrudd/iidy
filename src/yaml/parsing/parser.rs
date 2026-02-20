@@ -12,7 +12,9 @@ use super::ast::{
     SplitTag, SrcMeta, ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
 };
 use super::error::{ParseDiagnostics, ParseError, ParseResult, error_codes};
-use crate::yaml::errors::{missing_required_field_error, tag_parsing_error, yaml_syntax_error};
+use crate::yaml::errors::{
+    missing_required_field_error, tag_parsing_error, yaml_syntax_error, ErrorId,
+};
 
 /// YAML chomping indicator for block scalars
 #[derive(Debug, Clone, Copy)]
@@ -1988,9 +1990,26 @@ impl YamlParser {
         meta: &SrcMeta,
     ) -> ParseError {
         let file_path = self.format_file_location(meta);
-        let anyhow_error = tag_parsing_error(tag_name, message, &file_path, suggestion);
 
-        // Determine the appropriate error code based on the message content
+        // Classify the ErrorId based on message content
+        let error_id = if message.contains("is not a valid iidy tag") {
+            ErrorId::UnknownPreprocessingTag
+        } else if message.contains("missing required") || message.contains("missing in") {
+            ErrorId::MissingRequiredTagField
+        } else if message.contains("mutually exclusive")
+            || message.contains("invalid format")
+            || message.contains("unexpected field")
+        {
+            ErrorId::TagSyntaxError
+        } else if message.contains("must be") || message.contains("must have") {
+            ErrorId::InvalidTagFieldValue
+        } else {
+            ErrorId::TagSyntaxError
+        };
+
+        let anyhow_error = tag_parsing_error(tag_name, message, &file_path, suggestion, error_id);
+
+        // Determine the appropriate ParseError code based on the message content
         let error_code = if message.contains("missing required") {
             error_codes::MISSING_FIELD
         } else if message.contains("is not a valid iidy tag") {

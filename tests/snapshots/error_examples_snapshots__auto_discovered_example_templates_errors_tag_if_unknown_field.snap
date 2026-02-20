@@ -4,7 +4,7 @@ expression: "format!(\"{}\", e)"
 ---
 Tag error: unexpected field 'default'
 
-Valid fields are: test, then, else (optional) @ example-templates/errors/tag-if-unknown-field.yaml:9:3 (errno: ERR_4002)
+Valid fields are: test, then, else (optional) @ example-templates/errors/tag-if-unknown-field.yaml:9:3 (errno: ERR_4005)
   -> check field spelling and tag documentation
 
    8 |   else: "no"
@@ -15,4 +15,4 @@ Valid fields are: test, then, else (optional) @ example-templates/errors/tag-if-
      test: !$eq ["prod", "{{env}}"]
      then: "production"
      else: "development"
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4005

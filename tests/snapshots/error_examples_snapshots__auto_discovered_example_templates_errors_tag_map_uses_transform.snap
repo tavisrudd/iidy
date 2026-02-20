@@ -13,4 +13,4 @@ Tag error: 'template' missing in !$map tag @ example-templates/errors/tag-map-us
    !$map
      items: [1, 2, 3]
      template: "{{item}}"
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4002

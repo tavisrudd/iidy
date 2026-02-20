@@ -83,7 +83,13 @@ pub fn missing_required_field_error(
 ) -> anyhow::Error {
     let message = format!("'{}' missing in {} tag", missing_field, tag_name);
     let suggestion = format!("add '{}' field to {} tag", missing_field, tag_name);
-    tag_parsing_error(tag_name, &message, file_path, Some(&suggestion))
+    tag_parsing_error(
+        tag_name,
+        &message,
+        file_path,
+        Some(&suggestion),
+        ErrorId::MissingRequiredTagField,
+    )
 }
 
 /// Wrapper for YAML syntax errors
@@ -155,6 +161,7 @@ pub fn tag_parsing_error(
     message: &str,
     file_path: &str,
     suggestion: Option<&str>,
+    error_id: ErrorId,
 ) -> anyhow::Error {
     let (actual_file_path, line_number, parser_column) =
         display::parse_file_location_full(file_path);
@@ -182,7 +189,7 @@ pub fn tag_parsing_error(
         "",
     );
     let error = EnhancedPreprocessingError::TagParsing {
-        error_id: ErrorId::MissingRequiredTagField,
+        error_id,
         tag_name: tag_name.to_string(),
         message: message.to_string(),
         location,
@@ -332,7 +339,7 @@ pub fn lookup_query_error(
 
     let location = SourceLocation::new(file_path, line_number, 0, "");
     let error = EnhancedPreprocessingError::LookupQuery {
-        error_id: ErrorId::VariableNotFound,
+        error_id: ErrorId::LookupQueryFailed,
         variable_path: variable_path.to_string(),
         message: message.to_string(),
         location,

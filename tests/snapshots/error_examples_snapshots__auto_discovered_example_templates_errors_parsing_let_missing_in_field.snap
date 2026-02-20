@@ -14,4 +14,4 @@ Tag error: missing required 'in' field @ example-templates/errors/parsing-let-mi
      var1: value1
      var2: value2
      in: "{{var1}}-{{var2}}"
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4002

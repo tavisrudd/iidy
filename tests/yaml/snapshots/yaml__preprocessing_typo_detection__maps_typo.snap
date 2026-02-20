@@ -1,8 +1,8 @@
 ---
-source: tests/yaml_preprocessing_typo_detection.rs
+source: tests/yaml/preprocessing_typo_detection.rs
 expression: error_msg
 ---
-Tag error: '!$maps' is not a valid iidy tag @ test.yaml:1:7 (errno: ERR_4002)
+Tag error: '!$maps' is not a valid iidy tag @ test.yaml:1:7 (errno: ERR_4001)
   -> check tag spelling or see documentation for valid tags
 
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4001

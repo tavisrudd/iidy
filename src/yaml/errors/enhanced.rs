@@ -316,14 +316,14 @@ impl EnhancedPreprocessingError {
                 }
 
                 output.push_str(&format!(
-                    "\n{}   For more info, run: iidy explain {}{}\n",
+                    "\n{}   For more info: iidy explain {}{}\n",
                     c.light_blue,
                     self.error_id().code(),
                     c.reset
                 ));
             } else {
                 output.push_str(&format!(
-                    "\n{}   For more info, run: iidy explain {}{}\n",
+                    "\n{}   For more info: iidy explain {}{}\n",
                     c.light_blue,
                     self.error_id().code(),
                     c.reset
@@ -331,7 +331,7 @@ impl EnhancedPreprocessingError {
             }
         } else {
             output.push_str(&format!(
-                "\n{}   For more info, run: iidy explain {}{}\n",
+                "\n{}   For more info: iidy explain {}{}\n",
                 c.light_blue,
                 self.error_id().code(),
                 c.reset
@@ -390,7 +390,7 @@ impl EnhancedPreprocessingError {
         output.push_str(&display::tag_example(tag_name, &c));
 
         output.push_str(&format!(
-            "{}   For more info, run: iidy explain {}{}\n",
+            "{}   For more info: iidy explain {}{}\n",
             c.light_blue,
             self.error_id().code(),
             c.reset

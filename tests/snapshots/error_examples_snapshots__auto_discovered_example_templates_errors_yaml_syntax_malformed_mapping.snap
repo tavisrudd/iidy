@@ -13,4 +13,4 @@ Syntax error: invalid YAML structure @ example-templates/errors/yaml-syntax-malf
    fix: put the inner tag in a list to separate it from the outer tag
    example: !$not [!$eq ["a", "b"]]
 
-   For more info, run: iidy explain ERR_1001
+   For more info: iidy explain ERR_1001

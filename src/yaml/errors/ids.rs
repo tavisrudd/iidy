@@ -27,6 +27,7 @@ pub enum ErrorId {
     InvalidVariableName = 2003,
     CircularVariableReference = 2004,
     VariableOutOfScope = 2005,
+    LookupQueryFailed = 2006,
 
     // 3xxx - Import & Loading Errors
     ImportFileNotFound = 3001,
@@ -121,6 +122,7 @@ impl ErrorId {
             ErrorId::InvalidVariableName => "Invalid variable name",
             ErrorId::CircularVariableReference => "Circular variable reference",
             ErrorId::VariableOutOfScope => "Variable access out of scope",
+            ErrorId::LookupQueryFailed => "Lookup query failed",
 
             // 3xxx - Import & Loading Errors
             ErrorId::ImportFileNotFound => "Import file not found",
@@ -207,6 +209,7 @@ impl ErrorId {
             2003 => Some(ErrorId::InvalidVariableName),
             2004 => Some(ErrorId::CircularVariableReference),
             2005 => Some(ErrorId::VariableOutOfScope),
+            2006 => Some(ErrorId::LookupQueryFailed),
 
             3001 => Some(ErrorId::ImportFileNotFound),
             3002 => Some(ErrorId::ImportUrlUnreachable),
@@ -275,6 +278,7 @@ impl ErrorId {
             ErrorId::InvalidVariableName,
             ErrorId::CircularVariableReference,
             ErrorId::VariableOutOfScope,
+            ErrorId::LookupQueryFailed,
             ErrorId::ImportFileNotFound,
             ErrorId::ImportUrlUnreachable,
             ErrorId::ImportAuthenticationFailure,

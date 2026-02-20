@@ -4,7 +4,7 @@ expression: "format!(\"{}\", e)"
 ---
 Tag error: unexpected field 'separator'
 
-Valid fields are: items, template, var (optional) @ example-templates/errors/tag-mapvalues-unknown-field.yaml:12:3 (errno: ERR_4002)
+Valid fields are: items, template, var (optional) @ example-templates/errors/tag-mapvalues-unknown-field.yaml:12:3 (errno: ERR_4005)
   -> check field spelling and tag documentation
 
   11 |   template: "{{item.key}}"
@@ -13,4 +13,4 @@ Valid fields are: items, template, var (optional) @ example-templates/errors/tag
    example:
    !$mapValues
      <check documentation for proper syntax>
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4005

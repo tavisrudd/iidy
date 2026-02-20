@@ -14,4 +14,4 @@ Tag error: 'test' missing in !$if tag @ example-templates/errors/multiple-occurr
      test: !$eq ["prod", "{{env}}"]
      then: "production"
      else: "development"
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4002

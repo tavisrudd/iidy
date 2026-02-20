@@ -2,10 +2,10 @@
 source: tests/error_examples_snapshots.rs
 expression: "format!(\"{}\", e)"
 ---
-Tag error: '!$joinn' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo-flow.yaml:2:9 (errno: ERR_4002)
+Tag error: '!$joinn' is not a valid iidy tag @ example-templates/errors/unknown-tag-typo-flow.yaml:2:9 (errno: ERR_4001)
   -> check tag spelling or see documentation for valid tags
 
    1 | # Unknown iidy tag error in flow style (typo)
    2 | result: !$joinn [",", ["a", "b"]]
      |         ^^^^^^^
-   For more info, run: iidy explain ERR_4002
+   For more info: iidy explain ERR_4001
