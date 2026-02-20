@@ -1,5 +1,10 @@
 # Getting Started
 
+iidy ("Is it done yet?", [pronounced "eye-dee"](https://www.youtube.com/watch?v=8mq4UT4VnbE&t=50s))
+gives you fast, readable feedback on CloudFormation deployments so you never
+have to wonder whether things are working or stare at a wall of red text when
+they aren't.
+
 ## Prerequisites
 
 - **Rust toolchain**: install via [rustup](https://rustup.rs/)

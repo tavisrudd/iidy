@@ -1,7 +1,7 @@
 # iidy -- CloudFormation with Confidence
 
-iidy ("Is it done yet?") is a command-line tool for deploying and managing
-CloudFormation stacks. It gives you fast, readable feedback on every operation,
+iidy ("Is it done yet?", [pronounced "eye-dee"](https://www.youtube.com/watch?v=8mq4UT4VnbE&t=50s))
+is a command-line tool for deploying and managing CloudFormation stacks. It gives you fast, readable feedback on every operation,
 a clean workflow for parameterizing stacks across environments, changeset-based
 review before updates, and a multi-team template approval process. It also
 includes an optional YAML preprocessing language for reducing boilerplate in
@@ -262,9 +262,25 @@ and other YAML-based artifacts.
 
 ## Origin
 
-This is a Rust rewrite of the TypeScript [iidy](https://github.com/unbounce/iidy).
-The port is feature-complete for standard usage. Custom resource templates
-(`$params`, `!$expand`) are not yet implemented.
+iidy was born at [Unbounce](https://unbounce.com) out of frustration with a
+painful CloudFormation workflow. CloudFormation was wrapped in Ansible, which
+provided almost no feedback for minutes at a time until it would fail with an
+unreadable wall of red text. Developers were scared of CloudFormation -- not
+because of CloudFormation itself, but because the tooling around it made every
+deployment feel like a dice roll into a black box. The name captures the
+question everyone was asking while staring at the terminal: "Is it done yet?"
+
+The pronunciation comes from Cab Calloway's
+["Minnie the Moocher"](https://www.youtube.com/watch?v=8mq4UT4VnbE&t=50s) --
+say it like the audience call-and-response: "eye-dee."
+
+This is a Rust rewrite of the original TypeScript
+[iidy](https://github.com/unbounce/iidy). The port is feature-complete for
+standard usage. Custom resource templates (`$params`, `!$expand`) are not yet
+implemented.
 
 All code was written by Claude and Codex under strict guidance and review by
 [@tavisrudd](https://github.com/tavisrudd).
+
+Development of the original iidy was funded by
+[Unbounce](https://unbounce.com).
