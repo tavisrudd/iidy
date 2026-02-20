@@ -7,13 +7,13 @@ use url::Url;
 
 use super::ast::{
     CloudFormationTag, ConcatMapTag, ConcatTag, EqTag, EscapeTag, ExpandTag, FromPairsTag,
-    GroupByTag, IfTag, VarLookupTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag,
-    MergeMapTag, MergeTag, NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag,
-    SplitTag, SrcMeta, ToJsonStringTag, ToYamlStringTag, UnknownTag, YamlAst,
+    GroupByTag, IfTag, JoinTag, LetTag, MapListToHashTag, MapTag, MapValuesTag, MergeMapTag,
+    MergeTag, NotTag, ParseJsonTag, ParseYamlTag, Position, PreprocessingTag, SplitTag, SrcMeta,
+    ToJsonStringTag, ToYamlStringTag, UnknownTag, VarLookupTag, YamlAst,
 };
 use super::error::{ParseDiagnostics, ParseError, ParseResult, error_codes};
 use crate::yaml::errors::{
-    missing_required_field_error, tag_parsing_error, yaml_syntax_error, ErrorId,
+    ErrorId, missing_required_field_error, tag_parsing_error, yaml_syntax_error,
 };
 
 /// YAML chomping indicator for block scalars
@@ -1288,8 +1288,7 @@ impl YamlParser {
             }
             "!$expand" => {
                 self.validate_tag_fields(&content, "!$expand", &["template", "params"], &[], meta)?;
-                let fields =
-                    self.extract_fields_from_mapping(&content, &["template", "params"]);
+                let fields = self.extract_fields_from_mapping(&content, &["template", "params"]);
                 let template = fields
                     .get("template")
                     .cloned()

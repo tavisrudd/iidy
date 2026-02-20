@@ -166,8 +166,7 @@ pub(crate) fn format_source_context<S: AsRef<str>>(
 /// the type error. Returns 0 when no position can be determined.
 pub(crate) fn find_tag_column(line_content: &str, context_description: &str) -> usize {
     if context_description.contains("!$split delimiter field") {
-        find_after_bracket(line_content)
-            .unwrap_or_else(|| tag_fallback(line_content, "!$split", 8))
+        find_after_bracket(line_content).unwrap_or_else(|| tag_fallback(line_content, "!$split", 8))
     } else if context_description.contains("!$split string field") {
         find_after_simple_comma(line_content)
             .unwrap_or_else(|| tag_fallback(line_content, "!$split", 8))

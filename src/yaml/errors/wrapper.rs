@@ -23,7 +23,8 @@ impl std::fmt::Display for FormattedError {
         write!(
             f,
             "{}",
-            self.inner.display_with_context(self.source_lines.as_deref())
+            self.inner
+                .display_with_context(self.source_lines.as_deref())
         )
     }
 }
@@ -54,11 +55,7 @@ pub fn variable_not_found_error(
                 .enumerate()
                 .find_map(|(idx, line)| {
                     let col = display::find_variable_column(line, variable);
-                    if col > 0 {
-                        Some((idx + 1, col))
-                    } else {
-                        None
-                    }
+                    if col > 0 { Some((idx + 1, col)) } else { None }
                 })
                 .unwrap_or((0, 0))
         }
@@ -67,8 +64,7 @@ pub fn variable_not_found_error(
     };
 
     let location = SourceLocation::new(actual_file_path, line_number, column_number, yaml_path);
-    let error =
-        EnhancedPreprocessingError::variable_not_found(variable, location, available_vars);
+    let error = EnhancedPreprocessingError::variable_not_found(variable, location, available_vars);
 
     anyhow::Error::new(FormattedError::new(error, source_lines))
 }
@@ -201,7 +197,6 @@ pub fn tag_parsing_error(
     anyhow::Error::new(FormattedError::new(error, source_lines))
 }
 
-
 /// Wrapper for variable not found errors with PathTracker support
 pub fn variable_not_found_error_with_path_tracker(
     variable: &str,
@@ -303,8 +298,7 @@ fn cloudformation_validation_error_impl(
                 let next_char = line.chars().nth(tag_end);
                 if matches!(next_char, Some(' ') | Some('[') | Some('\t')) {
                     let after_tag = &line[tag_end..];
-                    let value_start =
-                        after_tag.chars().take_while(|c| c.is_whitespace()).count();
+                    let value_start = after_tag.chars().take_while(|c| c.is_whitespace()).count();
                     return Some((idx + 1, tag_end + value_start + 1));
                 }
             }

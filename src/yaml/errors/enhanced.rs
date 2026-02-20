@@ -1,5 +1,5 @@
-use crate::yaml::errors::display;
 use crate::yaml::errors::ErrorId;
+use crate::yaml::errors::display;
 use std::fmt;
 
 /// Source location information for precise error reporting
@@ -290,29 +290,17 @@ impl EnhancedPreprocessingError {
         output.push_str(&format!("{}  -> {}{}\n", c.light_blue, guidance, c.reset));
 
         if let Some(lines) = source_lines {
-            let ctx = display::format_source_context(
-                lines,
-                location.line,
-                location.column,
-                1,
-                "",
-                &c,
-            );
+            let ctx =
+                display::format_source_context(lines, location.line, location.column, 1, "", &c);
             if !ctx.is_empty() {
                 output.push('\n');
                 output.push_str(&ctx);
 
                 if let Some(fix) = fix_hint {
-                    output.push_str(&format!(
-                        "\n{}   fix: {}{}\n",
-                        c.light_blue, fix, c.reset
-                    ));
+                    output.push_str(&format!("\n{}   fix: {}{}\n", c.light_blue, fix, c.reset));
                 }
                 if let Some(ex) = example {
-                    output.push_str(&format!(
-                        "{}   example: {}{}\n",
-                        c.light_blue, ex, c.reset
-                    ));
+                    output.push_str(&format!("{}   example: {}{}\n", c.light_blue, ex, c.reset));
                 }
 
                 output.push_str(&format!(
@@ -370,7 +358,10 @@ impl EnhancedPreprocessingError {
         );
 
         let guidance_text = suggestion.as_deref().unwrap_or("invalid tag or syntax");
-        output.push_str(&format!("{}  -> {}{}\n", c.light_blue, guidance_text, c.reset));
+        output.push_str(&format!(
+            "{}  -> {}{}\n",
+            c.light_blue, guidance_text, c.reset
+        ));
 
         // Source context (always preceded by blank line)
         output.push('\n');
@@ -432,8 +423,7 @@ impl EnhancedPreprocessingError {
         if let Some(lines) = source_lines {
             if location.line > 0 {
                 output.push('\n');
-                let ctx =
-                    display::format_source_context(lines, location.line, 0, 0, "", &c);
+                let ctx = display::format_source_context(lines, location.line, 0, 0, "", &c);
                 output.push_str(&ctx);
                 output.push('\n');
             }
@@ -557,9 +547,7 @@ impl EnhancedPreprocessingError {
                 }
             }
             // New variants use their own render methods
-            Self::YamlSyntax { .. }
-            | Self::TagParsing { .. }
-            | Self::LookupQuery { .. } => {}
+            Self::YamlSyntax { .. } | Self::TagParsing { .. } | Self::LookupQuery { .. } => {}
         }
 
         help

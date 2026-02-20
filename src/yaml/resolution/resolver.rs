@@ -1076,7 +1076,7 @@ impl TagResolver for Resolver {
                     .find_map(|(idx, line)| {
                         let patterns = [
                             format!("!$ {}", base_path),
-                            format!("!$include {}", base_path),  // deprecated alias
+                            format!("!$include {}", base_path), // deprecated alias
                             format!("!$include: {}", base_path), // deprecated alias
                             format!("path: {}", base_path),
                             base_path.clone(),
@@ -1117,7 +1117,7 @@ impl TagResolver for Resolver {
                     .find_map(|(idx, line)| {
                         let patterns = [
                             format!("!$ {}", root_var),
-                            format!("!$include {}", root_var),  // deprecated alias
+                            format!("!$include {}", root_var), // deprecated alias
                             format!("!$include: {}", root_var), // deprecated alias
                             format!("path: {}", root_var),
                             root_var.to_string(),
