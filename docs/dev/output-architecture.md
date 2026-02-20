@@ -189,3 +189,80 @@ Command handlers must NOT:
 - Know about section titles or ordering
 - Decide display layout or timing
 - Interact directly with renderers (only through `DynamicOutputManager`)
+
+## SSM Parameter Store commands
+
+The `param` subcommands (`src/params/`) use a separate, simpler output
+approach than CloudFormation commands. They do NOT use the `OutputData`
+enum or `OutputRenderer` trait.
+
+### Why separate
+
+Param commands have fundamentally different output requirements:
+
+1. **Own format flag**: `--format simple|json|yaml` controls output
+   directly, independent of the global `--output-mode` flag.
+2. **No live streaming**: No spinners, section ordering, or progressive
+   updates. Each command makes API calls and prints the result.
+3. **No structured sections**: No command metadata, stack definitions, or
+   event tables. Output is either a raw value or a serialized object.
+4. **Direct stdout**: Commands `println!` their output rather than
+   emitting `OutputData` variants.
+
+The one exception is `param review`, which uses
+`DynamicOutputManager::request_confirmation()` for its interactive yes/no
+prompt. This reuses the existing confirmation infrastructure (oneshot
+channels, interactive/plain/JSON mode handling) without requiring the
+full section-based rendering pipeline.
+
+### Output format behavior
+
+**`simple` format** (default):
+
+| Command | Output |
+|---------|--------|
+| `param get` | Raw parameter value only |
+| `param get-by-path` | YAML map of `path: value`, sorted by path |
+| `param get-history` | YAML with `Current` (Value, LastModifiedDate, LastModifiedUser, Message) and `Previous` (array of Value, LastModifiedDate, LastModifiedUser) |
+
+**`json` / `yaml` formats**:
+
+All three read commands serialize full `ParamOutput` or
+`ParamHistoryOutput` structs (defined in `src/params/mod.rs`). These
+include Name, Type, Value, Version, LastModifiedDate, ARN, DataType, and
+a Tags map fetched via `list_tags_for_resource`. Field names use
+PascalCase (`#[serde(rename_all = "PascalCase")]`) to match the AWS SDK
+naming convention used by iidy-js.
+
+For `get-by-path`, the output is a sorted map keyed by parameter path.
+For `get-history`, the output is a `{Current, Previous}` object where
+Current includes tags and Previous does not (matching iidy-js behavior).
+
+### Serialization types
+
+`ParamOutput` and `ParamHistoryOutput` in `src/params/mod.rs` are the
+serializable representations of SSM Parameter and ParameterHistory. They
+exist because the AWS SDK types do not implement `serde::Serialize`.
+These structs are populated from SDK types via `from_parameter()` and
+`from_history()` methods, with optional tag attachment via `with_tags()`.
+
+### Shared helpers
+
+`src/params/mod.rs` provides helpers used across all param commands:
+
+| Function | Purpose |
+|----------|---------|
+| `create_ssm_client` | Build SSM client from CLI AWS options |
+| `create_kms_client` | Build KMS client from SDK config |
+| `get_kms_alias_for_parameter` | Paginated KMS alias list, hierarchical path match |
+| `maybe_fetch_param` | get_parameter with ParameterNotFound -> Ok(None) |
+| `get_param_tags` | list_tags_for_resource as BTreeMap |
+| `set_param_tags` | add_tags_to_resource wrapper |
+| `format_output` | Serialize to JSON or YAML string |
+
+### Approval workflow
+
+`param set --with-approval` stores the value at `{path}.pending` instead
+of the real path. `param review` fetches both the pending and current
+values, displays a comparison, and on confirmation promotes the pending
+value to the real path, deletes the pending parameter, and copies tags.

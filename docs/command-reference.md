@@ -484,11 +484,29 @@ iidy template-approval review s3://my-org-approvals/templates/my-app/a1b2c3d4.ya
 
 ### SSM Parameter Store
 
+The `param` subcommands manage AWS SSM Parameter Store values. They support a `--format` flag
+for controlling output:
+
+| Format | Description |
+|--------|-------------|
+| `simple` | Value only (default). For `get`, prints the raw value. For `get-by-path`, prints a YAML map of path to value. For `get-history`, prints a YAML document with Current and Previous sections showing Value, LastModifiedDate, LastModifiedUser, and Message |
+| `json` | Full parameter object including Name, Type, Value, Version, LastModifiedDate, ARN, DataType, and Tags (fetched separately). Pretty-printed JSON |
+| `yaml` | Same as `json` but formatted as YAML |
+
+The `--format` flag is independent of the global `--output-mode` flag. Param commands write
+directly to stdout rather than going through the data-driven output pipeline used by
+CloudFormation commands.
+
 ## param set
 
 Creates or updates an AWS SSM Parameter Store parameter. By default the value is stored as a
 `SecureString` (KMS-encrypted). Use `--with-approval` to route the change through an approval
 workflow before it takes effect.
+
+For `SecureString` parameters, iidy looks up a KMS alias by building a hierarchical path from
+the parameter name. Given `/myapp/prod/db-password`, it tries `alias/ssm/myapp/prod/db-password`,
+then `alias/ssm/myapp/prod`, then `alias/ssm/myapp`, then `alias/ssm`. If no match is found,
+SSM uses the default `aws/ssm` key.
 
 ```
 iidy param set <path> <value> [options] [global options]
@@ -500,8 +518,8 @@ iidy param set <path> <value> [options] [global options]
 | `<value>` | | Parameter value (required) |
 | `--type <TYPE>` | `SecureString` | SSM parameter type: `String`, `StringList`, or `SecureString` |
 | `--overwrite` | false | Overwrite an existing parameter |
-| `--message <MSG>` | | Change description for audit purposes |
-| `--with-approval` | false | Route the change through an approval workflow |
+| `--message <MSG>` | | Attach a change description as an `iidy:message` tag |
+| `--with-approval` | false | Store as `{path}.pending` and require `param review` before it takes effect |
 
 ```
 iidy param set /myapp/prod/db-password "s3cr3t" --overwrite
@@ -521,17 +539,18 @@ iidy param get <path> [options] [global options]
 |--------|---------|-------------|
 | `<path>` | | SSM parameter path (required) |
 | `--decrypt` | true | Decrypt SecureString parameters |
-| `--format <FMT>` | `simple` | Output format |
+| `--format <FMT>` | `simple` | Output format: `simple`, `json`, or `yaml` |
 
 ```
 iidy param get /myapp/prod/db-password
+iidy param get /myapp/prod/db-password --format json
 iidy param get /myapp/prod/db-password --decrypt=false
 ```
 
 ## param get-by-path
 
-Retrieves all SSM parameters under a path prefix. Use `--recursive` to include parameters in
-nested sub-paths.
+Retrieves all SSM parameters under a path prefix, sorted by name. Use `--recursive` to include
+parameters in nested sub-paths. Returns exit code 1 if no parameters are found.
 
 ```
 iidy param get-by-path <path> [options] [global options]
@@ -541,17 +560,18 @@ iidy param get-by-path <path> [options] [global options]
 |--------|---------|-------------|
 | `<path>` | | SSM parameter path prefix (required) |
 | `--decrypt` | true | Decrypt SecureString parameters |
-| `--format <FMT>` | `simple` | Output format |
+| `--format <FMT>` | `simple` | Output format: `simple`, `json`, or `yaml` |
 | `--recursive` | false | Include parameters in nested sub-paths |
 
 ```
 iidy param get-by-path /myapp/prod
-iidy param get-by-path /myapp --recursive
+iidy param get-by-path /myapp --recursive --format yaml
 ```
 
 ## param get-history
 
-Retrieves the version history of an SSM parameter, showing past values and metadata.
+Retrieves the version history of an SSM parameter. Output is split into Current (latest version,
+with tags) and Previous (all older versions, without tags), sorted by LastModifiedDate ascending.
 
 ```
 iidy param get-history <path> [options] [global options]
@@ -561,15 +581,21 @@ iidy param get-history <path> [options] [global options]
 |--------|---------|-------------|
 | `<path>` | | SSM parameter path (required) |
 | `--decrypt` | true | Decrypt SecureString parameter history |
-| `--format <FMT>` | `simple` | Output format |
+| `--format <FMT>` | `simple` | Output format: `simple`, `json`, or `yaml` |
 
 ```
 iidy param get-history /myapp/prod/db-password
+iidy param get-history /myapp/prod/db-password --format json
 ```
 
 ## param review
 
-Reviews a pending SSM parameter change that was submitted with `--with-approval`.
+Reviews a pending SSM parameter change that was submitted with `param set --with-approval`.
+Shows the current and pending values side by side, displays any `iidy:message` tag, and prompts
+for confirmation. On approval, the pending value is promoted to the real path and the `.pending`
+parameter is deleted. Tags are copied from the pending parameter to the real one.
+
+Returns exit code 1 if no pending change exists, or 130 if the user declines.
 
 ```
 iidy param review <path> [global options]

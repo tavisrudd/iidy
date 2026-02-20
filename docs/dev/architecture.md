@@ -143,6 +143,27 @@ chain.
 requests from `StackArgs`. It handles parameter formatting, tag injection,
 template body vs. template URL selection, and capability settings.
 
+## SSM Parameter Store commands
+
+The `param` subcommands in `src/params/` manage SSM Parameter Store
+values. Unlike CloudFormation commands, they do not use `CfnContext`,
+`run_command_handler!`, or the `OutputData` rendering pipeline. Each
+command creates its own SSM client via `create_ssm_client()`, makes API
+calls, and prints output directly to stdout.
+
+The `--format simple|json|yaml` flag on read commands controls output
+independently from the global `--output-mode`. Serializable output types
+(`ParamOutput`, `ParamHistoryOutput`) in `src/params/mod.rs` mirror the
+AWS SDK response structure with PascalCase field names for iidy-js
+compatibility.
+
+The `param review` command is the only one that uses the output
+manager -- specifically `DynamicOutputManager::request_confirmation()`
+for its interactive confirmation prompt.
+
+See [output-architecture.md](output-architecture.md) for details on
+how param output differs from CFN output.
+
 ## Output system
 
 The output system uses a data-driven architecture where command handlers

@@ -6,10 +6,11 @@ use std::io;
 
 use iidy::{
     cfn,
-    cli::{ApprovalCommands, Cli, Commands},
+    cli::{ApprovalCommands, Cli, Commands, ParamCommands},
     explain::handle_explain_command,
     output::color::ColorContext,
     output::terminal::Theme as TerminalTheme,
+    params,
     render::handle_render_command,
 };
 mod demo;
@@ -134,7 +135,49 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::DummySpacer3 => {}
-        Commands::Param { command } => println!("param {:?}", command),
+        Commands::Param { ref command } => match command {
+            ParamCommands::Set(args) => match rt.block_on(params::set::set_param(&cli, args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error setting parameter: {e:?}");
+                    std::process::exit(1);
+                }
+            },
+            ParamCommands::Review(args) => {
+                match rt.block_on(params::review::review_param(&cli, args)) {
+                    Ok(exit_code) => std::process::exit(exit_code),
+                    Err(e) => {
+                        eprintln!("error reviewing parameter: {e:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            ParamCommands::Get(args) => match rt.block_on(params::get::get_param(&cli, args)) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error getting parameter: {e:?}");
+                    std::process::exit(1);
+                }
+            },
+            ParamCommands::GetByPath(args) => {
+                match rt.block_on(params::get_by_path::get_by_path(&cli, args)) {
+                    Ok(exit_code) => std::process::exit(exit_code),
+                    Err(e) => {
+                        eprintln!("error getting parameters by path: {e:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            ParamCommands::GetHistory(args) => {
+                match rt.block_on(params::get_history::get_history(&cli, args)) {
+                    Ok(exit_code) => std::process::exit(exit_code),
+                    Err(e) => {
+                        eprintln!("error getting parameter history: {e:?}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        },
         Commands::DummySpacer4 => {}
         Commands::TemplateApproval { ref command } => match command {
             ApprovalCommands::Request(args) => {

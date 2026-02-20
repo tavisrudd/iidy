@@ -4,9 +4,47 @@
 
 ## Status
 
-The CLI definitions for all 5 `param` subcommands exist in `src/cli.rs` but
-the handlers in `src/main.rs` are stubs (`println!` only). No `src/params/`
-module exists yet.
+**IMPLEMENTED** (2026-02-19). All 5 param subcommands have working handlers.
+607 tests passing, zero warnings.
+
+### Implementation Summary
+
+Created `src/params/` module with 6 files:
+- `mod.rs` -- SSM/KMS client creation, KMS alias lookup, tag helpers,
+  serializable ParamOutput/ParamHistoryOutput structs, format_output helper
+- `set.rs` -- put_parameter with approval flow, KMS alias for SecureString, message tags
+- `review.rs` -- .pending comparison, confirmation via DynamicOutputManager, promote/decline
+- `get.rs` -- get_parameter with simple/json/yaml output
+- `get_by_path.rs` -- paginated get_parameters_by_path, sorted output, tag merging
+- `get_history.rs` -- paginated history, current/previous split, tags on current only
+
+### Design Decisions
+
+1. **Separate from OutputData pipeline**: Param commands have their own `--format`
+   flag (simple/json/yaml) and print directly to stdout. They don't use the
+   data-driven output architecture (OutputData enum / renderers) because they
+   have no spinners, live updates, or complex sections.
+
+2. **Confirmation via output manager**: The `review` command uses
+   `DynamicOutputManager::request_confirmation()` for the interactive yes/no
+   prompt, integrating with the existing confirmation system.
+
+3. **Added aws-sdk-kms dependency**: Required for hierarchical KMS alias lookup
+   for SecureString parameters.
+
+4. **BTreeMap for deterministic output**: Tags and sorted parameter maps use
+   BTreeMap instead of HashMap for consistent ordering.
+
+5. **PascalCase serialization**: Output structs use `#[serde(rename_all = "PascalCase")]`
+   to match the AWS SDK field naming convention used by iidy-js.
+
+### Findings
+
+- AWS SDK v1 methods like `resp.parameters()`, `resp.aliases()`, `resp.tag_list()`
+  return `&[T]` slices (not `Option`), unlike v0.x which used `Option<&[T]>`.
+- `Tag::builder().key(k).value(v).build()` returns `Result<Tag, BuildError>`,
+  must be unwrapped.
+- `tag.key()` and `tag.value()` return `&str` (not `Option<&str>`) in SDK v1.
 
 ## What Exists
 

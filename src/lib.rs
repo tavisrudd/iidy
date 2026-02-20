@@ -4,5 +4,6 @@ pub mod cli;
 pub mod debug;
 pub mod explain;
 pub mod output;
+pub mod params;
 pub mod render;
 pub mod yaml;
