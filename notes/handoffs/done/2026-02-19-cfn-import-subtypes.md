@@ -268,11 +268,11 @@ Update `docs/import-types.md:161-181`:
 
 ## Progress
 
-- [ ] Add CfnParameter, CfnTag, CfnResource structs
-- [ ] Extend CfnClient trait and AwsCfnClient impl
-- [ ] Add cfn:output: syntax (JS-compatible alias for existing dot syntax)
-- [ ] Add cfn:parameter:, cfn:tag:, cfn:resource:, cfn:stack: parsing
-- [ ] Add load match arms for new subtypes
-- [ ] Update MockCfnClient and add tests
-- [ ] Update docs/import-types.md (add new syntax, keep dot syntax as shorthand)
-- [ ] make check-fast + make test pass
+- [x] Add CfnParameter, CfnTag, CfnResource structs
+- [x] Extend CfnClient trait and AwsCfnClient impl
+- [x] Add cfn:output: syntax (JS-compatible alias for existing dot syntax)
+- [x] Add cfn:parameter:, cfn:tag:, cfn:resource:, cfn:stack: parsing
+- [x] Add load match arms for new subtypes
+- [x] Update MockCfnClient and add tests
+- [x] Update docs/import-types.md (add new syntax, keep dot syntax as shorthand)
+- [x] make check-fast + make test pass

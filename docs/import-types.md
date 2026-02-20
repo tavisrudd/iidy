@@ -160,25 +160,59 @@ $imports:
 
 ## cfn
 
-Read a CloudFormation stack output or named export. Requires AWS credentials.
+Read data from a CloudFormation stack. Requires AWS credentials.
 
-**Syntax:** `cfn:stack-name.OutputKey`, `cfn:export:ExportName`
+**Syntax:**
 
-| Format | Description |
+| Format | Returns |
 |---|---|
-| `cfn:stack-name.OutputKey` | The value of `OutputKey` from the outputs of the stack named `stack-name` |
-| `cfn:export:ExportName` | The value of the CloudFormation named export `ExportName` |
+| `cfn:stack-name.OutputKey` | Value of a stack output (legacy shorthand) |
+| `cfn:output:stack-name/OutputKey` | Value of a stack output |
+| `cfn:output:stack-name` | All stack outputs as a YAML mapping |
+| `cfn:export:ExportName` | Value of a named CloudFormation export |
+| `cfn:parameter:stack-name/Key` | Value of a stack parameter |
+| `cfn:parameter:stack-name` | All stack parameters as a YAML mapping |
+| `cfn:tag:stack-name/Key` | Value of a stack tag |
+| `cfn:tag:stack-name` | All stack tags as a YAML mapping |
+| `cfn:resource:stack-name/LogicalId` | Resource object for a logical resource ID |
+| `cfn:resource:stack-name` | All stack resources as a YAML mapping keyed by logical ID |
+| `cfn:stack:stack-name` | Entire stack as a mapping with `Outputs`, `Parameters`, and `Tags` keys |
+
+The `cfn:stack-name.OutputKey` dot syntax is a backward-compatible shorthand for `cfn:output:stack-name/OutputKey`.
+
+When looking up a specific field (output, parameter, tag, or resource), the result is either a string value or a resource object. When no field key is given, the result is a YAML mapping of all values.
+
+Resource objects returned by `cfn:resource:` contain `LogicalResourceId`, `PhysicalResourceId`, `ResourceType`, and `ResourceStatus` fields.
 
 **Examples:**
 
 ```yaml
 $imports:
+  # Stack outputs
   vpc_id: cfn:networking-stack.VpcId
-  private_subnets: cfn:networking-stack.PrivateSubnetIds
+  vpc_id_canonical: cfn:output:networking-stack/VpcId
+  all_outputs: cfn:output:networking-stack
+
+  # Named exports
   cert_arn: cfn:export:acm-wildcard-cert-arn
+
+  # Stack parameters
+  db_instance_class: cfn:parameter:db-stack/InstanceClass
+  all_params: cfn:parameter:db-stack
+
+  # Stack tags
+  environment: cfn:tag:my-stack/Environment
+  all_tags: cfn:tag:my-stack
+
+  # Stack resources
+  bucket_info: cfn:resource:my-stack/AssetsBucket
+  all_resources: cfn:resource:my-stack
+
+  # Entire stack
+  full_stack: cfn:stack:networking-stack
 ```
 
-**Notes:** Returns the string value of the output or export. The stack must exist and the output/export must be present, otherwise preprocessing fails. The subtypes `cfn:parameter`, `cfn:tag`, and `cfn:resource` are not yet implemented.
+**Notes:** The stack must exist in the current account and region. When looking up a specific field, it must be present in the stack, otherwise preprocessing fails.
 
 ---
 
