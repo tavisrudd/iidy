@@ -4,7 +4,7 @@ git diff --exit-code --quiet || {
     echo "pre-commit: cargo fmt made changes. Stage them and retry."
     exit 1
 }
-cargo clippy --all-targets -- -D warnings || {
+make clippy || {
     echo "pre-commit: clippy found warnings. Fix them and retry."
     exit 1
 }

@@ -2,10 +2,10 @@
 
 .PHONY: test test-force coverage coverage-html coverage-report clean help test-if-changed fmt clippy lint check-fast setup
 
-# Test markers directory
-TEST_MARKERS_DIR := .make-markers
-TEST_LAST_RUN_FILE := $(TEST_MARKERS_DIR)/test-last-run
-TEST_NEXTEST_LAST_RUN_FILE := $(TEST_MARKERS_DIR)/nextest-last-run
+# Markers directory for lazy targets
+MARKERS_DIR := .make-markers
+TEST_LAST_RUN_FILE := $(MARKERS_DIR)/test-last-run
+CLIPPY_LAST_RUN_FILE := $(MARKERS_DIR)/clippy-last-run
 
 # Find all relevant source files
 RUST_FILES := $(shell find src -name "*.rs" 2>/dev/null)
@@ -37,8 +37,8 @@ setup:
 	@echo "Git hooks configured to use .githooks/"
 
 # Create markers directory if it doesn't exist
-$(TEST_MARKERS_DIR):
-	@mkdir -p $(TEST_MARKERS_DIR)
+$(MARKERS_DIR):
+	@mkdir -p $(MARKERS_DIR)
 
 # Fast check via rust-analyzer through ra-multiplex (no cargo rebuild)
 check-fast:
@@ -52,9 +52,13 @@ check:
 fmt:
 	cargo fmt
 
-# Run clippy lints
-clippy:
-	cargo clippy --all-targets -- -D warnings
+# Run clippy lints (lazy -- skips if no source changes since last successful run)
+clippy: $(MARKERS_DIR)
+	@if [ ! -f "$(CLIPPY_LAST_RUN_FILE)" ] || [ -n "$$(find $(ALL_TRACKED_FILES) -newer $(CLIPPY_LAST_RUN_FILE) 2>/dev/null)" ]; then \
+		cargo clippy --all-targets -- -D warnings && touch $(CLIPPY_LAST_RUN_FILE); \
+	else \
+		echo "OK: no changes since last successful clippy run"; \
+	fi
 
 # Combined lint check (CI-friendly: checks formatting without modifying)
 lint:
@@ -65,7 +69,7 @@ lint:
 test: test-if-changed
 
 # Conditional test target based on file changes
-test-if-changed: $(TEST_MARKERS_DIR)
+test-if-changed: $(MARKERS_DIR)
 	@if [ ! -f "$(TEST_LAST_RUN_FILE)" ] || [ -n "$$(find $(ALL_TRACKED_FILES) -newer $(TEST_LAST_RUN_FILE) 2>/dev/null)" ]; then \
 		echo "🔄 Source files changed, running tests..."; \
 		if [ "$$CLAUDECODE" = "1" ]; then \
@@ -78,7 +82,7 @@ test-if-changed: $(TEST_MARKERS_DIR)
 	fi
 
 # Force run all tests regardless of changes
-test-force: $(TEST_MARKERS_DIR)
+test-force: $(MARKERS_DIR)
 	@echo "🔄 Force running all tests..."
 	@if [ "$$CLAUDECODE" = "1" ]; then \
 		cargo nextest r --color=never --hide-progress-bar && touch $(TEST_LAST_RUN_FILE); \
