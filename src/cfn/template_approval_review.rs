@@ -44,12 +44,30 @@ async fn template_approval_review_impl(
         .render(OutputData::CommandMetadata(command_metadata))
         .await?;
 
-    // Check if template already approved
+    // Derive latest key from pending key's parent directory (matches JS behavior)
+    let bucket_dir = std::path::Path::new(&pending_key)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let latest_key = if bucket_dir.is_empty() {
+        "latest".to_string()
+    } else {
+        format!("{bucket_dir}/latest")
+    };
+
     let s3_client = context.create_s3_client();
+
+    // Check if pending template exists before proceeding
+    let pending_exists = check_template_exists(&s3_client, &bucket, &pending_key).await?;
+    if !pending_exists {
+        anyhow::bail!("Pending template not found at {}", args.url);
+    }
+
+    // Check if template already approved
     let already_approved = check_template_exists(&s3_client, &bucket, &approved_key).await?;
 
     let approval_status = crate::output::data::ApprovalStatus {
-        pending_exists: true, // We assume it exists since user provided URL
+        pending_exists,
         already_approved,
         pending_location: args.url.clone(),
         approved_location: if already_approved {
@@ -68,7 +86,7 @@ async fn template_approval_review_impl(
 
     // Download templates
     let pending_template = download_template(&s3_client, &bucket, &pending_key).await?;
-    let latest_template = download_template(&s3_client, &bucket, "latest")
+    let latest_template = download_template(&s3_client, &bucket, &latest_key)
         .await
         .unwrap_or_else(|_| String::new());
 
@@ -77,8 +95,6 @@ async fn template_approval_review_impl(
     let has_changes = !diff_output.is_empty();
 
     let template_diff = crate::output::data::TemplateDiff {
-        old_template: latest_template.clone(),
-        new_template: pending_template.clone(),
         diff_output,
         context_lines: args.context,
         has_changes,
@@ -91,7 +107,7 @@ async fn template_approval_review_impl(
         let result = crate::output::data::ApprovalResult {
             approved: true,
             approved_location: Some(format!("s3://{bucket}/{approved_key}")),
-            latest_location: Some(format!("s3://{bucket}/latest")),
+            latest_location: Some(format!("s3://{bucket}/{latest_key}")),
             cleanup_completed: true,
         };
         output_manager
@@ -100,26 +116,18 @@ async fn template_approval_review_impl(
         return Ok(0);
     }
 
-    // Request confirmation
-    let confirmation_request = crate::output::data::ConfirmationRequest {
-        message: "Would you like to approve these changes?".to_string(),
-        response_tx: None,
-        key: None,
-    };
-    output_manager
-        .render(OutputData::ConfirmationPrompt(confirmation_request))
+    // Request user confirmation
+    let user_confirmed = output_manager
+        .request_confirmation("Would you like to approve these changes?".to_string())
         .await?;
 
-    // For now, assume user confirms (in real implementation, this would wait for user input)
-    let user_confirmed = true; // TODO: Implement actual user input handling
-
     if user_confirmed {
-        // Approve template
         approve_template(
             &s3_client,
             &bucket,
             &pending_key,
             &approved_key,
+            &latest_key,
             &pending_template,
         )
         .await?;
@@ -127,7 +135,7 @@ async fn template_approval_review_impl(
         let result = crate::output::data::ApprovalResult {
             approved: true,
             approved_location: Some(format!("s3://{bucket}/{approved_key}")),
-            latest_location: Some(format!("s3://{bucket}/latest")),
+            latest_location: Some(format!("s3://{bucket}/{latest_key}")),
             cleanup_completed: true,
         };
         output_manager
@@ -203,6 +211,7 @@ async fn approve_template(
     bucket: &str,
     pending_key: &str,
     approved_key: &str,
+    latest_key: &str,
     content: &str,
 ) -> Result<()> {
     // Copy to approved location
@@ -219,7 +228,7 @@ async fn approve_template(
     s3_client
         .put_object()
         .bucket(bucket)
-        .key("latest")
+        .key(latest_key)
         .body(ByteStream::from(content.as_bytes().to_vec()))
         .acl(ObjectCannedAcl::BucketOwnerFullControl)
         .send()
@@ -237,5 +246,10 @@ async fn approve_template(
 }
 
 pub async fn template_approval_review(cli: &Cli, args: &ApprovalReviewArgs) -> Result<i32> {
-    run_command_handler!(template_approval_review_impl, cli, args)
+    // JS forces us-east-1 when no region is specified for review
+    let mut cli = cli.clone();
+    if cli.aws_opts.region.is_none() {
+        cli.aws_opts.region = Some("us-east-1".to_string());
+    }
+    run_command_handler!(template_approval_review_impl, &cli, args)
 }

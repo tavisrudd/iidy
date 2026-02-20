@@ -55,6 +55,13 @@ These were identified during development and fixed to match JS behavior:
 
 - **`list-stack-instances`**: Supported in JS but removed from this version.
 
+## Carried-forward JS behaviors
+
+- **`template-approval review` defaults to us-east-1**: When no `--region`
+  is specified, the review command defaults to `us-east-1`. This matches
+  JS behavior (`approval/index.ts:78`). Should be parameterized in the
+  future.
+
 ## Intentional improvements over iidy-js
 
 - **`$defs` let* semantics**: JS copies `$defs` values raw (effectively

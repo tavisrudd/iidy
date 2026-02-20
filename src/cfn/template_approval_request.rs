@@ -77,16 +77,14 @@ async fn template_approval_request_impl(
 
     // Template validation (if enabled)
     if args.lint_template {
-        let validation_result = validate_template(
-            context,
-            &template_body,
-            stack_args,
-            args.lint_using_parameters,
-        )
-        .await?;
+        let validation_result = validate_template(context, &template_body).await?;
+        let has_errors = !validation_result.errors.is_empty();
         output_manager
             .render(OutputData::TemplateValidation(validation_result))
             .await?;
+        if has_errors {
+            return Ok(1);
+        }
     }
 
     // Upload pending template
@@ -132,40 +130,28 @@ async fn upload_template_to_s3(
 async fn validate_template(
     context: &CfnContext,
     template_body: &str,
-    stack_args: &StackArgs,
-    using_parameters: bool,
 ) -> Result<crate::output::data::TemplateValidation> {
-    let mut validation_request = context.client.validate_template();
-
-    if template_body.len() > 51200 {
-        // Use URL for large templates (not implemented yet)
-        validation_request = validation_request.template_url("template_url");
-    } else {
-        validation_request = validation_request.template_body(template_body);
-    }
-
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
-    match validation_request.send().await {
-        Ok(_response) => {
-            // Template is valid
+    if template_body.len() > 51200 {
+        warnings.push(
+            "Template exceeds 51200 bytes; skipping CFN validation (will be validated on deploy)"
+                .to_string(),
+        );
+    } else {
+        let validation_request = context
+            .client
+            .validate_template()
+            .template_body(template_body);
+        match validation_request.send().await {
+            Ok(_) => {}
+            Err(e) => errors.push(format!("Template validation failed: {e}")),
         }
-        Err(e) => {
-            errors.push(format!("Template validation failed: {e}"));
-        }
-    }
-
-    // Add parameter validation if requested
-    if using_parameters && stack_args.parameters.is_some() {
-        // This would require additional validation logic
-        // For now, just note that parameters were considered
-        warnings.push("Parameter validation not fully implemented yet".to_string());
     }
 
     Ok(crate::output::data::TemplateValidation {
         enabled: true,
-        using_parameters,
         errors,
         warnings,
     })

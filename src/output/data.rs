@@ -434,7 +434,6 @@ pub struct ApprovalRequestResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemplateValidation {
     pub enabled: bool,
-    pub using_parameters: bool,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
 }
@@ -451,8 +450,6 @@ pub struct ApprovalStatus {
 /// Template diff display
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemplateDiff {
-    pub old_template: String,
-    pub new_template: String,
     pub diff_output: String,
     pub context_lines: u32,
     pub has_changes: bool,

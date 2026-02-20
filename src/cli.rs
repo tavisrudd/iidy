@@ -598,14 +598,12 @@ pub struct ApprovalRequestArgs {
     pub argsfile: String,
     #[arg(long = "lint-template", default_value_t = true)]
     pub lint_template: bool,
-    #[arg(long = "lint-using-parameters")]
-    pub lint_using_parameters: bool,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct ApprovalReviewArgs {
     pub url: String,
-    #[arg(long, default_value_t = 100)]
+    #[arg(long, default_value_t = 500)]
     pub context: u32,
 }
 
