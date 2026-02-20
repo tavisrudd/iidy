@@ -622,6 +622,7 @@ impl InteractiveRenderer {
                 "confirmation",
                 "approval_result",
             ],
+            CfnOperation::ConvertStackToIidy => vec![],
         };
 
         // Start the first section for operations with predefined sections (show title immediately, spinner if enabled)

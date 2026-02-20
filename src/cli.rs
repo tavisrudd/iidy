@@ -388,6 +388,7 @@ impl Commands {
                 ApprovalCommands::Request(_) => crate::cfn::CfnOperation::TemplateApprovalRequest,
                 ApprovalCommands::Review(_) => crate::cfn::CfnOperation::TemplateApprovalReview,
             },
+            Commands::ConvertStackToIidy(_) => crate::cfn::CfnOperation::ConvertStackToIidy,
 
             // All other commands should not be calling to_cfn_operation()
             _ => panic!(

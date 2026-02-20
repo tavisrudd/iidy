@@ -217,6 +217,7 @@ macro_rules! run_command_handler_with_stack_args {
 // pub mod console; // REMOVED: Legacy direct output - replaced by data-driven output architecture
 pub mod changeset_operations; // Shared changeset functionality
 pub mod constants;
+pub mod convert_stack_to_iidy;
 pub mod create_changeset;
 pub mod create_or_update;
 pub mod create_stack;

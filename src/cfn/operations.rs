@@ -19,6 +19,7 @@ pub enum CfnOperation {
     DescribeStackDrift,
     TemplateApprovalRequest,
     TemplateApprovalReview,
+    ConvertStackToIidy,
 }
 
 impl CfnOperation {
@@ -38,6 +39,7 @@ impl CfnOperation {
             "describe-stack-drift" => Some(Self::DescribeStackDrift),
             "template-approval-request" => Some(Self::TemplateApprovalRequest),
             "template-approval-review" => Some(Self::TemplateApprovalReview),
+            "convert-stack-to-iidy" => Some(Self::ConvertStackToIidy),
             _ => None,
         }
     }
@@ -59,6 +61,7 @@ impl CfnOperation {
             Self::DescribeStackDrift => "describe-stack-drift",
             Self::TemplateApprovalRequest => "template-approval-request",
             Self::TemplateApprovalReview => "template-approval-review",
+            Self::ConvertStackToIidy => "convert-stack-to-iidy",
         }
     }
 
@@ -70,7 +73,8 @@ impl CfnOperation {
                 | Self::EstimateCost
                 | Self::ListStacks
                 | Self::GetStackTemplate
-                | Self::DescribeStackDrift // Note: TemplateApprovalRequest writes to S3, TemplateApprovalReview writes conditionally
+                | Self::DescribeStackDrift
+                | Self::ConvertStackToIidy
         )
     }
 }

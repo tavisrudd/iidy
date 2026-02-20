@@ -229,7 +229,17 @@ fn handle_command(cli: Cli) {
             }
         }
         Commands::LintTemplate(args) => println!("lint-template {args:?}"),
-        Commands::ConvertStackToIidy(args) => println!("convert-stack-to-iidy {args:?}"),
+        Commands::ConvertStackToIidy(ref args) => {
+            match rt.block_on(cfn::convert_stack_to_iidy::convert_stack_to_iidy(
+                &cli, args,
+            )) {
+                Ok(exit_code) => std::process::exit(exit_code),
+                Err(e) => {
+                    eprintln!("error converting stack to iidy: {e:?}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Commands::InitStackArgs(args) => {
             if let Err(e) = cfn::init_stack_args::init_stack_args(&args) {
                 eprintln!("error initializing stack args: {e:?}");
