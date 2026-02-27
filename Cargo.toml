@@ -89,7 +89,7 @@ rand = "0.8"
 uuid = { version = "1.0", features = ["v4"] }
 smallvec = "1.11"
 heck = "0.5"
-glob = "0.3"
+walkdir = "2"
 
 # Timing/NTP support
 ntp = "0.5"

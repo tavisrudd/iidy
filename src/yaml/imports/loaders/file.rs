@@ -7,6 +7,7 @@ use serde_yaml::Value;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use walkdir::WalkDir;
 
 use super::utils::resolve_doc_from_import_data;
 use crate::yaml::imports::{ImportData, ImportType};
@@ -134,16 +135,12 @@ pub async fn load_filehash_import(
         }
     }
 
-    let file_content = fs::read(&resolved_path)
-        .await
-        .map_err(|e| anyhow!("Failed to read file {}: {}", resolved_location, e))?;
-
-    let hash = sha256_digest(&String::from_utf8_lossy(&file_content));
+    let hex_hash = compute_path_hash(&resolved_path).await?;
     let data = if base64 {
         use base64::{Engine as _, engine::general_purpose};
-        general_purpose::STANDARD.encode(hex::decode(&hash).unwrap())
+        general_purpose::STANDARD.encode(hex::decode(&hex_hash).unwrap())
     } else {
-        hash
+        hex_hash
     };
 
     Ok(create_filehash_import_data(
@@ -154,11 +151,43 @@ pub async fn load_filehash_import(
     ))
 }
 
-/// Compute SHA256 hash of a string
-fn sha256_digest(data: &str) -> String {
+/// Compute SHA256 hash of raw bytes
+fn sha256_bytes(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(data.as_bytes());
+    hasher.update(data);
     hex::encode(hasher.finalize())
+}
+
+/// Compute SHA256 hash for a file or directory, matching iidy-js behavior.
+/// For files: hash the raw bytes directly.
+/// For directories: recursively find all files (sorted), hash each,
+/// join hex hashes with commas, then hash that string.
+async fn compute_path_hash(path: &Path) -> Result<String> {
+    if path.is_dir() {
+        let mut file_paths: Vec<PathBuf> = WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.into_path())
+            .collect();
+        file_paths.sort();
+
+        let mut file_hashes = Vec::with_capacity(file_paths.len());
+        for file_path in &file_paths {
+            let contents = fs::read(file_path)
+                .await
+                .map_err(|e| anyhow!("Failed to read file {}: {}", file_path.display(), e))?;
+            file_hashes.push(sha256_bytes(&contents));
+        }
+
+        let combined = file_hashes.join(",");
+        Ok(sha256_bytes(combined.as_bytes()))
+    } else {
+        let contents = fs::read(path)
+            .await
+            .map_err(|e| anyhow!("Failed to read file {}: {}", path.display(), e))?;
+        Ok(sha256_bytes(&contents))
+    }
 }
 
 #[cfg(test)]
@@ -237,7 +266,7 @@ mod tests {
         assert_eq!(result.data.len(), 64); // SHA256 hex length
 
         // Verify the hash is consistent
-        let expected_hash = sha256_digest("hash test content\n");
+        let expected_hash = sha256_bytes(b"hash test content\n");
         assert_eq!(result.data, expected_hash);
 
         Ok(())
@@ -292,15 +321,34 @@ mod tests {
     }
 
     #[test]
-    fn test_sha256_digest() {
-        let input = "test string";
-        let hash = sha256_digest(input);
+    fn test_sha256_bytes() {
+        let input = b"test string";
+        let hash = sha256_bytes(input);
 
-        // Verify it's a valid hex string of correct length
         assert_eq!(hash.len(), 64);
         assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
 
-        // Verify consistency
-        assert_eq!(hash, sha256_digest(input));
+        assert_eq!(hash, sha256_bytes(input));
+    }
+
+    #[tokio::test]
+    async fn test_load_filehash_directory() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let dir_path = temp_dir.path().join("subdir");
+        std::fs::create_dir(&dir_path)?;
+        std::fs::write(dir_path.join("a.txt"), "content_a")?;
+        std::fs::write(dir_path.join("b.txt"), "content_b")?;
+
+        let location = format!("filehash:{}", dir_path.to_string_lossy());
+        let result = load_filehash_import(&location, "/base", false).await?;
+
+        assert_eq!(result.import_type, ImportType::Filehash);
+        assert_eq!(result.data.len(), 64);
+
+        // Hash should be deterministic
+        let result2 = load_filehash_import(&location, "/base", false).await?;
+        assert_eq!(result.data, result2.data);
+
+        Ok(())
     }
 }

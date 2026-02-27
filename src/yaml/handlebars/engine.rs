@@ -35,8 +35,6 @@ fn get_registry() -> &'static Handlebars<'static> {
         handlebars.register_helper("base64", Box::new(base64_helper));
         handlebars.register_helper("urlEncode", Box::new(url_encode_helper));
         handlebars.register_helper("sha256", Box::new(sha256_helper));
-        handlebars.register_helper("filehash", Box::new(filehash_helper));
-        handlebars.register_helper("filehashBase64", Box::new(filehash_base64_helper));
 
         // String manipulation helpers
         handlebars.register_helper("toLowerCase", Box::new(to_lower_case_helper));
