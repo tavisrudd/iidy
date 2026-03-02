@@ -16,16 +16,9 @@ mod demo;
 use tokio::runtime::Runtime;
 
 fn handle_command(cli: Cli) {
-    // Set AWS_SDK_LOAD_CONFIG before creating the Tokio runtime so no other threads exist.
-    // This must not be done inside async code where Tokio worker threads are alive.
-    if let Some(home) = std::env::var_os("HOME") {
-        let aws_dir = std::path::Path::new(&home).join(".aws");
-        if aws_dir.exists() {
-            unsafe {
-                std::env::set_var("AWS_SDK_LOAD_CONFIG", "1");
-            }
-        }
-    }
+    // Note: AWS_SDK_LOAD_CONFIG was previously set here, inherited from iidy-js where
+    // aws-sdk-js v2 required it to read ~/.aws/config. The Rust AWS SDK reads config
+    // files by default, so this env var is unnecessary.
 
     let rt = Runtime::new().expect("failed to create tokio runtime");
     match cli.command {
