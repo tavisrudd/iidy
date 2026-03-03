@@ -119,7 +119,7 @@ pub async fn create_changeset_comprehensive(
     };
 
     // Check stack state to determine changeset handling
-    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_name = stack_args.require_stack_name()?;
     let stack_state = check_stack_state(context, stack_name).await?;
 
     // Handle REVIEW_IN_PROGRESS state - show existing changeset details and flow to execution
@@ -342,7 +342,7 @@ async fn build_changeset_result(
     let console_url = generate_changeset_console_url(response)?;
 
     // Fetch pending changesets
-    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_name = stack_args.require_stack_name()?;
     let pending_changesets = fetch_pending_changesets(&context.client, stack_name).await?;
 
     // Generate next steps (exact iidy-js format)
@@ -359,7 +359,7 @@ async fn build_changeset_result(
 
     Ok(ChangeSetCreationResult {
         changeset_name: changeset_name.to_string(),
-        stack_name: stack_name.clone(),
+        stack_name: stack_name.to_owned(),
         changeset_type: if stack_exists { "UPDATE" } else { "CREATE" }.to_string(),
         // Guaranteed by wait_for_changeset_completion which only returns Ok on CREATE_COMPLETE
         status: "CREATE_COMPLETE".to_string(),

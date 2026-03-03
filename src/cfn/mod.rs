@@ -566,10 +566,7 @@ pub fn apply_stack_name_override_and_validate(
         stack_args.stack_name = Some(stack_name.clone());
     }
 
-    if stack_args.stack_name.is_none() {
-        anyhow::bail!("Stack name is required (either in stack-args.yaml or via --stack-name)");
-    }
-
+    stack_args.require_stack_name()?;
     Ok(stack_args)
 }
 

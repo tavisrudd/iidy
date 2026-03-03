@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_yaml::{Mapping, Value};
 
 use crate::aws::config_from_merged_settings;
+use crate::yaml::errors::enhanced::levenshtein_distance;
 use crate::{aws::AwsSettings, cfn::CfnOperation, cli::YamlSpec, yaml::preprocess_yaml};
 
 #[allow(dead_code)]
@@ -55,6 +56,16 @@ pub struct StackArgs {
     pub commands_before: Option<Vec<String>>,
 }
 
+impl StackArgs {
+    pub fn require_stack_name(&self) -> Result<&str> {
+        self.stack_name.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "StackName is required (set it in stack-args.yaml or pass --stack-name)"
+            )
+        })
+    }
+}
+
 fn resolve_env_map(value: &Value, env: &str, key: &str) -> Result<Value> {
     match value {
         Value::Mapping(m) => {
@@ -82,6 +93,83 @@ fn ensure_environment_tag(root: &mut Mapping, env: &str) {
         .or_insert_with(|| Value::Mapping(Mapping::new()));
     if let Value::Mapping(map) = tags {
         map.entry(env_key).or_insert(Value::String(env.to_string()));
+    }
+}
+
+const VALID_STACK_ARGS_KEYS: &[&str] = &[
+    "StackName",
+    "Template",
+    "ApprovedTemplateLocation",
+    "Region",
+    "Profile",
+    "AssumeRoleARN",
+    "ServiceRoleARN",
+    "RoleARN",
+    "Capabilities",
+    "Tags",
+    "Parameters",
+    "NotificationARNs",
+    "TimeoutInMinutes",
+    "OnFailure",
+    "DisableRollback",
+    "EnableTerminationProtection",
+    "StackPolicy",
+    "ResourceTypes",
+    "UsePreviousTemplate",
+    "UsePreviousParameterValues",
+    "CommandsBefore",
+];
+
+fn validate_stack_args_keys(value: &Value) -> Result<()> {
+    let mapping = match value {
+        Value::Mapping(m) => m,
+        _ => return Ok(()),
+    };
+
+    let valid: HashSet<&str> = VALID_STACK_ARGS_KEYS.iter().copied().collect();
+    let mut unknown_keys: Vec<String> = Vec::new();
+
+    for (key, _) in mapping.iter() {
+        if let Value::String(key_str) = key {
+            if key_str.starts_with('$') {
+                continue;
+            }
+            if !valid.contains(key_str.as_str()) {
+                unknown_keys.push(key_str.clone());
+            }
+        }
+    }
+
+    if unknown_keys.is_empty() {
+        return Ok(());
+    }
+
+    let formatted: Vec<String> = unknown_keys
+        .iter()
+        .map(|key| format_unknown_key(key, &valid))
+        .collect();
+
+    bail!("Unknown keys in stack-args: {}", formatted.join(", "))
+}
+
+fn format_unknown_key(key: &str, valid_keys: &HashSet<&str>) -> String {
+    let max_dist = 3.min(key.len() / 2 + 1);
+    let mut best: Option<(&str, usize)> = None;
+
+    for &candidate in valid_keys {
+        let dist = levenshtein_distance(key, candidate);
+        if dist > 0 && dist <= max_dist {
+            match best {
+                None => best = Some((candidate, dist)),
+                Some((_, best_dist)) if dist < best_dist => best = Some((candidate, dist)),
+                _ => {}
+            }
+        }
+    }
+
+    match best {
+        Some((suggestion, _)) => format!("{key} (did you mean {suggestion}?)"),
+        None => key.to_string(),
     }
 }
 
@@ -231,7 +319,7 @@ pub async fn load_stack_args(
     let final_value =
         preprocess_yaml(&serde_yaml::to_string(&value)?, &base_location, &yaml_spec).await?;
 
-    // Deserialize to StackArgs
+    validate_stack_args_keys(&final_value)?;
     let mut stack_args: StackArgs = serde_yaml::from_value(final_value)?;
 
     // Apply global configuration from SSM parameter store
@@ -762,5 +850,58 @@ Template: template.yaml
         } else {
             panic!("Expected argsdata to be a mapping");
         }
+    }
+
+    #[test]
+    fn validate_keys_typo_with_suggestion() {
+        let yaml = "StackName: test\nParamters: {}\n";
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_stack_args_keys(&value);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Paramters"));
+        assert!(err.contains("did you mean Parameters?"));
+    }
+
+    #[test]
+    fn validate_keys_all_valid() {
+        let yaml = "StackName: test\nTemplate: t.yaml\nParameters: {}\nTags: {}\n";
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        assert!(validate_stack_args_keys(&value).is_ok());
+    }
+
+    #[test]
+    fn validate_keys_dollar_prefixed_accepted() {
+        let yaml = "StackName: test\n$envValues: {}\n$imports: {}\n$defs: {}\n$params: {}\n";
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        assert!(validate_stack_args_keys(&value).is_ok());
+    }
+
+    #[test]
+    fn validate_keys_far_off_no_suggestion() {
+        let yaml = "StackName: test\nFooBarBazQux: hi\n";
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_stack_args_keys(&value);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("FooBarBazQux"));
+        assert!(!err.contains("did you mean"));
+    }
+
+    #[test]
+    fn validate_keys_multiple_unknown() {
+        let yaml = "StakName: test\nParamters: {}\n";
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let result = validate_stack_args_keys(&value);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("StakName"));
+        assert!(err.contains("Paramters"));
+    }
+
+    #[test]
+    fn validate_keys_not_a_mapping() {
+        let value = Value::String("not a mapping".to_string());
+        assert!(validate_stack_args_keys(&value).is_ok());
     }
 }

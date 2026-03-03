@@ -34,11 +34,6 @@ async fn create_stack_impl(
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let _stack_name = final_stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
     let command_metadata =
         create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager
@@ -142,11 +137,6 @@ async fn perform_stack_creation(
     output_manager
         .render(OutputData::TokenInfo(output_token))
         .await?;
-
-    let _stack_name = stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     let response = create_request.send().await?;
 

@@ -28,11 +28,6 @@ async fn update_stack_impl(
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let stack_name = final_stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
     let command_metadata =
         create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager
@@ -44,7 +39,6 @@ async fn update_stack_impl(
             context,
             args,
             &final_stack_args,
-            stack_name,
             output_manager,
             &global_opts.environment,
             cli,
@@ -92,11 +86,6 @@ async fn perform_stack_update(
         .render(OutputData::TokenInfo(output_token))
         .await?;
 
-    let _stack_name = stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
     let response = update_request.send().await?;
 
     let stack_id = response
@@ -111,15 +100,14 @@ async fn update_stack_with_changeset(
     context: &CfnContext,
     args: &UpdateStackArgs,
     stack_args: &StackArgs,
-    _stack_name: &str,
     output_manager: &mut DynamicOutputManager,
     environment: &str,
     cli: &Cli,
 ) -> Result<i32> {
-    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_name = stack_args.require_stack_name()?;
     let stack_task = {
         let client = context.client.clone();
-        let stack_name = stack_name.clone();
+        let stack_name = stack_name.to_owned();
         tokio::spawn(async move {
             let stack =
                 crate::cfn::stack_operations::StackInfoService::get_stack(&client, &stack_name)

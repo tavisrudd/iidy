@@ -646,8 +646,8 @@ fn fuzzy_match_variables(target: &str, available: &Vec<String>) -> Vec<String> {
     suggestions
 }
 
-/// Simple Levenshtein distance calculation
-fn levenshtein_distance(s1: &str, s2: &str) -> usize {
+// strsim is in Cargo.lock (via clap) but not worth a direct dep for two call sites.
+pub(crate) fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let s1_chars: Vec<char> = s1.chars().collect();
     let s2_chars: Vec<char> = s2.chars().collect();
     let m = s1_chars.len();

@@ -25,11 +25,6 @@ pub async fn exec_changeset_impl(
     let final_stack_args =
         apply_stack_name_override_and_validate(stack_args.clone(), args.stack_name.as_ref())?;
 
-    let _stack_name = final_stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
-
     let command_metadata =
         create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
     output_manager
@@ -125,8 +120,7 @@ async fn perform_changeset_execution(
     let _response = execute_request.send().await?;
 
     let stack_id =
-        StackInfoService::get_stack_id(&context.client, stack_args.stack_name.as_ref().unwrap())
-            .await?;
+        StackInfoService::get_stack_id(&context.client, stack_args.require_stack_name()?).await?;
 
     Ok(stack_id)
 }

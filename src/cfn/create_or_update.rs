@@ -37,10 +37,7 @@ async fn create_or_update_impl(
         anyhow::bail!("Template is required in stack-args.yaml");
     }
 
-    let stack_name = final_stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
+    let stack_name = final_stack_args.require_stack_name()?;
 
     let command_metadata =
         create_command_metadata(context, opts, &final_stack_args, &global_opts.environment).await?;
@@ -68,11 +65,11 @@ async fn create_or_update_impl(
             {
                 Ok(UpdateResult::NoChanges) => StackChangeDetails {
                     change_type: StackChangeType::UpdateNoChanges,
-                    stack_name: stack_name.clone(),
+                    stack_name: stack_name.to_owned(),
                 },
                 Ok(UpdateResult::StackId(stack_id)) => StackChangeDetails {
                     change_type: StackChangeType::UpdateWithChanges { stack_id },
-                    stack_name: stack_name.clone(),
+                    stack_name: stack_name.to_owned(),
                 },
                 Err(e) => return Err(e),
             }
@@ -92,7 +89,7 @@ async fn create_or_update_impl(
         }
         StackChangeDetails {
             change_type: StackChangeType::Create,
-            stack_name: stack_name.clone(),
+            stack_name: stack_name.to_owned(),
         }
     };
 
@@ -164,11 +161,6 @@ async fn create_stack_direct_data(
     output_manager
         .render(OutputData::TokenInfo(output_token))
         .await?;
-
-    let _stack_name = stack_args
-        .stack_name
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("Stack name is required"))?;
 
     let response = create_request.send().await?;
 
@@ -242,10 +234,10 @@ async fn update_stack_with_changeset_data(
     aws_opts: &crate::cli::AwsOpts,
 ) -> Result<i32> {
     // Step 1: Fetch and render stack definition first
-    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_name = stack_args.require_stack_name()?;
     let stack_task = {
         let client = context.client.clone();
-        let stack_name = stack_name.clone();
+        let stack_name = stack_name.to_owned();
         tokio::spawn(async move {
             let stack =
                 crate::cfn::stack_operations::StackInfoService::get_stack(&client, &stack_name)
@@ -322,7 +314,7 @@ async fn create_stack_with_changeset_data(
     .await?;
 
     // Fetch and render stack definition (stack now exists in REVIEW_IN_PROGRESS state)
-    let stack_name = stack_args.stack_name.as_ref().unwrap();
+    let stack_name = stack_args.require_stack_name()?;
     let stack = StackInfoService::get_stack(&context.client, stack_name).await?;
     let stack_definition = convert_stack_to_definition(&stack, true);
     output_manager.render(stack_definition).await?;
