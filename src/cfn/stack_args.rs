@@ -433,15 +433,14 @@ async fn apply_global_configuration(
                                 )
                                 .await?;
                             }
-                            "/iidy/disable-template-approval" => {
+                            "/iidy/disable-template-approval"
                                 if value.to_lowercase() == "true"
-                                    && args.approved_template_location.is_some()
-                                {
-                                    eprintln!(
-                                        "Disabling template approval based on global {name} parameter store configuration"
-                                    );
-                                    args.approved_template_location = None;
-                                }
+                                    && args.approved_template_location.is_some() =>
+                            {
+                                eprintln!(
+                                    "Disabling template approval based on global {name} parameter store configuration"
+                                );
+                                args.approved_template_location = None;
                             }
                             _ => {}
                         }

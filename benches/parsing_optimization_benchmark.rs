@@ -3,9 +3,10 @@
 //! This benchmark tests the performance of the new tree-sitter based parser
 //! with various YAML document types and sizes.
 
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, criterion_group, criterion_main};
 use iidy::yaml::parsing::{parse_yaml_ast_with_diagnostics, parse_yaml_from_file};
 use serde_yaml::Value;
+use std::hint::black_box;
 use tree_sitter::Parser;
 use tree_sitter_yaml::LANGUAGE;
 use url::Url;

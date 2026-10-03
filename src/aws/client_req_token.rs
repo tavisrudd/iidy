@@ -104,7 +104,7 @@ fn derive_token(primary_token: &str, step: &str) -> String {
     let hash_result = hasher.finalize();
 
     // Convert to hex and take first 8 characters
-    let hash_hex = format!("{hash_result:x}");
+    let hash_hex = hex::encode(hash_result);
     let hash_short = &hash_hex[..8];
 
     // Take first 8 characters of original token

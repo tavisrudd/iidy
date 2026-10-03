@@ -295,7 +295,7 @@ pub fn parse_import_type(location: &str, base_location: &str) -> Result<ImportTy
 pub fn sha256_digest(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 // Note: Import loading is handled by the two-phase processing approach

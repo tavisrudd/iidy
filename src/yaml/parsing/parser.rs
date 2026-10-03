@@ -309,7 +309,7 @@ impl YamlParser {
         match node.kind() {
             "stream" => {
                 // Process all document children
-                for i in 0..node.named_child_count() {
+                for i in 0..node.named_child_count() as u32 {
                     if let Some(child) = node.named_child(i)
                         && child.kind() == "document"
                     {
@@ -325,7 +325,7 @@ impl YamlParser {
             }
             "document" => {
                 // Process all children in document
-                for i in 0..node.named_child_count() {
+                for i in 0..node.named_child_count() as u32 {
                     if let Some(child) = node.named_child(i) {
                         self.build_ast_with_error_collection(
                             child,
@@ -361,7 +361,7 @@ impl YamlParser {
             }
             "flow_node" => {
                 // Check if this flow_node contains a tag - if so, validate it
-                let has_tag = (0..node.named_child_count()).any(|i| {
+                let has_tag = (0..node.named_child_count() as u32).any(|i| {
                     node.named_child(i)
                         .is_some_and(|child| child.kind() == "tag")
                 });
@@ -379,7 +379,7 @@ impl YamlParser {
                     }
                 } else {
                     // Not a tagged node, recurse into children
-                    for i in 0..node.named_child_count() {
+                    for i in 0..node.named_child_count() as u32 {
                         if let Some(child) = node.named_child(i) {
                             self.build_ast_with_error_collection(
                                 child,
@@ -394,7 +394,7 @@ impl YamlParser {
             }
             "block_node" => {
                 // Check if this block_node contains a tag - if so, validate it
-                let has_tag = (0..node.named_child_count()).any(|i| {
+                let has_tag = (0..node.named_child_count() as u32).any(|i| {
                     node.named_child(i)
                         .is_some_and(|child| child.kind() == "tag")
                 });
@@ -412,7 +412,7 @@ impl YamlParser {
                     }
                 } else {
                     // Not a tagged node, recurse into children
-                    for i in 0..node.named_child_count() {
+                    for i in 0..node.named_child_count() as u32 {
                         if let Some(child) = node.named_child(i) {
                             self.build_ast_with_error_collection(
                                 child,
@@ -427,7 +427,7 @@ impl YamlParser {
             }
             _ => {
                 // For other nodes, recurse into children
-                for i in 0..node.named_child_count() {
+                for i in 0..node.named_child_count() as u32 {
                     if let Some(child) = node.named_child(i) {
                         self.build_ast_with_error_collection(
                             child,
@@ -520,7 +520,7 @@ impl YamlParser {
         match node_kind {
             "stream" => {
                 // Stream is the root node, process its document children
-                for i in 0..node.named_child_count() {
+                for i in 0..node.named_child_count() as u32 {
                     if let Some(child) = node.named_child(i)
                         && child.kind() == "document"
                     {
@@ -545,7 +545,7 @@ impl YamlParser {
             "document" => {
                 // Skip document wrapper and process its content
                 // Try each child until we find non-null content
-                for i in 0..node.named_child_count() {
+                for i in 0..node.named_child_count() as u32 {
                     if let Some(child) = node.named_child(i) {
                         match self.build_ast(child, src, uri, anchor_map) {
                             Ok(result) => {
@@ -855,7 +855,7 @@ impl YamlParser {
         let mut content_node = None;
 
         // Examine children to find anchor, tag, and content
-        for i in 0..node.named_child_count() {
+        for i in 0..node.named_child_count() as u32 {
             if let Some(child) = node.named_child(i) {
                 match child.kind() {
                     "anchor" => anchor_node = Some(child),
@@ -919,7 +919,7 @@ impl YamlParser {
         let mut value_node = None;
 
         // Look for tag and value children
-        for i in 0..node.named_child_count() {
+        for i in 0..node.named_child_count() as u32 {
             if let Some(child) = node.named_child(i) {
                 match child.kind() {
                     "tag" => tag_node = Some(child),

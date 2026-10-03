@@ -6,7 +6,7 @@ use std::path::Path;
 pub fn calculate_template_hash(template_content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(template_content.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Parse S3 URL and generate versioned S3 location

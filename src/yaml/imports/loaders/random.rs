@@ -49,7 +49,7 @@ pub async fn load_random_import(location: &str, base_location: &str) -> Result<I
 
 /// Generate a dashed name for random imports
 pub fn generate_dashed_name() -> String {
-    use rand::Rng;
+    use rand::RngExt;
     let adjectives = [
         "red", "blue", "green", "happy", "clever", "brave", "swift", "mighty",
     ];
@@ -57,9 +57,9 @@ pub fn generate_dashed_name() -> String {
         "cat", "dog", "bird", "fish", "lion", "eagle", "shark", "tiger",
     ];
 
-    let mut rng = rand::thread_rng();
-    let adj = adjectives[rng.gen_range(0..adjectives.len())];
-    let noun = nouns[rng.gen_range(0..nouns.len())];
+    let mut rng = rand::rng();
+    let adj = adjectives[rng.random_range(0..adjectives.len())];
+    let noun = nouns[rng.random_range(0..nouns.len())];
 
     format!("{adj}-{noun}")
 }
@@ -71,9 +71,9 @@ fn generate_name() -> String {
 
 /// Generate a random integer for random imports
 fn generate_random_int() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    rng.gen_range(1..1000).to_string()
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    rng.random_range(1..1000).to_string()
 }
 
 #[cfg(test)]

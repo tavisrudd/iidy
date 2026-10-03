@@ -3,8 +3,9 @@
 //! Measures the performance of various preprocessing operations to establish
 //! baselines and identify optimization opportunities.
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use iidy::yaml::preprocess_yaml_v11;
+use std::hint::black_box;
 // Removed complex tag resolver imports that aren't available
 use iidy::yaml::handlebars::interpolate_handlebars_string;
 use serde_yaml::Value;

@@ -348,9 +348,7 @@ async fn build_changeset_result(
     // Generate next steps (exact iidy-js format)
     let region = extract_region_from_stack_arn(response.stack_id().unwrap_or(""))?;
     let next_steps = vec![
-        format!(
-            "Your new stack is now in REVIEW_IN_PROGRESS state. To create the resources run the following"
-        ),
+        "Your new stack is now in REVIEW_IN_PROGRESS state. To create the resources run the following".to_string(),
         format!(
             "  iidy --region {} exec-changeset --stack-name {} {} {}",
             region, stack_name, argsfile_path, changeset_name

@@ -14,3 +14,7 @@ pub use object_access::*;
 pub use serialization::*;
 pub use string_case::*;
 pub use string_manip::*;
+
+fn render_error(message: impl Into<String>) -> handlebars::RenderError {
+    handlebars::RenderErrorReason::Other(message.into()).into()
+}

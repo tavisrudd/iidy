@@ -38,26 +38,34 @@ impl ReliableTimeProvider {
     }
 
     async fn try_ntp(&self) -> Result<DateTime<Utc>> {
+        self.try_ntp_at(("pool.ntp.org", 123)).await
+    }
+
+    async fn try_ntp_at(&self, server: (&str, u16)) -> Result<DateTime<Utc>> {
         let timeout = self.ntp_timeout;
 
         // Try NTP query with timeout
         let result = tokio::time::timeout(timeout, async move {
-            // Use pool.ntp.org as in the original implementation
-            let response = ntp::request("pool.ntp.org")
-                .map_err(|e| anyhow::anyhow!("NTP request failed: {}", e))?;
+            // Resolve and query asynchronously so the timeout covers DNS and UDP I/O.
+            let addr = tokio::net::lookup_host(server)
+                .await?
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("No NTP server address found"))?;
+            let bind_addr = if addr.is_ipv4() {
+                "0.0.0.0:0"
+            } else {
+                "[::]:0"
+            };
+            let socket = tokio::net::UdpSocket::bind(bind_addr).await?;
+            let socket = sntpc_net_tokio::UdpSocketWrapper::new(socket);
+            let context = sntpc::NtpContext::new(sntpc::StdTimestampGen::default());
+            let response = sntpc::get_time(addr, &socket, context)
+                .await
+                .map_err(|e| anyhow::anyhow!("NTP request failed: {:?}", e))?;
 
-            // Convert NTP timestamp to chrono DateTime
-            // The ntp crate provides transmit_time field
-            let ntp_time = response.transmit_time;
-
-            // NTP uses seconds since 1900, we need to convert to Unix timestamp
-            // NTP epoch is Jan 1, 1900, Unix epoch is Jan 1, 1970
-            // Difference is 70 years = 2208988800 seconds
-            const NTP_TO_UNIX_OFFSET: u32 = 2208988800;
-            let unix_timestamp = ntp_time.sec.saturating_sub(NTP_TO_UNIX_OFFSET) as i64;
-
-            // Convert fractional part to nanoseconds
-            let nanos = ((ntp_time.frac as f64 / u32::MAX as f64) * 1_000_000_000.0) as u32;
+            // sntpc returns Unix seconds and a fraction in units of 2^-32 seconds.
+            let unix_timestamp = i64::try_from(response.sec())?;
+            let nanos = ((u64::from(response.sec_fraction()) * 1_000_000_000) >> 32) as u32;
 
             DateTime::from_timestamp(unix_timestamp, nanos)
                 .ok_or_else(|| anyhow::anyhow!("Invalid NTP timestamp"))
@@ -182,6 +190,50 @@ mod tests {
         let start_time = provider.start_time().await.unwrap();
         let expected = fixed_time - chrono::Duration::milliseconds(500);
         assert_eq!(start_time, expected);
+    }
+
+    #[tokio::test]
+    async fn ntp_response_preserves_unix_seconds_and_fraction() {
+        let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        let server_task = tokio::spawn(async move {
+            let mut request = [0; 48];
+            let (_, peer) = server.recv_from(&mut request).await.unwrap();
+            let mut response = [0; 48];
+            response[0] = (request[0] & 0x38) | 4; // Same NTP version, server mode.
+            response[1] = 1; // Synchronized primary server.
+            response[24..32].copy_from_slice(&request[40..48]); // Originate timestamp.
+            let seconds = (1_700_000_000u32 + 2_208_988_800).to_be_bytes();
+            response[32..36].copy_from_slice(&seconds);
+            response[40..44].copy_from_slice(&seconds);
+            response[44..48].copy_from_slice(&0x8000_0000u32.to_be_bytes());
+            server.send_to(&response, peer).await.unwrap();
+        });
+
+        let time = ReliableTimeProvider::new()
+            .try_ntp_at(("127.0.0.1", port))
+            .await
+            .unwrap();
+        assert_eq!(time.timestamp(), 1_700_000_000);
+        assert_eq!(time.timestamp_subsec_nanos(), 500_000_000);
+        server_task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn ntp_query_times_out_when_server_does_not_reply() {
+        let server = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let port = server.local_addr().unwrap().port();
+        let provider = ReliableTimeProvider {
+            ntp_timeout: StdDuration::from_millis(50),
+        };
+        let error = tokio::time::timeout(
+            StdDuration::from_secs(1),
+            provider.try_ntp_at(("127.0.0.1", port)),
+        )
+        .await
+        .expect("NTP I/O must yield so its timeout can fire")
+        .unwrap_err();
+        assert_eq!(error.to_string(), "NTP request timed out");
     }
 
     #[tokio::test]

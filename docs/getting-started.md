@@ -7,7 +7,7 @@ they aren't.
 
 ## Prerequisites
 
-- **Rust toolchain**: install via [rustup](https://rustup.rs/)
+- **Rust toolchain (1.94.1 or newer)**: install via [rustup](https://rustup.rs/)
 - **AWS credentials**: configured via `~/.aws/credentials`, environment variables, or IAM role
 - **A CloudFormation template**: any valid YAML or JSON template
 

@@ -566,9 +566,7 @@ impl Resolver {
             Ok(interpolated) => Ok(Value::String(interpolated)),
             Err(e) => {
                 let file_path = context.input_uri.as_deref().unwrap_or("unknown location");
-                let error_msg = e.to_string();
-
-                if let Some(var_name) = parse_variable_name_from_handlebars_error(&error_msg) {
+                if let Some(var_name) = variable_name_from_handlebars_error(&e) {
                     let location = find_template_variable_location(file_path, var_name);
                     let available_vars: Vec<String> = env_values.keys().cloned().collect();
                     return Err(variable_not_found_error_with_path_tracker(
@@ -2407,13 +2405,13 @@ fn json_to_yaml_value(json_value: &serde_json::Value) -> Result<Value> {
     }
 }
 
-/// Extract variable name from a handlebars strict-mode error message.
-/// The handlebars crate formats these as: `Variable "name" not found in strict mode.`
-fn parse_variable_name_from_handlebars_error(error_msg: &str) -> Option<&str> {
-    let marker = "Variable \"";
-    let start = error_msg.find(marker)? + marker.len();
-    let end = start + error_msg[start..].find('"')?;
-    Some(&error_msg[start..end])
+/// Read the structured strict-mode error so diagnostics do not depend on its display format.
+fn variable_name_from_handlebars_error(error: &anyhow::Error) -> Option<&str> {
+    let render_error = error.downcast_ref::<handlebars::RenderError>()?;
+    match render_error.reason() {
+        handlebars::RenderErrorReason::MissingVariable(Some(name)) => Some(name),
+        _ => None,
+    }
 }
 
 /// Try to find which line of a source file contains a handlebars reference to `var_name`.

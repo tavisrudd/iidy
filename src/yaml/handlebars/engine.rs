@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use handlebars::Handlebars;
 use serde_json::Value;
 
@@ -81,11 +81,10 @@ pub fn interpolate_handlebars_string(
     handlebars
         .render_template(template_string, &data)
         .map_err(|e| {
-            anyhow!(
+            let message = format!(
                 "Error in string template at {}: {}\nTemplate: {}",
-                error_context,
-                e,
-                template_string
-            )
+                error_context, e, template_string
+            );
+            anyhow::Error::new(e).context(message)
         })
 }

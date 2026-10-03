@@ -44,7 +44,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let url = format!("{}/test.yaml", &server.url());
+        let url = format!("{}/test.yaml", server.url());
         let result = load_http_import(&url, "/base", &client).await?;
 
         mock.assert_async().await;
@@ -77,7 +77,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let url = format!("{}/test.json", &server.url());
+        let url = format!("{}/test.json", server.url());
         let result = load_http_import(&url, "/base", &client).await?;
 
         mock.assert_async().await;
@@ -114,7 +114,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let url = format!("{}/test.txt", &server.url());
+        let url = format!("{}/test.txt", server.url());
         let result = load_http_import(&url, "/base", &client).await?;
 
         mock.assert_async().await;
@@ -141,7 +141,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let url = format!("{}/nonexistent", &server.url());
+        let url = format!("{}/nonexistent", server.url());
         let result = load_http_import(&url, "/base", &client).await;
 
         mock.assert_async().await;
@@ -182,7 +182,7 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let url = format!("{}/large", &server.url());
+        let url = format!("{}/large", server.url());
         let result = load_http_import(&url, "/base", &client).await?;
 
         mock.assert_async().await;

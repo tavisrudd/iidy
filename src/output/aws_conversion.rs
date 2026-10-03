@@ -238,7 +238,7 @@ pub fn convert_stacks_to_list_display(stacks: Vec<Stack>, show_tags: bool) -> Ou
     let mut entries: Vec<StackListEntry> = stacks.iter().map(convert_stack_to_list_entry).collect();
 
     // Sort by creation time (matching original logic)
-    entries.sort_by(|a, b| a.creation_time.cmp(&b.creation_time));
+    entries.sort_by_key(|a| a.creation_time);
 
     OutputData::StackList(StackListDisplay {
         stacks: entries,

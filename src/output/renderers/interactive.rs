@@ -888,7 +888,7 @@ impl InteractiveRenderer {
     }
 
     async fn flush_buffered_live_events(&mut self) -> Result<()> {
-        let events_to_render: Vec<OutputData> = self.buffered_live_events.drain(..).collect();
+        let events_to_render: Vec<OutputData> = std::mem::take(&mut self.buffered_live_events);
         for buffered_event in events_to_render {
             self.render_data_immediately(buffered_event).await?;
         }

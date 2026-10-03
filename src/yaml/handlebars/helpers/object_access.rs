@@ -16,20 +16,20 @@ pub fn lookup_helper(
     let object = h
         .param(0)
         .ok_or_else(|| {
-            handlebars::RenderError::new("lookup helper requires two parameters: object and key")
+            super::render_error("lookup helper requires two parameters: object and key")
         })?
         .value();
 
     let key = h
         .param(1)
         .ok_or_else(|| {
-            handlebars::RenderError::new("lookup helper requires two parameters: object and key")
+            super::render_error("lookup helper requires two parameters: object and key")
         })?
         .value();
 
     let key_str = key
         .as_str()
-        .ok_or_else(|| handlebars::RenderError::new("lookup helper requires key to be a string"))?;
+        .ok_or_else(|| super::render_error("lookup helper requires key to be a string"))?;
 
     match object {
         Value::Object(obj) => {
@@ -40,9 +40,7 @@ pub fn lookup_helper(
                     Value::Bool(b) => b.to_string(),
                     Value::Null => "".to_string(),
                     _ => serde_json::to_string(value).map_err(|e| {
-                        handlebars::RenderError::new(format!(
-                            "Failed to serialize lookup result: {e}"
-                        ))
+                        super::render_error(format!("Failed to serialize lookup result: {e}"))
                     })?,
                 };
                 out.write(&value_str)?;
@@ -59,16 +57,14 @@ pub fn lookup_helper(
                     Value::Bool(b) => b.to_string(),
                     Value::Null => "".to_string(),
                     _ => serde_json::to_string(value).map_err(|e| {
-                        handlebars::RenderError::new(format!(
-                            "Failed to serialize lookup result: {e}"
-                        ))
+                        super::render_error(format!("Failed to serialize lookup result: {e}"))
                     })?,
                 };
                 out.write(&value_str)?;
             }
         }
         _ => {
-            return Err(handlebars::RenderError::new(
+            return Err(super::render_error(
                 "lookup helper requires first parameter to be an object or array",
             ));
         }

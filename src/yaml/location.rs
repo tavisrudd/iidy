@@ -231,7 +231,8 @@ impl ManualLocationFinder {
         }
 
         // Extract array index from the last segment if present
-        let (last_key, array_index) = if let Some(last_segment) = path_segments.last() {
+        let (last_key, array_index) = {
+            let last_segment = path_segments.last()?;
             if let Some(bracket_start) = last_segment.find('[') {
                 if let Some(bracket_end) = last_segment.find(']') {
                     let key_part = &last_segment[..bracket_start];
@@ -244,8 +245,6 @@ impl ManualLocationFinder {
             } else {
                 (*last_segment, None)
             }
-        } else {
-            return None;
         };
 
         // If this is a path with multiple segments, try to find the context by looking for
@@ -286,12 +285,10 @@ impl ManualLocationFinder {
         // Find each preceding segment in order
         for &segment in preceding_segments {
             let pattern = format!("{segment}:");
-            if let Some(segment_pos) =
-                self.find_position_of_from_offset(source, &pattern, search_offset)
             {
+                let segment_pos =
+                    self.find_position_of_from_offset(source, &pattern, search_offset)?;
                 search_offset = segment_pos.offset + pattern.len();
-            } else {
-                return None;
             }
         }
 

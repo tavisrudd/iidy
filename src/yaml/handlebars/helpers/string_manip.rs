@@ -14,12 +14,12 @@ pub fn trim_helper(
 ) -> HelperResult {
     let value = h
         .param(0)
-        .ok_or_else(|| handlebars::RenderError::new("trim helper requires one parameter"))?
+        .ok_or_else(|| super::render_error("trim helper requires one parameter"))?
         .value();
 
     let string_value = value
         .as_str()
-        .ok_or_else(|| handlebars::RenderError::new("trim helper requires a string parameter"))?;
+        .ok_or_else(|| super::render_error("trim helper requires a string parameter"))?;
 
     out.write(string_value.trim())?;
     Ok(())
@@ -36,7 +36,7 @@ pub fn replace_helper(
     let value = h
         .param(0)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
+            super::render_error(
                 "replace helper requires three parameters: string, search, replacement",
             )
         })?
@@ -45,7 +45,7 @@ pub fn replace_helper(
     let search = h
         .param(1)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
+            super::render_error(
                 "replace helper requires three parameters: string, search, replacement",
             )
         })?
@@ -54,22 +54,22 @@ pub fn replace_helper(
     let replacement = h
         .param(2)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
+            super::render_error(
                 "replace helper requires three parameters: string, search, replacement",
             )
         })?
         .value();
 
     let string_value = value.as_str().ok_or_else(|| {
-        handlebars::RenderError::new("replace helper requires a string as first parameter")
+        super::render_error("replace helper requires a string as first parameter")
     })?;
 
     let search_str = search.as_str().ok_or_else(|| {
-        handlebars::RenderError::new("replace helper requires a string as second parameter")
+        super::render_error("replace helper requires a string as second parameter")
     })?;
 
     let replacement_str = replacement.as_str().ok_or_else(|| {
-        handlebars::RenderError::new("replace helper requires a string as third parameter")
+        super::render_error("replace helper requires a string as third parameter")
     })?;
 
     let replaced = string_value.replace(search_str, replacement_str);
@@ -88,40 +88,34 @@ pub fn substring_helper(
     let value = h
         .param(0)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
-                "substring helper requires three parameters: string, start, length",
-            )
+            super::render_error("substring helper requires three parameters: string, start, length")
         })?
         .value();
 
     let start = h
         .param(1)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
-                "substring helper requires three parameters: string, start, length",
-            )
+            super::render_error("substring helper requires three parameters: string, start, length")
         })?
         .value();
 
     let length = h
         .param(2)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
-                "substring helper requires three parameters: string, start, length",
-            )
+            super::render_error("substring helper requires three parameters: string, start, length")
         })?
         .value();
 
     let string_value = value.as_str().ok_or_else(|| {
-        handlebars::RenderError::new("substring helper requires a string as first parameter")
+        super::render_error("substring helper requires a string as first parameter")
     })?;
 
     let start_idx = start.as_u64().ok_or_else(|| {
-        handlebars::RenderError::new("substring helper requires a number as second parameter")
+        super::render_error("substring helper requires a number as second parameter")
     })? as usize;
 
     let length_val = length.as_u64().ok_or_else(|| {
-        handlebars::RenderError::new("substring helper requires a number as third parameter")
+        super::render_error("substring helper requires a number as third parameter")
     })? as usize;
 
     let end_idx = (start_idx + length_val).min(string_value.len());
@@ -146,7 +140,7 @@ pub fn length_helper(
 ) -> HelperResult {
     let value = h
         .param(0)
-        .ok_or_else(|| handlebars::RenderError::new("length helper requires one parameter"))?
+        .ok_or_else(|| super::render_error("length helper requires one parameter"))?
         .value();
 
     let length = match value {
@@ -154,7 +148,7 @@ pub fn length_helper(
         serde_json::Value::Array(arr) => arr.len(),
         serde_json::Value::Object(obj) => obj.len(),
         _ => {
-            return Err(handlebars::RenderError::new(
+            return Err(super::render_error(
                 "length helper can only be used on strings, arrays, or objects",
             ));
         }
@@ -175,7 +169,7 @@ pub fn pad_helper(
     let value = h
         .param(0)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
+            super::render_error(
                 "pad helper requires at least two parameters: string, length, [padChar]",
             )
         })?
@@ -184,7 +178,7 @@ pub fn pad_helper(
     let target_length = h
         .param(1)
         .ok_or_else(|| {
-            handlebars::RenderError::new(
+            super::render_error(
                 "pad helper requires at least two parameters: string, length, [padChar]",
             )
         })?
@@ -192,13 +186,14 @@ pub fn pad_helper(
 
     let pad_char = h.param(2).and_then(|p| p.value().as_str()).unwrap_or(" ");
 
-    let string_value = value.as_str().ok_or_else(|| {
-        handlebars::RenderError::new("pad helper requires a string as first parameter")
-    })?;
+    let string_value = value
+        .as_str()
+        .ok_or_else(|| super::render_error("pad helper requires a string as first parameter"))?;
 
-    let target_len = target_length.as_u64().ok_or_else(|| {
-        handlebars::RenderError::new("pad helper requires a number as second parameter")
-    })? as usize;
+    let target_len = target_length
+        .as_u64()
+        .ok_or_else(|| super::render_error("pad helper requires a number as second parameter"))?
+        as usize;
 
     if string_value.len() >= target_len {
         out.write(string_value)?;
@@ -227,7 +222,7 @@ pub fn concat_helper(
             serde_json::Value::Number(n) => result.push_str(&n.to_string()),
             serde_json::Value::Bool(b) => result.push_str(&b.to_string()),
             _ => {
-                return Err(handlebars::RenderError::new(
+                return Err(super::render_error(
                     "concat helper only supports strings, numbers, and booleans",
                 ));
             }

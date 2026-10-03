@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 /// Shared display helpers for error formatting.
 ///
 /// Internal helpers used by enhanced.rs and wrapper.rs to avoid
@@ -54,7 +56,7 @@ pub(crate) struct ErrorColors {
 
 impl ErrorColors {
     pub(crate) fn detect() -> Self {
-        let use_color = std::env::var("NO_COLOR").is_err() && atty::is(atty::Stream::Stderr);
+        let use_color = std::env::var("NO_COLOR").is_err() && std::io::stderr().is_terminal();
         if use_color {
             Self {
                 bold_red: "\x1b[1;31m",
